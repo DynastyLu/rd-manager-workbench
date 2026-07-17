@@ -1,4 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { StoragePort, StorageReadOutput, StorageWriteInput } from './storage.port';
@@ -11,6 +12,11 @@ export class LocalStorageAdapter extends StoragePort {
   constructor(@Optional() @Inject('LOCAL_STORAGE_ROOT') rootPath?: string) {
     super();
     this.rootPath = resolve(rootPath || process.env.LOCAL_STORAGE_ROOT || 'var/storage');
+  }
+
+  async checkHealth(): Promise<void> {
+    await mkdir(this.rootPath, { recursive: true });
+    await access(this.rootPath, constants.R_OK | constants.W_OK | constants.X_OK);
   }
 
   async write(input: StorageWriteInput): Promise<{ storageKey: string; size: number }> {

@@ -1,9 +1,20 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { LocalStorageAdapter } from '../../../../src/infrastructure/storage/local-storage.adapter';
 
 describe('LocalStorageAdapter', () => {
+  it('creates and verifies the configured storage root without writing a data file', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'backend-core-storage-'));
+    const root = join(parent, 'storage-root');
+    const adapter = new LocalStorageAdapter(root);
+
+    await adapter.checkHealth();
+
+    await expect(access(root)).resolves.toBeUndefined();
+    await rm(parent, { recursive: true, force: true });
+  });
+
   it('writes and reads a file by storage key', async () => {
     const root = await mkdtemp(join(tmpdir(), 'backend-core-storage-'));
     const adapter = new LocalStorageAdapter(root);

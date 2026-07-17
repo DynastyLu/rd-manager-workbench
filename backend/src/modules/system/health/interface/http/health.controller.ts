@@ -33,7 +33,7 @@ export class HealthController {
     const checks = {
       database: await this.checkDatabase(),
       queue: 'unavailable',
-      storage: this.checkStorage(),
+      storage: await this.checkStorage(),
     };
     const status = Object.values(checks).every((value) => value === 'ok' || value === 'unavailable')
       ? 'ready'
@@ -58,7 +58,12 @@ export class HealthController {
     }
   }
 
-  private checkStorage() {
-    return this.storage ? 'ok' : 'error';
+  private async checkStorage() {
+    try {
+      await this.storage.checkHealth();
+      return 'ok';
+    } catch {
+      return 'unavailable';
+    }
   }
 }
