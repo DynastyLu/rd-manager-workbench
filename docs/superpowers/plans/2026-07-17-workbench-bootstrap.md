@@ -350,7 +350,7 @@ git commit -m "feat: add backend health skeleton"
 ## Task 4: Add safe PostgreSQL bootstrap and initial migration
 
 **Files:**
-- Create: `apps/backend/prisma/schema.prisma`
+- Modify: `apps/backend/prisma/schema.prisma` (Task 3 仅预置无业务表的 Prisma Client 生成基线；本任务新增 AppMetadata 模型)
 - Create: `apps/backend/prisma/migrations/20260717000000_init/migration.sql`
 - Create: `apps/backend/src/infrastructure/database/bootstrap-plan.ts`
 - Create: `apps/backend/src/infrastructure/database/bootstrap-database.ts`

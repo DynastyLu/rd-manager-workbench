@@ -5,15 +5,19 @@
   "type": "commonjs",
   "main": "dist/main.js",
   "scripts": {
+    "prebuild": "pnpm prisma:generate",
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && nest build",
     "lint": "eslint src test",
+    "pretypecheck": "pnpm prisma:generate",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest:unit": "pnpm prisma:generate",
     "test:unit": "jest --config test/jest-unit.config.cjs",
+    "pretest:e2e": "pnpm prisma:generate",
     "test:e2e": "jest --config test/jest-e2e.config.cjs",
     "test": "pnpm test:unit && pnpm test:e2e",
     "start": "node dist/main.js",
     "start:dev": "nest start --watch",
-    "prisma:generate": "prisma generate",
+    "prisma:generate": "node scripts/generate-prisma-client.cjs --schema prisma/schema.prisma",
     "prisma:migrate:deploy": "prisma migrate deploy"
   },
   "dependencies": {

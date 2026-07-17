@@ -144,6 +144,24 @@
   - `apps/backend/test/unit/request-context.service.spec.ts`
   - `progress.md`
 
+- **Task 3 可重复构建修复：** complete
+- 执行的操作：
+  - 按 TDD 新增可重复启动契约测试，先确认最小 Prisma schema、显式生成路径/前置钩子和完整环境示例均缺失而 RED。
+  - 新增仅含 `prisma-client-js` generator、PostgreSQL datasource 和 `app` schema 的无模型生成基线；业务模型与迁移仍由 Task 4 实现。
+  - `prisma:generate` 通过跨平台 Node 包装器显式接收 `--schema prisma/schema.prisma`；仅在环境缺失时注入无密码 loopback 占位 URL，生成过程不连接数据库。
+  - build、typecheck、unit 和 E2E 均通过生命周期前置钩子先生成 Prisma Client，避免依赖共享 node_modules 中的残留产物。
+  - 补全 `.env.example` 的 NODE_ENV、development-only INTERNAL_API_TOKEN、APP_DATA_DIR、FILES_DIR 和 LOG_LEVEL，并明确正式令牌由 Electron 随机注入。
+  - 将实施计划 Task 4 的 Prisma schema 操作由 Create 改为 Modify，并注明本阶段不含业务表。
+  - 在 `/tmp` 临时副本排除 node_modules/构建产物后执行 frozen、ignore-scripts 全新安装；先确认 client absent，再无 DATABASE_URL 生成 client、完成 typecheck，并删除临时副本。
+- 创建/修改的可重复构建文件：
+  - `.env.example`
+  - `apps/backend/package.json`
+  - `apps/backend/prisma/schema.prisma`
+  - `apps/backend/scripts/generate-prisma-client.cjs`
+  - `apps/backend/test/unit/bootstrap-reproducibility.spec.ts`
+  - `docs/superpowers/plans/2026-07-17-workbench-bootstrap.md`
+  - `progress.md`
+
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
@@ -171,6 +189,8 @@
 | Request context/logger RED | focused unit tests | 因基础设施模块尚不存在而失败 | 两组均为 `TS2307`，exit 1 | 通过 |
 | Backend tracing/logger GREEN | backend full unit + E2E | 环境、上下文、logger 与请求关联全部通过 | unit 3 suites / 18 tests；E2E 1 suite / 7 tests | 通过 |
 | Backend 成功契约 RED/GREEN | health E2E | 成功严格 `{ success, data }`，traceId 仅用于错误/日志 | RED 2 tests 因多余 traceId 失败；GREEN 7 tests passed | 通过 |
+| Backend 可重复构建 RED/GREEN | bootstrap reproducibility unit | schema、generate 前置和 env 示例具备静态契约 | RED 3 tests failed；GREEN 3 tests passed | 通过 |
+| Prisma clean-client 验证 | 临时副本 + frozen install + ignore-scripts | 无残留 client 时仍可生成并类型检查 | before=absent，after=generated，typecheck exit 0，探针已删除 | 通过 |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
@@ -187,6 +207,8 @@
 | 2026-07-17 | ConfigModule 在测试模块导入时早于 beforeEach 校验环境 | 1 | 新增 Jest setupFiles，在模块加载前写入仅用于测试的安全环境变量 |
 | 2026-07-17 | 离线安装显式 `@types/node` 时本机 store 缺少精确版本 tarball | 1 | 改为普通 `pnpm install` 下载唯一缺失包，锁文件未发生非预期漂移 |
 | 2026-07-17 | request context traceId 收紧补丁因 Prettier 已改变长行上下文而未匹配 | 1 | 读取实际文件后缩小补丁上下文，随后正常应用并运行 focused GREEN |
+| 2026-07-17 | `require.resolve('prisma')` 命中包导出的缺失 `build/types.js` | 1 | 改用官方 CLI 子路径 `prisma/build/index.js`，随后无 DATABASE_URL generate 成功 |
+| 2026-07-17 | 显式传入 `.env.example` 时 Prettier 无法推断解析器 | 1 | 环境示例保持人工键值格式，仅对可解析文件格式化；根 format:check 仍按 `.prettierignore` 正常处理 |
 
 ## 五问重启检查
 | 问题 | 答案 |
