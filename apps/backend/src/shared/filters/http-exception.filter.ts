@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common'
 import type { Request, Response } from 'express'
 
+import { RequestContextService } from '../../infrastructure/context/request-context.service'
+
 interface ErrorDescriptor {
   code: string
   message: string
@@ -35,6 +37,8 @@ const INTERNAL_SERVER_ERROR: ErrorDescriptor = {
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  constructor(private readonly requestContext: RequestContextService) {}
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp()
     const request = http.getRequest<Request>()
@@ -52,6 +56,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       error: descriptor,
       path: request.path,
       timestamp: new Date().toISOString(),
+      traceId: this.requestContext.getTraceId(),
     })
   }
 }

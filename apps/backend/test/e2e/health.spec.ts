@@ -8,6 +8,7 @@ import { configureBackendApp } from '../../src/bootstrap/create-backend-app'
 import { PrismaService } from '../../src/infrastructure/prisma/prisma.service'
 
 const INTERNAL_API_TOKEN = 'test-internal-token-with-at-least-32-characters'
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 describe('health endpoints', () => {
   let app: INestApplication
@@ -32,7 +33,11 @@ describe('health endpoints', () => {
   it('reports liveness without an internal token', async () => {
     const response = await request(app.getHttpServer()).get('/api/health/live').expect(200)
 
-    expect(response.body).toEqual({ success: true, data: { status: 'live' } })
+    expect(response.body).toEqual({
+      success: true,
+      data: { status: 'live' },
+      traceId: expect.stringMatching(UUID_PATTERN),
+    })
     expect(queryRaw).not.toHaveBeenCalled()
   })
 
@@ -42,6 +47,7 @@ describe('health endpoints', () => {
     expect(response.body).toMatchObject({
       success: false,
       error: { code: 'UNAUTHORIZED', message: 'Unauthorized' },
+      traceId: expect.stringMatching(UUID_PATTERN),
     })
     expect(queryRaw).not.toHaveBeenCalled()
   })
@@ -64,6 +70,20 @@ describe('health endpoints', () => {
     expect(JSON.stringify(response.body)).not.toContain('leaked-query-secret')
   })
 
+  it('assigns a different trace ID to each request', async () => {
+    const callerProvidedTraceId = '00000000-0000-4000-8000-000000000001'
+    const firstResponse = await request(app.getHttpServer())
+      .get('/api/health/live')
+      .set('x-request-id', callerProvidedTraceId)
+      .expect(200)
+    const secondResponse = await request(app.getHttpServer()).get('/api/health/live').expect(200)
+
+    expect(firstResponse.body.traceId).toMatch(UUID_PATTERN)
+    expect(secondResponse.body.traceId).toMatch(UUID_PATTERN)
+    expect(firstResponse.body.traceId).not.toBe(callerProvidedTraceId)
+    expect(firstResponse.body.traceId).not.toBe(secondResponse.body.traceId)
+  })
+
   it('reports readiness after checking PostgreSQL', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/health/ready')
@@ -73,6 +93,7 @@ describe('health endpoints', () => {
     expect(response.body).toEqual({
       success: true,
       data: { status: 'ready', database: 'ready' },
+      traceId: expect.stringMatching(UUID_PATTERN),
     })
     expect(queryRaw).toHaveBeenCalledTimes(1)
   })
@@ -90,6 +111,7 @@ describe('health endpoints', () => {
     expect(response.body).toMatchObject({
       success: false,
       error: { code: 'SERVICE_UNAVAILABLE', message: 'Service Unavailable' },
+      traceId: expect.stringMatching(UUID_PATTERN),
     })
     expect(JSON.stringify(response.body)).not.toContain('database password leaked')
     expect(JSON.stringify(response.body)).not.toContain(INTERNAL_API_TOKEN)

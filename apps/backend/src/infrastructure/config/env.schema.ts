@@ -50,6 +50,7 @@ export const environmentSchema = z.object({
   INTERNAL_API_TOKEN: z.string().min(32),
   APP_DATA_DIR: absolutePathSchema,
   FILES_DIR: absolutePathSchema,
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   ENABLE_SWAGGER: booleanStringSchema.default(false),
 })
 

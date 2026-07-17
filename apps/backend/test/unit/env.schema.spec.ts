@@ -23,8 +23,18 @@ describe('parseEnvironment', () => {
       NODE_ENV: 'test',
       HOST: '127.0.0.1',
       PORT: 0,
+      LOG_LEVEL: 'info',
       ENABLE_SWAGGER: false,
     })
+  })
+
+  it.each(['debug', 'info', 'warn', 'error'] as const)('accepts the %s log level', (logLevel) => {
+    const environment = parseEnvironment({
+      ...validEnvironment,
+      LOG_LEVEL: logLevel,
+    })
+
+    expect(environment.LOG_LEVEL).toBe(logLevel)
   })
 
   it('parses an explicitly enabled Swagger flag', () => {
@@ -46,6 +56,7 @@ describe('parseEnvironment', () => {
     ['a relative app data directory', { APP_DATA_DIR: './data' }],
     ['a relative files directory', { FILES_DIR: 'files' }],
     ['an out-of-range port', { PORT: '65536' }],
+    ['an invalid log level', { LOG_LEVEL: 'fatal' }],
     ['an invalid Swagger flag', { ENABLE_SWAGGER: 'yes' }],
   ])('rejects %s', (_description, override) => {
     expect(() => parseEnvironment({ ...validEnvironment, ...override })).toThrow()
