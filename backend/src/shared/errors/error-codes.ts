@@ -3,6 +3,7 @@ export const ErrorCodes = {
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   REQUEST_CONTEXT_UNAVAILABLE: 'REQUEST_CONTEXT_UNAVAILABLE',
   DATABASE_ERROR: 'DATABASE_ERROR',
+  PROJECT_CODE_EXISTS: 'PROJECT_CODE_EXISTS',
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
