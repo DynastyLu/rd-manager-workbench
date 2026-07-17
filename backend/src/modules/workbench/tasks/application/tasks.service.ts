@@ -31,8 +31,10 @@ export class TasksService {
 
   async createTask(dto: CreateTaskDto) {
     return this.prisma.$transaction(async (tx) => {
+      await this.acquireTaskGraphLock(tx);
       await this.assertTaskReferences(tx, dto);
       await this.assertCompletionAllowed(tx, dto.status, dto.dependencyIds ?? []);
+      await this.acquireProjectHealthLocks(tx, [dto.projectId]);
       const task = await tx.workTask.create({
         data: {
           title: dto.title,
@@ -46,9 +48,10 @@ export class TasksService {
               }
             : {}),
         },
+        include: { dependencies: { select: { dependsOnTaskId: true } } },
       });
       if (task.projectId) await this.recalculateHealth(tx, task.projectId);
-      return task;
+      return this.toTaskResponse(task);
     });
   }
 
@@ -75,20 +78,25 @@ export class TasksService {
         orderBy: [{ dueAt: 'asc' }, { updatedAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
+        include: { dependencies: { select: { dependsOnTaskId: true } } },
       }),
       this.prisma.workTask.count({ where }),
     ]);
-    return { data, meta: { page, pageSize, total } };
+    return { data: data.map((task) => this.toTaskResponse(task)), meta: { page, pageSize, total } };
   }
 
   async getTask(id: string) {
-    const task = await this.prisma.workTask.findFirst({ where: { id, archivedAt: null } });
+    const task = await this.prisma.workTask.findFirst({
+      where: { id, archivedAt: null },
+      include: { dependencies: { select: { dependsOnTaskId: true } } },
+    });
     if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
-    return task;
+    return this.toTaskResponse(task);
   }
 
   async updateTask(id: string, dto: UpdateTaskDto) {
     return this.prisma.$transaction(async (tx) => {
+      await this.acquireTaskGraphLock(tx);
       const existing = await tx.workTask.findFirst({
         where: { id, archivedAt: null },
         include: { dependencies: { select: { dependsOnTaskId: true } } },
@@ -103,7 +111,14 @@ export class TasksService {
         status: dto.status ?? existing.status,
       };
       await this.assertTaskReferences(tx, merged, id);
+      await this.assertProjectMoveDoesNotSplitHierarchy(
+        tx,
+        existing.projectId,
+        merged.projectId,
+        id,
+      );
       await this.assertCompletionAllowed(tx, merged.status, merged.dependencyIds);
+      await this.acquireProjectHealthLocks(tx, [existing.projectId, merged.projectId]);
       const task = await tx.workTask.update({
         where: { id },
         data: {
@@ -122,20 +137,23 @@ export class TasksService {
               }
             : {}),
         },
+        include: { dependencies: { select: { dependsOnTaskId: true } } },
       });
       const healthProjectIds = [existing.projectId, task.projectId].filter(
         (projectId): projectId is string => Boolean(projectId),
       );
       for (const projectId of new Set(healthProjectIds))
         await this.recalculateHealth(tx, projectId);
-      return task;
+      return this.toTaskResponse(task);
     });
   }
 
   async archiveTask(id: string) {
     return this.prisma.$transaction(async (tx) => {
+      await this.acquireTaskGraphLock(tx);
       const task = await tx.workTask.findFirst({ where: { id, archivedAt: null } });
       if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
+      await this.acquireProjectHealthLocks(tx, [task.projectId]);
       await tx.workTask.update({ where: { id }, data: { archivedAt: new Date() } });
       if (task.projectId) await this.recalculateHealth(tx, task.projectId);
     });
@@ -143,6 +161,7 @@ export class TasksService {
 
   async createMilestone(projectId: string, dto: CreateMilestoneDto) {
     return this.prisma.$transaction(async (tx) => {
+      await this.acquireProjectHealthLocks(tx, [projectId]);
       await this.assertActiveProject(tx, projectId);
       const milestone = await tx.milestone.create({
         data: {
@@ -162,6 +181,7 @@ export class TasksService {
 
   async updateMilestone(projectId: string, milestoneId: string, dto: UpdateMilestoneDto) {
     return this.prisma.$transaction(async (tx) => {
+      await this.acquireProjectHealthLocks(tx, [projectId]);
       await this.assertActiveProject(tx, projectId);
       const milestone = await tx.milestone.findFirst({ where: { id: milestoneId, projectId } });
       if (!milestone) throw this.notFound(ErrorCodes.MILESTONE_NOT_FOUND, 'Milestone not found');
@@ -183,15 +203,14 @@ export class TasksService {
 
   async createProgressReport(projectId: string, dto: CreateProgressReportDto) {
     return this.prisma.$transaction(async (tx) => {
+      await this.acquireProjectHealthLocks(tx, [projectId]);
       await this.assertActiveProject(tx, projectId);
       const report = await tx.progressReport.create({
         data: {
           projectId,
           summary: dto.summary,
           completionPercent: dto.completionPercent,
-          ...(dto.reportedAt !== undefined
-            ? { reportedAt: new Date(dto.reportedAt) }
-            : { reportedAt: new Date() }),
+          reportedAt: new Date(dto.reportedAt),
           ...(dto.blockers !== undefined ? { blockers: dto.blockers } : {}),
         },
       });
@@ -256,6 +275,7 @@ export class TasksService {
           'Parent task belongs to another project',
         );
       }
+      if (taskId) await this.assertNoHierarchyCycle(tx, taskId, candidate.parentId);
     }
     const dependencyIds = candidate.dependencyIds ?? [];
     if (new Set(dependencyIds).size !== dependencyIds.length) {
@@ -300,26 +320,62 @@ export class TasksService {
     taskId: string,
     dependencyIds: string[],
   ) {
-    const edges = await tx.taskDependency.findMany({
-      where: { task: { archivedAt: null }, dependsOnTask: { archivedAt: null } },
-      select: { taskId: true, dependsOnTaskId: true },
-    });
-    const adjacency = new Map<string, string[]>();
-    for (const edge of edges) {
-      if (edge.taskId === taskId) continue;
-      adjacency.set(edge.taskId, [...(adjacency.get(edge.taskId) ?? []), edge.dependsOnTaskId]);
+    let frontier = dependencyIds;
+    const visited = new Set<string>();
+    while (frontier.length) {
+      if (frontier.includes(taskId)) {
+        throw this.unprocessable(
+          ErrorCodes.TASK_DEPENDENCY_CYCLE,
+          'Task dependencies cannot form a cycle',
+        );
+      }
+      const batch = frontier.filter((taskId) => !visited.has(taskId));
+      if (!batch.length) return;
+      batch.forEach((taskId) => visited.add(taskId));
+      const edges = await tx.taskDependency.findMany({
+        where: {
+          taskId: { in: batch },
+          task: { archivedAt: null },
+          dependsOnTask: { archivedAt: null },
+        },
+        select: { taskId: true, dependsOnTaskId: true },
+      });
+      frontier = edges.map(({ dependsOnTaskId }) => dependsOnTaskId);
     }
-    adjacency.set(taskId, dependencyIds);
-    const reachesTask = (currentId: string, seen: Set<string>): boolean => {
-      if (currentId === taskId) return true;
-      if (seen.has(currentId)) return false;
-      seen.add(currentId);
-      return (adjacency.get(currentId) ?? []).some((nextId) => reachesTask(nextId, seen));
-    };
-    if (dependencyIds.some((dependencyId) => reachesTask(dependencyId, new Set()))) {
+  }
+
+  private async assertNoHierarchyCycle(tx: DatabaseClient, taskId: string, parentId: string) {
+    let ancestorId: string | null = parentId;
+    const visited = new Set<string>();
+    while (ancestorId) {
+      if (ancestorId === taskId || visited.has(ancestorId)) {
+        throw this.unprocessable(
+          ErrorCodes.TASK_INVALID_REFERENCE,
+          'Task hierarchy cannot form a cycle',
+        );
+      }
+      visited.add(ancestorId);
+      const ancestor = await tx.workTask.findFirst({
+        where: { id: ancestorId, archivedAt: null },
+        select: { parentId: true },
+      });
+      if (!ancestor) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Parent task not found');
+      ancestorId = ancestor.parentId;
+    }
+  }
+
+  private async assertProjectMoveDoesNotSplitHierarchy(
+    tx: DatabaseClient,
+    currentProjectId: string | null,
+    nextProjectId: string | null,
+    taskId: string,
+  ) {
+    if (currentProjectId === nextProjectId) return;
+    const childCount = await tx.workTask.count({ where: { parentId: taskId } });
+    if (childCount) {
       throw this.unprocessable(
-        ErrorCodes.TASK_DEPENDENCY_CYCLE,
-        'Task dependencies cannot form a cycle',
+        ErrorCodes.TASK_INVALID_REFERENCE,
+        'A task with children cannot move to another project',
       );
     }
   }
@@ -378,8 +434,36 @@ export class TasksService {
       overdueCriticalTasks,
     });
     await tx.projectHealthSnapshot.create({
-      data: { projectId, health: health.health, reasons: health.reasons },
+      data: { projectId, health: health.health, reasons: health.reasons, calculatedAt: now },
     });
+  }
+
+  private async acquireTaskGraphLock(tx: DatabaseClient) {
+    await tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`rd-manager-workbench:task-graph`}))`,
+    );
+  }
+
+  private async acquireProjectHealthLocks(
+    tx: DatabaseClient,
+    projectIds: Array<string | null | undefined>,
+  ) {
+    const sortedProjectIds = [
+      ...new Set(projectIds.filter((projectId): projectId is string => Boolean(projectId))),
+    ].sort();
+    for (const projectId of sortedProjectIds) {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`rd-manager-workbench:project-health:${projectId}`}))`,
+      );
+    }
+  }
+
+  private toTaskResponse<T extends { dependencies: Array<{ dependsOnTaskId: string }> }>(task: T) {
+    const { dependencies, ...taskFields } = task;
+    return {
+      ...taskFields,
+      dependencyIds: dependencies.map(({ dependsOnTaskId }) => dependsOnTaskId),
+    };
   }
 
   private notFound(code: (typeof ErrorCodes)[keyof typeof ErrorCodes], message: string) {

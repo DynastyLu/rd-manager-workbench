@@ -84,6 +84,21 @@ describe('Tasks API', () => {
     expect(snapshot).toMatchObject({ health: 'RED' });
   });
 
+  it('requires every progress report core field', async () => {
+    await request(app.getHttpServer())
+      .post(`/api/projects/${projectId}/progress-reports`)
+      .send({ summary: `${prefix} missing reportedAt`, completionPercent: 20 })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`/api/projects/${projectId}/progress-reports`)
+      .send({ summary: `${prefix} missing completion`, reportedAt: '2026-07-18T00:00:00.000Z' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`/api/projects/${projectId}/progress-reports`)
+      .send({ completionPercent: 20, reportedAt: '2026-07-18T00:00:00.000Z' })
+      .expect(400);
+  });
+
   it('rejects a milestone from another project', async () => {
     const milestone = await prisma.milestone.create({
       data: { projectId: otherProjectId, name: `${prefix} foreign milestone` },
@@ -182,6 +197,30 @@ describe('Tasks API', () => {
       .post('/api/tasks')
       .send({ title: `${prefix} dependent`, projectId, dependencyIds: [prerequisite.body.data.id] })
       .expect(201);
+    expect(dependent.body.data.dependencyIds).toEqual([prerequisite.body.data.id]);
+
+    const listed = await request(app.getHttpServer())
+      .get(`/api/tasks?projectId=${projectId}`)
+      .expect(200);
+    expect(listed.body.data.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: dependent.body.data.id,
+          dependencyIds: [prerequisite.body.data.id],
+        }),
+      ]),
+    );
+    const projectDetail = await request(app.getHttpServer())
+      .get(`/api/projects/${projectId}`)
+      .expect(200);
+    expect(projectDetail.body.data.tasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: dependent.body.data.id,
+          dependencyIds: [prerequisite.body.data.id],
+        }),
+      ]),
+    );
 
     const blocked = await request(app.getHttpServer())
       .patch(`/api/tasks/${dependent.body.data.id}`)
@@ -222,6 +261,93 @@ describe('Tasks API', () => {
       .send({ dependencyIds: [second.body.data.id] })
       .expect(422);
     expect(cycle.body).toMatchObject({ error: { code: 'TASK_DEPENDENCY_CYCLE' } });
+  });
+
+  it('rejects hierarchical cycles and project moves that would split a task tree', async () => {
+    const parent = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} hierarchy parent`, projectId })
+      .expect(201);
+    const child = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} hierarchy child`, projectId, parentId: parent.body.data.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/api/tasks/${parent.body.data.id}`)
+      .send({ parentId: child.body.data.id })
+      .expect(422);
+    await request(app.getHttpServer())
+      .patch(`/api/tasks/${child.body.data.id}`)
+      .send({ projectId: otherProjectId })
+      .expect(422);
+    await request(app.getHttpServer())
+      .patch(`/api/tasks/${parent.body.data.id}`)
+      .send({ projectId: otherProjectId })
+      .expect(422);
+  });
+
+  it('serializes opposing dependency writes so a cycle cannot persist', async () => {
+    const first = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} concurrent first`, projectId })
+      .expect(201);
+    const second = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} concurrent second`, projectId })
+      .expect(201);
+
+    const [firstWrite, secondWrite] = await Promise.all([
+      request(app.getHttpServer())
+        .patch(`/api/tasks/${first.body.data.id}`)
+        .send({ dependencyIds: [second.body.data.id] }),
+      request(app.getHttpServer())
+        .patch(`/api/tasks/${second.body.data.id}`)
+        .send({ dependencyIds: [first.body.data.id] }),
+    ]);
+
+    expect([firstWrite.status, secondWrite.status].sort()).toEqual([200, 422]);
+    expect([firstWrite.body, secondWrite.body]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          error: expect.objectContaining({ code: 'TASK_DEPENDENCY_CYCLE' }),
+        }),
+      ]),
+    );
+    const edges = await prisma.taskDependency.findMany({
+      where: { taskId: { in: [first.body.data.id, second.body.data.id] } },
+      select: { taskId: true, dependsOnTaskId: true },
+    });
+    expect(edges).toHaveLength(1);
+  });
+
+  it('keeps the latest health snapshot aligned with final state during concurrent writes', async () => {
+    const task = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({
+        title: `${prefix} concurrent overdue`,
+        projectId: otherProjectId,
+        priority: 'CRITICAL',
+        dueAt: '2020-01-01T00:00:00.000Z',
+      })
+      .expect(201);
+
+    await Promise.all([
+      request(app.getHttpServer()).delete(`/api/tasks/${task.body.data.id}`).expect(204),
+      request(app.getHttpServer())
+        .post(`/api/projects/${otherProjectId}/progress-reports`)
+        .send({
+          summary: `${prefix} concurrent report`,
+          completionPercent: 75,
+          reportedAt: '2026-07-18T00:00:00.000Z',
+        })
+        .expect(201),
+    ]);
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/projects/${otherProjectId}`)
+      .expect(200);
+    expect(detail.body.data.latestHealthSnapshot).toMatchObject({ health: 'GREEN' });
   });
 
   it('marks a project red for an overdue critical task and excludes archived tasks from lists', async () => {

@@ -76,6 +76,7 @@ export class ProjectsService {
         tasks: {
           where: { archivedAt: null },
           orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
+          include: { dependencies: { select: { dependsOnTaskId: true } } },
         },
         progressReports: { orderBy: [{ reportedAt: 'desc' }, { id: 'desc' }] },
         healthSnapshots: {
@@ -89,9 +90,13 @@ export class ProjectsService {
       throw new NotFoundException('Project not found');
     }
 
-    const { healthSnapshots, ...projectDetails } = project;
+    const { healthSnapshots, tasks, ...projectDetails } = project;
     return {
       ...projectDetails,
+      tasks: tasks.map(({ dependencies, ...task }) => ({
+        ...task,
+        dependencyIds: dependencies.map(({ dependsOnTaskId }) => dependsOnTaskId),
+      })),
       latestHealthSnapshot: healthSnapshots[0] ?? null,
     };
   }

@@ -1,21 +1,30 @@
 import { Transform } from 'class-transformer';
-import { IsDateString, IsInt, IsNotEmpty, IsString, Max, Min, ValidateIf } from 'class-validator';
+import {
+  IsDateString,
+  IsDefined,
+  IsInt,
+  IsNotEmpty,
+  IsString,
+  Max,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 
 const trimString = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 const isDefined = (_object: object, value: unknown) => value !== undefined;
 
 export class CreateProgressReportDto {
-  @ValidateIf(isDefined)
+  @IsDefined()
   @IsDateString()
-  reportedAt?: string;
+  reportedAt!: string;
 
   @Transform(trimString)
   @IsString()
   @IsNotEmpty()
   summary!: string;
 
-  @ValidateIf(isDefined)
+  @IsDefined()
   @IsInt()
   @Min(0)
   @Max(100)
