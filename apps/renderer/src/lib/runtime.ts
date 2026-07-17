@@ -1,15 +1,9 @@
 import { runtimeConfigSchema, type RuntimeConfig } from '@rd-manager/contracts'
 
-const ALLOWED_PRELOAD_KEYS = new Set(['getRuntimeConfig'])
-
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   const preloadApi = window.workbench
 
-  if (
-    preloadApi === undefined ||
-    typeof preloadApi.getRuntimeConfig !== 'function' ||
-    Object.keys(preloadApi).some((key) => !ALLOWED_PRELOAD_KEYS.has(key))
-  ) {
+  if (preloadApi === undefined || typeof preloadApi.getRuntimeConfig !== 'function') {
     throw new Error('桌面运行时接口校验失败')
   }
 

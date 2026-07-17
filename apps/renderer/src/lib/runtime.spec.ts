@@ -32,15 +32,27 @@ describe('getRuntimeConfig', () => {
     await expect(getRuntimeConfig()).rejects.toThrow('运行时配置校验失败')
   })
 
-  it('rejects a preload bridge that exposes capabilities beyond runtime reading', async () => {
+  it('allows future preload capabilities while reading only runtime configuration', async () => {
     Object.defineProperty(window, 'workbench', {
       configurable: true,
       value: {
         getRuntimeConfig: vi.fn().mockResolvedValue(VALID_RUNTIME),
-        openShell: vi.fn(),
+        openExternal: vi.fn(),
       },
     })
 
-    await expect(getRuntimeConfig()).rejects.toThrow('桌面运行时接口校验失败')
+    await expect(getRuntimeConfig()).resolves.toEqual(VALID_RUNTIME)
   })
+
+  it.each([{}, { getRuntimeConfig: 'not-a-function' }])(
+    'rejects a preload bridge without a callable runtime reader',
+    async (bridge) => {
+      Object.defineProperty(window, 'workbench', {
+        configurable: true,
+        value: bridge,
+      })
+
+      await expect(getRuntimeConfig()).rejects.toThrow('桌面运行时接口校验失败')
+    },
+  )
 })
