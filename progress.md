@@ -43,7 +43,7 @@
   - 确认隔离工作树分支为 `feature/bootstrap`。
   - 初始化根 pnpm workspace、TypeScript、ESLint、Prettier、Vitest 与本机 PostgreSQL 环境示例配置。
   - 使用 pnpm 9.15.1 安装根依赖并生成唯一的根 `pnpm-lock.yaml`。
-  - 将 Vitest 4 配置迁移到标准 `vitest.config.ts`，使用受支持的 `test.projects` 并验证 CLI 可实际加载。
+  - 将 Vitest 4 配置迁移到标准 `vitest.config.ts`，使用受支持的 `test.projects`，并为 `scripts/**/*.spec.ts` 保留命名 root project。
   - Task 2 及其后的 contracts、backend、renderer、desktop 实现尚未开始。
 - 创建/修改的 Task 1 文件：
   - `.gitignore`
@@ -66,7 +66,7 @@
 | DOCX 结构提取 | 需求文档 | 提取完整文字和表格 | 86 段、13 表、无批注与修订 | 通过 |
 | 基座只读盘点 | 两个源仓库 | 确认技术栈与工作树状态 | 已确认，均存在未提交改动 | 通过 |
 | 根依赖安装 | `pnpm install` | 安装成功并生成根锁文件 | exit 0，安装 397 个包 | 通过 |
-| Vitest config 加载 | `pnpm exec vitest --config vitest.config.ts list --passWithNoTests` | CLI 加载标准配置 | 临时匹配目录下 exit 0，验证后删除目录 | 通过 |
+| Vitest config 加载 | `pnpm test:package` | 命名 root project 加载根脚本测试 | 临时最小测试 1 passed，验证后删除 | 通过 |
 | 根配置静态校验 | ESLint + 严格 TypeScript | 配置无 lint 或类型错误 | 两项均 exit 0 | 通过 |
 | 格式检查 | `pnpm format:check` | 所有纳入格式化的文件符合规范 | exit 0 | 通过 |
 
