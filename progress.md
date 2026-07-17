@@ -44,7 +44,7 @@
   - 初始化根 pnpm workspace、TypeScript、ESLint、Prettier、Vitest 与本机 PostgreSQL 环境示例配置。
   - 使用 pnpm 9.15.1 安装根依赖并生成唯一的根 `pnpm-lock.yaml`。
   - 将 Vitest 4 配置迁移到标准 `vitest.config.ts`，使用受支持的 `test.projects`，并为 `scripts/**/*.spec.ts` 保留命名 root project。
-  - Task 2 已完成；backend、renderer、desktop 实现尚未开始。
+  - Task 2 已完成；后续 backend、renderer 与 desktop 任务按实施计划继续推进。
 - 创建/修改的 Task 1 文件：
   - `.gitignore`
   - `.npmrc`
@@ -192,6 +192,28 @@
   - `docs/superpowers/plans/2026-07-17-workbench-bootstrap.md`
   - `progress.md`
 
+- **Task 5：** complete
+- 执行的操作：
+  - 按 TDD 先创建路由、诊断、运行时与 API 客户端测试，确认因 `App`、`runtime`、`api-client` 尚不存在而 4 个 suites RED。
+  - 从 treasure-box 只读提取 React 19、Vite 8、React Router、TanStack Query、Tailwind v4 与 radix-nova 工程能力；未复制登录、鉴权、RBAC、Sentry、OCR 或旧业务代码。
+  - 使用 HashRouter 与 `base: './'` 建立严格 8 项导航；所有业务路由仅展示已批准范围，不定义 `/login`，不伪造业务数量。
+  - 完成“科研档案台”视觉壳：暖灰纸面、墨绿侧栏、朱砂风险点、细网格与档案标记；颜色均通过语义 CSS 变量，本地字体栈不依赖远程资源。
+  - Dashboard 四张模块卡均明确显示“尚未接入”并说明真实后续范围；Settings 通过 Query 展示 loading/error/ready 三态。
+  - runtime 仅调用 `window.workbench.getRuntimeConfig()`，并用共享 strict schema 二次验证；额外 bridge 能力、非 loopback URL 与低位端口均被拒绝。
+  - API 客户端仅请求 `127.0.0.1` 高位端口，自动添加 `x-workbench-token`、5 秒超时与安全非 2xx 错误，不向 UI 透出令牌或原始响应正文。
+  - 运行 shadcn `info --json`、`docs button card badge separator tooltip` 与 `view separator tooltip`，确认 radix/Tailwind v4/lucide API；以 apply_patch 重建并逐文件复核所需 primitives。
+  - 使用图标子路径直接导入，将 Vite transform 模块数从 1980 降至 302；生产构建资源使用相对路径且不含 source map。
+- 创建/修改的 Task 5 文件：
+  - `apps/renderer/package.json`
+  - `apps/renderer/tsconfig.json`
+  - `apps/renderer/tsconfig.node.json`
+  - `apps/renderer/vite.config.ts`
+  - `apps/renderer/components.json`
+  - `apps/renderer/index.html`
+  - `apps/renderer/src/**`
+  - `pnpm-lock.yaml`
+  - `progress.md`
+
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
@@ -227,6 +249,9 @@
 | 生产库幂等 bootstrap | 根 `pnpm db:bootstrap` 连续执行两次 | 首次创建并迁移，再次无副作用 | 两次均输出 completed、exit 0 | 通过 |
 | PostgreSQL 状态核验 | psql 只读查询 | owner/schema/public/table/migration 符合安全基线 | 两库 owner 正确；public CREATE=false；2 表；1 active migration | 通过 |
 | Task 4 完整质量门禁 | backend explicit + 根 `pnpm check` + diff check | 单元/integration/E2E/lint/typecheck/build/rootcheck 全通过 | unit 46、integration 4、E2E 7、contracts 17；全部 exit 0 | 通过 |
+| Renderer RED | `pnpm --filter @rd-manager/renderer test` | 新行为测试因生产模块缺失而失败 | 4 suites 均为目标模块不存在，exit 1 | 通过 |
+| Renderer GREEN | renderer test | 路由、诊断、安全 runtime 与鉴权 API 行为通过 | 4 files / 14 tests passed | 通过 |
+| Renderer 包级门禁 | typecheck + lint + test + build | 全部通过，相对资源且无 source map | Vite 302 modules；JS 429.07 kB / gzip 135.37 kB；全部 exit 0 | 通过 |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
@@ -251,12 +276,15 @@
 | 2026-07-17 | 质量门禁发现 Zod 运行时收窄未反映到 TypeScript 类型 | 1 | 将库名和角色字段改为 `z.enum`/`z.literal`，focused 39 tests 与 typecheck 通过 |
 | 2026-07-17 | Task 3 可重复构建测试仍要求正式 Prisma schema 不含 model | 1 | 将阶段性断言升级为 Task 4 的唯一 `AppMetadata` 基线、类型/映射和 integration generate 契约 |
 | 2026-07-17 | 唯一 Prisma model 断言首稿缺少 multiline 正则标志 | 1 | 增加 `m` 标志后重跑完整单元集，不放宽模型数量约束 |
+| 2026-07-17 | renderer Vite 配置使用 `vite` 的 `defineConfig` 导致不识别 Vitest `test` 字段 | 1 | 对照根配置改为 `vitest/config`，typecheck 通过 |
+| 2026-07-17 | shadcn 源码中的 react-refresh disable 注释引用了未安装规则 | 1 | 删除无效 disable 注释，保留现有 ESLint 规则并通过 lint |
+| 2026-07-17 | Lucide 图标子路径的 ambient 类型声明最初位于模块文件中，被视为 augmentation | 1 | 将 wildcard 声明移到独立 ambient `.d.ts`，直接导入与严格类型检查同时通过 |
 
 ## 五问重启检查
 | 问题 | 答案 |
 |------|------|
 | 我在哪里？ | 阶段 3：新工作区与基座提纯 |
-| 我要去哪里？ | 继续 renderer 与 Electron 骨架的后续任务 |
+| 我要去哪里？ | 继续 Electron 生命周期、开发编排与打包验证 |
 | 目标是什么？ | 构建 Electron + React + NestJS + 本机 PostgreSQL 的研发主管本地工作台 |
 | 我学到了什么？ | 见 `findings.md` |
-| 我做了什么？ | 完成 Task 1 根 workspace、Task 2 共享契约、Task 3 Backend health/config 和 Task 4 PostgreSQL bootstrap/迁移基线 |
+| 我做了什么？ | 完成 Task 1 根 workspace、Task 2 共享契约、Task 3 Backend、Task 4 PostgreSQL 和 Task 5 React renderer 壳 |
