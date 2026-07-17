@@ -63,7 +63,7 @@ export class HealthController {
       await this.storage.checkHealth();
       return 'ok';
     } catch {
-      return 'unavailable';
+      return 'error';
     }
   }
 }

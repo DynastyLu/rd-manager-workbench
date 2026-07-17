@@ -43,16 +43,16 @@ describe('HealthController', () => {
     expect(storage.checkHealth).toHaveBeenCalledTimes(1);
   });
 
-  it('reports storage unavailable when the storage port health check fails', async () => {
-    const storage = { checkHealth: jest.fn().mockRejectedValue(new Error('storage unavailable')) };
+  it('reports not_ready with a storage error when the configured storage port health check fails', async () => {
+    const storage = { checkHealth: jest.fn().mockRejectedValue(new Error('storage error')) };
     const controller = new HealthController(
       { $queryRaw: jest.fn().mockResolvedValue([{ '?column?': 1 }]) } as never,
       storage as never,
     );
 
     await expect(controller.ready()).resolves.toMatchObject({
-      status: 'ready',
-      checks: { database: 'ok', queue: 'unavailable', storage: 'unavailable' },
+      status: 'not_ready',
+      checks: { database: 'ok', queue: 'unavailable', storage: 'error' },
     });
   });
 });
