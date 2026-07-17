@@ -2,5 +2,6 @@
 export const ROUTES = {
   HOME: '/',
   PROJECTS: '/projects',
+  TASKS: '/tasks',
   SETTINGS: '/settings',
 }
