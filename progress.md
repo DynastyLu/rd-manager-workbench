@@ -44,7 +44,7 @@
   - 初始化根 pnpm workspace、TypeScript、ESLint、Prettier、Vitest 与本机 PostgreSQL 环境示例配置。
   - 使用 pnpm 9.15.1 安装根依赖并生成唯一的根 `pnpm-lock.yaml`。
   - 将 Vitest 4 配置迁移到标准 `vitest.config.ts`，使用受支持的 `test.projects`，并为 `scripts/**/*.spec.ts` 保留命名 root project。
-  - Task 2 及其后的 contracts、backend、renderer、desktop 实现尚未开始。
+  - Task 2 已完成；backend、renderer、desktop 实现尚未开始。
 - 创建/修改的 Task 1 文件：
   - `.gitignore`
   - `.npmrc`
@@ -59,6 +59,28 @@
   - `vitest.config.ts`
   - `progress.md`
 
+- **Task 2：** complete
+- 执行的操作：
+  - 按 TDD 先创建 contracts 包与测试，并确认因 `backend-protocol`、`runtime-config` 模块尚不存在而 RED。
+  - 新增严格的后端 ready/failed 判别联合协议；端口限定为 1024–65535，nonce 最少 8 字符。
+  - 新增只包含 `apiBaseUrl`、`sessionToken`、`appVersion`、`platform` 四字段的严格运行时配置；API 仅允许 `http://127.0.0.1:<1024-65535>`，会话令牌最少 32 字符。
+  - preload 公共契约仅暴露异步 `getRuntimeConfig()`，未暴露原始 IPC。
+  - 使用精确版本 Zod 4.4.3，并生成可被后续 workspace 包消费的 ESM JavaScript 与声明文件。
+  - 完成 GREEN、包级 lint/typecheck/build、根 `pnpm check` 与 `git diff --check`。
+- 创建/修改的 Task 2 文件：
+  - `packages/contracts/package.json`
+  - `packages/contracts/tsconfig.json`
+  - `packages/contracts/tsconfig.build.json`
+  - `packages/contracts/vitest.config.ts`
+  - `packages/contracts/src/backend-protocol.ts`
+  - `packages/contracts/src/backend-protocol.spec.ts`
+  - `packages/contracts/src/runtime-config.ts`
+  - `packages/contracts/src/runtime-config.spec.ts`
+  - `packages/contracts/src/preload-api.ts`
+  - `packages/contracts/src/index.ts`
+  - `pnpm-lock.yaml`
+  - `progress.md`
+
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
@@ -69,6 +91,9 @@
 | Vitest config 加载 | `pnpm test:package` | 命名 root project 加载根脚本测试 | 临时最小测试 1 passed，验证后删除 | 通过 |
 | 根配置静态校验 | ESLint + 严格 TypeScript | 配置无 lint 或类型错误 | 两项均 exit 0 | 通过 |
 | 格式检查 | `pnpm format:check` | 所有纳入格式化的文件符合规范 | exit 0 | 通过 |
+| Contracts RED | `pnpm --filter @rd-manager/contracts test` | 因契约模块尚未实现而失败 | 2 个 suite 均报目标模块不存在，exit 1 | 通过 |
+| Contracts GREEN | 包级 test + typecheck | 契约验证与类型检查通过 | 2 files / 16 tests passed，typecheck exit 0 | 通过 |
+| Contracts 质量门禁 | 包级 lint/build + 根 `pnpm check` + `git diff --check` | 全部通过且产出 ESM/声明文件 | 全部 exit 0 | 通过 |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
@@ -78,6 +103,7 @@
 | 2026-07-17 | 合并准备代理发现时补丁包含已变化上下文 | 1 | 先用 `rg` 定位实际行，再缩小补丁范围 |
 | 2026-07-17 | `.worktrees` 尚不存在导致忽略检查未匹配 | 1 | 改用 `--no-index` 检查占位路径后创建 worktree |
 | 2026-07-17 | Vitest 4.1 不再导出 `defineWorkspace`，且仅自动加载标准配置名 | 1 | 迁移为标准 `vitest.config.ts` 与 `defineConfig` 的 `test.projects`，并通过 CLI 加载验证 |
+| 2026-07-17 | contracts 包直接运行 Vitest 时继承根配置，只匹配 `scripts/**/*.spec.ts` | 1 | 新增包级 `vitest.config.ts` 并在测试脚本显式指定，随后得到预期的缺失模块 RED |
 
 ## 五问重启检查
 | 问题 | 答案 |
@@ -86,4 +112,4 @@
 | 我要去哪里？ | 继续 contracts、backend、renderer 与 Electron 骨架的后续任务 |
 | 目标是什么？ | 构建 Electron + React + NestJS + 本机 PostgreSQL 的研发主管本地工作台 |
 | 我学到了什么？ | 见 `findings.md` |
-| 我做了什么？ | 完成 Task 1 根 workspace 初始化和验证 |
+| 我做了什么？ | 完成 Task 1 根 workspace 与 Task 2 共享运行时契约的实现和验证 |
