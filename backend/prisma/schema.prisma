@@ -120,6 +120,7 @@ model Milestone {
   tasks      WorkTask[]
 
   @@index([projectId, plannedAt])
+  @@index([plannedAt])
   @@map("milestones")
   @@schema("app")
 }
@@ -152,6 +153,8 @@ model WorkTask {
   @@index([projectId, status, dueAt])
   @@index([milestoneId])
   @@index([parentId])
+  @@index([archivedAt, dueAt])
+  @@index([assigneeName, archivedAt, dueAt])
   @@map("tasks")
   @@schema("app")
 }
@@ -181,6 +184,7 @@ model ProgressReport {
   project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, reportedAt])
+  @@index([reportedAt])
   @@map("progress_reports")
   @@schema("app")
 }
