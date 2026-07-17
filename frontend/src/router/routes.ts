@@ -17,6 +17,7 @@ export interface RouteCategory {
 }
 
 const WorkbenchHome = lazy(() => import('@/pages/WorkbenchHome'))
+const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
 const WorkbenchSettings = lazy(() => import('@/pages/WorkbenchSettings'))
 
 function RedirectToWorkbench() {
@@ -30,6 +31,7 @@ export const routeCategories: RouteCategory[] = [
     icon: '◈',
     routes: [
       { path: ROUTES.HOME, title: '首页', icon: '⌂', component: WorkbenchHome },
+      { path: ROUTES.PROJECTS, title: '项目', icon: '▦', component: ProjectsPage },
       { path: ROUTES.SETTINGS, title: '设置', icon: '⚙', component: WorkbenchSettings },
     ],
   },
