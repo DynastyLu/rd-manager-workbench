@@ -71,7 +71,6 @@ export class ProjectsService {
       where: { id, archivedAt: null },
       include: {
         milestones: {
-          where: { status: { in: ['PENDING', 'IN_PROGRESS', 'MISSED'] } },
           orderBy: [{ plannedAt: 'asc' }, { id: 'asc' }],
         },
         tasks: {
@@ -98,13 +97,22 @@ export class ProjectsService {
   }
 
   async update(id: string, dto: UpdateProjectDto) {
-    await this.requireActiveProject(id);
-
     try {
-      return await this.prisma.project.update({
-        where: { id },
+      const result = await this.prisma.project.updateMany({
+        where: { id, archivedAt: null },
         data: this.toProjectUpdateData(dto),
       });
+
+      if (result.count === 0) {
+        throw new NotFoundException('Project not found');
+      }
+
+      const project = await this.prisma.project.findUnique({ where: { id } });
+      if (!project) {
+        throw new NotFoundException('Project not found');
+      }
+
+      return project;
     } catch (error) {
       this.throwIfDuplicateCode(error);
       throw error;
@@ -122,18 +130,7 @@ export class ProjectsService {
     }
   }
 
-  private async requireActiveProject(id: string) {
-    const project = await this.prisma.project.findFirst({
-      where: { id, archivedAt: null },
-      select: { id: true },
-    });
-
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
-  }
-
-  private toProjectUpdateData(dto: UpdateProjectDto): Prisma.ProjectUpdateInput {
+  private toProjectUpdateData(dto: UpdateProjectDto): Prisma.ProjectUpdateManyMutationInput {
     return {
       ...(dto.code !== undefined ? { code: dto.code } : {}),
       ...(dto.name !== undefined ? { name: dto.name } : {}),
@@ -149,10 +146,14 @@ export class ProjectsService {
       ...(dto.expectedOutcome !== undefined ? { expectedOutcome: dto.expectedOutcome } : {}),
       ...(dto.leadName !== undefined ? { leadName: dto.leadName } : {}),
       ...(dto.participantNames !== undefined ? { participantNames: dto.participantNames } : {}),
-      ...(dto.plannedStartAt !== undefined ? { plannedStartAt: new Date(dto.plannedStartAt) } : {}),
-      ...(dto.plannedEndAt !== undefined ? { plannedEndAt: new Date(dto.plannedEndAt) } : {}),
-      ...(dto.actualStartAt !== undefined ? { actualStartAt: new Date(dto.actualStartAt) } : {}),
-      ...(dto.actualEndAt !== undefined ? { actualEndAt: new Date(dto.actualEndAt) } : {}),
+      ...(typeof dto.plannedStartAt === 'string'
+        ? { plannedStartAt: new Date(dto.plannedStartAt) }
+        : {}),
+      ...(typeof dto.plannedEndAt === 'string' ? { plannedEndAt: new Date(dto.plannedEndAt) } : {}),
+      ...(typeof dto.actualStartAt === 'string'
+        ? { actualStartAt: new Date(dto.actualStartAt) }
+        : {}),
+      ...(typeof dto.actualEndAt === 'string' ? { actualEndAt: new Date(dto.actualEndAt) } : {}),
       ...(dto.phase !== undefined ? { phase: dto.phase } : {}),
       ...(dto.status !== undefined ? { status: dto.status } : {}),
     };

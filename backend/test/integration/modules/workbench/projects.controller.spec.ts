@@ -143,4 +143,43 @@ describe('Projects API', () => {
 
     expect(invalid.body).toMatchObject({ success: false, error: { code: 'HTTP_ERROR' } });
   });
+
+  it('rejects null optional values rather than converting them into project data', async () => {
+    await request(app.getHttpServer())
+      .post('/api/projects')
+      .send({
+        code: `${testCodePrefix}-NULL-CREATE`,
+        name: '空值创建校验',
+        plannedStartAt: null,
+        phase: null,
+      })
+      .expect(400);
+
+    const created = await request(app.getHttpServer())
+      .post('/api/projects')
+      .send({ code: `${testCodePrefix}-NULL-UPDATE`, name: '空值更新校验' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/api/projects/${created.body.data.id}`)
+      .send({ plannedStartAt: null, phase: null })
+      .expect(400);
+  });
+
+  it('includes completed milestones in project detail', async () => {
+    const project = await prisma.project.create({
+      data: { code: `${testCodePrefix}-COMPLETED-MILESTONE`, name: '完成里程碑详情' },
+    });
+    const milestone = await prisma.milestone.create({
+      data: { projectId: project.id, name: '已完成验收', status: 'COMPLETED' },
+    });
+
+    const detail = await request(app.getHttpServer())
+      .get(`/api/projects/${project.id}`)
+      .expect(200);
+
+    expect(detail.body.data.milestones).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: milestone.id, status: 'COMPLETED' })]),
+    );
+  });
 });

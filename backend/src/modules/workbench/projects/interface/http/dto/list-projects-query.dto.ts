@@ -1,22 +1,24 @@
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, Max, Min, ValidateIf } from 'class-validator';
 import { ProjectStatus } from '@prisma/client';
 
+const isDefined = (_object: object, value: unknown) => value !== undefined;
+
 export class ListProjectsQueryDto {
-  @IsOptional()
+  @ValidateIf(isDefined)
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsInt()
   @Min(1)
   page?: number;
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @Transform(({ value }: { value: unknown }) => Number(value))
   @IsInt()
   @Min(1)
   @Max(100)
   pageSize?: number;
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsEnum(ProjectStatus)
   status?: ProjectStatus;
 }

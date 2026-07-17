@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsArray, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsDateString, IsEnum, IsNotEmpty, IsString, ValidateIf } from 'class-validator';
 import { ProjectPhase, ProjectStatus } from '@prisma/client';
 
 const trimString = ({ value }: { value: unknown }) =>
@@ -10,72 +10,74 @@ const trimStringArray = ({ value }: { value: unknown }) =>
     ? value.map((item) => (typeof item === 'string' ? item.trim() : item))
     : value;
 
+const isDefined = (_object: object, value: unknown) => value !== undefined;
+
 export class UpdateProjectDto {
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   @IsNotEmpty()
   code?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   @IsNotEmpty()
   name?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   type?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   researchDirection?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   objective?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   expectedOutcome?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   leadName?: string;
 
   @Transform(trimStringArray)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsArray()
   @IsString({ each: true })
   @IsNotEmpty({ each: true })
   participantNames?: string[];
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsDateString()
   plannedStartAt?: string;
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsDateString()
   plannedEndAt?: string;
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsDateString()
   actualStartAt?: string;
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsDateString()
   actualEndAt?: string;
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsEnum(ProjectPhase)
   phase?: ProjectPhase;
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsEnum(ProjectStatus)
   status?: ProjectStatus;
 }
