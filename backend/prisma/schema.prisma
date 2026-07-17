@@ -17,3 +17,183 @@ model AppMetadata {
   @@schema("app")
   @@map("app_metadata")
 }
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+
+  @@schema("app")
+}
+
+enum ProjectPhase {
+  DISCOVERY
+  PLANNING
+  RESEARCH
+  DEVELOPMENT
+  VALIDATION
+  DELIVERY
+
+  @@schema("app")
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  MISSED
+
+  @@schema("app")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  CANCELLED
+
+  @@schema("app")
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+
+  @@schema("app")
+}
+
+enum ProjectHealth {
+  GREEN
+  YELLOW
+  RED
+
+  @@schema("app")
+}
+
+model Project {
+  id                String                  @id @default(cuid())
+  code              String                  @unique
+  name              String
+  type              String?
+  researchDirection String?                 @map("research_direction")
+  objective         String?
+  expectedOutcome   String?                 @map("expected_outcome")
+  leadName          String?                 @map("lead_name")
+  participantNames  String[]                @default([]) @map("participant_names")
+  plannedStartAt    DateTime?               @map("planned_start_at") @db.Timestamptz(6)
+  plannedEndAt      DateTime?               @map("planned_end_at") @db.Timestamptz(6)
+  actualStartAt     DateTime?               @map("actual_start_at") @db.Timestamptz(6)
+  actualEndAt       DateTime?               @map("actual_end_at") @db.Timestamptz(6)
+  phase             ProjectPhase            @default(PLANNING)
+  status            ProjectStatus           @default(DRAFT)
+  archivedAt        DateTime?               @map("archived_at") @db.Timestamptz(6)
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  milestones        Milestone[]
+  tasks             WorkTask[]
+  progressReports   ProgressReport[]
+  healthSnapshots   ProjectHealthSnapshot[]
+
+  @@index([status, archivedAt])
+  @@index([plannedEndAt])
+  @@map("projects")
+  @@schema("app")
+}
+
+model Milestone {
+  id         String          @id @default(cuid())
+  projectId  String          @map("project_id")
+  name       String
+  plannedAt  DateTime?       @map("planned_at") @db.Timestamptz(6)
+  actualAt   DateTime?       @map("actual_at") @db.Timestamptz(6)
+  ownerName  String?         @map("owner_name")
+  isCritical Boolean         @default(false) @map("is_critical")
+  status     MilestoneStatus @default(PENDING)
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks      WorkTask[]
+
+  @@index([projectId, plannedAt])
+  @@map("milestones")
+  @@schema("app")
+}
+
+model WorkTask {
+  id                String           @id @default(cuid())
+  projectId         String?          @map("project_id")
+  milestoneId       String?          @map("milestone_id")
+  parentId          String?          @map("parent_id")
+  title             String
+  description       String?
+  assigneeName      String?          @map("assignee_name")
+  collaboratorNames String[]         @default([]) @map("collaborator_names")
+  priority          TaskPriority     @default(MEDIUM)
+  status            TaskStatus       @default(TODO)
+  dueAt             DateTime?        @map("due_at") @db.Timestamptz(6)
+  completedAt       DateTime?        @map("completed_at") @db.Timestamptz(6)
+  sourceType        String?          @map("source_type")
+  sourceId          String?          @map("source_id")
+  archivedAt        DateTime?        @map("archived_at") @db.Timestamptz(6)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project           Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  milestone         Milestone?       @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  parent            WorkTask?        @relation("TaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children          WorkTask[]       @relation("TaskHierarchy")
+  dependencies      TaskDependency[] @relation("DependencyTask")
+  dependents        TaskDependency[] @relation("DependencyDependsOn")
+
+  @@index([projectId, status, dueAt])
+  @@index([milestoneId])
+  @@index([parentId])
+  @@map("tasks")
+  @@schema("app")
+}
+
+model TaskDependency {
+  taskId          String   @map("task_id")
+  dependsOnTaskId String   @map("depends_on_task_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  task            WorkTask @relation("DependencyTask", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOnTask   WorkTask @relation("DependencyDependsOn", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, dependsOnTaskId])
+  @@index([dependsOnTaskId])
+  @@map("task_dependencies")
+  @@schema("app")
+}
+
+model ProgressReport {
+  id                String   @id @default(cuid())
+  projectId         String   @map("project_id")
+  reportedAt        DateTime @default(now()) @map("reported_at") @db.Timestamptz(6)
+  summary           String
+  completionPercent Int      @map("completion_percent")
+  blockers          String?
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, reportedAt])
+  @@map("progress_reports")
+  @@schema("app")
+}
+
+model ProjectHealthSnapshot {
+  id           String        @id @default(cuid())
+  projectId    String        @map("project_id")
+  health       ProjectHealth
+  reasons      Json
+  calculatedAt DateTime      @default(now()) @map("calculated_at") @db.Timestamptz(6)
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, calculatedAt])
+  @@map("project_health_snapshots")
+  @@schema("app")
+}
