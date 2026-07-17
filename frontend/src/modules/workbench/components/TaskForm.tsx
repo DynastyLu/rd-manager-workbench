@@ -31,6 +31,7 @@ const STATUS_OPTIONS: Array<{ value: TaskStatus; label: string }> = [
   { value: 'IN_PROGRESS', label: '进行中' },
   { value: 'BLOCKED', label: '受阻' },
   { value: 'DONE', label: '已完成' },
+  { value: 'CANCELLED', label: '已取消' },
 ]
 
 export function TaskForm({ onSuccess }: TaskFormProps) {

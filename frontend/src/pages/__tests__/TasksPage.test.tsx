@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -123,5 +123,37 @@ describe('TasksPage', () => {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['projects'] })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard'] })
     })
+  })
+
+  it('sends explicit blocked, cancelled and reopened statuses to the API', async () => {
+    listTasks.mockResolvedValue({
+      data: [
+        { ...task, id: 'task-block', title: '需要受阻', status: 'TODO' },
+        { ...task, id: 'task-cancel', title: '需要取消', status: 'IN_PROGRESS' },
+        { ...task, id: 'task-reopen', title: '需要重开', status: 'CANCELLED' },
+      ],
+      meta: { page: 1, pageSize: 20, total: 3 },
+    })
+    updateTask.mockResolvedValue(task)
+
+    renderTasksPage()
+
+    fireEvent.keyDown(await screen.findByRole('combobox', { name: '设置任务状态：需要受阻' }), {
+      key: 'ArrowDown',
+    })
+    fireEvent.click(screen.getByRole('option', { name: '受阻' }))
+    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-block', { status: 'BLOCKED' }))
+
+    fireEvent.keyDown(screen.getByRole('combobox', { name: '设置任务状态：需要取消' }), {
+      key: 'ArrowDown',
+    })
+    fireEvent.click(screen.getByRole('option', { name: '已取消' }))
+    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-cancel', { status: 'CANCELLED' }))
+
+    fireEvent.keyDown(screen.getByRole('combobox', { name: '设置任务状态：需要重开' }), {
+      key: 'ArrowDown',
+    })
+    fireEvent.click(screen.getByRole('option', { name: '待开始' }))
+    await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-reopen', { status: 'TODO' }))
   })
 })

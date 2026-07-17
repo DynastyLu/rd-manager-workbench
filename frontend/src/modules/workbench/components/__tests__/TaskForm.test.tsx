@@ -15,7 +15,6 @@ describe('TaskForm', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
     const user = userEvent.setup()
-
     render(
       <QueryClientProvider client={queryClient}>
         <TaskForm />
@@ -31,5 +30,17 @@ describe('TaskForm', () => {
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['projects'] })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard'] })
     })
+  })
+
+  it('offers cancelled as an explicit creation status', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TaskForm />
+      </QueryClientProvider>
+    )
+
+    expect(screen.getByText('已取消', { selector: 'option' })).toBeInTheDocument()
   })
 })
