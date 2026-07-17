@@ -11,7 +11,7 @@ vi.mock('react-router-dom', async () => {
 
 const ROUTES = [
   { path: '/', title: '首页' },
-  { path: '/ocr', title: '识别工具' },
+  { path: '/settings', title: '设置' },
 ]
 
 function Wrapper({ path = '/', children }) {
@@ -68,12 +68,12 @@ describe('TabBar', () => {
       JSON.stringify({
         tabs: [
           { path: '/', title: '首页' },
-          { path: '/ocr', title: '识别工具' },
+          { path: '/settings', title: '设置' },
         ],
       })
     )
     render(
-      <Wrapper path="/ocr">
+      <Wrapper path="/settings">
         <TabBar routes={ROUTES} />
       </Wrapper>
     )
@@ -88,19 +88,19 @@ describe('TabBar', () => {
       JSON.stringify({
         tabs: [
           { path: '/', title: '首页' },
-          { path: '/ocr', title: '识别工具' },
+          { path: '/settings', title: '设置' },
         ],
       })
     )
 
     const user = userEvent.setup()
     render(
-      <Wrapper path="/ocr">
+      <Wrapper path="/settings">
         <TabBar routes={ROUTES} />
       </Wrapper>
     )
 
-    // Active tab is '/ocr' (last in list), close it → should navigate to '/'
+    // Active tab is '/settings' (last in list), close it → should navigate to '/'
     const closeButtons = screen.getAllByRole('button', { name: /关闭/ })
     await user.click(closeButtons[closeButtons.length - 1])
     expect(navigate).toHaveBeenCalledWith('/')

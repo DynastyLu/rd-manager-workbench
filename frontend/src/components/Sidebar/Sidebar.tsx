@@ -1,14 +1,11 @@
 import { useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { useAuthStore } from '@/stores/auth'
 import { routeCategories } from '@/router/routes'
 import './Sidebar.less'
 
 export default function Sidebar() {
   const navigate = useNavigate()
   const location = useLocation()
-  const user = useAuthStore((s) => s.user)
-
   // All categories open by default
   const [openCats, setOpenCats] = useState<Record<string, boolean>>(() =>
     routeCategories.reduce<Record<string, boolean>>((acc, c) => ({ ...acc, [c.key]: true }), {})
@@ -22,8 +19,6 @@ export default function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar__inner">
         {routeCategories.map((cat) => {
-          const visibleRoutes = cat.routes.filter((r) => !r.requireAdmin || user?.role === 'admin')
-          if (visibleRoutes.length === 0) return null
           const isOpen = openCats[cat.key]
 
           return (
@@ -44,7 +39,7 @@ export default function Sidebar() {
               {/* Route items */}
               {isOpen && (
                 <div className="sidebar__items">
-                  {visibleRoutes.map((r) => {
+                  {cat.routes.map((r) => {
                     const isActive = location.pathname === r.path
                     return (
                       <div

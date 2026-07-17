@@ -5,67 +5,58 @@
   align-items: center;
   height: @header-height;
   padding: 0 20px;
-  background: var(--header-bg);
-  border-bottom: 1px solid var(--header-border);
+  gap: 8px;
+  position: relative;
+  z-index: 100;
   flex-shrink: 0;
   user-select: none;
-  position: relative;
-  gap: 8px;
-  z-index: 100;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
 
-  /* Neon bottom glow line (hidden in classic via --neon-line-opacity: 0) */
   &::after {
     content: '';
     position: absolute;
+    right: 0;
     bottom: 0;
     left: 0;
-    right: 0;
     height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      var(--accent-cyan) 30%,
-      var(--accent-pink) 70%,
-      transparent 100%
-    );
     opacity: var(--neon-line-opacity, 0.6);
+    background: linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-pink), transparent);
   }
 
   &__logo {
-    font-size: 20px;
-    color: var(--accent-cyan);
-    text-shadow: var(--glow-cyan);
     flex-shrink: 0;
-    animation: header-logo-pulse 3s ease-in-out infinite;
+    color: var(--accent-cyan);
+    font-size: 20px;
+    text-shadow: var(--glow-cyan);
   }
 
   &__title {
     display: flex;
     flex-direction: column;
-    line-height: 1.1;
     flex-shrink: 0;
+    line-height: 1.1;
   }
 
   &__title-main {
+    color: var(--text-primary);
     font-size: 15px;
     font-weight: 700;
-    color: var(--text-primary);
     letter-spacing: 2px;
   }
 
   &__title-sub {
+    color: var(--accent-cyan);
+    font-family: var(--font-mono, monospace);
     font-size: 8px;
     letter-spacing: 3px;
-    color: var(--accent-cyan);
     opacity: 0.7;
-    font-family: var(--font-mono, monospace);
   }
 
   &__spacer {
     flex: 1;
   }
 
-  /* ── Theme switcher ── */
   &__theme {
     position: relative;
   }
@@ -75,14 +66,13 @@
     align-items: center;
     gap: 6px;
     padding: 5px 10px;
-    background: transparent;
     border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
     font-size: 12px;
     letter-spacing: 0.5px;
-    border-radius: var(--radius);
-    transition: all var(--transition);
 
     &:hover {
       border-color: var(--accent-cyan);
@@ -99,156 +89,27 @@
     font-size: 11px;
   }
 
-  /* ── Admin button ── */
-  &__admin-btn {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 12px;
-    background: transparent;
-    border: 1px solid rgba(255, 0, 144, 0.4);
-    color: var(--accent-pink);
-    cursor: pointer;
-    font-size: 12px;
-    letter-spacing: 1px;
-    border-radius: var(--radius);
-    transition: all var(--transition);
-    text-shadow: var(--glow-pink);
-
-    &:hover {
-      background: rgba(255, 0, 144, 0.1);
-      border-color: var(--accent-pink);
-      box-shadow: var(--glow-pink);
-    }
-  }
-
-  &__admin-icon {
-    font-size: 12px;
-  }
-
-  /* ── User menu ── */
-  &__user {
-    position: relative;
-  }
-
-  &__user-btn {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 4px 10px 4px 4px;
-    background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    cursor: pointer;
-    border-radius: var(--radius);
-    transition: all var(--transition);
-    font-size: 13px;
-
-    &:hover {
-      border-color: var(--accent-cyan);
-      box-shadow: var(--glow-cyan);
-    }
-  }
-
-  &__user-avatar {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-pink));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-inverse);
-    flex-shrink: 0;
-    line-height: 1;
-    padding-top: 1px;
-  }
-
-  &__username {
-    font-family: var(--font-mono, monospace);
-    font-size: 12px;
-    letter-spacing: 1px;
-  }
-
-  &__admin-tag {
-    font-size: 9px;
-    padding: 1px 5px;
-    border: 1px solid var(--accent-cyan);
-    color: var(--accent-cyan);
-    text-shadow: var(--glow-cyan);
-    letter-spacing: 1px;
-    border-radius: 2px;
-    font-family: var(--font-mono, monospace);
-    box-shadow: var(--glow-cyan);
-  }
-
   &__caret {
-    font-size: 10px;
-    color: var(--text-muted);
     margin-left: 2px;
+    color: var(--text-muted);
+    font-size: 10px;
   }
 
-  /* ── Shared dropdown ── */
   &__dropdown {
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    min-width: 160px;
     z-index: 1000;
-    box-shadow:
-      0 8px 24px rgba(0, 0, 0, 0.5),
-      var(--glow-cyan);
-    border-radius: var(--radius);
+    min-width: 180px;
     overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    background: var(--bg-surface);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), var(--glow-cyan);
 
     &--theme {
       min-width: 180px;
     }
-  }
-
-  &__dropdown-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  &__dropdown-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-pink));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text-inverse);
-    flex-shrink: 0;
-    line-height: 1;
-    padding-top: 1px;
-  }
-
-  &__dropdown-username {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  &__dropdown-role {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 1px;
-  }
-
-  &__dropdown-divider {
-    height: 1px;
-    background: var(--border-color);
   }
 
   &__dropdown-item {
@@ -257,264 +118,92 @@
     gap: 8px;
     width: 100%;
     padding: 10px 16px;
-    background: transparent;
     border: none;
+    background: transparent;
     color: var(--text-primary);
-    font-size: 13px;
     cursor: pointer;
-    text-align: left;
-    transition:
-      background var(--transition),
-      color var(--transition);
+    font-size: 13px;
     letter-spacing: 0.3px;
+    text-align: left;
 
-    &:hover {
-      background: var(--bg-hover);
-      color: var(--accent-cyan);
-    }
-
-    &--danger {
-      color: var(--accent-pink) !important;
-
-      &:hover {
-        background: rgba(255, 0, 144, 0.08) !important;
-      }
-    }
-
+    &:hover,
     &--selected {
-      color: var(--accent-cyan);
       background: var(--bg-hover);
+      color: var(--accent-cyan);
     }
   }
 
   &__dropdown-item-icon {
-    font-size: 16px;
     width: 20px;
-    text-align: center;
     flex-shrink: 0;
+    font-size: 16px;
+    text-align: center;
   }
 
   &__dropdown-item-text {
-    flex: 1;
     display: flex;
+    flex: 1;
     flex-direction: column;
     gap: 1px;
   }
 
   &__dropdown-item-desc {
-    font-size: 10px;
     color: var(--text-muted);
+    font-size: 10px;
     letter-spacing: 0.5px;
   }
 
   &__dropdown-check {
-    font-size: 12px;
-    color: var(--accent-cyan);
-    text-shadow: var(--glow-cyan);
     flex-shrink: 0;
+    color: var(--accent-cyan);
+    font-size: 12px;
+    text-shadow: var(--glow-cyan);
+  }
+}
+
+[data-theme='classic'] .header {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+
+  .header__logo {
+    color: #fff;
+    text-shadow: none;
   }
 
-  /* ── Login button ── */
-  &__login-btn {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    background: transparent;
-    border: 1px solid var(--accent-cyan);
-    color: var(--accent-cyan);
-    padding: 5px 16px;
-    cursor: pointer;
-    font-size: 12px;
-    letter-spacing: 1.5px;
-    border-radius: var(--radius);
-    text-shadow: var(--glow-cyan);
-    box-shadow: var(--glow-cyan);
-    transition: all var(--transition);
+  .header__title-sub {
+    display: none;
+  }
+
+  .header__theme-btn {
+    border-color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.85);
+  }
+}
+
+[data-theme='worldcup'] .header {
+  background:
+    linear-gradient(90deg, rgba(3, 13, 29, 0.96), rgba(7, 32, 49, 0.92)),
+    linear-gradient(120deg, rgba(246, 208, 93, 0.14), transparent 30%);
+
+  .header__logo,
+  .header__title-sub,
+  .header__dropdown-check {
+    color: var(--accent-gold);
+    text-shadow: var(--glow-gold);
+  }
+
+  .header__title-main {
+    color: #fffdf4;
+  }
+
+  .header__theme-btn {
+    border-color: rgba(246, 208, 93, 0.26);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.055);
 
     &:hover {
-      background: rgba(0, 255, 240, 0.1);
-    }
-  }
-}
-
-@keyframes header-logo-pulse {
-  0%,
-  100% {
-    text-shadow: var(--glow-cyan);
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
-/* Classic theme overrides */
-[data-theme='classic'] {
-  .header {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-
-    &__logo {
-      animation: none;
-      color: #fff;
-      text-shadow: none;
-    }
-
-    &__title-sub {
-      display: none;
-    }
-
-    &__theme-btn {
-      border-color: rgba(255, 255, 255, 0.4);
-      color: rgba(255, 255, 255, 0.85);
-      &:hover {
-        border-color: #fff;
-        color: #fff;
-        box-shadow: none;
-      }
-    }
-
-    &__admin-btn {
-      border-color: rgba(255, 255, 255, 0.4);
-      color: rgba(255, 255, 255, 0.9);
-      text-shadow: none;
-      &:hover {
-        background: rgba(255, 255, 255, 0.15);
-        border-color: #fff;
-        box-shadow: none;
-      }
-    }
-
-    &__user-btn {
-      border-color: rgba(255, 255, 255, 0.4);
-      color: #fff;
-      &:hover {
-        border-color: #fff;
-        box-shadow: none;
-      }
-    }
-
-    &__username {
-      color: #fff;
-    }
-
-    &__admin-tag {
-      border-color: rgba(255, 255, 255, 0.6);
-      color: #fff;
-      text-shadow: none;
-      box-shadow: none;
-    }
-
-    &__login-btn {
-      border-color: rgba(255, 255, 255, 0.6);
-      color: #fff;
-      text-shadow: none;
-      box-shadow: none;
-      &:hover {
-        background: rgba(255, 255, 255, 0.15);
-      }
-    }
-
-    &__dropdown {
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-    }
-  }
-}
-
-[data-theme='worldcup'] {
-  .header {
-    background:
-      linear-gradient(90deg, rgba(3, 13, 29, 0.96), rgba(7, 32, 49, 0.92)),
-      linear-gradient(120deg, rgba(246, 208, 93, 0.14), transparent 30%);
-    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.28);
-
-    &::after {
-      height: 2px;
-      background: linear-gradient(
-        90deg,
-        transparent,
-        var(--accent-gold),
-        var(--accent-green),
-        transparent
-      );
-    }
-
-    &__logo {
-      color: var(--accent-gold);
-      filter: drop-shadow(0 0 12px rgba(246, 208, 93, 0.35));
-      animation: none;
-    }
-
-    &__title-main {
-      color: #fffdf4;
-    }
-
-    &__title-sub {
-      color: var(--accent-gold);
-      opacity: 0.82;
-    }
-
-    &__theme-btn,
-    &__user-btn,
-    &__login-btn,
-    &__admin-btn {
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.055);
-      border-color: rgba(246, 208, 93, 0.26);
-      box-shadow: none;
-      text-shadow: none;
-    }
-
-    &__theme-btn:hover,
-    &__user-btn:hover,
-    &__login-btn:hover {
-      color: var(--accent-gold);
       border-color: var(--accent-gold);
-      background: rgba(246, 208, 93, 0.1);
+      color: var(--accent-gold);
       box-shadow: var(--glow-gold);
-    }
-
-    &__admin-btn {
-      color: var(--accent-gold);
-      border-color: rgba(246, 208, 93, 0.32);
-
-      &:hover {
-        background: rgba(246, 208, 93, 0.1);
-        border-color: var(--accent-gold);
-        box-shadow: var(--glow-gold);
-      }
-    }
-
-    &__user-avatar,
-    &__dropdown-avatar {
-      background: linear-gradient(135deg, var(--accent-gold), var(--accent-green));
-      color: #061326;
-    }
-
-    &__admin-tag {
-      border-color: rgba(246, 208, 93, 0.52);
-      color: var(--accent-gold);
-      box-shadow: none;
-      text-shadow: none;
-    }
-
-    &__dropdown {
-      background: rgba(5, 18, 36, 0.96);
-      border-color: rgba(246, 208, 93, 0.22);
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.46);
-      backdrop-filter: blur(14px);
-    }
-
-    &__dropdown-item {
-      &:hover,
-      &--selected {
-        background: rgba(246, 208, 93, 0.1);
-        color: var(--accent-gold);
-      }
-    }
-
-    &__dropdown-check {
-      color: var(--accent-gold);
-      text-shadow: var(--glow-gold);
     }
   }
 }

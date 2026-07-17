@@ -7,8 +7,8 @@ export default function Footer() {
     <footer className="footer">
       <div className="footer__inner">
         <span className="footer__brand">
-          <span className="footer__brand-icon">⚽</span>
-          百宝箱
+          <span className="footer__brand-icon">◈</span>
+          研发主管工作台
         </span>
 
         <span className="footer__sep">|</span>
@@ -19,7 +19,7 @@ export default function Footer() {
 
         <span className="footer__copy">
           © {YEAR}&nbsp;
-          <span className="footer__copy-accent">TREASURE BOX</span>
+          <span className="footer__copy-accent">LOCAL WORKBENCH</span>
           &nbsp;· All rights reserved
         </span>
       </div>
