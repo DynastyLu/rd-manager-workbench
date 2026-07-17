@@ -64,6 +64,7 @@
 | DOCX 在 LibreOffice 渲染中中文字体显示方框 | 1 | 使用 OOXML/文档结构完整提取文字，并结合页图核对版式 |
 | 设计规格补丁上下文因分段输出边界重复而未匹配 | 1 | 缩小补丁上下文，仅修改实际存在的目标行 |
 | 合并准备代理发现时补丁包含已变化上下文 | 1 | 使用 `rg` 定位实际内容后分段应用补丁 |
+| `git check-ignore .worktrees` 在目录不存在时返回未匹配 | 1 | 使用 `git check-ignore --no-index .worktrees/placeholder` 验证目录规则 |
 
 ## 备注
 - 原始基座：`/Users/dynastylu/Desktop/AICode/treasure-box`
