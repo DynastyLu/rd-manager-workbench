@@ -1,10 +1,28 @@
+# Isolated Codex worktrees
 .worktrees/
-node_modules/
-dist/
-coverage/
-release/
-.env
-.env.local
+
+# Frontend local dependencies, builds, environments, and test artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/storybook-static/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Backend local dependencies, builds, environments, runtime data, and test artifacts
+backend/node_modules/
+backend/dist/
+backend/coverage/
+backend/test-results/
+backend/var/
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Local machine files
 *.log
 .DS_Store
-apps/backend/generated/
