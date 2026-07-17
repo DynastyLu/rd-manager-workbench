@@ -408,7 +408,7 @@ export class TasksController {
 }
 ```
 
-`CreateTaskDto` requires a trimmed title; accepts optional `projectId`, `milestoneId`, `parentId`, `dependencyIds`, source fields and ISO due date. Service validation must reject self-dependency, duplicate dependency IDs, nonexistent active references, and a DONE transition when any dependency is not DONE. On a DONE transition set `completedAt`; clear it for every non-DONE status. List filters support `projectId`, `status`, `assigneeName`, `dueBefore`, `overdue`, `page`, and `pageSize`.
+`CreateTaskDto` requires a trimmed title; accepts optional `projectId`, `milestoneId`, `parentId`, `dependencyIds`, source fields and ISO due date. Service validation must reject self-dependency, duplicate dependency IDs, nonexistent active references, a milestone whose `projectId` differs from the task `projectId` (and a milestone on a task without `projectId`), and a DONE transition when any dependency is not DONE. On a DONE transition set `completedAt`; clear it for every non-DONE status. List filters support `projectId`, `status`, `assigneeName`, `dueBefore`, `overdue`, `page`, and `pageSize`.
 
 - [ ] **Step 3: 实现嵌套路由。**
 
