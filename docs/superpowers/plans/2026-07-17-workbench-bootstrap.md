@@ -1,5 +1,7 @@
 # R&D Manager Workbench Bootstrap Implementation Plan
 
+> **Historical / superseded (2026-07-18):** This plan describes the retired root pnpm workspace (`apps/`, `packages/`, and root pnpm commands) and is retained only as project history. Do not execute it. The current engineering baseline is the direct `frontend/` and `backend/` migration defined by [the 2026-07-18 design](../specs/2026-07-18-direct-framework-migration-design.md) and [the 2026-07-18 implementation plan](./2026-07-18-direct-framework-migration.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first runnable Electron desktop skeleton with a React renderer, a NestJS Utility Process backend, and an idempotently initialized local PostgreSQL database.

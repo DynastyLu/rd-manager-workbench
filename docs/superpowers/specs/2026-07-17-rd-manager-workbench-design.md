@@ -1,5 +1,7 @@
 # 研发主管本地工作台设计规格
 
+> **历史版本 / 已替代（2026-07-18）：** 本规格中的根 pnpm workspace、`apps/`、`packages/` 及根 pnpm 命令已不再适用，仅作为项目历史保留，不得作为当前实施指令。当前工程基线以直接迁入的 `frontend/` 和 `backend/` 为准，请使用 [2026-07-18 直接迁移设计](./2026-07-18-direct-framework-migration-design.md) 与 [2026-07-18 实施计划](../plans/2026-07-18-direct-framework-migration.md)。
+
 ## 1. 状态与目标
 
 - 设计状态：已由用户于 2026-07-17 确认。

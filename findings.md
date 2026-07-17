@@ -1,5 +1,7 @@
 # 发现与决策
 
+> **历史记录说明（2026-07-18）：** 本文件中关于根 pnpm workspace、`apps/`、`packages/` 与根锁文件的条目均为已替代方案的历史发现，不是当前工程指令。当前代码和命令只在独立的 `frontend/` 与 `backend/` 中继续；以 `docs/superpowers/specs/2026-07-18-direct-framework-migration-design.md` 和 `docs/superpowers/plans/2026-07-18-direct-framework-migration.md` 为准。
+
 ## 需求
 - 产品是研发主管单机使用的本地优先桌面工作台。
 - 核心业务覆盖首页驾驶舱、项目与任务、品种申报/认定、风险问题决策、合作方与会议、行业情报、提醒搜索报表、数据备份恢复。

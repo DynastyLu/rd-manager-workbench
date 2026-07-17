@@ -40,4 +40,4 @@ pnpm start:dev
 
 ## 本地文件
 
-根 `.worktrees/`、两个项目的 `node_modules/`、构建与测试产物、运行时数据以及本地环境文件均被忽略。`frontend/.env.example` 与 `backend/.env.example` 是可提交的环境模板；请不要提交真实凭据。
+根目录及两个项目的 `.env`、`.env.*` 本地环境文件均被忽略，`.env.example` 不受忽略规则影响，仍可提交。当前可用模板为 `frontend/.env.example` 与 `backend/.env.example`；请不要提交真实凭据。根 `.worktrees/`、两个项目的 `node_modules/`、构建与测试产物及运行时数据也均被忽略。

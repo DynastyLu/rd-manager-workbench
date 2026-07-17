@@ -1,6 +1,11 @@
 # Isolated Codex worktrees
 .worktrees/
 
+# Root local environment files; examples remain trackable
+.env
+.env.*
+!.env.example
+
 # Frontend local dependencies, builds, environments, and test artifacts
 frontend/node_modules/
 frontend/dist/

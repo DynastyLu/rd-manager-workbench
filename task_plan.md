@@ -1,10 +1,21 @@
 # 任务计划：研发主管本地工作台
 
+> **当前工程基线（2026-07-18）：** 旧根 pnpm workspace、`apps/` 与 `packages/` 已由直接工程迁移替代。当前开发仅在独立的 `frontend/` 与 `backend/` 中继续；旧 workspace 记录保留在文档中作为历史，不是当前执行入口。
+
+## 直接工程迁移状态
+
+| Task | 状态 | 当前工程落点 |
+|------|------|--------------|
+| Task 1：建立可追溯的真实工程副本 | complete | `frontend/`、`backend/`、`docs/migration/` |
+| Task 2：用真实前端框架替换旧业务 | complete | `frontend/` |
+| Task 3：用真实后端框架替换旧业务并接入本地 PostgreSQL | complete | `backend/` |
+| Task 4：移除错误自建结构并验证独立运行 | complete | 根说明与忽略规则；运行命令仍位于 `frontend/`、`backend/` |
+
 ## 目标
 基于 treasure-box 与 backend-core-platform 的工程能力，设计并实施一个 Electron 单机桌面应用，使用本机 PostgreSQL，完整覆盖需求文档并按 MVP 分阶段交付。
 
 ## 当前阶段
-阶段 3：新工作区与基座提纯
+阶段 3：真实前后端直接迁移已完成；后续工作在 `frontend/` 与 `backend/` 中推进。
 
 ## 各阶段
 
@@ -24,12 +35,11 @@
 - **状态：** complete
 
 ### 阶段 3：新工作区与基座提纯
-- [x] 建立统一工作区结构
-- [ ] 从 treasure-box 提取前端框架能力并删除旧业务
-- [ ] 从 backend-core-platform 提取后端框架能力并删除旧业务
-- [ ] 接入 Electron 主进程、preload 和后端生命周期管理
-- [x] 建立本机 PostgreSQL 数据库与迁移基线
-- **状态：** in_progress
+- [x] 直接迁入 treasure-box 前端工程并删除旧业务（`frontend/`）
+- [x] 直接迁入 backend-core-platform 后端工程并删除旧业务（`backend/`）
+- [x] 删除旧根 workspace、`apps/` 与 `packages/` 结构
+- [x] 验证前后端可从各自目录独立运行
+- **状态：** complete
 
 ### 阶段 4：MVP 功能实现
 - [ ] 按批准后的功能优先级增量实现

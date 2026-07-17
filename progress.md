@@ -1,5 +1,14 @@
 # 进度日志
 
+> **当前工程基线（2026-07-18）：** 直接工程迁移 Tasks 1–4 均已完成。当前代码与命令位于 `frontend/` 和 `backend/`；旧根 pnpm workspace、`apps/`、`packages/` 及其命令仅是以下日志中的历史记录，不应继续执行。
+
+| 直接迁移任务 | 状态 | 工程落点 |
+|---|---|---|
+| Task 1：建立可追溯的真实工程副本 | complete | `frontend/`、`backend/`、`docs/migration/` |
+| Task 2：前端旧业务替换 | complete | `frontend/` |
+| Task 3：后端旧业务替换与 PostgreSQL 接入 | complete | `backend/` |
+| Task 4：删除错误自建结构与独立运行验证 | complete | 根元数据；实际命令在 `frontend/`、`backend/` |
+
 ## 会话：2026-07-17
 
 ### 阶段 1：需求设计与范围确认
