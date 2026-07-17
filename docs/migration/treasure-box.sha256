@@ -1,30 +1,12 @@
 # SHA-256 content baseline: treasure-box
 # Format: <sha256><two spaces><source-relative path>
-# Exclusions: .git/, node_modules/, dist/, coverage/, playwright-report/, storybook-static/, test-results/, var/, .DS_Store, stats.html
+# Exclusions: .env, .env.* (except .env.example), .git/, .husky/_/, node_modules/, dist/, coverage/, playwright-report/, storybook-static/, test-results/, var/, .DS_Store, stats.html
 03fd504a492cc8464d7d31af2e15d57a8664d34273b6bb1bc9f01d1cf0010c8e  .commitlintrc.json
 9a05f3c33843d13fd72eeb43e559bd3b44e859a6499f563f3e79e872f95016dc  .dockerignore
-b15ff4c3fe125448dfb94450122947bca660b81aa41c83153ccf9bd553290d70  .env.development
 bb5848a253b49e605b8e9ffd3abb2da26cc06d8f68bbd483bde6da5bd57665cc  .env.example
 c63d7ab1d10dd44363189ed24546fbd07f6a92aeaa9489808717db141d74206e  .github/dependabot.yml
 29e837b32ce49209a501f4715ed2fded43618c0ce5c4361ac317f557318c16f8  .github/workflows/ci.yml
 765544cc2b9ce78cf889f71958638bd6052a7ea1e8d3c0d2c1a9ba81eec708a0  .gitignore
-684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1  .husky/_/.gitignore
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/applypatch-msg
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/commit-msg
-70200b200ca709b0622784f93839a5b2872333a917a09afddefd7dc2d8cdc680  .husky/_/h
-21122903fca7209a13c991e5be68780636e28f1b8f0ae7ea07ed0065dfe37268  .husky/_/husky.sh
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/post-applypatch
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/post-checkout
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/post-commit
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/post-merge
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/post-rewrite
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/pre-applypatch
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/pre-auto-gc
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/pre-commit
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/pre-merge-commit
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/pre-push
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/pre-rebase
-34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2  .husky/_/prepare-commit-msg
 fcfc227fe0e950deadcef148e6b460d3570b2d722ed523786a63ab00e73155c9  .husky/commit-msg
 aad3507759b5b03c40f17cb27ca0e2203edebcd8820c48addadc16104b1e011c  .husky/pre-commit
 ddab954e1cd4c11d63d8a0835309e2cc47a6d916d6adb92e515f52bcf2373825  .lintstagedrc.json

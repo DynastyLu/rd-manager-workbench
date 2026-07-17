@@ -1,9 +1,8 @@
 # SHA-256 content baseline: backend-core-platform
 # Format: <sha256><two spaces><source-relative path>
-# Exclusions: .git/, node_modules/, dist/, coverage/, playwright-report/, storybook-static/, test-results/, var/, .DS_Store, stats.html
+# Exclusions: .env, .env.* (except .env.example), .git/, .husky/_/, node_modules/, dist/, coverage/, playwright-report/, storybook-static/, test-results/, var/, .DS_Store, stats.html
 b17dc4f0397ee86dbde69305639b339f5f09ff1450124cca576c56405c47693e  .dockerignore
 90203b3f0dd746241cde3c76c616be9ddbe854ab9cd9a0990251600a57f5adcf  .editorconfig
-952077ee02450b40854ce16830260a099ce60540be624c948aa9f3f404327464  .env
 0110368a7fb4efcdc78019833e0426187fc2d55d8f93e427f1250201ba11d440  .env.example
 b1cde0d25c12d49379e4038b538a4786830255f8ecc58d4b4fbb4660d84a5827  .gitignore
 eb4964255a0301ea3d49ff0eef0ff38cca0c792897cefcc94183a932b19dbdbc  Dockerfile
