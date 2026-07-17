@@ -67,6 +67,8 @@
   - preload 公共契约仅暴露异步 `getRuntimeConfig()`，未暴露原始 IPC。
   - 使用精确版本 Zod 4.4.3，并生成可被后续 workspace 包消费的 ESM JavaScript 与声明文件。
   - 完成 GREEN、包级 lint/typecheck/build、根 `pnpm check` 与 `git diff --check`。
+  - 审查修复：将类型入口和 development 条件指向源码，生产/default/import 条件继续指向构建产物；在无 `dist` 时完成包名测试、包 typecheck 和临时 workspace 消费端 NodeNext typecheck。
+  - 审查修复：build 跨平台清理旧 `dist`，关闭 source/declaration map；确认构建与 `npm pack --dry-run` 均不包含 `.map`，并在打包白名单中包含公开源码类型入口。
 - 创建/修改的 Task 2 文件：
   - `packages/contracts/package.json`
   - `packages/contracts/tsconfig.json`
@@ -78,6 +80,7 @@
   - `packages/contracts/src/runtime-config.spec.ts`
   - `packages/contracts/src/preload-api.ts`
   - `packages/contracts/src/index.ts`
+  - `packages/contracts/src/package-entry.spec.ts`
   - `pnpm-lock.yaml`
   - `progress.md`
 
@@ -94,6 +97,10 @@
 | Contracts RED | `pnpm --filter @rd-manager/contracts test` | 因契约模块尚未实现而失败 | 2 个 suite 均报目标模块不存在，exit 1 | 通过 |
 | Contracts GREEN | 包级 test + typecheck | 契约验证与类型检查通过 | 2 files / 16 tests passed，typecheck exit 0 | 通过 |
 | Contracts 质量门禁 | 包级 lint/build + 根 `pnpm check` + `git diff --check` | 全部通过且产出 ESM/声明文件 | 全部 exit 0 | 通过 |
+| Contracts 无构建产物 RED | 无 `dist` 时从包名运行 package entry 测试 | 暴露当前入口依赖构建产物 | 1 suite 入口解析失败，另 2 files / 16 tests 通过，exit 1 | 通过 |
+| Contracts 源码入口 GREEN | 无 `dist` 时 package test + typecheck | development/types 条件直接消费源码 | 3 files / 17 tests passed，typecheck exit 0 | 通过 |
+| Contracts 临时消费端 | 无 `dist` 的最小 workspace + NodeNext typecheck | workspace 包可在首次构建前被类型消费 | 临时消费端 typecheck exit 0，探针已移除 | 通过 |
+| Contracts 干净构建 | 预置 stale map 后 build + map 检查 + `npm pack --dry-run` | 清理旧产物且不生成/打包 map | `dist` 仅 8 个 JS/声明文件，pack 13 entries、无 map | 通过 |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
@@ -104,6 +111,7 @@
 | 2026-07-17 | `.worktrees` 尚不存在导致忽略检查未匹配 | 1 | 改用 `--no-index` 检查占位路径后创建 worktree |
 | 2026-07-17 | Vitest 4.1 不再导出 `defineWorkspace`，且仅自动加载标准配置名 | 1 | 迁移为标准 `vitest.config.ts` 与 `defineConfig` 的 `test.projects`，并通过 CLI 加载验证 |
 | 2026-07-17 | contracts 包直接运行 Vitest 时继承根配置，只匹配 `scripts/**/*.spec.ts` | 1 | 新增包级 `vitest.config.ts` 并在测试脚本显式指定，随后得到预期的缺失模块 RED |
+| 2026-07-17 | 从 contracts 包目录检查 map 时误用了根目录相对路径 | 1 | 改为从包目录检查 `dist`，确认无 `.map`；同时以 `npm pack --dry-run` 文件清单交叉验证 |
 
 ## 五问重启检查
 | 问题 | 答案 |
