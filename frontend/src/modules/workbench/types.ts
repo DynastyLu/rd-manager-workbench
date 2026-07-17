@@ -1,49 +1,72 @@
-export type ProjectStatus = 'DRAFT' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'ARCHIVED'
+export type ProjectStatus = 'DRAFT' | 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'CANCELLED'
 
-export type ProjectPhase = 'PLANNING' | 'EXECUTION' | 'CLOSING'
+export type ProjectPhase =
+  | 'DISCOVERY'
+  | 'PLANNING'
+  | 'RESEARCH'
+  | 'DEVELOPMENT'
+  | 'VALIDATION'
+  | 'DELIVERY'
 
-export type ProjectHealth = 'HEALTHY' | 'AT_RISK' | 'CRITICAL' | 'UNKNOWN'
+export type ProjectHealth = 'GREEN' | 'YELLOW' | 'RED'
 
 export interface Project {
   id: string
-  code: string | null
+  code: string
   name: string
-  description: string | null
+  type: string | null
+  researchDirection: string | null
+  objective: string | null
+  expectedOutcome: string | null
+  leadName: string | null
+  participantNames: string[]
+  plannedStartAt: string | null
+  plannedEndAt: string | null
+  actualStartAt: string | null
+  actualEndAt: string | null
   status: ProjectStatus
   phase: ProjectPhase
   health: ProjectHealth
-  startDate: string | null
-  targetDate: string | null
-  completedAt: string | null
+  archivedAt: string | null
   createdAt: string
   updatedAt: string
 }
+
+export type MilestoneStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'MISSED'
 
 export interface Milestone {
   id: string
   projectId: string
   name: string
-  description: string | null
-  dueDate: string | null
-  completedAt: string | null
+  plannedAt: string | null
+  actualAt: string | null
+  ownerName: string | null
+  isCritical: boolean
+  status: MilestoneStatus
   createdAt: string
   updatedAt: string
 }
 
-export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'ARCHIVED'
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLED'
 
-export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 
 export interface WorkTask {
   id: string
   projectId: string | null
   milestoneId: string | null
+  parentId: string | null
   title: string
   description: string | null
+  assigneeName: string | null
+  collaboratorNames: string[]
   status: TaskStatus
   priority: TaskPriority
-  dueDate: string | null
+  dueAt: string | null
   completedAt: string | null
+  sourceType: string | null
+  sourceId: string | null
+  archivedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -52,33 +75,34 @@ export interface ProgressReport {
   id: string
   projectId: string
   summary: string
-  progressPercent: number
+  completionPercent: number
+  blockers: string | null
   reportedAt: string
   createdAt: string
   updatedAt: string
 }
 
 export interface DashboardData {
-  todayTasks: WorkTask[]
+  todayActions: WorkTask[]
   overdueTasks: WorkTask[]
-  projects: Project[]
-  projectHealthSummary: Record<ProjectHealth, number>
-  upcomingMilestones: Milestone[]
+  dueSoonMilestones: Milestone[]
+  healthDistribution: Record<ProjectHealth, number>
+  projectsNeedingAttention: Project[]
+  recentProgressReports: ProgressReport[]
 }
 
 export interface PaginationMeta {
   page: number
   pageSize: number
   total: number
-  totalPages: number
 }
 
 export interface ListProjectsResult {
-  items: Project[]
-  pagination: PaginationMeta
+  data: Project[]
+  meta: PaginationMeta
 }
 
 export interface ListTasksResult {
-  items: WorkTask[]
-  pagination: PaginationMeta
+  data: WorkTask[]
+  meta: PaginationMeta
 }

@@ -10,31 +10,43 @@ import type {
 export interface ListTasksParams {
   page?: number
   pageSize?: number
-  search?: string
   projectId?: string
-  milestoneId?: string
   status?: TaskStatus
-  priority?: TaskPriority
+  assigneeName?: string
+  dueBefore?: string
+  overdue?: boolean
 }
 
 export interface CreateTaskInput {
   title: string
   projectId?: string
   milestoneId?: string
+  parentId?: string
+  dependencyIds?: string[]
   description?: string
+  assigneeName?: string
+  collaboratorNames?: string[]
   status?: TaskStatus
   priority?: TaskPriority
-  dueDate?: string
+  dueAt?: string
+  sourceType?: string
+  sourceId?: string
 }
 
 export interface UpdateTaskInput {
   title?: string
   projectId?: string | null
   milestoneId?: string | null
+  parentId?: string | null
+  dependencyIds?: string[]
   description?: string | null
+  assigneeName?: string | null
+  collaboratorNames?: string[]
   status?: TaskStatus
   priority?: TaskPriority
-  dueDate?: string | null
+  dueAt?: string | null
+  sourceType?: string | null
+  sourceId?: string | null
 }
 
 function toQueryString(params: ListTasksParams): string {

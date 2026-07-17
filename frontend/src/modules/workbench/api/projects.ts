@@ -3,7 +3,6 @@ import { request } from '@/lib/http'
 import type {
   ListProjectsResult,
   Project,
-  ProjectHealth,
   ProjectPhase,
   ProjectStatus,
 } from '@/modules/workbench/types'
@@ -14,29 +13,40 @@ export interface ListProjectsParams {
   search?: string
   status?: ProjectStatus
   phase?: ProjectPhase
-  health?: ProjectHealth
 }
 
 export interface CreateProjectInput {
+  code: string
   name: string
-  code?: string
-  description?: string
+  type?: string
+  researchDirection?: string
+  objective?: string
+  expectedOutcome?: string
+  leadName?: string
+  participantNames?: string[]
+  plannedStartAt?: string
+  plannedEndAt?: string
+  actualStartAt?: string
+  actualEndAt?: string
   status?: ProjectStatus
   phase?: ProjectPhase
-  health?: ProjectHealth
-  startDate?: string
-  targetDate?: string
 }
 
 export interface UpdateProjectInput {
+  code?: string
   name?: string
-  code?: string | null
-  description?: string | null
+  type?: string | null
+  researchDirection?: string | null
+  objective?: string | null
+  expectedOutcome?: string | null
+  leadName?: string | null
+  participantNames?: string[]
+  plannedStartAt?: string | null
+  plannedEndAt?: string | null
+  actualStartAt?: string | null
+  actualEndAt?: string | null
   status?: ProjectStatus
   phase?: ProjectPhase
-  health?: ProjectHealth
-  startDate?: string | null
-  targetDate?: string | null
 }
 
 function toQueryString(params: ListProjectsParams): string {
