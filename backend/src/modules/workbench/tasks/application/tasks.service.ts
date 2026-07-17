@@ -37,6 +37,7 @@ export class TasksService {
         data: {
           title: dto.title,
           ...this.toTaskFields(dto),
+          ...(dto.status === TaskStatus.DONE ? { completedAt: new Date() } : {}),
           ...(dto.dependencyIds?.length
             ? {
                 dependencies: {
@@ -94,9 +95,9 @@ export class TasksService {
       });
       if (!existing) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
       const merged = {
-        projectId: dto.projectId ?? existing.projectId,
-        milestoneId: dto.milestoneId ?? existing.milestoneId,
-        parentId: dto.parentId ?? existing.parentId,
+        projectId: dto.projectId !== undefined ? dto.projectId : existing.projectId,
+        milestoneId: dto.milestoneId !== undefined ? dto.milestoneId : existing.milestoneId,
+        parentId: dto.parentId !== undefined ? dto.parentId : existing.parentId,
         dependencyIds:
           dto.dependencyIds ?? existing.dependencies.map(({ dependsOnTaskId }) => dependsOnTaskId),
         status: dto.status ?? existing.status,
@@ -107,7 +108,7 @@ export class TasksService {
         where: { id },
         data: {
           ...this.toTaskFields(dto),
-          ...(dto.status !== undefined
+          ...(dto.status !== undefined && dto.status !== existing.status
             ? { completedAt: dto.status === TaskStatus.DONE ? new Date() : null }
             : {}),
           ...(dto.dependencyIds !== undefined

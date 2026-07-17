@@ -100,6 +100,79 @@ describe('Tasks API', () => {
     });
   });
 
+  it('timestamps a task created as done and leaves other created tasks incomplete', async () => {
+    const completed = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} created done`, projectId, status: 'DONE' })
+      .expect(201);
+    expect(completed.body.data.completedAt).toEqual(expect.any(String));
+
+    const incomplete = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} created todo`, projectId, status: 'TODO' })
+      .expect(201);
+    expect(incomplete.body.data.completedAt).toBeNull();
+  });
+
+  it('rejects null task and milestone update fields before a milestone task can lose its project', async () => {
+    const milestone = await request(app.getHttpServer())
+      .post(`/api/projects/${projectId}/milestones`)
+      .send({ name: `${prefix} null validation milestone` })
+      .expect(201);
+    const task = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({
+        title: `${prefix} null validation task`,
+        projectId,
+        milestoneId: milestone.body.data.id,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/api/tasks/${task.body.data.id}`)
+      .send({ projectId: null })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`/api/tasks/${task.body.data.id}`)
+      .send({ description: null })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`/api/projects/${projectId}/milestones/${milestone.body.data.id}`)
+      .send({ name: null })
+      .expect(400);
+
+    const persisted = await request(app.getHttpServer())
+      .get(`/api/tasks/${task.body.data.id}`)
+      .expect(200);
+    expect(persisted.body.data).toMatchObject({ projectId, milestoneId: milestone.body.data.id });
+  });
+
+  it('only changes completedAt when task status transitions', async () => {
+    const task = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} transition timestamp`, projectId })
+      .expect(201);
+
+    const completed = await request(app.getHttpServer())
+      .patch(`/api/tasks/${task.body.data.id}`)
+      .send({ status: 'DONE' })
+      .expect(200);
+    expect(completed.body.data.completedAt).toEqual(expect.any(String));
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const repeatedDone = await request(app.getHttpServer())
+      .patch(`/api/tasks/${task.body.data.id}`)
+      .send({ status: 'DONE' })
+      .expect(200);
+    expect(repeatedDone.body.data.completedAt).toBe(completed.body.data.completedAt);
+
+    const reopened = await request(app.getHttpServer())
+      .patch(`/api/tasks/${task.body.data.id}`)
+      .send({ status: 'IN_PROGRESS' })
+      .expect(200);
+    expect(reopened.body.data.completedAt).toBeNull();
+  });
+
   it('does not complete a task until all dependencies are done and records completedAt', async () => {
     const prerequisite = await request(app.getHttpServer())
       .post('/api/tasks')
