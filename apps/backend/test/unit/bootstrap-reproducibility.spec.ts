@@ -11,14 +11,19 @@ const backendRoot = path.resolve(__dirname, '../..')
 const workspaceRoot = path.resolve(backendRoot, '../..')
 
 describe('backend bootstrap reproducibility', () => {
-  it('ships a model-free Prisma generation schema for the app schema', () => {
+  it('ships the single baseline metadata model in the app schema', () => {
     const schema = readFileSync(path.join(backendRoot, 'prisma/schema.prisma'), 'utf8')
 
     expect(schema).toContain('provider = "prisma-client-js"')
     expect(schema).toContain('provider = "postgresql"')
     expect(schema).toContain('url      = env("DATABASE_URL")')
     expect(schema).toContain('schemas  = ["app"]')
-    expect(schema).not.toMatch(/^model\s/mu)
+    expect(schema.match(/^model\s/gmu)).toHaveLength(1)
+    expect(schema).toContain('model AppMetadata')
+    expect(schema).toContain('value     Json')
+    expect(schema).toContain('@db.Timestamptz(6)')
+    expect(schema).toContain('@@schema("app")')
+    expect(schema).toContain('@@map("app_metadata")')
   })
 
   it('generates Prisma Client before every command that compiles backend code', () => {
@@ -31,6 +36,7 @@ describe('backend bootstrap reproducibility', () => {
       prebuild: 'pnpm prisma:generate',
       pretypecheck: 'pnpm prisma:generate',
       'pretest:unit': 'pnpm prisma:generate',
+      'pretest:integration': 'pnpm prisma:generate',
       'pretest:e2e': 'pnpm prisma:generate',
     })
   })
@@ -39,6 +45,9 @@ describe('backend bootstrap reproducibility', () => {
     const exampleEnvironment = readFileSync(path.join(workspaceRoot, '.env.example'), 'utf8')
 
     expect(exampleEnvironment).toContain('NODE_ENV=development')
+    expect(exampleEnvironment).toContain('DATABASE_ADMIN_URL=postgresql://dynastylu@127.0.0.1')
+    expect(exampleEnvironment).toContain('DATABASE_NAME=rd_manager_workbench')
+    expect(exampleEnvironment).toContain('DATABASE_ROLE=rd_manager_workbench_app')
     expect(exampleEnvironment).toContain('INTERNAL_API_TOKEN=development-only-')
     expect(exampleEnvironment).toContain('APP_DATA_DIR=/tmp/rd-manager-workbench')
     expect(exampleEnvironment).toContain('FILES_DIR=/tmp/rd-manager-workbench/files')

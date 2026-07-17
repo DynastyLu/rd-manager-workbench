@@ -28,7 +28,7 @@
 - [ ] 从 treasure-box 提取前端框架能力并删除旧业务
 - [ ] 从 backend-core-platform 提取后端框架能力并删除旧业务
 - [ ] 接入 Electron 主进程、preload 和后端生命周期管理
-- [ ] 建立本机 PostgreSQL 数据库与迁移基线
+- [x] 建立本机 PostgreSQL 数据库与迁移基线
 - **状态：** in_progress
 
 ### 阶段 4：MVP 功能实现

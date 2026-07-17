@@ -358,7 +358,7 @@ git commit -m "feat: add backend health skeleton"
 - Test: `apps/backend/test/unit/bootstrap-plan.spec.ts`
 - Test: `apps/backend/test/integration/database-bootstrap.spec.ts`
 
-- [ ] **Step 1: Write failing bootstrap plan tests**
+- [x] **Step 1: Write failing bootstrap plan tests**
 
 ```ts
 it('builds identifiers only for the approved local database and role', () => {
@@ -379,13 +379,13 @@ it.each(['postgres;drop database postgres', 'bad-name', ''])('rejects unsafe ide
 })
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `pnpm --filter @rd-manager/backend test:unit -- bootstrap-plan.spec.ts`
 
 Expected: FAIL because bootstrap plan code is missing.
 
-- [ ] **Step 3: Implement idempotent bootstrap**
+- [x] **Step 3: Implement idempotent bootstrap**
 
 Use `pg` with parameterized value queries and separately validated SQL identifiers. The command must:
 
@@ -399,7 +399,7 @@ Use `pg` with parameterized value queries and separately validated SQL identifie
 
 The command must never issue `DROP DATABASE`, `DROP ROLE`, `prisma db push`, or `prisma migrate reset`.
 
-- [ ] **Step 4: Add the baseline schema**
+- [x] **Step 4: Add the baseline schema**
 
 ```prisma
 generator client {
@@ -423,7 +423,7 @@ model AppMetadata {
 }
 ```
 
-- [ ] **Step 5: Verify RED-GREEN and run the real idempotent bootstrap twice**
+- [x] **Step 5: Verify RED-GREEN and run the real idempotent bootstrap twice**
 
 Run:
 
@@ -436,7 +436,7 @@ psql -d rd_manager_workbench -X -A -t -c "select schema_name from information_sc
 
 Expected: tests pass; both bootstrap runs exit 0; the final query prints `app` once.
 
-- [ ] **Step 6: Commit database bootstrap**
+- [x] **Step 6: Commit database bootstrap**
 
 ```bash
 git add apps/backend pnpm-lock.yaml

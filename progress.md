@@ -162,6 +162,36 @@
   - `docs/superpowers/plans/2026-07-17-workbench-bootstrap.md`
   - `progress.md`
 
+- **Task 4：** complete
+- 执行的操作：
+  - 按 TDD 先创建 bootstrap plan、环境一致性和命令安全测试；确认计划模块缺失、4 项环境约束未生效后进入 GREEN。
+  - 将库名严格限定为 `rd_manager_workbench` 或 `rd_manager_workbench_test`，角色严格限定为 `rd_manager_workbench_app`，schema 固定为 `app`；所有动态 SQL identifier 先经 lowercase snake_case 白名单再引用。
+  - 环境校验要求管理员 URL 指向 loopback `postgres` 维护库、应用 URL 的库名/角色/schema 与声明一致，并禁止测试环境回退生产库。
+  - 使用 `pg` session advisory lock 串行化初始化；缺失时创建 `LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE CONNECTION LIMIT 10` 技术角色和目标库，存在时只验证安全属性与 owner，不修改不匹配对象。
+  - 在目标库创建或验证 `app` schema owner，并仅在目标库撤销 public schema 的 CREATE 权限；所有客户端和 advisory lock 都在 `finally` 中释放。
+  - Prisma migration 子进程显式接收 schema 路径，子环境只含 `DATABASE_URL`，输出不回显连接串；新增 lowercase snake_case、JSONB 与 `TIMESTAMPTZ(6)` 的 `app_metadata` 基线。
+  - integration 严格固定 `rd_manager_workbench_test`，连续 bootstrap 两次后验证角色 flags/连接限制、两个 owner、public 权限、表和迁移记录；按要求保留测试库，不执行清理删除。
+  - 使用根 `pnpm db:bootstrap` 对生产库连续执行两次，均 exit 0；psql 分别验证生产/test 库 owner、生产 schema、两张表和唯一 active migration。
+- 创建/修改的 Task 4 文件：
+  - `.env.example`
+  - `apps/backend/package.json`
+  - `apps/backend/prisma/schema.prisma`
+  - `apps/backend/prisma/migrations/migration_lock.toml`
+  - `apps/backend/prisma/migrations/20260717000000_init/migration.sql`
+  - `apps/backend/src/commands/bootstrap-database.ts`
+  - `apps/backend/src/infrastructure/config/env.schema.ts`
+  - `apps/backend/src/infrastructure/database/bootstrap-plan.ts`
+  - `apps/backend/src/infrastructure/database/bootstrap-database.ts`
+  - `apps/backend/test/jest-integration.config.cjs`
+  - `apps/backend/test/integration/database-bootstrap.spec.ts`
+  - `apps/backend/test/setup-environment.cjs`
+  - `apps/backend/test/unit/bootstrap-plan.spec.ts`
+  - `apps/backend/test/unit/env.schema.spec.ts`
+  - `pnpm-lock.yaml`
+  - `task_plan.md`
+  - `docs/superpowers/plans/2026-07-17-workbench-bootstrap.md`
+  - `progress.md`
+
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
@@ -191,6 +221,12 @@
 | Backend 成功契约 RED/GREEN | health E2E | 成功严格 `{ success, data }`，traceId 仅用于错误/日志 | RED 2 tests 因多余 traceId 失败；GREEN 7 tests passed | 通过 |
 | Backend 可重复构建 RED/GREEN | bootstrap reproducibility unit | schema、generate 前置和 env 示例具备静态契约 | RED 3 tests failed；GREEN 3 tests passed | 通过 |
 | Prisma clean-client 验证 | 临时副本 + frozen install + ignore-scripts | 无残留 client 时仍可生成并类型检查 | before=absent，after=generated，typecheck exit 0，探针已删除 | 通过 |
+| PostgreSQL bootstrap plan RED/GREEN | focused unit | 先因功能缺失失败，再通过严格名称、引用、环境和安全扫描 | RED 2 suites failed；GREEN 2 suites / 39 tests passed | 通过 |
+| PostgreSQL integration RED/GREEN | 固定 test 库连续 bootstrap 两次 | 先因 `pg`/bootstrap 缺失失败，再验证真实库状态 | RED 1 suite compile failed；GREEN 1 suite / 4 tests passed | 通过 |
+| Prisma schema 验证 | 显式 test `DATABASE_URL` + schema 路径 | schema 有效并可生成客户端 | validate 与 generate 均 exit 0 | 通过 |
+| 生产库幂等 bootstrap | 根 `pnpm db:bootstrap` 连续执行两次 | 首次创建并迁移，再次无副作用 | 两次均输出 completed、exit 0 | 通过 |
+| PostgreSQL 状态核验 | psql 只读查询 | owner/schema/public/table/migration 符合安全基线 | 两库 owner 正确；public CREATE=false；2 表；1 active migration | 通过 |
+| Task 4 完整质量门禁 | backend explicit + 根 `pnpm check` + diff check | 单元/integration/E2E/lint/typecheck/build/rootcheck 全通过 | unit 46、integration 4、E2E 7、contracts 17；全部 exit 0 | 通过 |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
@@ -209,12 +245,18 @@
 | 2026-07-17 | request context traceId 收紧补丁因 Prettier 已改变长行上下文而未匹配 | 1 | 读取实际文件后缩小补丁上下文，随后正常应用并运行 focused GREEN |
 | 2026-07-17 | `require.resolve('prisma')` 命中包导出的缺失 `build/types.js` | 1 | 改用官方 CLI 子路径 `prisma/build/index.js`，随后无 DATABASE_URL generate 成功 |
 | 2026-07-17 | 显式传入 `.env.example` 时 Prettier 无法推断解析器 | 1 | 环境示例保持人工键值格式，仅对可解析文件格式化；根 format:check 仍按 `.prettierignore` 正常处理 |
+| 2026-07-17 | Bootstrap plan RED 测试首稿括号未闭合，造成语法错误而非目标缺失失败 | 1 | 先修正测试语法，再重跑并确认只因目标模块缺失与环境约束未实现而 RED |
+| 2026-07-17 | 直接执行 Prisma validate 时 shell 未提供 `DATABASE_URL` | 1 | 使用明确 test URL 重跑；schema valid，未发生数据库连接或写入 |
+| 2026-07-17 | Integration 首次 GREEN 的 `to_regclass` 期望省略 schema 前缀 | 1 | 按 PostgreSQL 实际 schema-qualified 文本修正断言，随后 4 项通过 |
+| 2026-07-17 | 质量门禁发现 Zod 运行时收窄未反映到 TypeScript 类型 | 1 | 将库名和角色字段改为 `z.enum`/`z.literal`，focused 39 tests 与 typecheck 通过 |
+| 2026-07-17 | Task 3 可重复构建测试仍要求正式 Prisma schema 不含 model | 1 | 将阶段性断言升级为 Task 4 的唯一 `AppMetadata` 基线、类型/映射和 integration generate 契约 |
+| 2026-07-17 | 唯一 Prisma model 断言首稿缺少 multiline 正则标志 | 1 | 增加 `m` 标志后重跑完整单元集，不放宽模型数量约束 |
 
 ## 五问重启检查
 | 问题 | 答案 |
 |------|------|
 | 我在哪里？ | 阶段 3：新工作区与基座提纯 |
-| 我要去哪里？ | 继续 PostgreSQL bootstrap/迁移、renderer 与 Electron 骨架的后续任务 |
+| 我要去哪里？ | 继续 renderer 与 Electron 骨架的后续任务 |
 | 目标是什么？ | 构建 Electron + React + NestJS + 本机 PostgreSQL 的研发主管本地工作台 |
 | 我学到了什么？ | 见 `findings.md` |
-| 我做了什么？ | 完成 Task 1 根 workspace、Task 2 共享契约和 Task 3 Backend health/config 骨架的实现与验证 |
+| 我做了什么？ | 完成 Task 1 根 workspace、Task 2 共享契约、Task 3 Backend health/config 和 Task 4 PostgreSQL bootstrap/迁移基线 |
