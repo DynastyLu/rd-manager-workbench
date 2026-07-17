@@ -1,0 +1,37 @@
+{
+  "name": "rd-manager-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx scripts/dev.ts",
+    "build": "pnpm -r --if-present build",
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "test:package": "vitest run scripts/verify-package.spec.ts",
+    "test:smoke:desktop": "playwright test e2e/desktop-smoke.spec.ts",
+    "format:check": "prettier . --check",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "db:bootstrap": "pnpm --filter @rd-manager/backend db:bootstrap",
+    "package:dir": "pnpm build && electron-builder --dir --config electron-builder.yml",
+    "verify:package": "tsx scripts/verify-package.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^22.15.3",
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "electron-builder": "26.15.3",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.19.4",
+    "typescript": "5.8.3",
+    "typescript-eslint": "^8.57.2",
+    "vitest": "^4.1.9"
+  }
+}
