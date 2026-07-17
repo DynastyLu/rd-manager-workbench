@@ -28,10 +28,14 @@ export function ProjectForm({ project, onSuccess }: ProjectFormProps) {
     mutationFn: (values: ProjectValues) =>
       project ? updateProject(project.id, values) : createProject(values),
     onSuccess: async (savedProject) => {
-      await Promise.all([
+      const invalidations = [
         queryClient.invalidateQueries({ queryKey: ['projects'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-      ])
+      ]
+      if (project) {
+        invalidations.push(queryClient.invalidateQueries({ queryKey: ['project', project.id] }))
+      }
+      await Promise.all(invalidations)
       toast.success(project ? '项目已更新' : '项目已创建')
       onSuccess?.(savedProject)
     },

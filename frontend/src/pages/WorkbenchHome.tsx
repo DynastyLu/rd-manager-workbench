@@ -10,9 +10,7 @@ function DashboardSection({ title, children }: { title: string; children: ReactN
   return (
     <Card>
       <CardHeader>
-        <h2>
-          <CardTitle>{title}</CardTitle>
-        </h2>
+        <h2 className="text-base leading-snug font-medium">{title}</h2>
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
