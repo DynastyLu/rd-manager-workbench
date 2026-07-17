@@ -1,11 +1,20 @@
-# backend-core-platform
+# RD Manager Workbench backend
 
-NestJS + TypeScript + Prisma + PostgreSQL scaffold for a SaaS admin backend.
+Local, single-user NestJS backend for the engineering manager workbench. It retains the core platform's Nest bootstrap, request context, Prisma, logging, filters, response envelope, health check, and local storage/queue boundaries without IAM, tenants, external queues, or remote storage.
 
-## Bootstrap
+## Local database
+
+`DATABASE_URL` must use the local PostgreSQL target below. Configuration rejects other roles, hosts, databases, and schemas.
+
+```text
+postgresql://rd_manager_workbench_app@127.0.0.1:5432/rd_manager_workbench?schema=app
+```
+
+The existing `app.app_metadata` migration is a baseline. Do not run `prisma db push`, `prisma migrate reset`, or destructive database commands.
+
+## Run and verify
 
 ```bash
-pnpm install
 cp .env.example .env
 pnpm prisma:generate
 pnpm test:unit
@@ -16,53 +25,8 @@ pnpm build
 pnpm start:dev
 ```
 
-## Environment
-
-Required variables:
-
-- `NODE_ENV=local|dev|test|prod`
-- `PORT`
-- `DATABASE_URL`
-
-## Request Context
-
-Request handling starts with provisional transport metadata only.
-
-- `x-trace-id`
-- `x-request-scope`
-- `x-tenant-id`
-- `x-tenant-key`
-- `x-operator-id`
-- `x-operator-type`
-
-Trusted tenant/operator identity is promoted later through the explicit policy/resolver path. Raw headers stay transport metadata and should not be treated as canonical business identity.
-
-## Modules
-
-Runnable example endpoints:
+Endpoints are loopback-only in production by default:
 
 - `GET /api/health`
-- `POST /api/platform/tenants`
-- `GET /api/platform/tenants`
-- `POST /api/iam/users`
-- `GET /api/iam/users`
-- `POST /api/iam/roles`
-- `GET /api/iam/roles`
-- `POST /api/system/audit/logs`
-- `GET /api/system/audit/logs`
-
-## Verification
-
-```bash
-pnpm test:unit
-pnpm test:integration
-pnpm test:e2e
-pnpm lint
-pnpm build
-```
-
-## Notes
-
-- Prisma is isolated behind stateless platform/tenant database targeting abstractions.
-- Tenant schema derivation is deterministic and collision-safe.
-- The repository intentionally starts as a modular monolith with clear boundaries.
+- `GET /api/health/ready`
+- `GET /api/workbench/status`

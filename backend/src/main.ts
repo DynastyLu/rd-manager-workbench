@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 
-import { RequestMethod, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
@@ -15,25 +15,9 @@ async function bootstrap() {
     bodyParser: false,
   });
 
-  app.enableCors({
-    credentials: true,
-    origin: true,
-  });
   configureBodyParser(app);
   app.useLogger(app.get(AppLoggerService));
-  app.setGlobalPrefix('api', {
-    exclude: [
-      { path: 'sys/(.*)', method: RequestMethod.ALL },
-      { path: 'label/(.*)', method: RequestMethod.ALL },
-      { path: 'labelCategory/(.*)', method: RequestMethod.ALL },
-      { path: 'audit/(.*)', method: RequestMethod.ALL },
-      { path: 'authority/(.*)', method: RequestMethod.ALL },
-      { path: 'dataResource/(.*)', method: RequestMethod.ALL },
-      { path: 'open/(.*)', method: RequestMethod.ALL },
-      { path: ':appId/sys/(.*)', method: RequestMethod.ALL },
-      { path: ':basePath/:appId/sys/(.*)', method: RequestMethod.ALL },
-    ],
-  });
+  app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -45,8 +29,8 @@ async function bootstrap() {
   app.useGlobalInterceptors(app.get(ResponseInterceptor));
 
   const config = new DocumentBuilder()
-    .setTitle('Backend Core Platform')
-    .setDescription('SaaS admin platform backend scaffold')
+    .setTitle('RD Manager Workbench')
+    .setDescription('Local single-user engineering manager workbench')
     .setVersion('0.1.0')
     .build();
   const document = SwaggerModule.createDocument(app, config);

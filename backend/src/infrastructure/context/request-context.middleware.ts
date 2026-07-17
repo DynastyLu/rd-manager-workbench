@@ -9,11 +9,6 @@ export class RequestContextMiddleware implements NestMiddleware {
   use(req: Request, _res: Response, next: NextFunction) {
     const context = this.requestContextService.createContext({
       traceId: headerAsString(req.headers['x-trace-id']),
-      requestedScope: headerAsString(req.headers['x-request-scope']),
-      rawTenantId: headerAsString(req.headers['x-tenant-id']),
-      rawTenantKey: headerAsString(req.headers['x-tenant-key']),
-      rawOperatorId: headerAsString(req.headers['x-operator-id']),
-      rawOperatorType: headerAsString(req.headers['x-operator-type']),
       sourceIp: req.ip,
       requestHeaders: req.headers,
     });
