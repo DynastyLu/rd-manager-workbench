@@ -51,9 +51,7 @@ export function AppSidebar() {
             key={path}
             to={path}
             end={end}
-            className={({ isActive }) =>
-              cn('sidebar-link', isActive && 'sidebar-link--active')
-            }
+            className={({ isActive }) => cn('sidebar-link', isActive && 'sidebar-link--active')}
           >
             <Icon aria-hidden="true" />
             <span>{label}</span>

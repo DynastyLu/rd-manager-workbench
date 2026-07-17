@@ -57,10 +57,8 @@
   --paper-grid: rgba(54, 71, 63, 0.08);
   --risk: #a84737;
   --shadow-paper: 0 18px 38px rgba(43, 48, 41, 0.08);
-  --font-heading: 'Songti SC', STSong, 'Noto Serif CJK SC', 'Source Han Serif SC',
-    Georgia, serif;
-  --font-body: 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui,
-    sans-serif;
+  --font-heading: 'Songti SC', STSong, 'Noto Serif CJK SC', 'Source Han Serif SC', Georgia, serif;
+  --font-body: 'PingFang SC', 'Microsoft YaHei UI', 'Noto Sans CJK SC', system-ui, sans-serif;
   --font-code: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
 }
 

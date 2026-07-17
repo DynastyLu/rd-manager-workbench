@@ -68,9 +68,9 @@ describe('SettingsPage diagnostics', () => {
     setWorkbenchApi({ getRuntimeConfig: async () => RUNTIME_CONFIG })
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof fetch>().mockResolvedValue(
-        new Response('{"secret":"must-not-render"}', { status: 503 }),
-      ),
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response('{"secret":"must-not-render"}', { status: 503 })),
     )
 
     renderSettings()

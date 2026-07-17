@@ -27,9 +27,7 @@ describe('workbench router', () => {
   it('renders the local workbench without an authentication redirect', async () => {
     renderRoute('/')
 
-    expect(
-      await screen.findByRole('heading', { name: '研发主管工作台' }),
-    ).toBeVisible()
+    expect(await screen.findByRole('heading', { name: '研发主管工作台' })).toBeVisible()
     expect(screen.queryByText('登录')).not.toBeInTheDocument()
   })
 

@@ -43,20 +43,17 @@ export function createApiClient(
       const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
       try {
-        const response = await fetchImplementation(
-          `${runtime.apiBaseUrl}/api/health/ready`,
-          {
-            method: 'GET',
-            headers: {
-              accept: 'application/json',
-              'x-workbench-token': runtime.sessionToken,
-            },
-            cache: 'no-store',
-            credentials: 'omit',
-            redirect: 'error',
-            signal: controller.signal,
+        const response = await fetchImplementation(`${runtime.apiBaseUrl}/api/health/ready`, {
+          method: 'GET',
+          headers: {
+            accept: 'application/json',
+            'x-workbench-token': runtime.sessionToken,
           },
-        )
+          cache: 'no-store',
+          credentials: 'omit',
+          redirect: 'error',
+          signal: controller.signal,
+        })
 
         if (!response.ok) {
           throw new WorkbenchApiError('本地服务暂时不可用', response.status)

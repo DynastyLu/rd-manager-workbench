@@ -65,11 +65,7 @@ function CardAction({ className, ...props }: React.ComponentProps<'div'>) {
 
 function CardContent({ className, ...props }: React.ComponentProps<'div'>) {
   return (
-    <div
-      data-slot="card-content"
-      className={cn('px-(--card-spacing)', className)}
-      {...props}
-    />
+    <div data-slot="card-content" className={cn('px-(--card-spacing)', className)} {...props} />
   )
 }
 
@@ -87,12 +83,4 @@ function CardFooter({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 // Adapted from treasure-box's radix-nova shadcn primitive and current card spacing API.
-export {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-}
+export { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }

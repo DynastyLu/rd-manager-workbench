@@ -2,13 +2,7 @@ import ArchiveIcon from 'lucide-react/dist/esm/icons/archive.js'
 import CheckIcon from 'lucide-react/dist/esm/icons/check.js'
 
 import { Badge } from '@/components/ui/badge'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 interface ModulePlaceholderPageProps {
   archiveCode: string

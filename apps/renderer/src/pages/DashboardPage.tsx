@@ -72,31 +72,29 @@ export function DashboardPage() {
       </section>
 
       <section className="module-grid" aria-label="工作台模块预览">
-        {DASHBOARD_MODULES.map(
-          ({ title, description, scope, archiveCode, icon: Icon }) => (
-            <Card key={title} size="sm">
-              <CardHeader>
-                <div className="module-icon" aria-hidden="true">
-                  <Icon />
-                </div>
-                <CardAction>
-                  <Badge variant="secondary">尚未接入</Badge>
-                </CardAction>
-                <CardTitle>
-                  <h2>{title}</h2>
-                </CardTitle>
-                <CardDescription>{description}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="module-scope">接入范围：{scope}</p>
-              </CardContent>
-              <CardFooter>
-                <span>档案号 {archiveCode}</span>
-                <span>等待业务子项目</span>
-              </CardFooter>
-            </Card>
-          ),
-        )}
+        {DASHBOARD_MODULES.map(({ title, description, scope, archiveCode, icon: Icon }) => (
+          <Card key={title} size="sm">
+            <CardHeader>
+              <div className="module-icon" aria-hidden="true">
+                <Icon />
+              </div>
+              <CardAction>
+                <Badge variant="secondary">尚未接入</Badge>
+              </CardAction>
+              <CardTitle>
+                <h2>{title}</h2>
+              </CardTitle>
+              <CardDescription>{description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="module-scope">接入范围：{scope}</p>
+            </CardContent>
+            <CardFooter>
+              <span>档案号 {archiveCode}</span>
+              <span>等待业务子项目</span>
+            </CardFooter>
+          </Card>
+        ))}
       </section>
 
       <section className="working-principle" aria-labelledby="principle-title">

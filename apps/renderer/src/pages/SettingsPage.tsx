@@ -140,9 +140,7 @@ export function SettingsPage() {
                 </div>
                 <div>
                   <dt>运行平台</dt>
-                  <dd>
-                    {PLATFORM_LABELS[diagnostics.data.platform] ?? diagnostics.data.platform}
-                  </dd>
+                  <dd>{PLATFORM_LABELS[diagnostics.data.platform] ?? diagnostics.data.platform}</dd>
                 </div>
               </dl>
             </CardContent>
