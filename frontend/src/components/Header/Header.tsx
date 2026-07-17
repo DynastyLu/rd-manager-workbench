@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
 import { useThemeStore, THEME_LABELS } from '@/stores/theme'
 import type { Theme } from '@/stores/theme'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -11,6 +11,7 @@ export default function Header() {
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
 
   const themeMenuRef = useRef<HTMLDivElement>(null)
+  const themeTriggerRef = useRef<HTMLButtonElement>(null)
 
   // Close menus on outside click
   useEffect(() => {
@@ -24,6 +25,18 @@ export default function Header() {
   }, [])
 
   const currentTheme = THEME_LABELS[theme]
+
+  function closeThemeMenu() {
+    setThemeMenuOpen(false)
+    themeTriggerRef.current?.focus()
+  }
+
+  function handleThemeEscape(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeThemeMenu()
+    }
+  }
 
   return (
     <header className="header">
@@ -39,9 +52,15 @@ export default function Header() {
       {/* Theme Switcher */}
       <div className="header__theme" ref={themeMenuRef}>
         <button
+          ref={themeTriggerRef}
           className="header__theme-btn"
-          onClick={() => setThemeMenuOpen((v) => !v)}
+          onClick={() => setThemeMenuOpen((open) => !open)}
           title="切换主题"
+          aria-label="切换主题"
+          aria-haspopup="menu"
+          aria-controls="theme-menu"
+          aria-expanded={themeMenuOpen}
+          onKeyDown={handleThemeEscape}
         >
           <span className="header__theme-icon">{currentTheme.icon}</span>
           <span className="header__theme-label">{currentTheme.label}</span>
@@ -50,6 +69,9 @@ export default function Header() {
         <AnimatePresence>
           {themeMenuOpen && (
             <motion.div
+              id="theme-menu"
+              role="menu"
+              onKeyDown={handleThemeEscape}
               className="header__dropdown header__dropdown--theme"
               initial={{ opacity: 0, scale: 0.95, y: -4 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -60,10 +82,12 @@ export default function Header() {
                 ([key, t]) => (
                   <button
                     key={key}
+                    role="menuitemradio"
+                    aria-checked={key === theme}
                     className={`header__dropdown-item${key === theme ? ' header__dropdown-item--selected' : ''}`}
                     onClick={() => {
                       setTheme(key)
-                      setThemeMenuOpen(false)
+                      closeThemeMenu()
                     }}
                   >
                     <span className="header__dropdown-item-icon">{t.icon}</span>

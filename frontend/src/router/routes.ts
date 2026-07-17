@@ -1,4 +1,5 @@
-import { lazy, type ComponentType } from 'react'
+import { createElement, lazy, type ComponentType } from 'react'
+import { Navigate } from 'react-router-dom'
 import { ROUTES } from '@/constants/routes'
 
 export interface AppRoute {
@@ -18,6 +19,10 @@ export interface RouteCategory {
 const WorkbenchHome = lazy(() => import('@/pages/WorkbenchHome'))
 const WorkbenchSettings = lazy(() => import('@/pages/WorkbenchSettings'))
 
+function RedirectToWorkbench() {
+  return createElement(Navigate, { to: ROUTES.HOME, replace: true })
+}
+
 export const routeCategories: RouteCategory[] = [
   {
     key: 'workbench',
@@ -30,6 +35,9 @@ export const routeCategories: RouteCategory[] = [
   },
 ]
 
-const routes: AppRoute[] = routeCategories.flatMap((category) => category.routes)
+const routes: AppRoute[] = [
+  ...routeCategories.flatMap((category) => category.routes),
+  { path: '*', title: '首页', icon: '⌂', component: RedirectToWorkbench },
+]
 
 export default routes

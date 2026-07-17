@@ -7,4 +7,10 @@ test.describe('workbench smoke', () => {
     await expect(page).toHaveTitle(/研发主管工作台/)
     await expect(page.getByRole('heading', { name: '研发主管工作台' })).toBeVisible()
   })
+
+  test('renders settings through the hash route', async ({ page }) => {
+    await page.goto('/#/settings')
+
+    await expect(page.getByRole('heading', { name: '工作台设置' })).toBeVisible()
+  })
 })

@@ -7,12 +7,10 @@ import path from 'path'
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
+  base: './',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
-  },
-  server: {
-    proxy: { '/api': 'http://localhost:3000' },
   },
   define: {
     // 注入构建版本号，供版本更新检测使用（Plan 3）
@@ -70,7 +68,6 @@ export default defineConfig({
       exclude: [
         '**/*.d.ts',
         '**/*.stories.{ts,tsx}',
-        '**/mocks/**',
         '**/test-setup.ts',
         '**/vite-env.d.ts',
       ],

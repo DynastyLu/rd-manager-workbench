@@ -3,8 +3,8 @@ import routes, { routeCategories } from '../routes'
 
 describe('workbench routes', () => {
   it('exposes only the local workbench and settings routes', () => {
-    expect(routes.map((route) => route.path)).toEqual(['/', '/settings'])
-    expect(routeCategories.flatMap((category) => category.routes)).toEqual(routes)
+    expect(routes.map((route) => route.path)).toEqual(['/', '/settings', '*'])
+    expect(routeCategories.flatMap((category) => category.routes)).toEqual(routes.slice(0, 2))
   })
 
   it('contains no authentication or authorization route metadata', () => {

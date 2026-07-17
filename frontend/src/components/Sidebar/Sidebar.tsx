@@ -1,11 +1,9 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { routeCategories } from '@/router/routes'
 import './Sidebar.less'
 
 export default function Sidebar() {
-  const navigate = useNavigate()
-  const location = useLocation()
   // All categories open by default
   const [openCats, setOpenCats] = useState<Record<string, boolean>>(() =>
     routeCategories.reduce<Record<string, boolean>>((acc, c) => ({ ...acc, [c.key]: true }), {})
@@ -40,25 +38,23 @@ export default function Sidebar() {
               {isOpen && (
                 <div className="sidebar__items">
                   {cat.routes.map((r) => {
-                    const isActive = location.pathname === r.path
                     return (
-                      <div
+                      <NavLink
                         key={r.path}
-                        className={`sidebar__item${isActive ? ' sidebar__item--active' : ''}`}
-                        onClick={() => {
-                          void navigate(r.path)
-                        }}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') void navigate(r.path)
-                        }}
+                        className={({ isActive }) =>
+                          `sidebar__item${isActive ? ' sidebar__item--active' : ''}`
+                        }
+                        to={r.path}
                       >
-                        <span className="sidebar__item-track" />
-                        <span className="sidebar__item-icon">{r.icon}</span>
-                        <span className="sidebar__item-title">{r.title}</span>
-                        {isActive && <span className="sidebar__item-dot" />}
-                      </div>
+                        {({ isActive }) => (
+                          <>
+                            <span className="sidebar__item-track" />
+                            <span className="sidebar__item-icon">{r.icon}</span>
+                            <span className="sidebar__item-title">{r.title}</span>
+                            {isActive && <span className="sidebar__item-dot" />}
+                          </>
+                        )}
+                      </NavLink>
                     )
                   })}
                 </div>

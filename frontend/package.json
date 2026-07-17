@@ -6,7 +6,7 @@
   "packageManager": "pnpm@9.15.1",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && pnpm build:info",
+    "build": "vite build && pnpm build:info && node scripts/verify-relative-build.mjs",
     "build:info": "node scripts/write-build-info.mjs dist",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm build-storybook",
     "ci": "pnpm check",
@@ -81,7 +81,6 @@
     "jsdom": "^28.1.0",
     "less": "^4.6.4",
     "lint-staged": "^16.4.0",
-    "msw": "^2.12.14",
     "prettier": "^3.8.1",
     "storybook": "^8",
     "tailwindcss": "^4.2.2",
@@ -90,10 +89,5 @@
     "vite": "^8.0.1",
     "vite-bundle-visualizer": "^1.2.1",
     "vitest": "^4.1.9"
-  },
-  "msw": {
-    "workerDirectory": [
-      "public"
-    ]
   }
 }

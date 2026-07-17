@@ -74,13 +74,23 @@
     position: relative;
     display: flex;
     align-items: center;
+    width: 100%;
     padding: 9px 16px 9px 32px;
+    border: none;
+    background: transparent;
     cursor: pointer;
     gap: 9px;
+    text-align: left;
+    text-decoration: none;
     transition:
       background var(--transition),
       color var(--transition);
     outline: none;
+
+    &:focus-visible {
+      outline: 2px solid var(--accent-cyan);
+      outline-offset: -2px;
+    }
 
     &:hover {
       background: var(--bg-hover);

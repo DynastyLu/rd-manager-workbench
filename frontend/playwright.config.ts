@@ -38,8 +38,5 @@ export default defineConfig({
         timeout: 120_000,
         stdout: 'pipe',
         stderr: 'pipe',
-        env: {
-          VITE_USE_MOCK: 'true',
-        },
       },
 })

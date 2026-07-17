@@ -7,12 +7,12 @@ interface VersionFile {
 }
 
 /**
- * Fetches /version.json and compares with current build version.
+ * Fetches the build-relative version.json and compares with current build version.
  * Returns true if a newer version is deployed.
  */
 export async function checkForUpdate(): Promise<boolean> {
   try {
-    const res = await fetch(`/version.json?t=${Date.now()}`)
+    const res = await fetch(`${import.meta.env.BASE_URL}version.json?t=${Date.now()}`)
     if (!res.ok) return false
     const { version } = (await res.json()) as VersionFile
     return version !== CURRENT_VERSION

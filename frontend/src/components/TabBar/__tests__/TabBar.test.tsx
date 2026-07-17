@@ -80,6 +80,30 @@ describe('TabBar', () => {
     expect(screen.getAllByRole('button', { name: /关闭/ })).toHaveLength(2)
   })
 
+  it('removes obsolete persisted tool tabs without navigating away from the current route', () => {
+    const navigate = vi.fn()
+    vi.mocked(useNavigate).mockReturnValue(navigate)
+    localStorage.setItem(
+      'tabbar_state',
+      JSON.stringify({
+        tabs: [
+          { path: '/', title: '首页' },
+          { path: '/ocr', title: '识别工具' },
+        ],
+      })
+    )
+
+    render(
+      <Wrapper path="/">
+        <TabBar routes={ROUTES} />
+      </Wrapper>
+    )
+
+    expect(screen.queryByText('识别工具')).not.toBeInTheDocument()
+    expect(screen.getByText('首页')).toBeInTheDocument()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
   it('closing active tab navigates to neighbor', async () => {
     const navigate = vi.fn()
     vi.mocked(useNavigate).mockReturnValue(navigate)

@@ -15,12 +15,19 @@ interface TabBarProps {
   routes?: Tab[]
 }
 
-function loadTabs(initialPath: string): Tab[] {
+function loadTabs(initialPath: string, routes: Tab[]): Tab[] {
+  const routeByPath = new Map(routes.map((route) => [route.path, route]))
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
     if (saved) {
       const { tabs } = JSON.parse(saved) as { tabs: Tab[] }
-      if (Array.isArray(tabs) && tabs.length > 0) return tabs
+      if (Array.isArray(tabs)) {
+        const validTabs = tabs.flatMap((tab) => {
+          const route = routeByPath.get(tab.path)
+          return route ? [{ path: route.path, title: route.title }] : []
+        })
+        if (validTabs.length > 0) return validTabs
+      }
     }
   } catch {
     // ignore corrupted storage
@@ -45,7 +52,7 @@ export default function TabBar({ routes = [] }: TabBarProps) {
   const location = RRD.useLocation()
   const navigate = useNavigateCompat()
 
-  const [tabs, setTabs] = useState<Tab[]>(() => loadTabs(location.pathname))
+  const [tabs, setTabs] = useState<Tab[]>(() => loadTabs(location.pathname, routes))
   const [activeTab, setActiveTab] = useState<string>(location.pathname)
 
   const listRef = useRef<HTMLDivElement>(null)
