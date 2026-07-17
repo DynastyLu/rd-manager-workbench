@@ -9,11 +9,6 @@ describe('Workbench e2e', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
-    process.env.SERVICE_NAME = 'rd-manager-workbench';
-    process.env.DATABASE_URL =
-      'postgresql://rd_manager_workbench_app@127.0.0.1:5432/rd_manager_workbench?schema=app';
-
     const { AppModule } = await import('../../src/app.module');
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication({ bodyParser: false });
@@ -37,6 +32,22 @@ describe('Workbench e2e', () => {
       data: {
         mode: 'local',
         database: 'postgresql',
+      },
+    });
+  });
+
+  it('reports database readiness without an external queue', async () => {
+    const response = await request(app.getHttpServer()).get('/api/health/ready').expect(200);
+
+    expect(response.body).toMatchObject({
+      success: true,
+      data: {
+        status: 'ready',
+        checks: {
+          database: 'ok',
+          queue: 'unavailable',
+          storage: 'ok',
+        },
       },
     });
   });

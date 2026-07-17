@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+const applicationDatabaseName = 'rd_manager_workbench';
+const testDatabaseName = 'rd_manager_workbench_test';
+
 const approvedDatabaseUrl = z.string().min(1).superRefine((value, context) => {
   let url: URL;
   try {
@@ -24,29 +27,41 @@ const approvedDatabaseUrl = z.string().min(1).superRefine((value, context) => {
       message: 'DATABASE_URL must use the rd_manager_workbench_app role',
     });
   }
-  if (decodeURIComponent(url.pathname) !== '/rd_manager_workbench') {
+  const schemas = url.searchParams.getAll('schema');
+  if (schemas.length !== 1 || schemas[0] !== 'app') {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'DATABASE_URL must target the rd_manager_workbench database',
+      message: 'DATABASE_URL must select exactly one app schema',
     });
-  }
-  if (url.searchParams.get('schema') !== 'app') {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'DATABASE_URL must select the app schema' });
   }
 });
 
-export const appEnvSchema = z.object({
-  NODE_ENV: z.enum(['local', 'dev', 'test', 'prod']).default('local'),
-  SERVICE_NAME: z.string().min(1).default('rd-manager-workbench'),
-  INSTANCE_ID: z
-    .string()
-    .min(1)
-    .default(() => process.env.HOSTNAME || 'local-instance'),
-  HOST: z.literal('127.0.0.1').default('127.0.0.1'),
-  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
-  DATABASE_URL: approvedDatabaseUrl,
-  LOCAL_STORAGE_ROOT: z.string().min(1).default('var/storage'),
-});
+export const appEnvSchema = z
+  .object({
+    NODE_ENV: z.enum(['local', 'dev', 'test', 'prod']).default('local'),
+    SERVICE_NAME: z.string().min(1).default('rd-manager-workbench'),
+    INSTANCE_ID: z
+      .string()
+      .min(1)
+      .default(() => process.env.HOSTNAME || 'local-instance'),
+    HOST: z.literal('127.0.0.1').default('127.0.0.1'),
+    PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+    DATABASE_URL: approvedDatabaseUrl,
+    LOCAL_STORAGE_ROOT: z.string().min(1).default('var/storage'),
+  })
+  .superRefine((environment, context) => {
+    const expectedDatabaseName =
+      environment.NODE_ENV === 'test' ? testDatabaseName : applicationDatabaseName;
+    const databaseName = decodeURIComponent(new URL(environment.DATABASE_URL).pathname.slice(1));
+
+    if (databaseName !== expectedDatabaseName) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `DATABASE_URL must target the ${expectedDatabaseName} database`,
+        path: ['DATABASE_URL'],
+      });
+    }
+  });
 
 export type AppEnv = z.infer<typeof appEnvSchema>;
 

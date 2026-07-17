@@ -1,3 +1,5 @@
+CREATE SCHEMA IF NOT EXISTS "app";
+
 CREATE TABLE "app"."app_metadata" (
     "key" TEXT NOT NULL,
     "value" JSONB NOT NULL,
