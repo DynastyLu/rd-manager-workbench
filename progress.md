@@ -84,6 +84,39 @@
   - `pnpm-lock.yaml`
   - `progress.md`
 
+- **Task 3：** complete
+- 执行的操作：
+  - 按 TDD 先创建环境校验与 health E2E 测试，分别确认因 `parseEnvironment` 和 Nest/Prisma 应用骨架缺失而 RED。
+  - 新增仅允许 `127.0.0.1`、支持随机端口 0、严格 PostgreSQL URL、32 字符内部令牌、绝对数据目录与默认关闭 Swagger 的 Zod 环境校验。
+  - 新增 NestJS 10.4.8 应用骨架、全局 `/api` 前缀、严格 ValidationPipe、统一成功响应与保留 HTTP 状态码的安全错误响应。
+  - 新增 Prisma 6.19.3 生命周期服务；ready 使用 `x-workbench-token` 的常量时间摘要比较并执行 `SELECT 1`，数据库错误返回 503 且不泄露异常、堆栈或令牌。
+  - 新增无需令牌的 live 探针，以及监听 `127.0.0.1:PORT` 并返回实际端口的可复用 `startBackend()`。
+  - 自审按 TDD 新增错误路径不回显 query secret 的回归测试，确认 RED 后改用不含查询串的 `request.path` 并得到 GREEN。
+  - Prisma CLI 作为运行时依赖；用临时无模型 schema 完成客户端生成验证后删除，正式 schema 与迁移仍由 Task 4 创建。
+  - 完成 backend 单元/E2E、lint、typecheck、build 和无 source map 检查；阶段 3 与后续后端功能仍保持进行中。
+- 创建/修改的 Task 3 文件：
+  - `apps/backend/package.json`
+  - `apps/backend/nest-cli.json`
+  - `apps/backend/tsconfig.json`
+  - `apps/backend/tsconfig.build.json`
+  - `apps/backend/src/app.module.ts`
+  - `apps/backend/src/bootstrap/create-backend-app.ts`
+  - `apps/backend/src/main.ts`
+  - `apps/backend/src/infrastructure/config/env.schema.ts`
+  - `apps/backend/src/infrastructure/prisma/prisma.module.ts`
+  - `apps/backend/src/infrastructure/prisma/prisma.service.ts`
+  - `apps/backend/src/shared/filters/http-exception.filter.ts`
+  - `apps/backend/src/shared/interceptors/response.interceptor.ts`
+  - `apps/backend/src/modules/system/health/health.module.ts`
+  - `apps/backend/src/modules/system/health/health.controller.ts`
+  - `apps/backend/test/unit/env.schema.spec.ts`
+  - `apps/backend/test/e2e/health.spec.ts`
+  - `apps/backend/test/jest-unit.config.cjs`
+  - `apps/backend/test/jest-e2e.config.cjs`
+  - `apps/backend/test/setup-environment.cjs`
+  - `pnpm-lock.yaml`
+  - `progress.md`
+
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
@@ -101,6 +134,12 @@
 | Contracts 源码入口 GREEN | 无 `dist` 时 package test + typecheck | development/types 条件直接消费源码 | 3 files / 17 tests passed，typecheck exit 0 | 通过 |
 | Contracts 临时消费端 | 无 `dist` 的最小 workspace + NodeNext typecheck | workspace 包可在首次构建前被类型消费 | 临时消费端 typecheck exit 0，探针已移除 | 通过 |
 | Contracts 干净构建 | 预置 stale map 后 build + map 检查 + `npm pack --dry-run` | 清理旧产物且不生成/打包 map | `dist` 仅 8 个 JS/声明文件，pack 13 entries、无 map | 通过 |
+| Backend env RED | focused unit test | 因环境解析模块尚未实现而失败 | `TS2307` 缺少 `env.schema`，exit 1 | 通过 |
+| Backend health RED | focused E2E test | 因应用、bootstrap 与 Prisma 模块尚未实现而失败 | 3 个 `TS2307` 缺失模块，exit 1 | 通过 |
+| Backend 单元测试 GREEN | `pnpm --filter @rd-manager/backend test:unit` | 环境正反例全部通过 | 1 suite / 9 tests passed | 通过 |
+| Backend E2E GREEN | `pnpm --filter @rd-manager/backend test:e2e` | live、ready 鉴权、DB 成功/失败与错误路径脱敏语义通过 | 1 suite / 6 tests passed | 通过 |
+| Backend query secret RED/GREEN | focused health E2E | 先证明错误响应回显 query，再去除查询串 | RED 收到含 secret 的 originalUrl；GREEN 1 test passed | 通过 |
+| Backend 质量门禁 | backend lint + typecheck + build + map 检查 | 全部通过且无 source map | 全部 exit 0，`dist` 无 `.map` | 通过 |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
@@ -112,12 +151,16 @@
 | 2026-07-17 | Vitest 4.1 不再导出 `defineWorkspace`，且仅自动加载标准配置名 | 1 | 迁移为标准 `vitest.config.ts` 与 `defineConfig` 的 `test.projects`，并通过 CLI 加载验证 |
 | 2026-07-17 | contracts 包直接运行 Vitest 时继承根配置，只匹配 `scripts/**/*.spec.ts` | 1 | 新增包级 `vitest.config.ts` 并在测试脚本显式指定，随后得到预期的缺失模块 RED |
 | 2026-07-17 | 从 contracts 包目录检查 map 时误用了根目录相对路径 | 1 | 改为从包目录检查 `dist`，确认无 `.map`；同时以 `npm pack --dry-run` 文件清单交叉验证 |
+| 2026-07-17 | Backend Jest 配置的 testMatch 误少了 `test/` 路径 | 1 | 修正 unit/e2e 匹配路径与 tsconfig 相对路径后得到预期 RED |
+| 2026-07-17 | Health E2E 首次编译时错误描述表不能用 number 索引枚举 Record | 1 | 将只读错误描述表改为 number 索引并保留未匹配状态回退 |
+| 2026-07-17 | ConfigModule 在测试模块导入时早于 beforeEach 校验环境 | 1 | 新增 Jest setupFiles，在模块加载前写入仅用于测试的安全环境变量 |
+| 2026-07-17 | 离线安装显式 `@types/node` 时本机 store 缺少精确版本 tarball | 1 | 改为普通 `pnpm install` 下载唯一缺失包，锁文件未发生非预期漂移 |
 
 ## 五问重启检查
 | 问题 | 答案 |
 |------|------|
 | 我在哪里？ | 阶段 3：新工作区与基座提纯 |
-| 我要去哪里？ | 继续 contracts、backend、renderer 与 Electron 骨架的后续任务 |
+| 我要去哪里？ | 继续 PostgreSQL bootstrap/迁移、renderer 与 Electron 骨架的后续任务 |
 | 目标是什么？ | 构建 Electron + React + NestJS + 本机 PostgreSQL 的研发主管本地工作台 |
 | 我学到了什么？ | 见 `findings.md` |
-| 我做了什么？ | 完成 Task 1 根 workspace 与 Task 2 共享运行时契约的实现和验证 |
+| 我做了什么？ | 完成 Task 1 根 workspace、Task 2 共享契约和 Task 3 Backend health/config 骨架的实现与验证 |

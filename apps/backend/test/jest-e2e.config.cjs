@@ -1,0 +1,11 @@
+module.exports = {
+  displayName: 'backend-e2e',
+  moduleFileExtensions: ['js', 'json', 'ts'],
+  rootDir: '..',
+  setupFiles: ['<rootDir>/test/setup-environment.cjs'],
+  testEnvironment: 'node',
+  testMatch: ['<rootDir>/test/e2e/**/*.spec.ts'],
+  transform: {
+    '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json' }],
+  },
+}

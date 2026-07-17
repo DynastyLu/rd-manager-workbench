@@ -1,0 +1,9 @@
+process.env.NODE_ENV = 'test'
+process.env.HOST = '127.0.0.1'
+process.env.PORT = '0'
+process.env.DATABASE_URL =
+  'postgresql://rd_manager_workbench_app@127.0.0.1:5432/rd_manager_workbench_test?schema=app'
+process.env.INTERNAL_API_TOKEN = 'test-internal-token-with-at-least-32-characters'
+process.env.APP_DATA_DIR = '/tmp/rd-manager-test'
+process.env.FILES_DIR = '/tmp/rd-manager-test/files'
+process.env.ENABLE_SWAGGER = 'false'
