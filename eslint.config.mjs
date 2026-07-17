@@ -9,9 +9,20 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.{js,mjs,cjs,ts,mts,cts,tsx}'],
+    files: [
+      '*.{js,mjs,cjs,ts,mts,cts}',
+      'scripts/**/*.{js,mjs,cjs,ts,mts,cts}',
+      'apps/backend/**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}',
+      'apps/desktop/**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}',
+    ],
     languageOptions: {
       globals: globals.node,
+    },
+  },
+  {
+    files: ['apps/renderer/**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx}'],
+    languageOptions: {
+      globals: globals.browser,
     },
   },
 )
