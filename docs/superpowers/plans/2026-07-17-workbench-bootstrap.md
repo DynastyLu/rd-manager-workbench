@@ -30,7 +30,7 @@
 - Create: `pnpm-workspace.yaml`
 - Create: `tsconfig.base.json`
 - Create: `eslint.config.mjs`
-- Create: `vitest.workspace.ts`
+- Create: `vitest.config.ts`
 
 - [ ] **Step 1: Capture source repository status without modifying it**
 
@@ -65,7 +65,7 @@ Use this root package contract:
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.1",
-  "engines": { "node": ">=22" },
+  "engines": { "node": ">=22.12.0" },
   "scripts": {
     "dev": "tsx scripts/dev.ts",
     "build": "pnpm -r --if-present build",
