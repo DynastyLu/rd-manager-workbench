@@ -3,6 +3,10 @@ import { AppError } from '../../../../src/shared/errors/app-error';
 import { ErrorCodes } from '../../../../src/shared/errors/error-codes';
 
 describe('AppError', () => {
+  it('does not expose tenant-specific error codes in the local workbench', () => {
+    expect(Object.keys(ErrorCodes).filter((code) => code.includes('TENANT'))).toEqual([]);
+  });
+
   it('retains error metadata', () => {
     const error = new AppError({
       code: ErrorCodes.VALIDATION_ERROR,
