@@ -122,10 +122,11 @@
   - 复核设计规格后确认初始骨架缺少约定的 trace ID、请求上下文、结构化日志和 `LOG_LEVEL` 配置。
   - 按 TDD 先确认环境测试因 `LOG_LEVEL` 不存在而 RED，成功/错误 health 响应因无 traceId 而 RED，请求上下文与 logger 测试因模块缺失而 RED。
   - 新增全局 AsyncLocalStorage 请求上下文，每个请求始终生成本地 UUID；上下文严格只含 traceId、sourceIp、startedAt，并忽略外部 `x-request-id`。
-  - 成功和错误响应均包含 UUID traceId，不同请求使用不同 trace；错误路径继续去除查询串。
+  - 错误响应包含 UUID traceId，不同错误请求使用不同 trace；成功响应严格保持 `{ success: true, data }`，请求 trace 继续供 logger 关联，错误路径继续去除查询串。
   - 新增默认 `info` 的 debug/info/warn/error 日志级别校验，以及按级别过滤的 JSON 行 logger；字段白名单包含 timestamp、level、service、message、context 和可选 traceId。
   - logger 不序列化异常正文、stack 或对象，并对内部令牌、配置数据库 URL、其他 PostgreSQL URL 和具名 secret 进行脱敏。
   - Nest bootstrap 在替换为 AppLoggerService 后显式刷新缓冲日志；未引入 tenant、user 或旧业务上下文。
+  - 复审按 TDD 先确认 live/ready 因成功响应多出 traceId 而 RED，再移除成功拦截器中的 traceId；错误响应和 logger 的 traceId 保持不变。
 - 创建/修改的审查修复文件：
   - `apps/backend/src/app.module.ts`
   - `apps/backend/src/bootstrap/create-backend-app.ts`
@@ -169,6 +170,7 @@
 | Backend tracing/env 审查 RED | env unit + health E2E | 暴露缺少 LOG_LEVEL 与响应 traceId | env `TS2339`；health 5 tests failed | 通过 |
 | Request context/logger RED | focused unit tests | 因基础设施模块尚不存在而失败 | 两组均为 `TS2307`，exit 1 | 通过 |
 | Backend tracing/logger GREEN | backend full unit + E2E | 环境、上下文、logger 与请求关联全部通过 | unit 3 suites / 18 tests；E2E 1 suite / 7 tests | 通过 |
+| Backend 成功契约 RED/GREEN | health E2E | 成功严格 `{ success, data }`，traceId 仅用于错误/日志 | RED 2 tests 因多余 traceId 失败；GREEN 7 tests passed | 通过 |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |

@@ -36,8 +36,8 @@ describe('health endpoints', () => {
     expect(response.body).toEqual({
       success: true,
       data: { status: 'live' },
-      traceId: expect.stringMatching(UUID_PATTERN),
     })
+    expect(response.body).not.toHaveProperty('traceId')
     expect(queryRaw).not.toHaveBeenCalled()
   })
 
@@ -70,13 +70,13 @@ describe('health endpoints', () => {
     expect(JSON.stringify(response.body)).not.toContain('leaked-query-secret')
   })
 
-  it('assigns a different trace ID to each request', async () => {
+  it('assigns a different trace ID to each error response', async () => {
     const callerProvidedTraceId = '00000000-0000-4000-8000-000000000001'
     const firstResponse = await request(app.getHttpServer())
-      .get('/api/health/live')
+      .get('/api/health/ready')
       .set('x-request-id', callerProvidedTraceId)
-      .expect(200)
-    const secondResponse = await request(app.getHttpServer()).get('/api/health/live').expect(200)
+      .expect(401)
+    const secondResponse = await request(app.getHttpServer()).get('/api/health/ready').expect(401)
 
     expect(firstResponse.body.traceId).toMatch(UUID_PATTERN)
     expect(secondResponse.body.traceId).toMatch(UUID_PATTERN)
@@ -93,8 +93,8 @@ describe('health endpoints', () => {
     expect(response.body).toEqual({
       success: true,
       data: { status: 'ready', database: 'ready' },
-      traceId: expect.stringMatching(UUID_PATTERN),
     })
+    expect(response.body).not.toHaveProperty('traceId')
     expect(queryRaw).toHaveBeenCalledTimes(1)
   })
 
