@@ -172,7 +172,7 @@ model TaskDependency {
 model ProgressReport {
   id                String   @id @default(cuid())
   projectId         String   @map("project_id")
-  reportedAt        DateTime @default(now()) @map("reported_at") @db.Timestamptz(6)
+  reportedAt        DateTime @map("reported_at") @db.Timestamptz(6)
   summary           String
   completionPercent Int      @map("completion_percent")
   blockers          String?
