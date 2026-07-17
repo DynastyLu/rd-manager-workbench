@@ -1,8 +1,16 @@
-import { parseEnvironment } from '../infrastructure/config/env.schema'
+import path from 'node:path'
+
+import {
+  BootstrapEnvironmentError,
+  loadBootstrapEnvironment,
+} from '../infrastructure/database/bootstrap-env'
 import { bootstrapDatabase } from '../infrastructure/database/bootstrap-database'
 
 export async function runDatabaseBootstrap(): Promise<void> {
-  const environment = parseEnvironment(process.env)
+  const environment = loadBootstrapEnvironment({
+    workspaceRoot: path.resolve(__dirname, '../../../..'),
+    processEnvironment: process.env,
+  })
 
   await bootstrapDatabase({
     databaseAdminUrl: environment.DATABASE_ADMIN_URL,
@@ -12,13 +20,18 @@ export async function runDatabaseBootstrap(): Promise<void> {
   })
 }
 
+export function formatBootstrapFailure(error: unknown): string {
+  const errorCode = error instanceof BootstrapEnvironmentError ? error.code : 'BOOTSTRAP_FAILED'
+  return `Database bootstrap failed [${errorCode}].`
+}
+
 if (require.main === module) {
   void runDatabaseBootstrap()
     .then(() => {
       process.stdout.write('Database bootstrap completed.\n')
     })
-    .catch(() => {
-      process.stderr.write('Database bootstrap failed.\n')
+    .catch((error: unknown) => {
+      process.stderr.write(`${formatBootstrapFailure(error)}\n`)
       process.exitCode = 1
     })
 }

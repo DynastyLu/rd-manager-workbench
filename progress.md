@@ -192,6 +192,22 @@
   - `docs/superpowers/plans/2026-07-17-workbench-bootstrap.md`
   - `progress.md`
 
+- **Task 4 fresh-shell 修复：** complete
+- 执行的操作：
+  - 在仅保留 `HOME`、`PATH`、`SHELL`、`USER` 的等效全新 shell 中复现根 `pnpm db:bootstrap` exit 1，确认 CLI 错误复用了 Nest 完整运行时环境解析。
+  - 按 TDD 新增独立 bootstrap 环境加载器测试，先确认 loader 与安全错误格式化不存在而 RED，再实现专用五字段 parser 并得到 GREEN。
+  - bootstrap CLI 固定解析 workspace root，只读取 `.env.example` 的五个非秘密数据库初始化字段，可选 `.env.local` 覆盖，显式 `process.env` 优先级最高；输入对象与进程环境均不被修改。
+  - 保留 production/test 数据库严格关联、loopback maintenance DB、唯一技术角色和 `app` schema 校验；Nest `ConfigModule` 继续独立使用完整 `parseEnvironment`，不会自动加载 example。
+  - 配置错误输出稳定安全 code，未知错误统一为 `BOOTSTRAP_FAILED`，不回显 URL、密码、令牌或底层错误正文。
+  - 在等效全新 shell 中连续两次运行 production bootstrap 均 exit 0；psql 验证 schema owner、`app_metadata` 与唯一 active migration 未变化。
+- 创建/修改的 fresh-shell 修复文件：
+  - `apps/backend/package.json`
+  - `apps/backend/src/commands/bootstrap-database.ts`
+  - `apps/backend/src/infrastructure/database/bootstrap-env.ts`
+  - `apps/backend/test/unit/bootstrap-env.spec.ts`
+  - `pnpm-lock.yaml`
+  - `progress.md`
+
 - **Task 5：** complete
 - 执行的操作：
   - 按 TDD 先创建路由、诊断、运行时与 API 客户端测试，确认因 `App`、`runtime`、`api-client` 尚不存在而 4 个 suites RED。
@@ -249,6 +265,9 @@
 | 生产库幂等 bootstrap | 根 `pnpm db:bootstrap` 连续执行两次 | 首次创建并迁移，再次无副作用 | 两次均输出 completed、exit 0 | 通过 |
 | PostgreSQL 状态核验 | psql 只读查询 | owner/schema/public/table/migration 符合安全基线 | 两库 owner 正确；public CREATE=false；2 表；1 active migration | 通过 |
 | Task 4 完整质量门禁 | backend explicit + 根 `pnpm check` + diff check | 单元/integration/E2E/lint/typecheck/build/rootcheck 全通过 | unit 46、integration 4、E2E 7、contracts 17；全部 exit 0 | 通过 |
+| Bootstrap fresh-shell RED/GREEN | allowlist 新 shell 根命令 | 先复现缺环境失败，再无需 export 幂等成功 | RED exit 1；GREEN 连续两次 exit 0 | 通过 |
+| Bootstrap 专用环境加载器 | focused unit | 优先级、缺文件、不污染与错误脱敏均通过 | 1 suite / 9 tests passed | 通过 |
+| Bootstrap fresh-shell 数据核验 | production psql 只读查询 | owner、metadata table、migration 保持正确 | owner 正确；table 存在；active migration=1 | 通过 |
 | Renderer RED | `pnpm --filter @rd-manager/renderer test` | 新行为测试因生产模块缺失而失败 | 4 suites 均为目标模块不存在，exit 1 | 通过 |
 | Renderer GREEN | renderer test | 路由、诊断、安全 runtime 与鉴权 API 行为通过 | 4 files / 14 tests passed | 通过 |
 | Renderer 包级门禁 | typecheck + lint + test + build | 全部通过，相对资源且无 source map | Vite 302 modules；JS 429.07 kB / gzip 135.37 kB；全部 exit 0 | 通过 |
@@ -276,6 +295,9 @@
 | 2026-07-17 | 质量门禁发现 Zod 运行时收窄未反映到 TypeScript 类型 | 1 | 将库名和角色字段改为 `z.enum`/`z.literal`，focused 39 tests 与 typecheck 通过 |
 | 2026-07-17 | Task 3 可重复构建测试仍要求正式 Prisma schema 不含 model | 1 | 将阶段性断言升级为 Task 4 的唯一 `AppMetadata` 基线、类型/映射和 integration generate 契约 |
 | 2026-07-17 | 唯一 Prisma model 断言首稿缺少 multiline 正则标志 | 1 | 增加 `m` 标志后重跑完整单元集，不放宽模型数量约束 |
+| 2026-07-17 | 全新 shell 未 export Nest 完整运行时变量时根 `db:bootstrap` 失败 | 1 | 拆分专用五字段 bootstrap parser，并按固定文件与显式环境优先级加载 |
+| 2026-07-17 | 缺失环境文件的 Node 错误未通过跨上下文 `instanceof Error` 判断 | 1 | 改为结构化检查非空 object 的 `code=ENOENT`，focused 9 tests 通过 |
+| 2026-07-17 | 在线 `pnpm install` 输出 Done 后因残留 registry 连接未退出 | 2 | 中止空闲进程后用 offline frozen ignore-scripts 完整复验，exit 0 且未修改 renderer 源码 |
 | 2026-07-17 | renderer Vite 配置使用 `vite` 的 `defineConfig` 导致不识别 Vitest `test` 字段 | 1 | 对照根配置改为 `vitest/config`，typecheck 通过 |
 | 2026-07-17 | shadcn 源码中的 react-refresh disable 注释引用了未安装规则 | 1 | 删除无效 disable 注释，保留现有 ESLint 规则并通过 lint |
 | 2026-07-17 | Lucide 图标子路径的 ambient 类型声明最初位于模块文件中，被视为 augmentation | 1 | 将 wildcard 声明移到独立 ambient `.d.ts`，直接导入与严格类型检查同时通过 |
