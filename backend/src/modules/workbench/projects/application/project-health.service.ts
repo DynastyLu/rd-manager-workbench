@@ -21,8 +21,10 @@ export class ProjectHealthService {
       return {
         health: ProjectHealth.RED,
         reasons: [
-          ...(input.missedMilestones > 0 ? ['里程碑已逾期'] : []),
-          ...(input.overdueCriticalTasks > 0 ? ['关键任务已逾期'] : []),
+          ...(input.missedMilestones > 0 ? [`${input.missedMilestones} 个里程碑已延期`] : []),
+          ...(input.overdueCriticalTasks > 0
+            ? [`${input.overdueCriticalTasks} 项关键任务逾期`]
+            : []),
         ],
       };
     }
@@ -31,8 +33,8 @@ export class ProjectHealthService {
       return {
         health: ProjectHealth.YELLOW,
         reasons: [
-          ...(input.overdueTasks > 0 ? ['任务已逾期'] : []),
-          ...(input.dueSoonMilestones > 0 ? ['里程碑临近'] : []),
+          ...(input.overdueTasks > 0 ? [`${input.overdueTasks} 项任务逾期`] : []),
+          ...(input.dueSoonMilestones > 0 ? [`${input.dueSoonMilestones} 个关键里程碑临期`] : []),
         ],
       };
     }

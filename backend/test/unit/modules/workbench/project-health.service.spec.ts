@@ -14,7 +14,7 @@ describe('ProjectHealthService', () => {
       }),
     ).toEqual({
       health: 'RED',
-      reasons: ['里程碑已逾期', '关键任务已逾期'],
+      reasons: ['2 个里程碑已延期', '1 项关键任务逾期'],
     });
   });
 
@@ -29,7 +29,7 @@ describe('ProjectHealthService', () => {
       }),
     ).toEqual({
       health: 'YELLOW',
-      reasons: ['任务已逾期', '里程碑临近'],
+      reasons: ['2 项任务逾期', '1 个关键里程碑临期'],
     });
   });
 
