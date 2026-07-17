@@ -9,6 +9,15 @@
 | Task 3：后端旧业务替换与 PostgreSQL 接入 | complete | `backend/` |
 | Task 4：删除错误自建结构与独立运行验证 | complete | 根元数据；实际命令在 `frontend/`、`backend/` |
 
+## 会话：2026-07-18（全量业务实施恢复）
+
+### 阶段 4：MVP 功能实现
+- **状态：** in_progress
+- 已在 `feature/full-prd-implementation` 隔离分支创建工作区：`/Users/dynastylu/Desktop/AICode/rd-manager-workbench/.worktrees/full-prd-implementation`。
+- 前端依赖安装后 `pnpm test` 通过：12 个文件、28 个测试。
+- 后端全新安装需先执行既有的 `pnpm prisma:generate`；生成后 `pnpm test:unit` 可运行。此为当前框架生成前置条件，后续计划在每项后端验证前显式执行。
+- 已将完整规格拆为七份可独立交付的计划队列；当前写入 `docs/superpowers/plans/2026-07-18-project-execution-p0.md`，先实现项目、里程碑、任务、进展和首页驾驶舱。
+
 ## 会话：2026-07-17
 
 ### 阶段 1：需求设计与范围确认
