@@ -1,0 +1,25 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "timezone": "Asia/Shanghai",
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchPackageNames": ["react", "react-dom", "/^@types/react/"],
+      "groupName": "react"
+    },
+    {
+      "matchPackageNames": [
+        "vitest",
+        "/^@vitest\\//",
+        "/^@testing-library\\//",
+        "/^@playwright\\//"
+      ],
+      "groupName": "testing"
+    },
+    {
+      "matchPackageNames": ["storybook", "/^@storybook\\//"],
+      "groupName": "storybook"
+    }
+  ]
+}

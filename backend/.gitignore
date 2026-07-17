@@ -1,0 +1,12 @@
+node_modules
+dist
+coverage
+.env
+.DS_Store
+*.log
+.turbo
+.cache
+.pnpm-store
+prisma/dev.db
+prisma/migrations/*/migration_lock.toml
+!prisma/migrations/.gitkeep

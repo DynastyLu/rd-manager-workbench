@@ -1,0 +1,146 @@
+/* ============================================================
+   ANIMATIONS — Global keyframes and interaction rules
+   Imported at the bottom of index.css
+   ============================================================ */
+
+/* ── Keyframes ─────────────────────────────────────────── */
+
+@keyframes neon-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    text-shadow: var(--glow-cyan);
+  }
+  50% {
+    opacity: 0.6;
+    text-shadow: none;
+  }
+}
+
+@keyframes scanline {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100vh);
+  }
+}
+
+@keyframes glitch {
+  0%,
+  94%,
+  100% {
+    transform: translateX(0);
+    clip-path: none;
+    opacity: 1;
+  }
+  95% {
+    transform: translateX(-3px);
+    clip-path: inset(10% 0 80% 0);
+    opacity: 0.9;
+  }
+  96% {
+    transform: translateX(3px);
+    clip-path: inset(60% 0 20% 0);
+    opacity: 0.85;
+  }
+  97% {
+    transform: translateX(-2px);
+    clip-path: none;
+    opacity: 1;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+
+@keyframes filecard-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes spinner-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 6px var(--accent-cyan);
+  }
+  50% {
+    box-shadow:
+      0 0 16px var(--accent-cyan),
+      0 0 30px var(--accent-cyan);
+  }
+}
+
+/* ── Reduced motion (accessibility) ──────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Classic theme: no decorative animations ─────────── */
+[data-theme='classic'] * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+/* ── Global button transitions ───────────────────────── */
+button {
+  transition: all 0.2s ease;
+}
+
+/* ── Input focus neon flash ──────────────────────────── */
+input:focus,
+select:focus,
+textarea:focus {
+  animation: neon-pulse 1.5s ease-in-out 1;
+}
+
+/* ── Scrollbar (replaces blocks in index.css) ────────── */
+/* Width intentionally reduced from 6px → 4px for minimal look */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--accent-cyan);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-pink);
+}
+[data-theme='classic'] ::-webkit-scrollbar-thumb {
+  background: #1677ff;
+}
+[data-theme='classic'] ::-webkit-scrollbar-thumb:hover {
+  background: #0958d9;
+}
+
+/* ── Text selection ──────────────────────────────────── */
+::selection {
+  background: var(--accent-selection);
+}

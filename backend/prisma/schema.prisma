@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+model Tenant {
+  id         String       @id @default(cuid())
+  key        String       @unique
+  name       String
+  schemaName String       @unique @map("schema_name")
+  status     TenantStatus @default(PENDING)
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  @@map("tenants")
+}
+
+model PlatformOperator {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_operators")
+}
+
+model Job {
+  id           String          @id @default(cuid())
+  type         String
+  status       JobStatus       @default(QUEUED)
+  queueJobId   String?         @map("queue_job_id")
+  tenantId     String?         @map("tenant_id")
+  tenantKey    String?         @map("tenant_key")
+  operatorId   String?         @map("operator_id")
+  traceId      String?         @map("trace_id")
+  input        Json?
+  result       Json?
+  errorCode    String?         @map("error_code")
+  errorMessage String?         @map("error_message")
+  attempts     Int             @default(0)
+  progress     Int             @default(0)
+  createdAt    DateTime        @default(now()) @map("created_at")
+  startedAt    DateTime?       @map("started_at")
+  finishedAt   DateTime?       @map("finished_at")
+  files        GeneratedFile[]
+
+  @@index([type, status])
+  @@index([tenantId])
+  @@map("jobs")
+}
+
+model GeneratedFile {
+  id         String   @id @default(cuid())
+  jobId      String   @map("job_id")
+  kind       String
+  filename   String
+  mimeType   String   @map("mime_type")
+  size       Int
+  storageKey String   @map("storage_key")
+  createdAt  DateTime @default(now()) @map("created_at")
+  job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("generated_files")
+}
+
+model PaperUser {
+  id           Int                 @id @default(autoincrement())
+  username     String              @unique
+  passwordHash String              @map("password_hash")
+  role         String              @default("user")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  refreshTokens PaperRefreshToken[]
+
+  @@map("paper_users")
+}
+
+model PaperRefreshToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  revoked   Boolean   @default(false)
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      PaperUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("paper_refresh_tokens")
+}

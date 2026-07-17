@@ -1,0 +1,11 @@
+{
+  "rootDir": "..",
+  "preset": "ts-jest",
+  "testEnvironment": "node",
+  "testMatch": ["<rootDir>/test/e2e/**/*.spec.ts"],
+  "moduleFileExtensions": ["ts", "js", "json"],
+  "clearMocks": true,
+  "testTimeout": 60000,
+  "maxWorkers": 1,
+  "passWithNoTests": true
+}

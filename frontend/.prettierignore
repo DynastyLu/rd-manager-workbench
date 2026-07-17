@@ -1,0 +1,10 @@
+coverage
+dist
+node_modules
+playwright-report
+pnpm-lock.yaml
+public/config.js
+stats.html
+storybook-static
+test-results
+*.min.js

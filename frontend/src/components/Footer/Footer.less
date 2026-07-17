@@ -1,0 +1,125 @@
+.footer {
+  flex-shrink: 0;
+  background: var(--footer-bg);
+  border-top: 1px solid var(--border-color);
+  position: relative;
+
+  /* Neon top glow line */
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--accent-pink) 30%,
+      var(--accent-cyan) 70%,
+      transparent 100%
+    );
+    opacity: var(--neon-line-opacity, 0.5);
+  }
+
+  &__inner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 20px;
+    height: 36px;
+  }
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--text-secondary);
+  }
+
+  &__brand-icon {
+    color: var(--accent-cyan);
+    text-shadow: var(--glow-cyan);
+    font-size: 13px;
+  }
+
+  &__sep {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  &__stack {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--font-mono, monospace);
+    letter-spacing: 0.5px;
+  }
+
+  &__spacer {
+    flex: 1;
+  }
+
+  &__copy {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+    font-family: var(--font-mono, monospace);
+  }
+
+  &__copy-accent {
+    color: var(--accent-cyan);
+    opacity: 0.7;
+  }
+}
+
+[data-theme='classic'] {
+  .footer {
+    background: #001529;
+    border-top-color: #003a70;
+
+    &__brand {
+      color: rgba(255, 255, 255, 0.65);
+      letter-spacing: 0.5px;
+    }
+    &__brand-icon {
+      color: #4fc3f7;
+      text-shadow: none;
+    }
+    &__sep,
+    &__stack,
+    &__copy {
+      color: rgba(255, 255, 255, 0.4);
+    }
+    &__copy-accent {
+      color: #4fc3f7;
+      opacity: 1;
+    }
+  }
+}
+
+[data-theme='worldcup'] {
+  .footer {
+    background: rgba(3, 12, 25, 0.94);
+    border-top-color: rgba(246, 208, 93, 0.18);
+
+    &::before {
+      background: linear-gradient(
+        90deg,
+        transparent,
+        var(--accent-green),
+        var(--accent-gold),
+        transparent
+      );
+    }
+
+    &__brand-icon,
+    &__copy-accent {
+      color: var(--accent-gold);
+      text-shadow: var(--glow-gold);
+      opacity: 1;
+    }
+  }
+}
