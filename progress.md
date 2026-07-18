@@ -9,6 +9,18 @@
 | Task 3：后端旧业务替换与 PostgreSQL 接入 | complete | `backend/` |
 | Task 4：删除错误自建结构与独立运行验证 | complete | 根元数据；实际命令在 `frontend/`、`backend/` |
 
+## 会话：2026-07-18（全量业务实施恢复）
+
+### 阶段 4：MVP 功能实现
+- **状态：** in_progress
+- 已在 `feature/full-prd-implementation` 隔离分支创建工作区：`/Users/dynastylu/Desktop/AICode/rd-manager-workbench/.worktrees/full-prd-implementation`。
+- 前端依赖安装后 `pnpm test` 通过：12 个文件、28 个测试。
+- 后端全新安装需先执行既有的 `pnpm prisma:generate`；生成后 `pnpm test:unit` 可运行。此为当前框架生成前置条件，后续计划在每项后端验证前显式执行。
+- 已将完整规格拆为七份可独立交付的计划队列；当前写入 `docs/superpowers/plans/2026-07-18-project-execution-p0.md`，先实现项目、里程碑、任务、进展和首页驾驶舱。
+- 项目执行数据模型质量审查发现：全局查询需要额外索引，已在数据模型任务中以仅新增索引的前向迁移修复；任务与里程碑跨项目一致性将在下一项 `TasksService` 写入校验中强制，实施计划已明确该不变量。
+- 已合并项目执行数据模型、测试库前向迁移、前端本地 API 契约与质量门禁至 `feature/full-prd-implementation`。测试库当前 4 份迁移均已部署；后端单元 8/19、集成 5/7、lint/build 通过，前端 `pnpm check`（含 31 项测试、契约编译、Vite/Storybook 构建）通过。
+- 已合并项目健康度、项目 CRUD/软归档 API、驾驶舱首页和项目列表/表单。两轮审查修复了健康度数量、DTO `null`、完成里程碑可见性、归档更新竞态、编辑详情缓存失效和标题语义。集成后：后端单元 10/23、集成 6/12、lint/build 通过；前端 `pnpm check` 通过（39 项测试、契约编译、Vite/Storybook 构建）。
+
 ## 会话：2026-07-17
 
 ### 阶段 1：需求设计与范围确认

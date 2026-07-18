@@ -25,9 +25,9 @@ pnpm build
 pnpm start:dev
 ```
 
-默认后端地址为 `http://127.0.0.1:4311`。若已有本地 `.env`，请确认其中是 `PORT=4311`。
+开发服务固定监听 `http://127.0.0.1:4311`，避免占用旧项目的默认端口。请先从 `.env.example` 复制出 `.env`；Vite 前端默认请求 `http://127.0.0.1:4311/api`。
 
-Endpoints are loopback-only in production by default:
+Endpoints are loopback-only by default:
 
 - `GET /api/health`
 - `GET /api/health/ready`

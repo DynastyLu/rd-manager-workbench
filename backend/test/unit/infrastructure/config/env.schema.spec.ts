@@ -15,6 +15,16 @@ describe('local workbench database configuration', () => {
     ).toBe(localDatabaseUrl);
   });
 
+  it('defaults the loopback API listener to the isolated workbench port', () => {
+    const environment = validateEnv({
+      NODE_ENV: 'local',
+      DATABASE_URL: localDatabaseUrl,
+    });
+
+    expect(environment.HOST).toBe('127.0.0.1');
+    expect(environment.PORT).toBe(4311);
+  });
+
   it.each([
     'postgresql://postgres@127.0.0.1:5432/rd_manager_workbench?schema=app',
     'postgresql://rd_manager_workbench_app@localhost:5432/rd_manager_workbench?schema=app',

@@ -1,0 +1,5 @@
+{
+  "extends": "../../../../../tsconfig.json",
+  "include": ["contracts.test.ts", "../../../../vite-env.d.ts"],
+  "exclude": []
+}
