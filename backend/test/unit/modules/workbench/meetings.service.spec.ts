@@ -120,8 +120,30 @@ describe('MeetingsService', () => {
       data: {
         type: 'MEETING_MINUTES',
         title: 'Architecture review 会议纪要',
-        content: { type: 'doc', content: [] },
-        plainText: 'Legacy notes',
+        content: {
+          type: 'doc',
+          content: [
+            {
+              type: 'heading',
+              attrs: { level: 2 },
+              content: [{ type: 'text', text: '会议要点' }],
+            },
+            { type: 'paragraph', content: [{ type: 'text', text: 'Legacy notes' }] },
+            {
+              type: 'heading',
+              attrs: { level: 2 },
+              content: [{ type: 'text', text: '决策' }],
+            },
+            { type: 'paragraph' },
+            {
+              type: 'heading',
+              attrs: { level: 2 },
+              content: [{ type: 'text', text: '行动项' }],
+            },
+            { type: 'paragraph' },
+          ],
+        },
+        plainText: '会议要点\nLegacy notes\n决策\n行动项',
         meetingId: meeting.id,
         projectId: meeting.projectId,
       },
