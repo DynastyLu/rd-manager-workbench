@@ -102,32 +102,10 @@ describe('workspace route registry', () => {
     expect(await screen.findByText('/spaces/projects:REPLACE')).toBeInTheDocument()
   })
 
-  it('keeps the documents app available while its dedicated experience evolves', () => {
+  it('keeps the real documents app available at its canonical route', () => {
     expect(findRoute(ROUTES.DOCS)?.availability).toBe('AVAILABLE')
     expect(findRoute(ROUTES.DOCS)?.component).toBeDefined()
-  })
-
-  it('renders the existing knowledge directory at the canonical documents path', () => {
-    const documentsRoute = findRoute(ROUTES.DOCS)
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
-
-    render(
-      createElement(
-        MemoryRouter,
-        { initialEntries: [ROUTES.DOCS] },
-        createElement(
-          Routes,
-          undefined,
-          createElement(Route, {
-            path: ROUTES.DOCS,
-            element: documentsRoute ? createElement(documentsRoute.component) : null,
-          })
-        )
-      )
-    )
-
-    expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
-    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(findRoute(ROUTES.DOCS)?.redirectTo).toBeUndefined()
   })
 
   it('uses the shared planned state for an unknown governance module', () => {
