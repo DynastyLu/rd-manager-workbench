@@ -1,6 +1,26 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+
+const dndHarness = vi.hoisted(() => ({
+  dragEnd: undefined as
+    | ((event: { active: { id: string }; over: { id: string } | null }) => void)
+    | undefined,
+}))
+
+vi.mock('@dnd-kit/core', async () => {
+  const actual = await vi.importActual<typeof import('@dnd-kit/core')>('@dnd-kit/core')
+  const react = await vi.importActual<typeof import('react')>('react')
+
+  return {
+    ...actual,
+    DndContext: (props: ComponentProps<typeof actual.DndContext>) => {
+      dndHarness.dragEnd = props.onDragEnd as typeof dndHarness.dragEnd
+      return react.createElement(actual.DndContext, props)
+    },
+  }
+})
 
 import { CalendarView } from '../components/CalendarView'
 import { FormView } from '../components/FormView'
@@ -118,6 +138,83 @@ describe('KanbanView', () => {
     )
 
     expect(screen.getByText('请先添加单选字段，再创建看板分组。')).toBeInTheDocument()
+  })
+
+  it('limits each card to statuses allowed for its record type', () => {
+    const typedStatusField = {
+      ...fields[1],
+      config: {
+        options: [
+          { label: '待开始', value: 'SCHEDULED' },
+          { label: '已结束', value: 'FINISHED' },
+          { label: '待处理', value: 'TODO' },
+          { label: '已完成', value: 'DONE' },
+        ],
+        optionsByRecordType: {
+          MEETING: ['SCHEDULED', 'FINISHED'],
+          ACTION: ['TODO', 'DONE'],
+        },
+      },
+    }
+    const typedRecords = [
+      { ...records[0], id: 'meeting-1', values: { title: '研发周会', recordType: 'MEETING', status: 'SCHEDULED' } },
+      { ...records[0], id: 'action-1', values: { title: '整理纪要', recordType: 'ACTION', status: 'TODO' } },
+    ]
+
+    render(
+      <KanbanView
+        fields={[fields[0], typedStatusField]}
+        records={typedRecords}
+        groupFieldKey="status"
+        onRecordUpdate={vi.fn()}
+      />
+    )
+
+    const meetingStatus = screen.getByRole('combobox', { name: '移动“研发周会”' })
+    const actionStatus = screen.getByRole('combobox', { name: '移动“整理纪要”' })
+    expect(within(meetingStatus).getByRole('option', { name: '已结束' })).toBeInTheDocument()
+    expect(within(meetingStatus).queryByRole('option', { name: '待处理' })).not.toBeInTheDocument()
+    expect(within(actionStatus).getByRole('option', { name: '已完成' })).toBeInTheDocument()
+    expect(within(actionStatus).queryByRole('option', { name: '待开始' })).not.toBeInTheDocument()
+  })
+
+  it('ignores a drag target that is not allowed for the record type', () => {
+    const onRecordUpdate = vi.fn()
+    const typedStatusField = {
+      ...fields[1],
+      config: {
+        options: [
+          { label: '待开始', value: 'SCHEDULED' },
+          { label: '已结束', value: 'FINISHED' },
+          { label: '待处理', value: 'TODO' },
+        ],
+        optionsByRecordType: {
+          MEETING: ['SCHEDULED', 'FINISHED'],
+          ACTION: ['TODO'],
+        },
+      },
+    }
+    const meeting = {
+      ...records[0],
+      id: 'meeting-1',
+      values: { title: '研发周会', recordType: 'MEETING', status: 'SCHEDULED' },
+    }
+
+    render(
+      <KanbanView
+        fields={[fields[0], typedStatusField]}
+        records={[meeting]}
+        groupFieldKey="status"
+        onRecordUpdate={onRecordUpdate}
+      />
+    )
+
+    act(() => dndHarness.dragEnd?.({
+      active: { id: 'record:meeting-1' },
+      over: { id: 'column:TODO' },
+    }))
+
+    expect(onRecordUpdate).not.toHaveBeenCalled()
   })
 })
 

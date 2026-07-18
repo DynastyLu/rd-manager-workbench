@@ -47,6 +47,33 @@ function readSelectOptions(field: DataField): SelectOption[] {
   })
 }
 
+function readRecordTypeOptions(field: DataField, record: DataRecord): SelectOption[] | null {
+  const optionsByRecordType = field.config.optionsByRecordType
+  if (!isUnknownRecord(optionsByRecordType)) return null
+
+  const recordType = readText(record.values.recordType)
+  const configuredOptions = recordType ? optionsByRecordType[recordType] : undefined
+  if (!Array.isArray(configuredOptions)) return []
+
+  const optionByValue = new Map(readSelectOptions(field).map((option) => [option.value, option]))
+  return configuredOptions.flatMap((configuredOption) => {
+    const value = typeof configuredOption === 'string'
+      ? configuredOption
+      : isUnknownRecord(configuredOption) && typeof configuredOption.value === 'string'
+        ? configuredOption.value
+        : ''
+    if (!value) return []
+
+    const existingOption = optionByValue.get(value)
+    if (existingOption) return [existingOption]
+    if (!isUnknownRecord(configuredOption)) return [{ label: value, value }]
+
+    const label = typeof configuredOption.label === 'string' ? configuredOption.label : value
+    const color = typeof configuredOption.color === 'string' ? configuredOption.color : undefined
+    return [{ label, value, ...(color ? { color } : {}) }]
+  })
+}
+
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -73,6 +100,7 @@ function KanbanCard({
   onMove,
   onOpen,
   options,
+  showUngroupedOption,
   record,
 }: {
   disabled: boolean
@@ -81,6 +109,7 @@ function KanbanCard({
   onMove: (value: string | null) => void
   onOpen?: () => void
   options: SelectOption[]
+  showUngroupedOption: boolean
   record: DataRecord
 }) {
   const title = getRecordTitle(record, fields)
@@ -188,7 +217,7 @@ function KanbanCard({
           fontSize: 12,
         }}
       >
-        <option value={UNGROUPED_VALUE}>未分组</option>
+        {showUngroupedOption ? <option value={UNGROUPED_VALUE}>未分组</option> : null}
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -274,6 +303,8 @@ export function KanbanView({
 
   const moveRecord = (record: DataRecord, nextValue: string | null) => {
     if ((record.values[groupField.key] ?? null) === nextValue) return
+    const recordTypeOptions = readRecordTypeOptions(groupField, record)
+    if (recordTypeOptions && (nextValue === null || !recordTypeOptions.some((option) => option.value === nextValue))) return
     void onRecordUpdate(record.id, moveKanbanRecord(record, groupField.key, nextValue))
   }
 
@@ -329,7 +360,8 @@ export function KanbanView({
                     fields={fields}
                     groupField={groupField}
                     record={record}
-                    options={options}
+                    options={readRecordTypeOptions(groupField, record) ?? options}
+                    showUngroupedOption={readRecordTypeOptions(groupField, record) === null}
                     onOpen={onOpenRecord ? () => onOpenRecord(record) : undefined}
                     onMove={(value) => moveRecord(record, value)}
                   />
