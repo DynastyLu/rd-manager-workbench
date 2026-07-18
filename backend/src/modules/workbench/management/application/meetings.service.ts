@@ -1,0 +1,25 @@
+import { HttpStatus, Injectable } from '@nestjs/common';
+import { MeetingActionStatus, MeetingStatus } from '@prisma/client';
+import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { AppError } from '../../../../shared/errors/app-error';
+import { ErrorCodes } from '../../../../shared/errors/error-codes';
+import { TasksService } from '../../tasks/application/tasks.service';
+import { CreateMeetingActionDto, CreateMeetingAgendaItemDto, CreateMeetingDto, CreateSourceTaskDto, PageQueryDto, UpdateMeetingActionDto, UpdateMeetingDto } from '../interface/http/dto/management.dto';
+
+@Injectable()
+export class MeetingsService {
+  constructor(private readonly prisma:PlatformPrismaService,private readonly tasks:TasksService){}
+  async list(query:PageQueryDto){const page=query.page??1,pageSize=Math.min(query.pageSize??20,100),where={archivedAt:null};const[data,total]=await this.prisma.$transaction([this.prisma.meeting.findMany({where,orderBy:[{scheduledAt:'asc'}],skip:(page-1)*pageSize,take:pageSize}),this.prisma.meeting.count({where})]);return{data,meta:{page,pageSize,total}};}
+  async get(id:string){const item=await this.prisma.meeting.findFirst({where:{id,archivedAt:null},include:{actions:{where:{archivedAt:null},orderBy:{dueAt:'asc'}},agendaItems:{where:{archivedAt:null},orderBy:{sequence:'asc'}},decisions:{where:{archivedAt:null},orderBy:{updatedAt:'desc'}}}});if(!item)throw this.notFound(ErrorCodes.MEETING_NOT_FOUND,'Meeting not found');return item;}
+  async create(dto:CreateMeetingDto){if(dto.projectId)await this.assertProject(dto.projectId);return this.prisma.meeting.create({data:{...dto,scheduledAt:new Date(dto.scheduledAt),heldAt:dto.heldAt?new Date(dto.heldAt):(dto.status===MeetingStatus.HELD?new Date():undefined)}})}
+  async update(id:string,dto:UpdateMeetingDto){const old=await this.get(id);if(dto.projectId)await this.assertProject(dto.projectId);const status=dto.status??old.status;return this.prisma.meeting.update({where:{id},data:{...dto,scheduledAt:dto.scheduledAt?new Date(dto.scheduledAt):undefined,heldAt:status===MeetingStatus.HELD?(dto.heldAt?new Date(dto.heldAt):(old.heldAt??new Date())):null}})}
+  async archive(id:string){return this.prisma.$transaction(async tx=>{const meeting=await tx.meeting.findFirst({where:{id,archivedAt:null}});if(!meeting)throw this.notFound(ErrorCodes.MEETING_NOT_FOUND,'Meeting not found');const open=await tx.meetingAction.count({where:{meetingId:id,archivedAt:null,status:{in:[MeetingActionStatus.OPEN,MeetingActionStatus.IN_PROGRESS]}}});if(open)throw new AppError({code:ErrorCodes.MEETING_HAS_OPEN_ACTIONS,message:'Meeting has open actions',statusCode:HttpStatus.CONFLICT});await tx.meeting.update({where:{id},data:{archivedAt:new Date()}});});}
+  async createAction(meetingId:string,dto:CreateMeetingActionDto){await this.get(meetingId);return this.prisma.meetingAction.create({data:{meetingId,...dto,dueAt:dto.dueAt?new Date(dto.dueAt):undefined}})}
+  async updateAction(meetingId:string,id:string,dto:UpdateMeetingActionDto){const result=await this.prisma.meetingAction.updateMany({where:{id,meetingId,archivedAt:null},data:{...dto,dueAt:dto.dueAt?new Date(dto.dueAt):undefined}});if(!result.count)throw this.notFound(ErrorCodes.MEETING_ACTION_NOT_FOUND,'Meeting action not found');return this.prisma.meetingAction.findUnique({where:{id}})}
+  async archiveAction(meetingId:string,id:string){const result=await this.prisma.meetingAction.updateMany({where:{id,meetingId,archivedAt:null},data:{archivedAt:new Date()}});if(!result.count)throw this.notFound(ErrorCodes.MEETING_ACTION_NOT_FOUND,'Meeting action not found');}
+  async createAgendaItem(meetingId:string,dto:CreateMeetingAgendaItemDto){return this.prisma.$transaction(tx=>this.createIntelligenceAgendaInTransaction(tx,meetingId,dto))}
+  async createIntelligenceAgendaInTransaction(tx:any,meetingId:string,dto:CreateMeetingAgendaItemDto){const meeting=await tx.meeting.findFirst({where:{id:meetingId,archivedAt:null}});if(!meeting)throw this.notFound(ErrorCodes.MEETING_NOT_FOUND,'Meeting not found');return tx.meetingAgendaItem.create({data:{meetingId,...dto}})}
+  async createTaskForAction(id:string,input:CreateSourceTaskDto){return this.prisma.$transaction(async tx=>{const action=await tx.meetingAction.findFirst({where:{id,archivedAt:null}});if(!action)throw this.notFound(ErrorCodes.MEETING_ACTION_NOT_FOUND,'Meeting action not found');if(action.taskId)throw new AppError({code:ErrorCodes.MEETING_ACTION_TASK_EXISTS,message:'Meeting action already has a task',statusCode:HttpStatus.CONFLICT});const task=await this.tasks.createTaskInTransaction(tx,{...input,sourceType:'MEETING_ACTION',sourceId:action.id});await tx.meetingAction.update({where:{id},data:{taskId:task.id}});return task;});}
+  private async assertProject(id:string){const project=await this.prisma.project.findFirst({where:{id,archivedAt:null}});if(!project)throw this.notFound(ErrorCodes.PROJECT_NOT_FOUND,'Project not found')}
+  private notFound(code:(typeof ErrorCodes)[keyof typeof ErrorCodes],message:string){return new AppError({code,message,statusCode:HttpStatus.NOT_FOUND});}
+}

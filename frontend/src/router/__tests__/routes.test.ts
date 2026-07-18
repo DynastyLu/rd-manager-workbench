@@ -8,15 +8,25 @@ describe('workbench routes', () => {
       '/projects',
       '/tasks',
       '/application-cases',
+      '/risks',
+      '/issues',
+      '/decisions',
+      '/partners',
+      '/meetings',
       '/settings',
       '*',
     ])
-    expect(routeCategories.flatMap((category) => category.routes)).toEqual(routes.slice(0, 5))
+    expect(routeCategories.flatMap((category) => category.routes)).toEqual(routes.slice(0, 10))
     expect(routeCategories[0]?.routes.map((route) => route.title)).toEqual([
       '首页',
       '项目',
       '任务',
       '申报认定',
+      '风险',
+      '问题',
+      '决策',
+      '合作方',
+      '会议',
       '设置',
     ])
   })

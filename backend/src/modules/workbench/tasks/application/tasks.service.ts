@@ -4,6 +4,7 @@ import { PlatformPrismaService } from '../../../../infrastructure/prisma/platfor
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { ProjectHealthService } from '../../projects/application/project-health.service';
+import { ProjectHealthSnapshotService } from '../../projects/application/project-health-snapshot.service';
 import { CreateMilestoneDto } from '../interface/http/dto/create-milestone.dto';
 import { CreateProgressReportDto } from '../interface/http/dto/create-progress-report.dto';
 import { CreateTaskDto } from '../interface/http/dto/create-task.dto';
@@ -27,15 +28,22 @@ export class TasksService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly projectHealthService: ProjectHealthService,
+    private readonly healthSnapshotService?: ProjectHealthSnapshotService,
   ) {}
 
   async createTask(dto: CreateTaskDto) {
     return this.prisma.$transaction(async (tx) => {
-      await this.acquireTaskGraphLock(tx);
-      await this.assertTaskReferences(tx, dto);
-      await this.assertCompletionAllowed(tx, dto.status, dto.dependencyIds ?? []);
-      await this.acquireProjectHealthLocks(tx, [dto.projectId]);
-      const task = await tx.workTask.create({
+      return this.createTaskInTransaction(tx, dto);
+    });
+  }
+
+  async createTaskInTransaction(tx: Prisma.TransactionClient, dto: CreateTaskDto) {
+    this.assertCompleteSourceReference(dto.sourceType, dto.sourceId);
+    await this.acquireTaskGraphLock(tx);
+    await this.assertTaskReferences(tx, dto);
+    await this.assertCompletionAllowed(tx, dto.status, dto.dependencyIds ?? []);
+    await this.acquireProjectHealthLocks(tx, [dto.projectId]);
+    const task = await tx.workTask.create({
         data: {
           title: dto.title,
           ...this.toTaskFields(dto),
@@ -49,10 +57,9 @@ export class TasksService {
             : {}),
         },
         include: { dependencies: { select: { dependsOnTaskId: true } } },
-      });
-      if (task.projectId) await this.recalculateHealth(tx, task.projectId);
-      return this.toTaskResponse(task);
     });
+    if (task.projectId) await this.recalculateHealth(tx, task.projectId);
+    return this.toTaskResponse(task);
   }
 
   async listTasks(query: ListTasksQueryDto) {
@@ -109,7 +116,10 @@ export class TasksService {
         dependencyIds:
           dto.dependencyIds ?? existing.dependencies.map(({ dependsOnTaskId }) => dependsOnTaskId),
         status: dto.status ?? existing.status,
+        sourceType: dto.sourceType !== undefined ? dto.sourceType : existing.sourceType,
+        sourceId: dto.sourceId !== undefined ? dto.sourceId : existing.sourceId,
       };
+      this.assertCompleteSourceReference(merged.sourceType, merged.sourceId);
       await this.assertTaskReferences(tx, merged, id);
       await this.assertProjectMoveDoesNotSplitHierarchy(
         tx,
@@ -234,6 +244,17 @@ export class TasksService {
       ...(dto.sourceType !== undefined ? { sourceType: dto.sourceType } : {}),
       ...(dto.sourceId !== undefined ? { sourceId: dto.sourceId } : {}),
     };
+  }
+
+  private assertCompleteSourceReference(sourceType: string | null | undefined, sourceId: string | null | undefined) {
+    const normalizedType = sourceType?.trim();
+    const normalizedId = sourceId?.trim();
+    if (Boolean(normalizedType) !== Boolean(normalizedId)) {
+      throw this.unprocessable(
+        ErrorCodes.SOURCE_REFERENCE_INCOMPLETE,
+        'Task sourceType and sourceId must be supplied together',
+      );
+    }
   }
 
   private async assertTaskReferences(
@@ -389,6 +410,10 @@ export class TasksService {
   }
 
   private async recalculateHealth(tx: DatabaseClient, projectId: string) {
+    if (this.healthSnapshotService) {
+      await this.healthSnapshotService.recalculate(tx as Prisma.TransactionClient, projectId);
+      return;
+    }
     const now = new Date();
     const dueSoon = new Date(now);
     dueSoon.setDate(dueSoon.getDate() + 7);
@@ -432,6 +457,7 @@ export class TasksService {
       dueSoonMilestones,
       overdueTasks,
       overdueCriticalTasks,
+      openHighRisks: 0,
     });
     await tx.projectHealthSnapshot.create({
       data: { projectId, health: health.health, reasons: health.reasons, calculatedAt: now },

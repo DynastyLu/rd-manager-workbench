@@ -1,6 +1,20 @@
 import { ProjectHealthService } from '../../../../src/modules/workbench/projects/application/project-health.service';
 
 describe('ProjectHealthService', () => {
+  it('marks a project red when an unresolved high risk exists', () => {
+    const service = new ProjectHealthService();
+
+    expect(
+      service.calculate({
+        today: new Date('2026-07-18T00:00:00.000Z'),
+        missedMilestones: 0,
+        dueSoonMilestones: 0,
+        overdueTasks: 0,
+        overdueCriticalTasks: 0,
+        openHighRisks: 1,
+      }),
+    ).toEqual({ health: 'RED', reasons: ['1 项高风险未关闭'] });
+  });
   const service = new ProjectHealthService();
 
   it('returns RED with missed-milestone and critical-overdue reasons in a stable order', () => {

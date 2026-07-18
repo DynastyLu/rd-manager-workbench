@@ -1,0 +1,4 @@
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { RisksService } from '../../application/risks.service';
+import { CreateRiskDto, ListRisksQueryDto, UpdateRiskDto } from './dto/management.dto';
+@Controller('risks') export class RisksController { constructor(private readonly service:RisksService){} @Get() list(@Query() q:ListRisksQueryDto){return this.service.list(q)} @Post() create(@Body() d:CreateRiskDto){return this.service.create(d)} @Get(':id') get(@Param('id') id:string){return this.service.get(id)} @Patch(':id') update(@Param('id')id:string,@Body()d:UpdateRiskDto){return this.service.update(id,d)} @Delete(':id') @HttpCode(HttpStatus.NO_CONTENT) async archive(@Param('id')id:string){await this.service.archive(id)} }

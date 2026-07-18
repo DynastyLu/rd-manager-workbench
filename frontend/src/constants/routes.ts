@@ -4,5 +4,10 @@ export const ROUTES = {
   PROJECTS: '/projects',
   TASKS: '/tasks',
   APPLICATION_CASES: '/application-cases',
+  RISKS: '/risks',
+  ISSUES: '/issues',
+  DECISIONS: '/decisions',
+  PARTNERS: '/partners',
+  MEETINGS: '/meetings',
   SETTINGS: '/settings',
 }

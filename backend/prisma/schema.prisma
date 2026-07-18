@@ -129,6 +129,75 @@ enum SubmissionStatus {
   @@schema("app")
 }
 
+enum RiskLikelihood {
+  LOW
+  MEDIUM
+  HIGH
+  @@schema("app")
+}
+enum RiskImpact {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+  @@schema("app")
+}
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+  @@schema("app")
+}
+enum RiskStatus {
+  OPEN
+  MITIGATING
+  CLOSED
+  @@schema("app")
+}
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  @@schema("app")
+}
+enum DecisionStatus {
+  DRAFT
+  DECIDED
+  SUPERSEDED
+  @@schema("app")
+}
+enum AgreementStatus {
+  DRAFT
+  ACTIVE
+  EXPIRED
+  TERMINATED
+  @@schema("app")
+}
+enum CommunicationType {
+  EMAIL
+  PHONE
+  MEETING
+  CHAT
+  VISIT
+  OTHER
+  @@schema("app")
+}
+enum MeetingStatus {
+  PLANNED
+  HELD
+  CANCELLED
+  @@schema("app")
+}
+enum MeetingActionStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELLED
+  @@schema("app")
+}
+
 model Project {
   id                String                  @id @default(cuid())
   code              String                  @unique
@@ -153,6 +222,11 @@ model Project {
   progressReports   ProgressReport[]
   healthSnapshots   ProjectHealthSnapshot[]
   applicationCases  ApplicationCase[]
+  risks             Risk[]
+  issues            Issue[]
+  decisions         Decision[]
+  communications    CommunicationRecord[]
+  meetings          Meeting[]
 
   @@index([status, archivedAt])
   @@index([plannedEndAt])
@@ -173,6 +247,9 @@ model Milestone {
   updatedAt  DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
   project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   tasks      WorkTask[]
+  risks      Risk[]
+  issues     Issue[]
+  decisions  Decision[]
 
   @@index([projectId, plannedAt])
   @@index([plannedAt])
@@ -204,6 +281,9 @@ model WorkTask {
   children          WorkTask[]       @relation("TaskHierarchy")
   dependencies      TaskDependency[] @relation("DependencyTask")
   dependents        TaskDependency[] @relation("DependencyDependsOn")
+  risks             Risk[]
+  issues            Issue[]
+  decisions         Decision[]
 
   @@index([projectId, status, dueAt])
   @@index([milestoneId])
@@ -520,5 +600,228 @@ model SubmissionMaterialVersion {
   @@id([submissionRecordId, materialVersionId])
   @@index([materialVersionId])
   @@map("submission_material_versions")
+  @@schema("app")
+}
+
+model Risk {
+  id          String         @id @default(cuid())
+  projectId   String?        @map("project_id")
+  milestoneId String?        @map("milestone_id")
+  taskId      String?        @map("task_id")
+  title       String
+  description String?
+  likelihood  RiskLikelihood
+  impact      RiskImpact
+  level       RiskLevel
+  mitigation  String?
+  ownerName   String?        @map("owner_name")
+  status      RiskStatus     @default(OPEN)
+  closedAt    DateTime?      @map("closed_at") @db.Timestamptz(6)
+  archivedAt  DateTime?      @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project     Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  milestone   Milestone?     @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  task        WorkTask?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, archivedAt, status])
+  @@index([taskId])
+  @@map("risks")
+  @@schema("app")
+}
+
+model Issue {
+  id                 String      @id @default(cuid())
+  projectId          String?     @map("project_id")
+  milestoneId        String?     @map("milestone_id")
+  taskId             String?     @map("task_id")
+  title              String
+  description        String?
+  impactObject       String?     @map("impact_object")
+  proposedResolution String?     @map("proposed_resolution")
+  ownerName          String?     @map("owner_name")
+  dueAt              DateTime?   @map("due_at") @db.Timestamptz(6)
+  verificationResult String?     @map("verification_result")
+  status             IssueStatus @default(OPEN)
+  closedAt           DateTime?   @map("closed_at") @db.Timestamptz(6)
+  archivedAt         DateTime?   @map("archived_at") @db.Timestamptz(6)
+  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project            Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  milestone          Milestone?  @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  task               WorkTask?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, archivedAt, status])
+  @@index([dueAt])
+  @@map("issues")
+  @@schema("app")
+}
+
+model Decision {
+  id               String         @id @default(cuid())
+  projectId        String?        @map("project_id")
+  milestoneId      String?        @map("milestone_id")
+  taskId           String?        @map("task_id")
+  meetingId        String?        @map("meeting_id")
+  title            String
+  background       String?
+  alternatives     Json
+  basis            String?
+  conclusion       String?
+  participantNames String[]       @default([]) @map("participant_names")
+  status           DecisionStatus @default(DRAFT)
+  decidedAt        DateTime?      @map("decided_at") @db.Timestamptz(6)
+  archivedAt       DateTime?      @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project          Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  milestone        Milestone?     @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  task             WorkTask?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  meeting          Meeting?       @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, archivedAt, status])
+  @@index([meetingId])
+  @@map("decisions")
+  @@schema("app")
+}
+
+model Partner {
+  id          String                @id @default(cuid())
+  name        String
+  shortName   String?               @map("short_name")
+  category    String?
+  address     String?
+  notes       String?
+  archivedAt  DateTime?             @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  contacts    PartnerContact[]
+  agreements  PartnerAgreement[]
+  communications CommunicationRecord[]
+
+  @@index([archivedAt, name])
+  @@map("partners")
+  @@schema("app")
+}
+
+model PartnerContact {
+  id         String    @id @default(cuid())
+  partnerId  String    @map("partner_id")
+  name       String
+  title      String?
+  phone      String?
+  email      String?
+  notes      String?
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  partner    Partner   @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  communications CommunicationRecord[]
+
+  @@index([partnerId, archivedAt])
+  @@map("partner_contacts")
+  @@schema("app")
+}
+
+model PartnerAgreement {
+  id          String          @id @default(cuid())
+  partnerId   String          @map("partner_id")
+  title       String
+  agreementNo String?         @map("agreement_no")
+  status      AgreementStatus @default(DRAFT)
+  startAt     DateTime?       @map("start_at") @db.Timestamptz(6)
+  endAt       DateTime?       @map("end_at") @db.Timestamptz(6)
+  notes       String?
+  archivedAt  DateTime?       @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  partner     Partner         @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+
+  @@index([partnerId, archivedAt, status])
+  @@map("partner_agreements")
+  @@schema("app")
+}
+
+model CommunicationRecord {
+  id             String            @id @default(cuid())
+  partnerId      String            @map("partner_id")
+  projectId      String?           @map("project_id")
+  contactId      String?           @map("contact_id")
+  type           CommunicationType
+  occurredAt     DateTime          @map("occurred_at") @db.Timestamptz(6)
+  subject        String
+  summary        String?
+  promises       String?
+  ownerName      String?           @map("owner_name")
+  nextFollowUpAt DateTime?         @map("next_follow_up_at") @db.Timestamptz(6)
+  archivedAt     DateTime?         @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  partner        Partner           @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  project        Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  contact        PartnerContact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([partnerId, archivedAt, occurredAt])
+  @@index([nextFollowUpAt])
+  @@map("communication_records")
+  @@schema("app")
+}
+
+model Meeting {
+  id               String        @id @default(cuid())
+  projectId        String?       @map("project_id")
+  title            String
+  scheduledAt      DateTime      @map("scheduled_at") @db.Timestamptz(6)
+  heldAt           DateTime?     @map("held_at") @db.Timestamptz(6)
+  status           MeetingStatus @default(PLANNED)
+  agenda           String?
+  minutes          String?
+  participantNames String[]      @default([]) @map("participant_names")
+  archivedAt       DateTime?     @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project          Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  actions          MeetingAction[]
+  agendaItems      MeetingAgendaItem[]
+  decisions        Decision[]
+
+  @@index([projectId, archivedAt, status])
+  @@index([scheduledAt])
+  @@map("meetings")
+  @@schema("app")
+}
+
+model MeetingAgendaItem {
+  id          String    @id @default(cuid())
+  meetingId   String    @map("meeting_id")
+  title       String
+  description String?
+  sequence    Int       @default(0)
+  archivedAt  DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  meeting     Meeting   @relation(fields: [meetingId], references: [id], onDelete: Restrict)
+
+  @@index([meetingId, archivedAt, sequence])
+  @@map("meeting_agenda_items")
+  @@schema("app")
+}
+
+model MeetingAction {
+  id          String              @id @default(cuid())
+  meetingId   String              @map("meeting_id")
+  title       String
+  description String?
+  ownerName   String?             @map("owner_name")
+  dueAt       DateTime?           @map("due_at") @db.Timestamptz(6)
+  status      MeetingActionStatus @default(OPEN)
+  taskId      String?             @unique @map("task_id")
+  archivedAt  DateTime?           @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  meeting     Meeting             @relation(fields: [meetingId], references: [id], onDelete: Restrict)
+
+  @@index([meetingId, archivedAt, dueAt])
+  @@map("meeting_actions")
   @@schema("app")
 }

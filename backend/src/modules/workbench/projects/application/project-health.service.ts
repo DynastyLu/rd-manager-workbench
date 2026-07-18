@@ -7,6 +7,7 @@ export interface ProjectHealthInput {
   missedMilestones: number;
   dueSoonMilestones: number;
   overdueTasks: number;
+  openHighRisks?: number;
 }
 
 export interface ProjectHealthResult {
@@ -17,7 +18,8 @@ export interface ProjectHealthResult {
 @Injectable()
 export class ProjectHealthService {
   calculate(input: ProjectHealthInput): ProjectHealthResult {
-    if (input.missedMilestones > 0 || input.overdueCriticalTasks > 0) {
+    const openHighRisks = input.openHighRisks ?? 0;
+    if (input.missedMilestones > 0 || input.overdueCriticalTasks > 0 || openHighRisks > 0) {
       return {
         health: ProjectHealth.RED,
         reasons: [
@@ -25,6 +27,7 @@ export class ProjectHealthService {
           ...(input.overdueCriticalTasks > 0
             ? [`${input.overdueCriticalTasks} 项关键任务逾期`]
             : []),
+          ...(openHighRisks > 0 ? [`${openHighRisks} 项高风险未关闭`] : []),
         ],
       };
     }
