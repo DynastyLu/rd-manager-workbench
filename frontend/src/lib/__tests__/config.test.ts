@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 type WindowWithConfig = Window & {
   __APP_CONFIG__?: {
-    sentryDsn: string
+    sentryDsn?: string
+    apiBaseUrl?: string
+    socketUrl?: string
   }
 }
 
@@ -22,9 +24,14 @@ describe('config module', () => {
     // 模拟运维修改了 public/config.js 的效果
     ;(window as WindowWithConfig).__APP_CONFIG__ = {
       sentryDsn: 'test-dsn',
+      apiBaseUrl: 'http://127.0.0.1:4311/api',
+      socketUrl: 'http://127.0.0.1:4311',
     }
     const { config } = await import('../config')
+    delete (window as WindowWithConfig).__APP_CONFIG__
     expect(config.sentryDsn).toBe('test-dsn')
+    expect(config.apiBaseUrl).toBe('http://127.0.0.1:4311/api')
+    expect(config.socketUrl).toBe('http://127.0.0.1:4311')
   })
 
   it('config object is frozen — mutations throw in strict mode', async () => {

@@ -15,11 +15,31 @@ vi.mock('socket.io-client', () => ({ io }))
 
 describe('notification socket', () => {
   beforeEach(() => {
+    vi.resetModules()
+    Reflect.deleteProperty(window, '__APP_CONFIG__')
     io.mockReset()
     socket.on.mockReset()
     socket.off.mockReset()
     socket.disconnect.mockReset()
     io.mockReturnValue(socket)
+  })
+
+  it('prefers the runtime socket URL embedded in the production config file', async () => {
+    window.__APP_CONFIG__ = { socketUrl: 'http://127.0.0.1:4999/' }
+    const { subscribeToNotifications: subscribeWithRuntimeConfig } = await import(
+      '../notificationSocket'
+    )
+
+    const cleanup = subscribeWithRuntimeConfig({
+      onReconnect: vi.fn(),
+      onNotification: vi.fn(),
+    })
+
+    expect(io).toHaveBeenCalledWith(
+      'http://127.0.0.1:4999/notifications',
+      expect.objectContaining({ transports: ['websocket'] }),
+    )
+    cleanup()
   })
 
   it('refreshes from REST on connect and forwards newly created notifications', () => {

@@ -1,5 +1,9 @@
 {
   "extends": "../../../../../tsconfig.json",
-  "include": ["contracts.test.ts", "../../../../vite-env.d.ts"],
+  "include": [
+    "contracts.test.ts",
+    "../../../../vite-env.d.ts",
+    "../../../../types/env.d.ts"
+  ],
   "exclude": []
 }

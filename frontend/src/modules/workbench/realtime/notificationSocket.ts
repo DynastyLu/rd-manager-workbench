@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client'
+import { config } from '@/lib/config'
 import type { WorkbenchNotification } from '@/modules/workbench/api/notifications'
 
 export interface NotificationSocketHandlers {
@@ -7,15 +8,12 @@ export interface NotificationSocketHandlers {
 }
 
 function getSocketUrl(): string {
-  const environment = import.meta.env as unknown as Record<string, unknown>
-  const configuredSocketUrl = environment['VITE_SOCKET_URL']
-  if (typeof configuredSocketUrl === 'string' && configuredSocketUrl.trim()) {
-    return configuredSocketUrl.trim().replace(/\/$/, '')
+  if (config.socketUrl) {
+    return config.socketUrl.replace(/\/$/, '')
   }
 
-  const configuredApiUrl = environment['VITE_API_BASE_URL']
-  if (typeof configuredApiUrl === 'string' && configuredApiUrl.trim()) {
-    return configuredApiUrl.trim().replace(/\/api\/?$/, '').replace(/\/$/, '')
+  if (config.apiBaseUrl) {
+    return config.apiBaseUrl.replace(/\/api\/?$/, '').replace(/\/$/, '')
   }
 
   return 'http://127.0.0.1:4311'

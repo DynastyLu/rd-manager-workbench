@@ -1,8 +1,8 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppShell } from '../AppShell'
 
 const { listNotifications, subscribeToNotifications } = vi.hoisted(() => ({
@@ -59,6 +59,10 @@ describe('AppShell', () => {
     subscribeToNotifications.mockReturnValue(vi.fn())
   })
 
+  afterEach(() => {
+    Reflect.deleteProperty(window, 'rdWorkbenchDesktop')
+  })
+
   it('renders semantic primary navigation, active documents app, and the route content area without tabs', () => {
     const { container } = renderShell()
 
@@ -101,4 +105,54 @@ describe('AppShell', () => {
     expect(screen.getByLabelText('当前位置：工作空间，工作台')).toBeInTheDocument()
     expect(screen.queryByText(specificTitle, { selector: 'strong' })).not.toBeInTheDocument()
   })
+
+  it('navigates to an internal related object when Electron reports a notification click', () => {
+    let notificationClick: ((sourcePath: string) => void) | undefined
+    const unsubscribe = vi.fn()
+    const onNotificationClicked = vi.fn((callback: (sourcePath: string) => void) => {
+      notificationClick = callback
+      return unsubscribe
+    })
+    Object.defineProperty(window, 'rdWorkbenchDesktop', {
+      configurable: true,
+      value: { onNotificationClicked },
+    })
+
+    const view = renderShell()
+    act(() => notificationClick?.('/spaces/projects/project-1/overview?from=notification'))
+
+    expect(screen.getByLabelText('当前路径')).toHaveTextContent(
+      '/spaces/projects/project-1/overview'
+    )
+    expect(onNotificationClicked).toHaveBeenCalledTimes(1)
+    view.unmount()
+    expect(unsubscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    'https://evil.example/steal',
+    '//evil.example/steal',
+    '/\\evil.example/steal',
+    'javascript:alert(1)',
+    '/not-a-workbench-route',
+  ])(
+    'ignores unsafe desktop notification path %s',
+    (unsafePath) => {
+      let notificationClick: ((sourcePath: string) => void) | undefined
+      Object.defineProperty(window, 'rdWorkbenchDesktop', {
+        configurable: true,
+        value: {
+          onNotificationClicked(callback: (sourcePath: string) => void) {
+            notificationClick = callback
+            return vi.fn()
+          },
+        },
+      })
+
+      renderShell('/my-work')
+      act(() => notificationClick?.(unsafePath))
+
+      expect(screen.getByLabelText('当前路径')).toHaveTextContent('/my-work')
+    }
+  )
 })

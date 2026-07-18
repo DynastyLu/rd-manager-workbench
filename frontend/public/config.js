@@ -2,4 +2,6 @@
 // 此文件在 index.html 的 bundle 之前加载
 window.__APP_CONFIG__ = {
   sentryDsn: '',
+  apiBaseUrl: 'http://127.0.0.1:4311/api',
+  socketUrl: 'http://127.0.0.1:4311',
 }

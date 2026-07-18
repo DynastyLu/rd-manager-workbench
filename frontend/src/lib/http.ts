@@ -1,3 +1,5 @@
+import { config } from '@/lib/config'
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -35,10 +37,7 @@ function isFailureEnvelope(value: unknown): value is ApiFailureEnvelope {
 }
 
 function getApiBaseUrl(): string {
-  const environment = import.meta.env as unknown as Record<string, unknown>
-  const configuredValue = environment['VITE_API_BASE_URL']
-  const configuredBaseUrl =
-    typeof configuredValue === 'string' ? configuredValue.trim() : undefined
+  const configuredBaseUrl = config.apiBaseUrl
 
   if (configuredBaseUrl) {
     return configuredBaseUrl.replace(/\/$/, '')

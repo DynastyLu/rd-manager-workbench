@@ -5,6 +5,7 @@ import { ApiError, request } from '@/lib/http'
 describe('workbench HTTP client', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    Reflect.deleteProperty(window, '__APP_CONFIG__')
   })
 
   it('unwraps a successful API envelope', async () => {
@@ -41,5 +42,26 @@ describe('workbench HTTP client', () => {
       code: 'PROJECT_NOT_FOUND',
       message: '不存在',
     })
+  })
+
+  it('uses the runtime API base URL embedded in the production config file', async () => {
+    vi.resetModules()
+    window.__APP_CONFIG__ = {
+      apiBaseUrl: 'http://127.0.0.1:4999/runtime-api/',
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const { request: runtimeRequest } = await import('@/lib/http')
+
+    await runtimeRequest('/notifications')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:4999/runtime-api/notifications',
+      expect.any(Object),
+    )
   })
 })
