@@ -22,7 +22,7 @@ function getSocketUrl(): string {
 }
 
 export function subscribeToNotifications(handlers: NotificationSocketHandlers): () => void {
-  const socket = io(getSocketUrl(), {
+  const socket = io(`${getSocketUrl()}/notifications`, {
     transports: ['websocket'],
     reconnection: true,
   })

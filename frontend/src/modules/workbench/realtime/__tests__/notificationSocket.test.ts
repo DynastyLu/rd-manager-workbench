@@ -29,7 +29,7 @@ describe('notification socket', () => {
     const cleanup = subscribeToNotifications({ onReconnect, onNotification })
 
     expect(io).toHaveBeenCalledWith(
-      expect.stringMatching(/^http:\/\/127\.0\.0\.1:4311/),
+      'http://127.0.0.1:4311/notifications',
       expect.objectContaining({ transports: ['websocket'] }),
     )
     const handlers = Object.fromEntries(socket.on.mock.calls)
