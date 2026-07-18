@@ -10,6 +10,7 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { useRef, useState } from 'react'
 
 import type { DataField, DataRecord } from '../types'
 
@@ -57,11 +58,12 @@ function readRecordTypeOptions(field: DataField, record: DataRecord): SelectOpti
 
   const optionByValue = new Map(readSelectOptions(field).map((option) => [option.value, option]))
   return configuredOptions.flatMap((configuredOption) => {
-    const value = typeof configuredOption === 'string'
-      ? configuredOption
-      : isUnknownRecord(configuredOption) && typeof configuredOption.value === 'string'
-        ? configuredOption.value
-        : ''
+    const value =
+      typeof configuredOption === 'string'
+        ? configuredOption
+        : isUnknownRecord(configuredOption) && typeof configuredOption.value === 'string'
+          ? configuredOption.value
+          : ''
     if (!value) return []
 
     const existingOption = optionByValue.get(value)
@@ -78,6 +80,10 @@ function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return isUnknownRecord(value) && typeof value.then === 'function'
+}
+
 function readText(value: unknown) {
   if (typeof value === 'string' || typeof value === 'number') return String(value)
   return ''
@@ -87,6 +93,16 @@ function getRecordTitle(record: DataRecord, fields: DataField[]) {
   const primaryField = fields.find((field) => field.isPrimary) ?? fields[0]
   if (!primaryField) return '未命名记录'
   return readText(record.values[primaryField.key]) || '未命名记录'
+}
+
+function isReadOnlyForRecord(field: DataField, record: DataRecord) {
+  if (field.config.readOnly === true) return true
+
+  const readOnlyRecordTypes = Array.isArray(field.config.readOnlyRecordTypes)
+    ? field.config.readOnlyRecordTypes.filter((item): item is string => typeof item === 'string')
+    : []
+  const recordType = readText(record.values.recordType)
+  return Boolean(recordType && readOnlyRecordTypes.includes(recordType))
 }
 
 function moveKanbanRecord(_record: DataRecord, fieldKey: string, nextValue: string | null) {
@@ -286,7 +302,11 @@ export function KanbanView({
   onOpenRecord,
   isUpdating = false,
 }: KanbanViewProps) {
-  const groupableFields = fields.filter((field) => field.type === 'SINGLE_SELECT')
+  const [pendingRecordIds, setPendingRecordIds] = useState<Set<string>>(() => new Set())
+  const pendingRecordIdsRef = useRef(pendingRecordIds)
+  const groupableFields = fields.filter(
+    (field) => field.type === 'SINGLE_SELECT' && field.config.readOnly !== true
+  )
   const groupField =
     groupableFields.find((field) => field.key === groupFieldKey) ?? groupableFields[0]
   const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor))
@@ -302,10 +322,44 @@ export function KanbanView({
   }
 
   const moveRecord = (record: DataRecord, nextValue: string | null) => {
+    if (
+      isUpdating ||
+      pendingRecordIdsRef.current.has(record.id) ||
+      isReadOnlyForRecord(groupField, record)
+    ) {
+      return
+    }
     if ((record.values[groupField.key] ?? null) === nextValue) return
     const recordTypeOptions = readRecordTypeOptions(groupField, record)
-    if (recordTypeOptions && (nextValue === null || !recordTypeOptions.some((option) => option.value === nextValue))) return
-    void onRecordUpdate(record.id, moveKanbanRecord(record, groupField.key, nextValue))
+    if (
+      recordTypeOptions &&
+      (nextValue === null || !recordTypeOptions.some((option) => option.value === nextValue))
+    )
+      return
+
+    const pendingAfterMove = new Set(pendingRecordIdsRef.current).add(record.id)
+    pendingRecordIdsRef.current = pendingAfterMove
+    setPendingRecordIds(pendingAfterMove)
+    const clearPending = () => {
+      const pendingAfterSave = new Set(pendingRecordIdsRef.current)
+      pendingAfterSave.delete(record.id)
+      pendingRecordIdsRef.current = pendingAfterSave
+      setPendingRecordIds(pendingAfterSave)
+    }
+
+    try {
+      const result = onRecordUpdate(record.id, moveKanbanRecord(record, groupField.key, nextValue))
+      if (isPromiseLike(result)) {
+        void Promise.resolve(result)
+          .finally(clearPending)
+          .catch(() => undefined)
+      } else {
+        clearPending()
+      }
+    } catch (error) {
+      clearPending()
+      throw error
+    }
   }
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
@@ -356,7 +410,11 @@ export function KanbanView({
                 {columnRecords.map((record) => (
                   <KanbanCard
                     key={record.id}
-                    disabled={isUpdating}
+                    disabled={
+                      isUpdating ||
+                      pendingRecordIds.has(record.id) ||
+                      isReadOnlyForRecord(groupField, record)
+                    }
                     fields={fields}
                     groupField={groupField}
                     record={record}

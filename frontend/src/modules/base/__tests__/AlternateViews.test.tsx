@@ -157,8 +157,16 @@ describe('KanbanView', () => {
       },
     }
     const typedRecords = [
-      { ...records[0], id: 'meeting-1', values: { title: '研发周会', recordType: 'MEETING', status: 'SCHEDULED' } },
-      { ...records[0], id: 'action-1', values: { title: '整理纪要', recordType: 'ACTION', status: 'TODO' } },
+      {
+        ...records[0],
+        id: 'meeting-1',
+        values: { title: '研发周会', recordType: 'MEETING', status: 'SCHEDULED' },
+      },
+      {
+        ...records[0],
+        id: 'action-1',
+        values: { title: '整理纪要', recordType: 'ACTION', status: 'TODO' },
+      },
     ]
 
     render(
@@ -209,12 +217,147 @@ describe('KanbanView', () => {
       />
     )
 
-    act(() => dndHarness.dragEnd?.({
-      active: { id: 'record:meeting-1' },
-      over: { id: 'column:TODO' },
-    }))
+    act(() =>
+      dndHarness.dragEnd?.({
+        active: { id: 'record:meeting-1' },
+        over: { id: 'column:TODO' },
+      })
+    )
 
     expect(onRecordUpdate).not.toHaveBeenCalled()
+  })
+
+  it('does not offer a globally read-only select field as a kanban grouping field', () => {
+    const priorityField = {
+      ...fields[1],
+      id: 'field-priority',
+      key: 'priority',
+      name: '优先级',
+      config: {
+        options: [
+          { label: '普通', value: 'NORMAL' },
+          { label: '紧急', value: 'URGENT' },
+        ],
+      },
+    }
+    const readOnlyStatusField = {
+      ...fields[1],
+      config: { ...fields[1].config, readOnly: true },
+    }
+
+    render(
+      <KanbanView
+        fields={[fields[0], readOnlyStatusField, priorityField]}
+        records={[{ ...records[0], values: { ...records[0].values, priority: 'NORMAL' } }]}
+        groupFieldKey="status"
+        onRecordUpdate={vi.fn()}
+      />
+    )
+
+    const groupingField = screen.getByRole('combobox', { name: '分组字段' })
+    expect(groupingField).toHaveValue('priority')
+    expect(within(groupingField).queryByRole('option', { name: '状态' })).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '普通 1' })).toBeInTheDocument()
+  })
+
+  it('prevents records with a read-only record type from moving', async () => {
+    const onRecordUpdate = vi.fn()
+    const typedStatusField = {
+      ...fields[1],
+      config: {
+        ...fields[1].config,
+        readOnlyRecordTypes: ['MEETING'],
+      },
+    }
+    const meeting = {
+      ...records[0],
+      id: 'meeting-1',
+      values: { title: '研发周会', recordType: 'MEETING', status: 'TODO' },
+    }
+
+    render(
+      <KanbanView
+        fields={[fields[0], typedStatusField]}
+        records={[meeting]}
+        groupFieldKey="status"
+        onRecordUpdate={onRecordUpdate}
+      />
+    )
+
+    expect(screen.getByRole('combobox', { name: '移动“研发周会”' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '拖动“研发周会”' })).toBeDisabled()
+
+    act(() =>
+      dndHarness.dragEnd?.({
+        active: { id: 'record:meeting-1' },
+        over: { id: 'column:DOING' },
+      })
+    )
+
+    expect(onRecordUpdate).not.toHaveBeenCalled()
+  })
+
+  it('keeps a record disabled while its move request is pending', async () => {
+    let resolveUpdate: (() => void) | undefined
+    const onRecordUpdate = vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveUpdate = resolve
+        })
+    )
+    const user = userEvent.setup()
+
+    render(
+      <KanbanView
+        fields={fields}
+        records={records}
+        groupFieldKey="status"
+        onRecordUpdate={onRecordUpdate}
+      />
+    )
+
+    const movementSelect = screen.getByRole('combobox', { name: '移动“完成评审”' })
+    await user.selectOptions(movementSelect, 'DOING')
+
+    expect(movementSelect).toBeDisabled()
+    expect(screen.getByRole('button', { name: '拖动“完成评审”' })).toBeDisabled()
+
+    act(() =>
+      dndHarness.dragEnd?.({
+        active: { id: 'record:record-1' },
+        over: { id: 'column:DOING' },
+      })
+    )
+    expect(onRecordUpdate).toHaveBeenCalledTimes(1)
+
+    await act(async () => resolveUpdate?.())
+    expect(movementSelect).toBeEnabled()
+  })
+
+  it('accepts only one move when duplicate drag events arrive before rendering', () => {
+    const onRecordUpdate = vi.fn().mockImplementation(() => new Promise<void>(() => undefined))
+
+    render(
+      <KanbanView
+        fields={fields}
+        records={records}
+        groupFieldKey="status"
+        onRecordUpdate={onRecordUpdate}
+      />
+    )
+
+    act(() => {
+      dndHarness.dragEnd?.({
+        active: { id: 'record:record-1' },
+        over: { id: 'column:DOING' },
+      })
+      dndHarness.dragEnd?.({
+        active: { id: 'record:record-1' },
+        over: { id: 'column:DOING' },
+      })
+    })
+
+    expect(onRecordUpdate).toHaveBeenCalledTimes(1)
   })
 })
 
