@@ -5,11 +5,12 @@
 ## 快速开始
 
 ```bash
+cp .env.example .env
 pnpm install --ignore-workspace
 pnpm dev
 ```
 
-默认开发地址为 http://localhost:5173。应用使用 HashRouter，入口为 `#/` 和 `#/settings`。
+默认开发地址为 `http://127.0.0.1:4300/#/`，并且只监听本机回环地址；端口被占用时会直接报错，不会自动改用其他端口。开发环境默认请求后端 `http://127.0.0.1:4301/api`。应用使用 HashRouter，入口为 `#/` 和 `#/settings`。
 
 ## 常用命令
 

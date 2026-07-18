@@ -11,6 +11,7 @@
 
 ```sh
 cd frontend
+cp .env.example .env
 pnpm install
 pnpm lint
 pnpm typecheck
@@ -20,12 +21,15 @@ pnpm test:e2e
 pnpm dev
 ```
 
+前端仅监听 `http://127.0.0.1:4300/#/`，端口被占用时会直接报错；开发环境默认请求后端 `http://127.0.0.1:4301/api`。
+
 ## 后端
 
 先从 `backend/.env.example` 创建本地环境文件并按本机 PostgreSQL 配置 `DATABASE_URL`，再运行：
 
 ```sh
 cd backend
+cp .env.example .env
 pnpm install
 pnpm prisma:generate
 pnpm test:unit
@@ -35,6 +39,8 @@ pnpm lint
 pnpm build
 pnpm start:dev
 ```
+
+后端仅监听 `http://127.0.0.1:4301`。两个端口均与旧项目的默认端口隔离，不会自动切换到其他端口。
 
 可用 `pnpm prisma migrate status` 检查本地数据库迁移状态。
 
