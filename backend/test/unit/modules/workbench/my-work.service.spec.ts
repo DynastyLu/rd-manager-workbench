@@ -138,8 +138,8 @@ describe('TasksService later and reminder settings', () => {
   const deferredUntil = '2026-07-20T01:00:00.000Z';
   const remindAt = '2026-07-19T01:00:00.000Z';
 
-  function setup() {
-    const findFirst = jest.fn().mockResolvedValue({ id: 'task-1' });
+  function setup(status: TaskStatus = TaskStatus.TODO) {
+    const findFirst = jest.fn().mockResolvedValue({ id: 'task-1', status });
     const laterUpsert = jest.fn().mockResolvedValue({ taskId: 'task-1', deferredUntil });
     const laterDeleteMany = jest.fn().mockResolvedValue({ count: 1 });
     const reminderUpsert = jest.fn().mockResolvedValue({ taskId: 'task-1', remindAt });
@@ -167,7 +167,7 @@ describe('TasksService later and reminder settings', () => {
 
     expect(findFirst).toHaveBeenCalledWith({
       where: { id: 'task-1', archivedAt: null },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     expect(laterUpsert).toHaveBeenCalledWith({
       where: { taskId: 'task-1' },
@@ -203,4 +203,22 @@ describe('TasksService later and reminder settings', () => {
 
     expect(reminderDeleteMany).toHaveBeenCalledWith({ where: { taskId: 'task-1' } });
   });
+
+  it.each([TaskStatus.DONE, TaskStatus.CANCELLED])(
+    'rejects later and reminder upserts for a %s task',
+    async (status) => {
+      const { service, laterUpsert, reminderUpsert } = setup(status);
+
+      await expect(service.upsertLater('task-1', { deferredUntil })).rejects.toMatchObject({
+        code: 'TASK_INVALID_REFERENCE',
+        statusCode: 422,
+      });
+      await expect(service.upsertReminder('task-1', { remindAt })).rejects.toMatchObject({
+        code: 'TASK_INVALID_REFERENCE',
+        statusCode: 422,
+      });
+      expect(laterUpsert).not.toHaveBeenCalled();
+      expect(reminderUpsert).not.toHaveBeenCalled();
+    },
+  );
 });

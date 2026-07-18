@@ -136,7 +136,7 @@ export class TasksService {
   }
 
   async upsertLater(taskId: string, dto: UpsertTaskLaterDto) {
-    await this.assertActiveTask(taskId);
+    await this.assertActionableTask(taskId);
     return this.prisma.taskLater.upsert({
       where: { taskId },
       create: { taskId, deferredUntil: new Date(dto.deferredUntil) },
@@ -145,12 +145,12 @@ export class TasksService {
   }
 
   async deleteLater(taskId: string): Promise<void> {
-    await this.assertActiveTask(taskId);
+    await this.assertTaskExists(taskId);
     await this.prisma.taskLater.deleteMany({ where: { taskId } });
   }
 
   async upsertReminder(taskId: string, dto: UpsertTaskReminderDto) {
-    await this.assertActiveTask(taskId);
+    await this.assertActionableTask(taskId);
     return this.prisma.taskReminder.upsert({
       where: { taskId },
       create: { taskId, remindAt: new Date(dto.remindAt) },
@@ -159,7 +159,7 @@ export class TasksService {
   }
 
   async deleteReminder(taskId: string): Promise<void> {
-    await this.assertActiveTask(taskId);
+    await this.assertTaskExists(taskId);
     await this.prisma.taskReminder.deleteMany({ where: { taskId } });
   }
 
@@ -191,6 +191,10 @@ export class TasksService {
       );
       await this.assertCompletionAllowed(tx, merged.status, merged.dependencyIds);
       await this.acquireProjectHealthLocks(tx, [existing.projectId, merged.projectId]);
+      if (dto.status === TaskStatus.DONE || dto.status === TaskStatus.CANCELLED) {
+        await tx.taskReminder.deleteMany({ where: { taskId: id } });
+        await tx.taskLater.deleteMany({ where: { taskId: id } });
+      }
       const task = await tx.workTask.update({
         where: { id },
         data: {
@@ -365,7 +369,21 @@ export class TasksService {
     };
   }
 
-  private async assertActiveTask(taskId: string): Promise<void> {
+  private async assertActionableTask(taskId: string): Promise<void> {
+    const task = await this.prisma.workTask.findFirst({
+      where: { id: taskId, archivedAt: null },
+      select: { id: true, status: true },
+    });
+    if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
+    if (!ACTIVE_TASK_STATUSES.includes(task.status)) {
+      throw this.unprocessable(
+        ErrorCodes.TASK_INVALID_REFERENCE,
+        'Completed or cancelled tasks cannot be deferred or reminded',
+      );
+    }
+  }
+
+  private async assertTaskExists(taskId: string): Promise<void> {
     const task = await this.prisma.workTask.findFirst({
       where: { id: taskId, archivedAt: null },
       select: { id: true },

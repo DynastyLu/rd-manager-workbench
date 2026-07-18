@@ -45,21 +45,23 @@ describe('My work tasks API', () => {
   it('serves all six real views and keeps a future-later task out of today and week', async () => {
     const { start, end } = currentShanghaiDayRange();
     const todayDueAt = new Date(start.getTime() + 12 * 60 * 60 * 1000);
-    const [inbox, today, overdue, later, completed] = await Promise.all([
-      prisma.workTask.create({ data: { title: `${prefix} inbox` } }),
-      prisma.workTask.create({ data: { title: `${prefix} today`, dueAt: todayDueAt } }),
-      prisma.workTask.create({
-        data: { title: `${prefix} overdue`, dueAt: new Date('2020-01-01T00:00:00.000Z') },
-      }),
-      prisma.workTask.create({
-        data: {
-          title: `${prefix} later`,
-          dueAt: todayDueAt,
-          later: { create: { deferredUntil: new Date('2099-01-01T00:00:00.000Z') } },
-        },
-      }),
-      prisma.workTask.create({ data: { title: `${prefix} completed`, status: 'DONE' } }),
-    ]);
+    const inbox = await prisma.workTask.create({ data: { title: `${prefix} inbox` } });
+    const today = await prisma.workTask.create({
+      data: { title: `${prefix} today`, dueAt: todayDueAt },
+    });
+    const overdue = await prisma.workTask.create({
+      data: { title: `${prefix} overdue`, dueAt: new Date('2020-01-01T00:00:00.000Z') },
+    });
+    const later = await prisma.workTask.create({
+      data: {
+        title: `${prefix} later`,
+        dueAt: todayDueAt,
+        later: { create: { deferredUntil: new Date('2099-01-01T00:00:00.000Z') } },
+      },
+    });
+    const completed = await prisma.workTask.create({
+      data: { title: `${prefix} completed`, status: 'DONE' },
+    });
 
     const views = ['INBOX', 'TODAY', 'WEEK', 'OVERDUE', 'LATER', 'COMPLETED'];
     const idsByView: Record<string, string[]> = {};
@@ -109,6 +111,44 @@ describe('My work tasks API', () => {
     const cleared = await request(app.getHttpServer()).get(`/api/tasks/${task.id}`).expect(200);
     expect(cleared.body.data).toMatchObject({ reminder: null, later: null });
   });
+
+  it.each(['DONE', 'CANCELLED'] as const)(
+    'clears reminder/later atomically when a task becomes %s and rejects new settings',
+    async (status) => {
+      const task = await prisma.workTask.create({
+        data: {
+          title: `${prefix} close ${status}`,
+          reminder: { create: { remindAt: new Date('2099-01-01T01:00:00.000Z') } },
+          later: { create: { deferredUntil: new Date('2099-01-01T00:00:00.000Z') } },
+        },
+      });
+
+      const closed = await request(app.getHttpServer())
+        .patch(`/api/tasks/${task.id}`)
+        .send({ status })
+        .expect(200);
+
+      expect(closed.body.data).toMatchObject({ status, reminder: null, later: null });
+      await expect(
+        prisma.taskReminder.count({ where: { taskId: task.id } }),
+      ).resolves.toBe(0);
+      await expect(prisma.taskLater.count({ where: { taskId: task.id } })).resolves.toBe(0);
+
+      const rejectedLater = await request(app.getHttpServer())
+        .put(`/api/tasks/${task.id}/later`)
+        .send({ deferredUntil: '2099-02-01T00:00:00.000Z' })
+        .expect(422);
+      const rejectedReminder = await request(app.getHttpServer())
+        .put(`/api/tasks/${task.id}/reminder`)
+        .send({ remindAt: '2099-02-01T01:00:00.000Z' })
+        .expect(422);
+      expect(rejectedLater.body.error.code).toBe('TASK_INVALID_REFERENCE');
+      expect(rejectedReminder.body.error.code).toBe('TASK_INVALID_REFERENCE');
+
+      await request(app.getHttpServer()).delete(`/api/tasks/${task.id}/later`).expect(204);
+      await request(app.getHttpServer()).delete(`/api/tasks/${task.id}/reminder`).expect(204);
+    },
+  );
 
   it('validates view and timestamps and rejects settings for an unknown task', async () => {
     await request(app.getHttpServer()).get('/api/tasks/my-work?view=UNKNOWN').expect(400);
