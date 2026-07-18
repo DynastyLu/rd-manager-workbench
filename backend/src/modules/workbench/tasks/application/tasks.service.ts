@@ -8,13 +8,32 @@ import { ProjectHealthSnapshotService } from '../../projects/application/project
 import { CreateMilestoneDto } from '../interface/http/dto/create-milestone.dto';
 import { CreateProgressReportDto } from '../interface/http/dto/create-progress-report.dto';
 import { CreateTaskDto } from '../interface/http/dto/create-task.dto';
+import {
+  ListMyWorkQueryDto,
+  MyWorkView,
+} from '../interface/http/dto/list-my-work-query.dto';
 import { ListTasksQueryDto } from '../interface/http/dto/list-tasks-query.dto';
 import { UpdateMilestoneDto } from '../interface/http/dto/update-milestone.dto';
 import { UpdateTaskDto } from '../interface/http/dto/update-task.dto';
+import { UpsertTaskLaterDto } from '../interface/http/dto/upsert-task-later.dto';
+import { UpsertTaskReminderDto } from '../interface/http/dto/upsert-task-reminder.dto';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_TASK_STATUSES: TaskStatus[] = [
+  TaskStatus.TODO,
+  TaskStatus.IN_PROGRESS,
+  TaskStatus.BLOCKED,
+];
+const TASK_RESPONSE_INCLUDE = {
+  dependencies: { select: { dependsOnTaskId: true } },
+  reminder: true,
+  later: true,
+} satisfies Prisma.WorkTaskInclude;
+
 type DatabaseClient = PlatformPrismaService | Prisma.TransactionClient;
 interface TaskReferenceInput {
   projectId?: string | null;
@@ -56,7 +75,7 @@ export class TasksService {
               }
             : {}),
         },
-        include: { dependencies: { select: { dependsOnTaskId: true } } },
+        include: TASK_RESPONSE_INCLUDE,
     });
     if (task.projectId) await this.recalculateHealth(tx, task.projectId);
     return this.toTaskResponse(task);
@@ -85,7 +104,7 @@ export class TasksService {
         orderBy: [{ dueAt: 'asc' }, { updatedAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { dependencies: { select: { dependsOnTaskId: true } } },
+        include: TASK_RESPONSE_INCLUDE,
       }),
       this.prisma.workTask.count({ where }),
     ]);
@@ -95,10 +114,53 @@ export class TasksService {
   async getTask(id: string) {
     const task = await this.prisma.workTask.findFirst({
       where: { id, archivedAt: null },
-      include: { dependencies: { select: { dependsOnTaskId: true } } },
+      include: TASK_RESPONSE_INCLUDE,
     });
     if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
     return this.toTaskResponse(task);
+  }
+
+  async listMyWork(query: ListMyWorkQueryDto, now = new Date()) {
+    const data = await this.prisma.workTask.findMany({
+      where: {
+        ...this.buildMyWorkWhere(query.view, now),
+        ...(query.projectId ? { projectId: query.projectId } : {}),
+      },
+      orderBy: [{ dueAt: 'asc' }, { updatedAt: 'desc' }, { id: 'desc' }],
+      include: TASK_RESPONSE_INCLUDE,
+    });
+    return {
+      data: data.map((task) => this.toTaskResponse(task)),
+      meta: { page: 1, pageSize: data.length, total: data.length },
+    };
+  }
+
+  async upsertLater(taskId: string, dto: UpsertTaskLaterDto) {
+    await this.assertActiveTask(taskId);
+    return this.prisma.taskLater.upsert({
+      where: { taskId },
+      create: { taskId, deferredUntil: new Date(dto.deferredUntil) },
+      update: { deferredUntil: new Date(dto.deferredUntil) },
+    });
+  }
+
+  async deleteLater(taskId: string): Promise<void> {
+    await this.assertActiveTask(taskId);
+    await this.prisma.taskLater.deleteMany({ where: { taskId } });
+  }
+
+  async upsertReminder(taskId: string, dto: UpsertTaskReminderDto) {
+    await this.assertActiveTask(taskId);
+    return this.prisma.taskReminder.upsert({
+      where: { taskId },
+      create: { taskId, remindAt: new Date(dto.remindAt) },
+      update: { remindAt: new Date(dto.remindAt), dismissedAt: null },
+    });
+  }
+
+  async deleteReminder(taskId: string): Promise<void> {
+    await this.assertActiveTask(taskId);
+    await this.prisma.taskReminder.deleteMany({ where: { taskId } });
   }
 
   async updateTask(id: string, dto: UpdateTaskDto) {
@@ -147,7 +209,7 @@ export class TasksService {
               }
             : {}),
         },
-        include: { dependencies: { select: { dependsOnTaskId: true } } },
+        include: TASK_RESPONSE_INCLUDE,
       });
       const healthProjectIds = [existing.projectId, task.projectId].filter(
         (projectId): projectId is string => Boolean(projectId),
@@ -244,6 +306,71 @@ export class TasksService {
       ...(dto.sourceType !== undefined ? { sourceType: dto.sourceType } : {}),
       ...(dto.sourceId !== undefined ? { sourceId: dto.sourceId } : {}),
     };
+  }
+
+  private buildMyWorkWhere(view: MyWorkView, now: Date): Prisma.WorkTaskWhereInput {
+    const activeTaskWhere: Prisma.WorkTaskWhereInput = {
+      archivedAt: null,
+      status: { in: ACTIVE_TASK_STATUSES },
+    };
+    const visibleOutsideLater: Prisma.WorkTaskWhereInput = {
+      OR: [
+        { later: { is: null } },
+        { later: { is: { deferredUntil: { lte: now } } } },
+      ],
+    };
+    const { dayStart, nextDayStart, weekStart, nextWeekStart } =
+      this.getShanghaiBoundaries(now);
+
+    switch (view) {
+      case MyWorkView.INBOX:
+        return { ...activeTaskWhere, dueAt: null, ...visibleOutsideLater };
+      case MyWorkView.TODAY:
+        return {
+          ...activeTaskWhere,
+          dueAt: { gte: dayStart, lt: nextDayStart },
+          ...visibleOutsideLater,
+        };
+      case MyWorkView.WEEK:
+        return {
+          ...activeTaskWhere,
+          dueAt: { gte: weekStart, lt: nextWeekStart },
+          ...visibleOutsideLater,
+        };
+      case MyWorkView.OVERDUE:
+        return { ...activeTaskWhere, dueAt: { lt: now }, ...visibleOutsideLater };
+      case MyWorkView.LATER:
+        return { ...activeTaskWhere, later: { isNot: null } };
+      case MyWorkView.COMPLETED:
+        return { archivedAt: null, status: TaskStatus.DONE };
+    }
+  }
+
+  private getShanghaiBoundaries(now: Date) {
+    const shiftedNow = new Date(now.getTime() + SHANGHAI_OFFSET_MS);
+    const dayStart = new Date(
+      Date.UTC(
+        shiftedNow.getUTCFullYear(),
+        shiftedNow.getUTCMonth(),
+        shiftedNow.getUTCDate(),
+      ) - SHANGHAI_OFFSET_MS,
+    );
+    const daysSinceMonday = (shiftedNow.getUTCDay() + 6) % 7;
+    const weekStart = new Date(dayStart.getTime() - daysSinceMonday * DAY_MS);
+    return {
+      dayStart,
+      nextDayStart: new Date(dayStart.getTime() + DAY_MS),
+      weekStart,
+      nextWeekStart: new Date(weekStart.getTime() + 7 * DAY_MS),
+    };
+  }
+
+  private async assertActiveTask(taskId: string): Promise<void> {
+    const task = await this.prisma.workTask.findFirst({
+      where: { id: taskId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
   }
 
   private assertCompleteSourceReference(sourceType: string | null | undefined, sourceId: string | null | undefined) {
