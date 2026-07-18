@@ -9,6 +9,7 @@ import type { MyWorkView } from '@/modules/workbench/api/tasks'
 
 const {
   listMyWork,
+  getTask,
   createTask,
   updateTask,
   setTaskLater,
@@ -17,6 +18,7 @@ const {
   removeTaskReminder,
 } = vi.hoisted(() => ({
   listMyWork: vi.fn(),
+  getTask: vi.fn(),
   createTask: vi.fn(),
   updateTask: vi.fn(),
   setTaskLater: vi.fn(),
@@ -27,6 +29,7 @@ const {
 
 vi.mock('@/modules/workbench/api/tasks', () => ({
   listMyWork,
+  getTask,
   createTask,
   updateTask,
   setTaskLater,
@@ -94,6 +97,7 @@ function mockViews(overrides: Partial<Record<MyWorkView, typeof task[]>> = {}) {
 describe('TasksPage', () => {
   beforeEach(() => {
     listMyWork.mockReset()
+    getTask.mockReset()
     createTask.mockReset()
     updateTask.mockReset()
     setTaskLater.mockReset()
@@ -136,6 +140,21 @@ describe('TasksPage', () => {
       expect(listMyWork).toHaveBeenCalledWith({ view, projectId: 'project-1' })
     }
     expect(screen.getByText('当前仅显示本项目任务')).toBeInTheDocument()
+  })
+
+  it('opens the exact task supplied by a source deep link even when it is outside the fixed views', async () => {
+    mockViews()
+    getTask.mockResolvedValue({
+      ...task,
+      id: 'future-task',
+      title: '下月技术评审',
+      dueAt: '2026-08-20T01:00:00.000Z',
+    })
+
+    renderTasksPage(undefined, '/my-work?taskId=future-task')
+
+    expect(await screen.findByRole('region', { name: '当前定位任务' })).toHaveTextContent('下月技术评审')
+    expect(getTask).toHaveBeenCalledWith('future-task')
   })
 
   it('renders loading, retryable error and empty states for the active view', async () => {

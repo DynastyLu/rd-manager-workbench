@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { createRisk, listRisks } from '@/modules/workbench/api/management'
+import { createRisk, getRisk, listRisks } from '@/modules/workbench/api/management'
 import {
   ManagementEmpty,
   ManagementError,
@@ -24,12 +24,18 @@ import type { RiskStatus } from '@/modules/workbench/types'
 export default function RisksPage() {
   const [searchParams] = useSearchParams()
   const projectId = searchParams.get('projectId')?.trim() || undefined
+  const recordId = searchParams.get('recordId')?.trim() || undefined
   const [status, setStatus] = useState<RiskStatus | undefined>()
   const [open, setOpen] = useState(false)
   const queryClient = useQueryClient()
   const risksQuery = useQuery({
     queryKey: ['risks', { projectId, status }],
     queryFn: () => listRisks({ projectId, status }),
+  })
+  const focusedRiskQuery = useQuery({
+    queryKey: ['risk', recordId],
+    queryFn: () => getRisk(recordId!),
+    enabled: Boolean(recordId),
   })
   const createRiskMutation = useMutation({
     mutationFn: (form: HTMLFormElement) => {
@@ -91,6 +97,21 @@ export default function RisksPage() {
             </DialogContent>
           </Dialog>
         </header>
+
+        {focusedRiskQuery.data ? (
+          <section aria-label="当前定位风险">
+            <Card className="mb-4 border-blue-300 bg-blue-50/50">
+              <CardHeader>
+                <p className="text-xs font-semibold text-blue-700">当前定位</p>
+                <CardTitle>{focusedRiskQuery.data.title}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                等级：{focusedRiskQuery.data.level} · 状态：{focusedRiskQuery.data.status} · 负责人：
+                {focusedRiskQuery.data.ownerName ?? '未指定'}
+              </CardContent>
+            </Card>
+          </section>
+        ) : null}
 
         <Card className="mb-4">
           <CardContent className="pt-4">

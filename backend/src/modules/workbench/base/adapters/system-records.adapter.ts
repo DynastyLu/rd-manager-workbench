@@ -157,11 +157,11 @@ export class SystemRecordsAdapter {
     return [
       ...risks.map((item) => ({
         id: `RISK:${item.id}`, values: { ...this.pick(item, ['title', 'status', 'level', 'ownerName', 'projectId', 'updatedAt']), recordType: 'RISK' }, sourceType: 'RISK', sourceId: item.id,
-        sourcePath: `/library/governance/risks?projectId=${item.projectId ?? ''}`, createdAt: item.createdAt, updatedAt: item.updatedAt,
+        sourcePath: this.governanceSourcePath('risks', item.id, item.projectId), createdAt: item.createdAt, updatedAt: item.updatedAt,
       })),
       ...decisions.map((item) => ({
         id: `DECISION:${item.id}`, values: { ...this.pick(item, ['title', 'status', 'projectId', 'participantNames', 'updatedAt']), recordType: 'DECISION' }, sourceType: 'DECISION', sourceId: item.id,
-        sourcePath: `/library/governance/decisions?projectId=${item.projectId ?? ''}`, createdAt: item.createdAt, updatedAt: item.updatedAt,
+        sourcePath: this.governanceSourcePath('decisions', item.id, item.projectId), createdAt: item.createdAt, updatedAt: item.updatedAt,
       })),
     ].sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
   }
@@ -239,6 +239,12 @@ export class SystemRecordsAdapter {
 
   private pick<T extends object>(source: T, keys: string[]) {
     return Object.fromEntries(keys.map((key) => [key, (source as Record<string, unknown>)[key]]));
+  }
+
+  private governanceSourcePath(kind: 'risks' | 'decisions', recordId: string, projectId: string | null) {
+    const params = new URLSearchParams({ recordId });
+    if (projectId) params.set('projectId', projectId);
+    return `/library/governance/${kind}?${params.toString()}`;
   }
 
   private string(value: unknown) { return typeof value === 'string' && value.trim() ? value.trim() : undefined; }

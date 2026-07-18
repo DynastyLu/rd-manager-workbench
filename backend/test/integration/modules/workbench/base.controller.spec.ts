@@ -169,6 +169,12 @@ describe('Multi-dimensional base API', () => {
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/RISK:${risk.id}`).send({ values: { projectId: null } }).expect(400);
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/RISK:${risk.id}`).send({ values: { projectId: secondProject.id } }).expect(200);
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/DECISION:${decision.id}`).send({ values: { projectId: secondProject.id } }).expect(200);
+    await request(app.getHttpServer()).get(`/api/base/tables/${table.id}/records`).query({ query: prefix }).expect(200).expect(({ body }) => {
+      expect(body.data.data).toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: `RISK:${risk.id}`, sourcePath: `/library/governance/risks?recordId=${risk.id}&projectId=${secondProject.id}` }),
+        expect.objectContaining({ id: `DECISION:${decision.id}`, sourcePath: `/library/governance/decisions?recordId=${decision.id}&projectId=${secondProject.id}` }),
+      ]));
+    });
     await expect(prisma.risk.findUniqueOrThrow({ where: { id: risk.id } })).resolves.toMatchObject({ projectId: secondProject.id });
     await expect(prisma.decision.findUniqueOrThrow({ where: { id: decision.id } })).resolves.toMatchObject({ projectId: secondProject.id });
   });

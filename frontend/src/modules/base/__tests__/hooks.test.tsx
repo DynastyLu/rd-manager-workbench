@@ -29,7 +29,9 @@ describe('base hooks', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     for (const queryKey of [
       ['base', 'records', 'table-tasks'], ['my-work'], ['tasks'], ['calendar'],
-      ['projects'], ['project'], ['dashboard'], ['reminders'],
+      ['projects'], ['project'], ['task'], ['dashboard'], ['reminders'],
+      ['documents'], ['document'], ['document-versions'], ['files'],
+      ['meetings'], ['meeting'], ['risks'], ['risk'], ['decisions'], ['decision'],
     ]) expect(invalidate).toHaveBeenCalledWith({ queryKey })
   })
 

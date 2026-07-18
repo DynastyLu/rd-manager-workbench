@@ -35,6 +35,26 @@
     font-size: 12px;
   }
 
+  &__focused {
+    overflow: hidden;
+    border: 1px solid #91b5ff;
+    border-radius: var(--workspace-radius-lg);
+    background: #f7faff;
+    box-shadow: 0 0 0 3px rgb(51 112 255 / 8%);
+
+    > span {
+      display: block;
+      padding: 10px 16px 2px;
+      color: #245bdb;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .my-work-task {
+      padding-inline: 16px;
+    }
+  }
+
   &__workspace {
     display: grid;
     min-height: 600px;

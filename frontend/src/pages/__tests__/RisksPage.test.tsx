@@ -6,12 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import RisksPage from '../RisksPage'
 
-const { createRisk, listRisks } = vi.hoisted(() => ({
+const { createRisk, getRisk, listRisks } = vi.hoisted(() => ({
   createRisk: vi.fn(),
+  getRisk: vi.fn(),
   listRisks: vi.fn(),
 }))
 
-vi.mock('@/modules/workbench/api/management', () => ({ createRisk, listRisks }))
+vi.mock('@/modules/workbench/api/management', () => ({ createRisk, getRisk, listRisks }))
 
 function renderRisksPage(path = '/governance/risks') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -28,6 +29,7 @@ function renderRisksPage(path = '/governance/risks') {
 describe('RisksPage project context', () => {
   beforeEach(() => {
     createRisk.mockReset()
+    getRisk.mockReset()
     listRisks.mockReset()
     listRisks.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0 } })
   })
@@ -61,5 +63,20 @@ describe('RisksPage project context', () => {
         projectId: 'project-42',
       })
     })
+  })
+
+  it('opens the exact risk supplied by a source deep link', async () => {
+    getRisk.mockResolvedValue({
+      id: 'risk-9',
+      title: '供应商交付风险',
+      level: 'HIGH',
+      status: 'MITIGATING',
+      ownerName: '李工',
+    })
+
+    renderRisksPage('/library/governance/risks?recordId=risk-9')
+
+    expect(await screen.findByRole('region', { name: '当前定位风险' })).toHaveTextContent('供应商交付风险')
+    expect(getRisk).toHaveBeenCalledWith('risk-9')
   })
 })

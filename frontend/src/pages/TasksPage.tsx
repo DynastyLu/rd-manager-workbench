@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Banner, Button, Dropdown, Empty, Modal, Skeleton, Tag } from '@douyinfe/semi-ui'
 import {
   IconAlertTriangle,
@@ -18,6 +18,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 
 import {
   listMyWork,
+  getTask,
   removeTaskLater,
   removeTaskReminder,
   setTaskLater,
@@ -246,6 +247,7 @@ export default function TasksPage() {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const projectId = searchParams.get('projectId')?.trim() || undefined
+  const taskId = searchParams.get('taskId')?.trim() || undefined
   const [activeView, setActiveView] = useState<MyWorkView>('INBOX')
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [scheduleDialog, setScheduleDialog] = useState<ScheduleDialogState | null>(null)
@@ -257,6 +259,11 @@ export default function TasksPage() {
       queryKey: ['my-work', value, { projectId }],
       queryFn: () => listMyWork({ view: value, projectId }),
     })),
+  })
+  const focusedTaskQuery = useQuery({
+    queryKey: ['task', taskId],
+    queryFn: () => getTask(taskId!),
+    enabled: Boolean(taskId),
   })
 
   const queryByView = useMemo(
@@ -357,6 +364,19 @@ export default function TasksPage() {
       </header>
 
       {projectId ? <div className="my-work-page__context">当前仅显示本项目任务</div> : null}
+
+      {focusedTaskQuery.data ? (
+        <section className="my-work-page__focused" aria-label="当前定位任务">
+          <span>当前定位</span>
+          <TaskRow
+            task={focusedTaskQuery.data}
+            isUpdating={actionMutation.isPending}
+            onAction={(action) => actionMutation.mutate(action)}
+            onOpenSchedule={openSchedule}
+            onRequestCancel={setCancelTask}
+          />
+        </section>
+      ) : null}
 
       <div className="my-work-page__workspace">
         <nav className="my-work-page__views" aria-label="我的工作视图">
