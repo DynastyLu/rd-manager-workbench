@@ -33,6 +33,24 @@ export interface SnoozeNotificationInput {
   snoozeUntil: string
 }
 
+export type ReminderSourceType = 'TASK' | 'CALENDAR_EVENT' | 'MEETING'
+
+export interface ReminderRule {
+  id: string
+  sourceType: ReminderSourceType
+  sourceId: string
+  remindAt: string
+  archivedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateReminderRuleInput {
+  sourceType: ReminderSourceType
+  sourceId: string
+  remindAt: string
+}
+
 function toQueryString(params: ListNotificationsParams): string {
   const searchParams = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -66,5 +84,24 @@ export function snoozeNotification(
     method: 'PUT',
     body: JSON.stringify(input),
   })
+}
+
+export function listReminderRules(
+  sourceType: ReminderSourceType,
+  sourceId: string,
+): Promise<ReminderRule[]> {
+  const query = new URLSearchParams({ sourceType, sourceId })
+  return request<ReminderRule[]>(`/reminders?${query.toString()}`)
+}
+
+export function createReminderRule(input: CreateReminderRuleInput): Promise<ReminderRule> {
+  return request<ReminderRule>('/reminders', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function archiveReminderRule(id: string): Promise<void> {
+  return request<void>(`/reminders/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 import { request } from '@/lib/http'

@@ -4,12 +4,15 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { archiveCalendarEvent, createCalendarEvent, listCalendarEntries, listProjects, updateCalendarEvent, updateTask } = vi.hoisted(
+const { archiveCalendarEvent, archiveReminderRule, createCalendarEvent, createReminderRule, listCalendarEntries, listProjects, listReminderRules, updateCalendarEvent, updateTask } = vi.hoisted(
   () => ({
     archiveCalendarEvent: vi.fn(),
+    archiveReminderRule: vi.fn(),
     createCalendarEvent: vi.fn(),
+    createReminderRule: vi.fn(),
     listCalendarEntries: vi.fn(),
     listProjects: vi.fn(),
+    listReminderRules: vi.fn(),
     updateCalendarEvent: vi.fn(),
     updateTask: vi.fn(),
   })
@@ -23,6 +26,11 @@ vi.mock('@/modules/workbench/api/calendar', () => ({
 }))
 vi.mock('@/modules/workbench/api/projects', () => ({ listProjects }))
 vi.mock('@/modules/workbench/api/tasks', () => ({ updateTask }))
+vi.mock('@/modules/workbench/api/notifications', () => ({
+  archiveReminderRule,
+  createReminderRule,
+  listReminderRules,
+}))
 vi.mock('@fullcalendar/react', () => ({
   default: ({
     events,
@@ -97,6 +105,10 @@ describe('CalendarPage', () => {
     updateCalendarEvent.mockReset()
     updateTask.mockReset()
     archiveCalendarEvent.mockReset()
+    archiveReminderRule.mockReset()
+    createReminderRule.mockReset()
+    listReminderRules.mockReset()
+    listReminderRules.mockResolvedValue([])
     listProjects.mockReset()
     listProjects.mockResolvedValue({
       data: [{ id: 'project-1', name: '工作台重构', code: 'RD-001' }],
@@ -130,6 +142,7 @@ describe('CalendarPage', () => {
 
   it('creates an interview event and persists a drag reschedule', async () => {
     createCalendarEvent.mockResolvedValue({ id: 'calendar-2' })
+    createReminderRule.mockResolvedValue({ id: 'rule-1' })
     updateCalendarEvent.mockResolvedValue({ id: 'calendar-1' })
     const user = userEvent.setup()
     renderPage()
@@ -140,12 +153,20 @@ describe('CalendarPage', () => {
     await user.type(screen.getByLabelText('结束时间'), '2026-07-21T11:00')
     await waitFor(() => expect(screen.getByLabelText('关联项目（可选）')).not.toBeDisabled())
     await user.selectOptions(screen.getByLabelText('关联项目（可选）'), 'project-1')
+    await user.type(screen.getByLabelText('提醒时间 1'), '2026-07-21T09:30')
     await user.click(screen.getByRole('button', { name: '保存日程' }))
 
     await waitFor(() => {
       expect(createCalendarEvent).toHaveBeenCalledWith(
         expect.objectContaining({ title: '明天面试', type: 'INTERVIEW', projectId: 'project-1' })
       )
+    })
+    await waitFor(() => {
+      expect(createReminderRule).toHaveBeenCalledWith({
+        sourceType: 'CALENDAR_EVENT',
+        sourceId: 'calendar-2',
+        remindAt: new Date('2026-07-21T09:30').toISOString(),
+      })
     })
 
     await user.click(screen.getByRole('button', { name: '模拟拖动普通日程' }))

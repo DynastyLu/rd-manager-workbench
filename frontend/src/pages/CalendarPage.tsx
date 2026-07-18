@@ -18,6 +18,11 @@ import {
   type CreateCalendarEventInput,
 } from '@/modules/workbench/api/calendar'
 import { listProjects } from '@/modules/workbench/api/projects'
+import {
+  archiveReminderRule,
+  createReminderRule,
+  listReminderRules,
+} from '@/modules/workbench/api/notifications'
 import { updateTask } from '@/modules/workbench/api/tasks'
 import './CalendarPage.less'
 
@@ -74,6 +79,9 @@ export default function CalendarPage() {
   const [notes, setNotes] = useState('')
   const [projectId, setProjectId] = useState<string | undefined>()
   const [allDay, setAllDay] = useState(false)
+  const [reminderTimes, setReminderTimes] = useState([''])
+  const [reminderRuleIds, setReminderRuleIds] = useState<string[]>([])
+  const [isLoadingReminders, setIsLoadingReminders] = useState(false)
   const [validationMessage, setValidationMessage] = useState('')
 
   const entriesQuery = useQuery({
@@ -106,7 +114,25 @@ export default function CalendarPage() {
   )
 
   const createMutation = useMutation({
-    mutationFn: (input: CreateCalendarEventInput) => createCalendarEvent(input),
+    mutationFn: async ({
+      input,
+      reminders,
+    }: {
+      input: CreateCalendarEventInput
+      reminders: string[]
+    }) => {
+      const calendarEvent = await createCalendarEvent(input)
+      await Promise.all(
+        reminders.map((remindAt) =>
+          createReminderRule({
+            sourceType: 'CALENDAR_EVENT',
+            sourceId: calendarEvent.id,
+            remindAt,
+          }),
+        ),
+      )
+      return calendarEvent
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['calendar'] })
       toast.success('日程已创建')
@@ -118,12 +144,32 @@ export default function CalendarPage() {
       setLink('')
       setNotes('')
       setProjectId(undefined)
+      setReminderTimes([''])
+      setReminderRuleIds([])
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : '保存日程失败'),
   })
   const updateMutation = useMutation({
-    mutationFn: ({ id, input }: { id: string; input: CreateCalendarEventInput }) =>
-      updateCalendarEvent(id, input),
+    mutationFn: async ({
+      id,
+      input,
+      reminders,
+      ruleIds,
+    }: {
+      id: string
+      input: CreateCalendarEventInput
+      reminders: string[]
+      ruleIds: string[]
+    }) => {
+      const calendarEvent = await updateCalendarEvent(id, input)
+      await Promise.all(ruleIds.map((ruleId) => archiveReminderRule(ruleId)))
+      await Promise.all(
+        reminders.map((remindAt) =>
+          createReminderRule({ sourceType: 'CALENDAR_EVENT', sourceId: id, remindAt }),
+        ),
+      )
+      return calendarEvent
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['calendar'] })
       toast.success('日程已更新')
@@ -185,12 +231,24 @@ export default function CalendarPage() {
     const trimmedTitle = title.trim()
     const start = new Date(startAt)
     const end = new Date(endAt)
+    const normalizedReminders = reminderTimes
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) => new Date(value))
     if (!trimmedTitle || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       setValidationMessage('请填写主题、开始时间和结束时间。')
       return
     }
     if (end <= start) {
       setValidationMessage('结束时间必须晚于开始时间。')
+      return
+    }
+    if (normalizedReminders.some((value) => Number.isNaN(value.getTime()))) {
+      setValidationMessage('提醒时间格式不正确。')
+      return
+    }
+    if (normalizedReminders.some((value) => value > start)) {
+      setValidationMessage('提醒时间不能晚于日程开始时间。')
       return
     }
     setValidationMessage('')
@@ -205,8 +263,10 @@ export default function CalendarPage() {
       ...(link.trim() ? { link: link.trim() } : {}),
       ...(notes.trim() ? { notes: notes.trim() } : {}),
     }
-    if (editingId) updateMutation.mutate({ id: editingId, input })
-    else createMutation.mutate(input)
+    const reminders = normalizedReminders.map((value) => value.toISOString())
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, input, reminders, ruleIds: reminderRuleIds })
+    } else createMutation.mutate({ input, reminders })
   }
 
   function resetForm() {
@@ -220,6 +280,8 @@ export default function CalendarPage() {
     setNotes('')
     setProjectId(undefined)
     setAllDay(false)
+    setReminderTimes([''])
+    setReminderRuleIds([])
     setValidationMessage('')
   }
 
@@ -250,6 +312,16 @@ export default function CalendarPage() {
     setNotes(entry.notes ?? '')
     setProjectId(entry.projectId ?? undefined)
     setAllDay(entry.allDay)
+    setIsLoadingReminders(true)
+    void listReminderRules('CALENDAR_EVENT', entry.sourceId)
+      .then((rules) => {
+        setReminderRuleIds(rules.map((rule) => rule.id))
+        setReminderTimes(
+          rules.length ? rules.map((rule) => toLocalDateTime(new Date(rule.remindAt))) : [''],
+        )
+      })
+      .catch(() => toast.error('无法读取日程提醒，请重试。'))
+      .finally(() => setIsLoadingReminders(false))
     setValidationMessage('')
     setIsCreateOpen(true)
   }
@@ -399,6 +471,40 @@ export default function CalendarPage() {
           <Checkbox checked={allDay} onChange={(event) => setAllDay(Boolean(event.target.checked))}>
             全天日程
           </Checkbox>
+          <fieldset className="calendar-page__reminders" disabled={isLoadingReminders}>
+            <legend>提醒时间（可添加多个）</legend>
+            {reminderTimes.map((value, index) => (
+              <div key={index} className="calendar-page__reminder-row">
+                <Input
+                  type="datetime-local"
+                  aria-label={`提醒时间 ${index + 1}`}
+                  value={value}
+                  onChange={(nextValue) =>
+                    setReminderTimes((current) =>
+                      current.map((item, itemIndex) => itemIndex === index ? nextValue : item)
+                    )
+                  }
+                />
+                {reminderTimes.length > 1 ? (
+                  <Button
+                    type="tertiary"
+                    aria-label={`删除提醒时间 ${index + 1}`}
+                    onClick={() =>
+                      setReminderTimes((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                    }
+                  >
+                    删除
+                  </Button>
+                ) : null}
+              </div>
+            ))}
+            <Button
+              type="tertiary"
+              onClick={() => setReminderTimes((current) => [...current, ''])}
+            >
+              添加提醒
+            </Button>
+          </fieldset>
           <div className="calendar-page__form-grid">
             <label htmlFor="calendar-start">
               <span>开始时间</span>
