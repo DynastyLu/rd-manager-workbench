@@ -1,0 +1,52 @@
+{
+  "name": "rd-manager-workbench-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsc && electron .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc && electron-builder --dir",
+    "dist": "tsc && electron-builder"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.15",
+    "electron": "37.3.1",
+    "electron-builder": "^26.0.12",
+    "typescript": "~5.8.3",
+    "vitest": "^4.0.18"
+  },
+  "build": {
+    "appId": "com.rdworkbench.desktop",
+    "productName": "研发工作台",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "../frontend/dist", "to": "frontend" },
+      { "from": "../backend/dist", "to": "backend/dist" },
+      { "from": "../backend/prisma", "to": "backend/prisma" },
+      { "from": "../backend/node_modules", "to": "backend/node_modules" }
+    ],
+    "asarUnpack": [
+      "**/node_modules/.prisma/**/*",
+      "**/node_modules/@prisma/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}

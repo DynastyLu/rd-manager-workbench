@@ -29,6 +29,11 @@ backend/.env
 backend/.env.*
 !backend/.env.example
 
+# Electron desktop dependencies and package outputs
+desktop/node_modules/
+desktop/dist/
+desktop/release/
+
 # Local machine files
 *.log
 .DS_Store
