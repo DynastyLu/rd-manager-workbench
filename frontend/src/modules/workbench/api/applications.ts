@@ -15,7 +15,6 @@ import type {
   MaterialVersion,
   MaterialReviewStatus,
   SubmissionRecord,
-  SubmissionStatus,
   WorkflowTemplate,
 } from '@/modules/workbench/types'
 
@@ -62,14 +61,12 @@ export interface CreateWorkflowTemplateInput {
 export interface CreateApplicationCaseInput {
   code: string
   title: string
-  projectId?: string
+  projectId: string
   workflowTemplateId: string
 }
 
 export interface UpdateApplicationCaseInput {
-  code?: string
   title?: string
-  projectId?: string | null
   subjectName?: string | null
   region?: string | null
   organization?: string | null
@@ -81,11 +78,10 @@ export interface UpdateApplicationCaseInput {
 
 export interface UpdateApplicationNodeInput {
   status?: ApplicationNodeStatus
-  notes?: string | null
 }
 
 export interface CreateApplicationRequirementInput {
-  nodeId?: string
+  applicationNodeId?: string
   code: string
   title: string
   description?: string
@@ -93,15 +89,15 @@ export interface CreateApplicationRequirementInput {
 }
 
 export interface UpdateApplicationRequirementInput {
-  code?: string
   title?: string
   description?: string | null
   isRequired?: boolean
   status?: ApplicationRequirementStatus
+  applicationNodeId?: string
 }
 
 export interface CreateApplicationMaterialInput {
-  nodeId?: string
+  applicationNodeId?: string
   code: string
   title: string
   category?: string
@@ -119,33 +115,26 @@ export interface CreateMaterialVersionInput {
 }
 
 export interface CreateEvidenceRecordInput {
-  nodeId?: string
   title: string
   description?: string
-  referenceUrl?: string
-  occurredAt?: string
+  sourceUri?: string
+  collectedAt?: string
+  requirementIds?: string[]
+  materialIds?: string[]
 }
 
 export interface CreateCorrectionInput {
-  nodeId?: string
-  summary: string
-  deadlineAt?: string
-}
-
-export interface UpdateCorrectionInput {
-  summary?: string
-  deadlineAt?: string | null
+  title: string
+  details?: string
+  dueAt?: string
   status?: CorrectionStatus
+  submissionRecordId?: string
+  materialVersionIds?: string[]
 }
 
 export interface CreateSubmissionInput {
-  notes?: string
+  note?: string
   materialVersionIds: string[]
-}
-
-export interface UpdateSubmissionInput {
-  notes?: string | null
-  status?: SubmissionStatus
 }
 
 function toQueryString(params: object): string {
@@ -292,34 +281,12 @@ export function createCorrection(
   })
 }
 
-export function updateCorrection(
-  caseId: string,
-  correctionId: string,
-  input: UpdateCorrectionInput,
-): Promise<CorrectionRecord> {
-  return request<CorrectionRecord>(`${casePath(caseId)}/corrections/${encodeURIComponent(correctionId)}`, {
-    method: 'PATCH',
-    body: JSON.stringify(input),
-  })
-}
-
 export function createSubmission(
   caseId: string,
   input: CreateSubmissionInput,
 ): Promise<SubmissionRecord> {
   return request<SubmissionRecord>(`${casePath(caseId)}/submissions`, {
     method: 'POST',
-    body: JSON.stringify(input),
-  })
-}
-
-export function updateSubmission(
-  caseId: string,
-  submissionId: string,
-  input: UpdateSubmissionInput,
-): Promise<SubmissionRecord> {
-  return request<SubmissionRecord>(`${casePath(caseId)}/submissions/${encodeURIComponent(submissionId)}`, {
-    method: 'PATCH',
     body: JSON.stringify(input),
   })
 }

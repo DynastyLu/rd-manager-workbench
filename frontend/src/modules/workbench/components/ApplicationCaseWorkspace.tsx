@@ -63,7 +63,7 @@ export function ApplicationCaseWorkspace({
                   <div>
                     <p className="font-medium">{node.sequence}. {node.title}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {node.isRequired ? '必经节点' : '可选节点'} · {nodeStatusLabel[node.status]}
+                      {nodeStatusLabel[node.status]}
                     </p>
                   </div>
                   <Badge variant={node.status === 'COMPLETED' ? 'secondary' : 'outline'}>
@@ -161,7 +161,7 @@ export function ApplicationCaseWorkspace({
                   <ul className="grid gap-2">
                     {applicationCase.corrections.map((correction) => (
                       <li key={correction.id} className="rounded-md border p-3">
-                        {correction.summary} · {correction.status === 'RESOLVED' ? '已解决' : '待处理'}
+                        {correction.title} · {correction.status === 'RESOLVED' ? '已解决' : '待处理'}
                       </li>
                     ))}
                   </ul>

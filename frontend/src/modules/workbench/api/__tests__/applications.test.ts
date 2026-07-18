@@ -35,7 +35,12 @@ describe('application case API client', () => {
       name: '认定流程',
       nodes: [{ code: 'PREPARE', title: '材料准备', sequence: 1, isRequired: true }],
     })
-    await createApplicationCase({ code: 'APP-001', title: '市级认定', workflowTemplateId: 'template-1' })
+    await createApplicationCase({
+      code: 'APP-001',
+      title: '市级认定',
+      projectId: 'project-1',
+      workflowTemplateId: 'template-1',
+    })
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -51,6 +56,16 @@ describe('application case API client', () => {
       3,
       'http://127.0.0.1:4311/api/workflow-templates',
       expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetchMock.mock.calls[3]?.[1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          code: 'APP-001',
+          title: '市级认定',
+          projectId: 'project-1',
+          workflowTemplateId: 'template-1',
+        }),
+      }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       4,

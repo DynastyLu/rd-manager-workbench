@@ -20,25 +20,26 @@ export function ApplicationCaseForm({
   const [code, setCode] = useState('')
   const [projectId, setProjectId] = useState('')
   const [workflowTemplateId, setWorkflowTemplateId] = useState('')
-  const [errors, setErrors] = useState<{ code?: string; title?: string; template?: string }>({})
+  const [errors, setErrors] = useState<{ code?: string; title?: string; project?: string; template?: string }>({})
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const nextErrors = {
       code: code.trim() ? undefined : '请填写案件编号',
       title: title.trim() ? undefined : '请填写案件名称',
+      project: projectId.trim() ? undefined : '请选择关联项目',
       template: workflowTemplateId ? undefined : '请选择流程模板',
     }
     setErrors(nextErrors)
 
-    if (nextErrors.code || nextErrors.title || nextErrors.template) {
+    if (nextErrors.code || nextErrors.title || nextErrors.project || nextErrors.template) {
       return
     }
 
     void onSubmit({
       code: code.trim(),
       title: title.trim(),
-      ...(projectId.trim() ? { projectId: projectId.trim() } : {}),
+      projectId: projectId.trim(),
       workflowTemplateId,
     })
   }
@@ -68,7 +69,7 @@ export function ApplicationCaseForm({
         {errors.code ? <p className="text-sm text-destructive" role="alert">{errors.code}</p> : null}
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="application-case-project">关联项目 ID（可选）</Label>
+        <Label htmlFor="application-case-project">关联项目 ID</Label>
         <Input
           id="application-case-project"
           value={projectId}
@@ -76,6 +77,7 @@ export function ApplicationCaseForm({
           disabled={isSubmitting}
           autoComplete="off"
         />
+        {errors.project ? <p className="text-sm text-destructive" role="alert">{errors.project}</p> : null}
       </div>
       <div className="grid gap-2">
         <Label htmlFor="application-case-template">流程模板</Label>

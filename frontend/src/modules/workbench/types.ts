@@ -158,21 +158,18 @@ export interface ApplicationNode {
   prerequisiteNodeCodes: string[]
   requiredRequirementCodes: string[]
   requiredMaterialCodes: string[]
-  isRequired: boolean
   status: ApplicationNodeStatus
   completedAt: string | null
-  notes?: string | null
 }
 
 export interface ApplicationRequirement {
   id: string
-  nodeId: string | null
+  applicationNodeId: string | null
   code: string
   title: string
   description: string | null
   isRequired: boolean
   status: ApplicationRequirementStatus
-  satisfiedAt: string | null
 }
 
 export interface MaterialVersion {
@@ -190,7 +187,7 @@ export interface MaterialVersion {
 
 export interface ApplicationMaterial {
   id: string
-  nodeId: string | null
+  applicationNodeId: string | null
   code: string
   title: string
   category: string | null
@@ -200,20 +197,19 @@ export interface ApplicationMaterial {
 
 export interface EvidenceRecord {
   id: string
-  nodeId: string | null
   title: string
   description: string | null
-  referenceUrl: string | null
-  occurredAt: string | null
+  sourceUri: string | null
+  collectedAt: string | null
   createdAt: string
 }
 
 export interface CorrectionRecord {
   id: string
-  nodeId: string | null
-  summary: string
+  title: string
+  details: string | null
   status: CorrectionStatus
-  deadlineAt: string | null
+  dueAt: string | null
   resolvedAt: string | null
   createdAt: string
 }
@@ -222,8 +218,7 @@ export interface SubmissionRecord {
   id: string
   status: SubmissionStatus
   submittedAt: string | null
-  notes: string | null
-  materialVersionIds: string[]
+  note: string | null
   createdAt: string
 }
 

@@ -72,7 +72,6 @@ const applicationCase = {
       prerequisiteNodeCodes: [],
       requiredRequirementCodes: [],
       requiredMaterialCodes: [],
-      isRequired: true,
       status: 'PENDING',
       completedAt: null,
     },
