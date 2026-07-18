@@ -106,3 +106,157 @@ export interface ListTasksResult {
   data: WorkTask[]
   meta: PaginationMeta
 }
+
+export type ApplicationCaseStatus =
+  | 'DRAFT'
+  | 'IN_PROGRESS'
+  | 'SUBMITTED'
+  | 'COMPLETED'
+  | 'CANCELLED'
+
+export type ApplicationNodeStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'SKIPPED'
+
+export type ApplicationRequirementStatus = 'SATISFIED' | 'PENDING' | 'TO_VERIFY' | 'NOT_APPLICABLE'
+
+export type MaterialReviewStatus = 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED'
+
+export type CorrectionStatus = 'OPEN' | 'RESOLVED' | 'WAIVED'
+
+export type SubmissionStatus = 'DRAFT' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED'
+
+export interface WorkflowTemplateNode {
+  id: string
+  code: string
+  title: string
+  description: string | null
+  sequence: number
+  prerequisiteNodeCodes: string[]
+  requiredRequirementCodes: string[]
+  requiredMaterialCodes: string[]
+  isRequired: boolean
+}
+
+export interface WorkflowTemplate {
+  id: string
+  name: string
+  description: string | null
+  category: string | null
+  version: number
+  archivedAt: string | null
+  nodes: WorkflowTemplateNode[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ApplicationNode {
+  id: string
+  workflowTemplateNodeId: string | null
+  code: string
+  title: string
+  description: string | null
+  sequence: number
+  prerequisiteNodeCodes: string[]
+  requiredRequirementCodes: string[]
+  requiredMaterialCodes: string[]
+  isRequired: boolean
+  status: ApplicationNodeStatus
+  completedAt: string | null
+  notes?: string | null
+}
+
+export interface ApplicationRequirement {
+  id: string
+  nodeId: string | null
+  code: string
+  title: string
+  description: string | null
+  isRequired: boolean
+  status: ApplicationRequirementStatus
+  satisfiedAt: string | null
+}
+
+export interface MaterialVersion {
+  id: string
+  versionNumber: number
+  fileName: string
+  storageKey: string | null
+  checksum: string | null
+  fileSize: number | null
+  note: string | null
+  reviewStatus: MaterialReviewStatus
+  isFinal: boolean
+  createdAt: string
+}
+
+export interface ApplicationMaterial {
+  id: string
+  nodeId: string | null
+  code: string
+  title: string
+  category: string | null
+  isRequired: boolean
+  versions: MaterialVersion[]
+}
+
+export interface EvidenceRecord {
+  id: string
+  nodeId: string | null
+  title: string
+  description: string | null
+  referenceUrl: string | null
+  occurredAt: string | null
+  createdAt: string
+}
+
+export interface CorrectionRecord {
+  id: string
+  nodeId: string | null
+  summary: string
+  status: CorrectionStatus
+  deadlineAt: string | null
+  resolvedAt: string | null
+  createdAt: string
+}
+
+export interface SubmissionRecord {
+  id: string
+  status: SubmissionStatus
+  submittedAt: string | null
+  notes: string | null
+  materialVersionIds: string[]
+  createdAt: string
+}
+
+export interface ApplicationCase {
+  id: string
+  code: string
+  title: string
+  projectId: string | null
+  workflowTemplateId: string
+  subjectName: string | null
+  region: string | null
+  organization: string | null
+  batch: string | null
+  deadlineAt: string | null
+  collaboratorNames: string[]
+  status: ApplicationCaseStatus
+  archivedAt: string | null
+  nodes: ApplicationNode[]
+  requirements: ApplicationRequirement[]
+  materials: ApplicationMaterial[]
+  evidenceRecords: EvidenceRecord[]
+  corrections: CorrectionRecord[]
+  submissions: SubmissionRecord[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ListWorkflowTemplatesResult {
+  data: WorkflowTemplate[]
+  meta: PaginationMeta
+}
+
+export interface ListApplicationCasesResult {
+  data: ApplicationCase[]
+  meta: PaginationMeta
+}

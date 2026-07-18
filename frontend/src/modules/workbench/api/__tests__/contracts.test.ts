@@ -7,6 +7,13 @@ import type {
 } from '../projects'
 import type { CreateTaskInput, ListTasksParams, UpdateTaskInput } from '../tasks'
 import type {
+  ApplicationCase,
+  CreateApplicationCaseInput,
+  CreateWorkflowTemplateInput,
+  ListApplicationCasesResult,
+  WorkflowTemplate,
+} from '../applications'
+import type {
   DashboardData,
   ListProjectsResult,
   ListTasksResult,
@@ -15,6 +22,87 @@ import type {
   Project,
   WorkTask,
 } from '../../types'
+
+const workflowTemplate = {
+  id: 'template-1',
+  name: '市级研发平台认定',
+  description: '可配置的申报流程',
+  category: '认定',
+  version: 1,
+  archivedAt: null,
+  nodes: [
+    {
+      id: 'template-node-1',
+      code: 'PREPARE',
+      title: '材料准备',
+      description: null,
+      sequence: 1,
+      prerequisiteNodeCodes: [],
+      requiredRequirementCodes: [],
+      requiredMaterialCodes: [],
+      isRequired: true,
+    },
+  ],
+  createdAt: '2026-07-18T00:00:00.000Z',
+  updatedAt: '2026-07-18T00:00:00.000Z',
+} satisfies WorkflowTemplate
+
+const applicationCase = {
+  id: 'case-1',
+  title: '2026 年市级研发平台认定',
+  code: 'APP-2026-001',
+  projectId: 'project-1',
+  workflowTemplateId: 'template-1',
+  subjectName: null,
+  region: null,
+  organization: null,
+  batch: null,
+  deadlineAt: null,
+  collaboratorNames: [],
+  status: 'IN_PROGRESS',
+  archivedAt: null,
+  nodes: [
+    {
+      id: 'case-node-1',
+      workflowTemplateNodeId: 'template-node-1',
+      code: 'PREPARE',
+      title: '材料准备',
+      description: null,
+      sequence: 1,
+      prerequisiteNodeCodes: [],
+      requiredRequirementCodes: [],
+      requiredMaterialCodes: [],
+      isRequired: true,
+      status: 'PENDING',
+      completedAt: null,
+    },
+  ],
+  requirements: [],
+  materials: [],
+  evidenceRecords: [],
+  corrections: [],
+  submissions: [],
+  createdAt: '2026-07-18T00:00:00.000Z',
+  updatedAt: '2026-07-18T00:00:00.000Z',
+} satisfies ApplicationCase
+
+const createWorkflowTemplateInput = {
+  name: '市级研发平台认定',
+  description: '可配置的申报流程',
+  nodes: [{ code: 'PREPARE', title: '材料准备', sequence: 1, isRequired: true }],
+} satisfies CreateWorkflowTemplateInput
+
+const createApplicationCaseInput = {
+  code: 'APP-2026-001',
+  title: '2026 年市级研发平台认定',
+  projectId: 'project-1',
+  workflowTemplateId: 'template-1',
+} satisfies CreateApplicationCaseInput
+
+const listApplicationCasesResult = {
+  data: [applicationCase],
+  meta: { page: 1, pageSize: 20, total: 1 },
+} satisfies ListApplicationCasesResult
 
 const project = {
   id: 'project-1',
@@ -169,10 +257,17 @@ describe('workbench client contracts', () => {
       updateProjectInput,
       createTaskInput,
       updateTaskInput,
+      workflowTemplate,
+      applicationCase,
+      createWorkflowTemplateInput,
+      createApplicationCaseInput,
+      listApplicationCasesResult,
     }).toMatchObject({
       dashboard: { healthDistribution: { GREEN: 1, YELLOW: 0, RED: 0 } },
       listProjectsResult: { meta: { page: 1, pageSize: 20, total: 1 } },
       listTasksResult: { meta: { page: 1, pageSize: 20, total: 1 } },
+      applicationCase: { nodes: [{ code: 'PREPARE', status: 'PENDING' }] },
+      listApplicationCasesResult: { meta: { page: 1, pageSize: 20, total: 1 } },
     })
   })
 })
