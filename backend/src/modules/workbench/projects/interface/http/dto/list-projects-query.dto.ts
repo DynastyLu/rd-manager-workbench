@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, Max, Min, ValidateIf } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsString, Max, Min, ValidateIf } from 'class-validator';
 import { ProjectStatus } from '@prisma/client';
 
 const isDefined = (_object: object, value: unknown) => value !== undefined;
@@ -21,4 +21,9 @@ export class ListProjectsQueryDto {
   @ValidateIf(isDefined)
   @IsEnum(ProjectStatus)
   status?: ProjectStatus;
+
+  @ValidateIf(isDefined)
+  @IsString()
+  @IsNotEmpty()
+  search?: string;
 }

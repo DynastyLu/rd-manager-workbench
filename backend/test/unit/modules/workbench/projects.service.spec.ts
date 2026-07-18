@@ -3,6 +3,35 @@ import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/pla
 import { ProjectsService } from '../../../../src/modules/workbench/projects/application/projects.service';
 
 describe('ProjectsService', () => {
+  it('searches project code or name case-insensitively', async () => {
+    const findMany = jest.fn().mockReturnValue('find-many-query');
+    const count = jest.fn().mockReturnValue('count-query');
+    const transaction = jest.fn().mockResolvedValue([[], 0]);
+    const prisma = {
+      project: { findMany, count },
+      $transaction: transaction,
+    } as unknown as PlatformPrismaService;
+    const service = new ProjectsService(prisma);
+
+    await service.list({ search: 'alpha', page: 2, pageSize: 20 });
+
+    const where = {
+      archivedAt: null,
+      OR: [
+        { code: { contains: 'alpha', mode: 'insensitive' } },
+        { name: { contains: 'alpha', mode: 'insensitive' } },
+      ],
+    };
+    expect(findMany).toHaveBeenCalledWith({
+      where,
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      skip: 20,
+      take: 20,
+    });
+    expect(count).toHaveBeenCalledWith({ where });
+    expect(transaction).toHaveBeenCalledWith(['find-many-query', 'count-query']);
+  });
+
   it('does not update a project that is archived after an earlier active read', async () => {
     const updateMany = jest.fn().mockResolvedValue({ count: 0 });
     const prisma = {

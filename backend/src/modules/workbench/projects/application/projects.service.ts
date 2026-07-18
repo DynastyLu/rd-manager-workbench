@@ -51,6 +51,14 @@ export class ProjectsService {
     const where: Prisma.ProjectWhereInput = {
       archivedAt: null,
       ...(query.status ? { status: query.status } : {}),
+      ...(query.search
+        ? {
+            OR: [
+              { code: { contains: query.search, mode: 'insensitive' } },
+              { name: { contains: query.search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
     };
 
     const [data, total] = await this.prisma.$transaction([

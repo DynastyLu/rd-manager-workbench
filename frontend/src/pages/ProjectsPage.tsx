@@ -34,6 +34,9 @@ const HEALTH_META: Record<ProjectHealth, { label: string; className: string }> =
 
 type ProjectView = 'all' | 'recent'
 
+const PROJECT_PAGE_SIZE = 20
+const RECENT_PROJECT_PAGE_SIZE = 100
+
 function projectStatusLabel(status: ProjectStatus) {
   return STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
 }
@@ -55,21 +58,41 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<ProjectStatus | undefined>()
   const [view, setView] = useState<ProjectView>('all')
+  const [page, setPage] = useState(1)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const projectsQuery = useQuery({
-    queryKey: ['projects', { search, status }],
-    queryFn: () => listProjects({ search: search || undefined, status }),
+    queryKey: ['projects', { page, pageSize: PROJECT_PAGE_SIZE, search, status }],
+    queryFn: () =>
+      listProjects({
+        page,
+        pageSize: PROJECT_PAGE_SIZE,
+        search: search || undefined,
+        status,
+      }),
+    enabled: view === 'all',
   })
+  const recentProjectsQuery = useQuery({
+    queryKey: ['projects', 'recent', { search, status }],
+    queryFn: () =>
+      listProjects({
+        page: 1,
+        pageSize: RECENT_PROJECT_PAGE_SIZE,
+        search: search || undefined,
+        status,
+      }),
+    enabled: view === 'recent',
+  })
+  const activeQuery = view === 'recent' ? recentProjectsQuery : projectsQuery
 
   const projects = useMemo(() => {
-    const all = projectsQuery.data?.data ?? []
+    const all = activeQuery.data?.data ?? []
     if (view === 'all') return all
     const recent = getRecentProjectIds()
     return recent.flatMap((id) => {
       const project = all.find((item) => item.id === id)
       return project ? [project] : []
     })
-  }, [projectsQuery.data, view])
+  }, [activeQuery.data, view])
 
   const columns: ColumnProps<Project>[] = [
     {
@@ -168,7 +191,10 @@ export default function ProjectsPage() {
             prefix={<IconSearch />}
             placeholder="搜索项目名称或编号"
             value={search}
-            onChange={setSearch}
+            onChange={(value) => {
+              setSearch(value)
+              setPage(1)
+            }}
             showClear
           />
           <span id="project-status-label" className="projects-page__sr-only">
@@ -177,9 +203,10 @@ export default function ProjectsPage() {
           <Select
             aria-labelledby="project-status-label"
             value={status ?? 'ALL'}
-            onChange={(value) =>
+            onChange={(value) => {
               setStatus(value === 'ALL' ? undefined : (value as ProjectStatus))
-            }
+              setPage(1)
+            }}
             optionList={[
               { value: 'ALL', label: '全部状态' },
               ...STATUS_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
@@ -187,7 +214,7 @@ export default function ProjectsPage() {
           />
         </div>
 
-        {projectsQuery.isError ? (
+        {activeQuery.isError ? (
           <Banner
             type="danger"
             fullMode={false}
@@ -195,29 +222,40 @@ export default function ProjectsPage() {
             description="请确认本地服务已启动后重试。"
             closeIcon={null}
           >
-            <Button onClick={() => void projectsQuery.refetch()}>重试</Button>
+            <Button onClick={() => void activeQuery.refetch()}>重试</Button>
           </Banner>
         ) : null}
 
-        <Table<Project>
-          className="projects-page__table"
-          rowKey="id"
-          size="middle"
-          pagination={false}
-          loading={projectsQuery.isPending}
-          columns={columns}
-          dataSource={projects}
-          empty={
-            <Empty
-              title={
-                view === 'recent'
-                  ? '还没有最近访问的项目。'
-                  : '还没有项目，先新建一个项目吧。'
-              }
-              description={view === 'recent' ? '打开一个项目后，它会出现在这里。' : undefined}
-            />
-          }
-        />
+        {!activeQuery.isError ? (
+          <Table<Project>
+            className="projects-page__table"
+            rowKey="id"
+            size="middle"
+            pagination={
+              view === 'all'
+                ? {
+                    currentPage: page,
+                    pageSize: PROJECT_PAGE_SIZE,
+                    total: projectsQuery.data?.meta.total ?? 0,
+                    showTotal: true,
+                    showSizeChanger: false,
+                    onPageChange: setPage,
+                  }
+                : false
+            }
+            loading={activeQuery.isPending}
+            columns={columns}
+            dataSource={projects}
+            empty={
+              <Empty
+                title={
+                  view === 'recent' ? '还没有最近访问的项目。' : '还没有项目，先新建一个项目吧。'
+                }
+                description={view === 'recent' ? '打开一个项目后，它会出现在这里。' : undefined}
+              />
+            }
+          />
+        ) : null}
       </section>
 
       <Modal
@@ -228,7 +266,9 @@ export default function ProjectsPage() {
         closeOnEsc
         width={520}
       >
-        <p className="projects-page__modal-copy">先填写项目编号和名称，创建后进入项目空间继续完善。</p>
+        <p className="projects-page__modal-copy">
+          先填写项目编号和名称，创建后进入项目空间继续完善。
+        </p>
         <ProjectForm onSuccess={() => setIsCreateOpen(false)} />
       </Modal>
     </div>
