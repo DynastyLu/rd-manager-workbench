@@ -64,4 +64,21 @@ describe('workbench HTTP client', () => {
       expect.any(Object),
     )
   })
+
+  it('lets the browser set the multipart boundary for file uploads', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ success: true, data: { id: 'file-1' } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const form = new FormData()
+    form.append('file', new Blob(['document']), 'note.txt')
+
+    await request('/files', { method: 'POST', body: form })
+
+    const init = fetchMock.mock.calls[0]?.[1]
+    const headers = init?.headers as Headers
+    expect(headers.has('Content-Type')).toBe(false)
+  })
 })
