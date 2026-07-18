@@ -5,14 +5,18 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProjectWorkspacePage from '../ProjectWorkspacePage'
 
-const { createProgressReport, createTask, getProject } = vi.hoisted(() => ({
+const { createProgressReport, createTask, getProject, listMeetings, request } = vi.hoisted(() => ({
   createProgressReport: vi.fn(),
   createTask: vi.fn(),
   getProject: vi.fn(),
+  listMeetings: vi.fn(),
+  request: vi.fn(),
 }))
 
 vi.mock('@/modules/workbench/api/projects', () => ({ createProgressReport, getProject }))
 vi.mock('@/modules/workbench/api/tasks', () => ({ createTask }))
+vi.mock('@/modules/workbench/api/management', () => ({ listMeetings }))
+vi.mock('@/lib/http', () => ({ request }))
 
 function CurrentPath() {
   return <output aria-label="当前项目路径">{useLocation().pathname}</output>
@@ -121,7 +125,11 @@ describe('ProjectWorkspacePage', () => {
     createProgressReport.mockReset()
     createTask.mockReset()
     getProject.mockReset()
+    listMeetings.mockReset()
+    request.mockReset()
     getProject.mockResolvedValue(project)
+    listMeetings.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
+    request.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
   })
 
   it('renders the fixed project context and six connected sections', async () => {
@@ -201,5 +209,51 @@ describe('ProjectWorkspacePage', () => {
         reportedAt: expect.any(String),
       })
     })
+  })
+
+  it('shows the project meetings from the shared meeting data source', async () => {
+    listMeetings.mockResolvedValue({
+      data: [
+        {
+          id: 'meeting-1',
+          title: '材料筛选周会',
+          scheduledAt: '2026-07-21T02:00:00.000Z',
+          status: 'PLANNED',
+        },
+      ],
+      meta: { page: 1, pageSize: 6, total: 1 },
+    })
+
+    renderWorkspace('/spaces/projects/project-1/meetings')
+
+    expect(await screen.findByText('材料筛选周会')).toBeInTheDocument()
+    expect(listMeetings).toHaveBeenCalledWith({ projectId: 'project-1', pageSize: 6 })
+    expect(screen.getByRole('link', { name: '打开会议：材料筛选周会' })).toHaveAttribute(
+      'href',
+      '/calendar?meetingId=meeting-1'
+    )
+  })
+
+  it('shows project documents and opens the same document in the knowledge workspace', async () => {
+    request.mockResolvedValue({
+      data: [
+        {
+          id: 'document-1',
+          title: '耐盐材料技术方案',
+          type: 'DOCUMENT',
+          updatedAt: '2026-07-18T08:00:00.000Z',
+        },
+      ],
+      meta: { page: 1, pageSize: 6, total: 1 },
+    })
+
+    renderWorkspace('/spaces/projects/project-1/docs')
+
+    expect(await screen.findByText('耐盐材料技术方案')).toBeInTheDocument()
+    expect(request).toHaveBeenCalledWith('/documents?projectId=project-1&pageSize=6')
+    expect(screen.getByRole('link', { name: '打开文档：耐盐材料技术方案' })).toHaveAttribute(
+      'href',
+      '/docs?documentId=document-1'
+    )
   })
 })

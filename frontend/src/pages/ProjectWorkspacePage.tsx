@@ -9,6 +9,8 @@ import {
 } from '@douyinfe/semi-icons'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { getProject } from '@/modules/workbench/api/projects'
+import { listMeetings } from '@/modules/workbench/api/management'
+import { request } from '@/lib/http'
 import type {
   MilestoneStatus,
   ProjectDetail,
@@ -249,6 +251,115 @@ function ProgressSection({
   )
 }
 
+type ProjectDocumentSummary = {
+  id: string
+  title: string
+  type: 'DOCUMENT' | 'KNOWLEDGE_PAGE' | 'MEETING_MINUTES'
+  updatedAt: string
+}
+
+type ProjectDocumentPage = {
+  data: ProjectDocumentSummary[]
+  meta: { page: number; pageSize: number; total: number }
+}
+
+function ProjectMeetingsSection({ project }: { project: ProjectDetail }) {
+  const meetingsQuery = useQuery({
+    queryKey: ['meetings', { projectId: project.id, pageSize: 6 }],
+    queryFn: () => listMeetings({ projectId: project.id, pageSize: 6 }),
+  })
+
+  if (meetingsQuery.isPending) return <Skeleton.Paragraph rows={4} />
+  if (meetingsQuery.isError) {
+    return (
+      <EmptySection
+        title="无法读取项目会议"
+        description="本地服务暂时没有返回会议，请重试。"
+        action={<Button onClick={() => void meetingsQuery.refetch()}>重试</Button>}
+      />
+    )
+  }
+
+  return (
+    <section className="project-workspace__panel project-workspace__panel--section">
+      <header>
+        <h2>项目会议</h2>
+        <Link to={`${ROUTES.CALENDAR}?projectId=${project.id}`}>新建会议</Link>
+      </header>
+      {meetingsQuery.data.data.length ? (
+        <ul className="project-workspace__task-list">
+          {meetingsQuery.data.data.map((meeting) => (
+            <li key={meeting.id}>
+              <IconCalendarStroked />
+              <strong>{meeting.title}</strong>
+              <time>{new Date(meeting.scheduledAt).toLocaleString('zh-CN')}</time>
+              <Tag size="small">{meeting.status === 'HELD' ? '已结束' : meeting.status === 'CANCELLED' ? '已取消' : '待召开'}</Tag>
+              <Link
+                aria-label={`打开会议：${meeting.title}`}
+                to={`${ROUTES.CALENDAR}?meetingId=${meeting.id}`}
+              >
+                查看
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="project-workspace__muted">当前项目还没有会议，可从日历新建并自动关联。</p>
+      )}
+    </section>
+  )
+}
+
+function ProjectDocumentsSection({ project }: { project: ProjectDetail }) {
+  const documentsQuery = useQuery({
+    queryKey: ['documents', { projectId: project.id, pageSize: 6 }],
+    queryFn: () =>
+      request<ProjectDocumentPage>(
+        `/documents?projectId=${encodeURIComponent(project.id)}&pageSize=6`
+      ),
+  })
+
+  if (documentsQuery.isPending) return <Skeleton.Paragraph rows={4} />
+  if (documentsQuery.isError) {
+    return (
+      <EmptySection
+        title="无法读取项目文档"
+        description="本地服务暂时没有返回文档，请重试。"
+        action={<Button onClick={() => void documentsQuery.refetch()}>重试</Button>}
+      />
+    )
+  }
+
+  return (
+    <section className="project-workspace__panel project-workspace__panel--section">
+      <header>
+        <h2>文档与资料</h2>
+        <Link to={`${ROUTES.DOCS}?projectId=${project.id}&create=document`}>新建文档</Link>
+      </header>
+      {documentsQuery.data.data.length ? (
+        <ul className="project-workspace__task-list">
+          {documentsQuery.data.data.map((document) => (
+            <li key={document.id}>
+              <IconFolderStroked />
+              <strong>{document.title}</strong>
+              <span>{document.type === 'KNOWLEDGE_PAGE' ? '知识页' : document.type === 'MEETING_MINUTES' ? '会议纪要' : '文档'}</span>
+              <time>{new Date(document.updatedAt).toLocaleDateString('zh-CN')}</time>
+              <Link
+                aria-label={`打开文档：${document.title}`}
+                to={`${ROUTES.DOCS}?documentId=${document.id}`}
+              >
+                打开
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="project-workspace__muted">当前项目还没有文档或知识页。</p>
+      )}
+    </section>
+  )
+}
+
 function ProjectSectionContent({
   section,
   project,
@@ -266,10 +377,10 @@ function ProjectSectionContent({
     return <EmptySection title="集中管理风险、问题与决策" description="现有风险、问题和决策记录将按当前项目筛选。" action={<Link to={`${ROUTES.governance('risks')}?projectId=${project.id}`}>打开风险与问题</Link>} />
   }
   if (section === 'meetings') {
-    return <EmptySection title="项目会议" description="从日历创建会议，并把纪要和行动项关联到当前项目。" action={<Link to={`${ROUTES.CALENDAR}?projectId=${project.id}`}><IconCalendarStroked /> 新建会议</Link>} />
+    return <ProjectMeetingsSection project={project} />
   }
   if (section === 'docs') {
-    return <EmptySection title="文档与资料" description="项目级文档与附件将在 P0-B 接入，当前不会创建无法关联的假文档。" action={<Link to={ROUTES.DOCS}><IconFolderStroked /> 查看文档规划</Link>} />
+    return <ProjectDocumentsSection project={project} />
   }
   return <OverviewSection project={project} />
 }
