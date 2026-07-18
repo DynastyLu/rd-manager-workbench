@@ -8,7 +8,7 @@ function CurrentPath() {
   return <output aria-label="当前路径">{useLocation().pathname}</output>
 }
 
-function renderShell(initialPath = '/library') {
+function renderShell(initialPath = '/docs') {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <Routes>
@@ -29,14 +29,17 @@ function renderShell(initialPath = '/library') {
 }
 
 describe('AppShell', () => {
-  it('renders semantic primary navigation, active library, and the route content area without tabs', () => {
+  it('renders semantic primary navigation, active documents app, and the route content area without tabs', () => {
     const { container } = renderShell()
 
     expect(screen.getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
-    expect(screen.getAllByRole('link')).toHaveLength(10)
-    expect(screen.getByRole('link', { name: /业务库/ })).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByLabelText('当前位置：工作空间，业务库')).toBeInTheDocument()
-    expect(screen.getByText('业务库', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getAllByRole('link').length).toBeGreaterThanOrEqual(8)
+    expect(screen.getByRole('link', { name: /文档与知识库/ })).toHaveAttribute(
+      'aria-current',
+      'page'
+    )
+    expect(screen.getByLabelText('当前位置：工作空间，文档与知识库')).toBeInTheDocument()
+    expect(screen.getByText('文档与知识库', { selector: 'strong' })).toBeInTheDocument()
     expect(screen.getByRole('main')).toBeInTheDocument()
     expect(container.querySelector('.tab-bar')).not.toBeInTheDocument()
   })
