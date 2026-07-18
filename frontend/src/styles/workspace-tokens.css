@@ -71,7 +71,7 @@
 }
 
 body {
-  min-width: 1024px;
+  min-width: 0;
   background: var(--workspace-canvas);
   color: var(--workspace-text);
   font-family: var(--font-main);

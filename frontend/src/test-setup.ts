@@ -15,7 +15,13 @@ HTMLElement.prototype.scrollIntoView ??= () => undefined
 // Semi Design loads lottie-web from its package entry. Lottie creates a 1×1
 // canvas during module evaluation; jsdom returns null unless a canvas backend
 // is installed. The workspace tests only need the initialization surface.
-HTMLCanvasElement.prototype.getContext = (() => ({
-  fillStyle: '',
-  fillRect: () => undefined,
-})) as typeof HTMLCanvasElement.prototype.getContext
+const originalCanvasGetContext = HTMLCanvasElement.prototype.getContext
+HTMLCanvasElement.prototype.getContext = function getContext(
+  contextId: string,
+  ...args: unknown[]
+) {
+  if (contextId === '2d') {
+    return { fillStyle: '', fillRect: () => undefined } as CanvasRenderingContext2D
+  }
+  return originalCanvasGetContext.call(this, contextId as '2d', ...args)
+} as typeof HTMLCanvasElement.prototype.getContext

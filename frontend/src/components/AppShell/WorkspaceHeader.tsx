@@ -1,4 +1,5 @@
-import { Badge, Button, Dropdown, Popover } from '@douyinfe/semi-ui'
+import { useState, type ReactNode } from 'react'
+import { Button, Dropdown, Input, Modal, Popover } from '@douyinfe/semi-ui'
 import {
   IconBellStroked,
   IconChevronDown,
@@ -7,121 +8,156 @@ import {
   IconSearch,
   IconSetting,
 } from '@douyinfe/semi-icons'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import type { RouteDefinition } from '@/router/routes'
 import { ROUTES } from '@/constants/routes'
+import { ProjectForm } from '@/modules/workbench/components/ProjectForm'
+import { TaskForm } from '@/modules/workbench/components/TaskForm'
 
 interface WorkspaceHeaderProps {
   route?: RouteDefinition
 }
 
-function HeaderPopoverContent({ title, description }: { title: string; description: string }) {
+type CreateTarget = 'project' | 'task' | null
+
+function getRecentProjectIds(): string[] {
+  try {
+    const value: unknown = JSON.parse(
+      localStorage.getItem('rd-workbench:recent-projects') ?? '[]'
+    )
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function HeaderPopoverContent({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
   return (
     <div className="workspace-header__popover">
       <strong>{title}</strong>
-      <span>{description}</span>
+      {children}
     </div>
   )
 }
 
 export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
-  const navigate = useNavigate()
+  const [createTarget, setCreateTarget] = useState<CreateTarget>(null)
   const routeTitle = route?.title ?? '工作台'
+  const recentProjectId = getRecentProjectIds()[0]
 
   return (
-    <header className="workspace-header">
-      <div className="workspace-header__context">
-        <span className="workspace-header__identity">研发工作台</span>
-        <span className="workspace-header__divider" aria-hidden="true" />
-        <div className="workspace-header__route" aria-label={`当前位置：工作空间，${routeTitle}`}>
-          <strong>{routeTitle}</strong>
-          <span>本地单人空间</span>
+    <>
+      <header className="workspace-header">
+        <div className="workspace-header__context">
+          <span className="workspace-header__identity">研发工作台</span>
+          <span className="workspace-header__divider" aria-hidden="true" />
+          <div className="workspace-header__route" aria-label={`当前位置：工作空间，${routeTitle}`}>
+            <strong>{routeTitle}</strong>
+            <span>本地单人空间</span>
+          </div>
         </div>
-      </div>
 
-      <div className="workspace-header__search-wrap">
-        <button
-          type="button"
-          className="workspace-header__search"
-          aria-label="搜索工作台"
-          onClick={() => {
-            void navigate('/search')
-          }}
-        >
-          <IconSearch size="small" />
-          <span>搜索项目、任务、会议和文档</span>
-          <kbd>⌘ K</kbd>
-        </button>
-      </div>
-
-      <div className="workspace-header__actions">
-        <Dropdown
-          trigger="click"
-          position="bottomRight"
-          render={
-            <Dropdown.Menu className="workspace-header__create-menu">
-              <Dropdown.Item>
-                <Link to={ROUTES.PROJECT_SPACES}>新建项目</Link>
-              </Dropdown.Item>
-              <Dropdown.Item>
-                <Link to={ROUTES.MY_WORK}>新建任务</Link>
-              </Dropdown.Item>
-              <Dropdown.Item>
-                <Link to="/calendar">新建日程或会议</Link>
-              </Dropdown.Item>
-              <Dropdown.Item>
-                <Link to="/docs">新建文档</Link>
-              </Dropdown.Item>
-            </Dropdown.Menu>
-          }
-        >
-          <Button
-            theme="solid"
-            type="primary"
-            icon={<IconPlus />}
-            iconPosition="left"
-            aria-label="全局新建"
-          >
-            新建 <IconChevronDown size="small" />
-          </Button>
-        </Dropdown>
-
-        <Popover
-          trigger="click"
-          position="bottomRight"
-          content={
-            <HeaderPopoverContent title="最近访问" description="访问过的项目和文档会显示在这里。" />
-          }
-        >
-          <Button
-            theme="borderless"
-            icon={<IconHistory />}
-            aria-label="最近访问"
-            className="workspace-header__icon-button"
+        <div className="workspace-header__search-wrap">
+          <Input
+            className="workspace-header__search-input"
+            aria-label="全局搜索（P1 开发中）"
+            prefix={<IconSearch />}
+            placeholder="全局搜索将在 P1 接入"
+            disabled
           />
-        </Popover>
+        </div>
 
-        <Popover
-          trigger="click"
-          position="bottomRight"
-          content={
-            <HeaderPopoverContent title="通知中心" description="当前没有未读通知。" />
-          }
-        >
-          <Badge count={0} type="danger">
+        <div className="workspace-header__actions">
+          <Dropdown
+            trigger="click"
+            position="bottomRight"
+            render={
+              <Dropdown.Menu className="workspace-header__create-menu">
+                <Dropdown.Item onClick={() => setCreateTarget('project')}>新建项目</Dropdown.Item>
+                <Dropdown.Item onClick={() => setCreateTarget('task')}>新建任务</Dropdown.Item>
+              </Dropdown.Menu>
+            }
+          >
+            <Button
+              theme="solid"
+              type="primary"
+              icon={<IconPlus />}
+              iconPosition="left"
+              aria-label="全局新建"
+            >
+              新建 <IconChevronDown size="small" />
+            </Button>
+          </Dropdown>
+
+          <Popover
+            trigger="click"
+            position="bottomRight"
+            content={
+              <HeaderPopoverContent title="最近访问">
+                {recentProjectId ? (
+                  <Link
+                    className="workspace-header__popover-link"
+                    to={ROUTES.projectWorkspace(recentProjectId)}
+                    aria-label="打开最近访问的项目"
+                  >
+                    打开最近访问的项目
+                  </Link>
+                ) : (
+                  <span>还没有最近访问的项目。</span>
+                )}
+              </HeaderPopoverContent>
+            }
+          >
+            <Button
+              theme="borderless"
+              icon={<IconHistory />}
+              aria-label="最近访问"
+              className="workspace-header__icon-button"
+            />
+          </Popover>
+
+          <Popover
+            trigger="click"
+            position="bottomRight"
+            content={
+              <HeaderPopoverContent title="通知中心将在 P0-B 接入">
+                <span>提醒调度、页面推送和桌面通知将在下一批完成。</span>
+              </HeaderPopoverContent>
+            }
+          >
             <Button
               theme="borderless"
               icon={<IconBellStroked />}
               aria-label="通知中心"
               className="workspace-header__icon-button"
             />
-          </Badge>
-        </Popover>
+          </Popover>
 
-        <Link className="workspace-header__settings" to={ROUTES.SETTINGS} aria-label="设置">
-          <IconSetting />
-        </Link>
-      </div>
-    </header>
+          <Link className="workspace-header__settings" to={ROUTES.SETTINGS} aria-label="设置">
+            <IconSetting />
+          </Link>
+        </div>
+      </header>
+
+      <Modal
+        title={createTarget === 'project' ? '新建项目' : '新建任务'}
+        visible={createTarget !== null}
+        onCancel={() => setCreateTarget(null)}
+        footer={null}
+        width={520}
+        closeOnEsc
+      >
+        {createTarget === 'project' ? (
+          <ProjectForm onSuccess={() => setCreateTarget(null)} />
+        ) : null}
+        {createTarget === 'task' ? <TaskForm onSuccess={() => setCreateTarget(null)} /> : null}
+      </Modal>
+    </>
   )
 }
