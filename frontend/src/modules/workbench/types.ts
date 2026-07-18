@@ -32,6 +32,21 @@ export interface Project {
   updatedAt: string
 }
 
+export interface ProjectHealthSnapshot {
+  id: string
+  projectId: string
+  health: ProjectHealth
+  reasons: unknown
+  calculatedAt: string
+}
+
+export interface ProjectDetail extends Omit<Project, 'health'> {
+  milestones: Milestone[]
+  tasks: Array<WorkTask & { dependencyIds: string[] }>
+  progressReports: ProgressReport[]
+  latestHealthSnapshot: ProjectHealthSnapshot | null
+}
+
 export type MilestoneStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'MISSED'
 
 export interface Milestone {

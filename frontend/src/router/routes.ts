@@ -41,6 +41,7 @@ export interface RouteCategory {
 
 const WorkbenchHome = lazy(() => import('@/pages/WorkbenchHome'))
 const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
+const ProjectWorkspacePage = lazy(() => import('@/pages/ProjectWorkspacePage'))
 const TasksPage = lazy(() => import('@/pages/TasksPage'))
 const ApplicationCasesPage = lazy(() => import('@/pages/ApplicationCasesPage'))
 const RisksPage = lazy(() => import('@/pages/RisksPage'))
@@ -150,7 +151,7 @@ const canonicalRoutes: RouteDefinition[] = [
     path: '/spaces/projects/:projectId/:section?',
     title: '项目',
     icon: '▦',
-    component: ProjectsPage,
+    component: ProjectWorkspacePage,
     navigationKey: 'projects',
     availability: 'AVAILABLE',
   },

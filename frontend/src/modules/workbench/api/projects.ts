@@ -3,6 +3,7 @@ import { request } from '@/lib/http'
 import type {
   ListProjectsResult,
   Project,
+  ProjectDetail,
   ProjectPhase,
   ProjectStatus,
 } from '@/modules/workbench/types'
@@ -66,8 +67,8 @@ export function listProjects(params: ListProjectsParams = {}): Promise<ListProje
   return request<ListProjectsResult>(`/projects${toQueryString(params)}`)
 }
 
-export function getProject(id: string): Promise<Project> {
-  return request<Project>(`/projects/${encodeURIComponent(id)}`)
+export function getProject(id: string): Promise<ProjectDetail> {
+  return request<ProjectDetail>(`/projects/${encodeURIComponent(id)}`)
 }
 
 export function createProject(input: CreateProjectInput): Promise<Project> {
