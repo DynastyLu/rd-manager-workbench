@@ -17,6 +17,6 @@ import { RisksController } from './interface/http/risks.controller';
   imports: [ProjectsModule, TasksModule],
   controllers: [RisksController, IssuesController, DecisionsController, PartnersController, CommunicationsController, MeetingsController, MeetingActionsController],
   providers: [ManagementReferenceService, RisksService, IssuesService, DecisionsService, PartnersService, MeetingsService],
-  exports: [RisksService, MeetingsService],
+  exports: [RisksService, DecisionsService, MeetingsService],
 })
 export class ManagementModule {}

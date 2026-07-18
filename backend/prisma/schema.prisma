@@ -246,6 +246,43 @@ enum FileAssetStatus {
   @@schema("app")
 }
 
+enum DataTableSource {
+  CUSTOM
+  PROJECTS
+  WORK_TASKS
+  MEETING_ACTIONS
+  DOCUMENTS
+  RISKS_DECISIONS
+
+  @@schema("app")
+}
+
+enum DataFieldType {
+  TEXT
+  LONG_TEXT
+  NUMBER
+  DATETIME
+  SINGLE_SELECT
+  MULTI_SELECT
+  CHECKBOX
+  LINK
+  ATTACHMENT
+  RELATION
+  CREATED_AT
+  UPDATED_AT
+
+  @@schema("app")
+}
+
+enum DataViewType {
+  GRID
+  KANBAN
+  CALENDAR
+  FORM
+
+  @@schema("app")
+}
+
 model Project {
   id                String                  @id @default(cuid())
   code              String                  @unique
@@ -1086,5 +1123,93 @@ model MeetingAction {
 
   @@index([meetingId, archivedAt, dueAt])
   @@map("meeting_actions")
+  @@schema("app")
+}
+
+model DataWorkspace {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  sequence    Int         @default(0)
+  archivedAt  DateTime?   @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tables      DataTable[]
+
+  @@index([archivedAt, sequence, name])
+  @@map("data_workspaces")
+  @@schema("app")
+}
+
+model DataTable {
+  id          String          @id @default(cuid())
+  workspaceId String          @map("workspace_id")
+  name        String
+  description String?
+  source      DataTableSource @default(CUSTOM)
+  presetKey   String?         @unique @map("preset_key")
+  icon        String?
+  sequence    Int             @default(0)
+  archivedAt  DateTime?       @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  workspace   DataWorkspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  fields      DataField[]
+  records     DataRecord[]
+  views       DataView[]
+
+  @@index([workspaceId, archivedAt, sequence])
+  @@map("data_tables")
+  @@schema("app")
+}
+
+model DataField {
+  id         String        @id @default(cuid())
+  tableId    String        @map("table_id")
+  key        String
+  name       String
+  type       DataFieldType
+  config     Json          @default("{}")
+  isPrimary  Boolean       @default(false) @map("is_primary")
+  isRequired Boolean       @default(false) @map("is_required")
+  sequence   Int           @default(0)
+  archivedAt DateTime?     @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  table      DataTable     @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@unique([tableId, key])
+  @@index([tableId, archivedAt, sequence])
+  @@map("data_fields")
+  @@schema("app")
+}
+
+model DataRecord {
+  id        String    @id @default(cuid())
+  tableId   String    @map("table_id")
+  values    Json      @default("{}")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  table     DataTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId, updatedAt])
+  @@map("data_records")
+  @@schema("app")
+}
+
+model DataView {
+  id        String       @id @default(cuid())
+  tableId   String       @map("table_id")
+  name      String
+  type      DataViewType @default(GRID)
+  config    Json         @default("{}")
+  isDefault Boolean      @default(false) @map("is_default")
+  sequence  Int          @default(0)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  table     DataTable    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId, sequence])
+  @@map("data_views")
   @@schema("app")
 }
