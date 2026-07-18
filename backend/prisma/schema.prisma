@@ -198,6 +198,15 @@ enum MeetingActionStatus {
   @@schema("app")
 }
 
+enum CalendarEventType {
+  EVENT
+  INTERVIEW
+  REVIEW
+  OTHER
+
+  @@schema("app")
+}
+
 model Project {
   id                String                  @id @default(cuid())
   code              String                  @unique
@@ -227,6 +236,7 @@ model Project {
   decisions         Decision[]
   communications    CommunicationRecord[]
   meetings          Meeting[]
+  calendarEvents    CalendarEvent[]
 
   @@index([status, archivedAt])
   @@index([plannedEndAt])
@@ -817,6 +827,28 @@ model Meeting {
   @@index([projectId, archivedAt, status])
   @@index([scheduledAt])
   @@map("meetings")
+  @@schema("app")
+}
+
+model CalendarEvent {
+  id         String            @id @default(cuid())
+  projectId  String?           @map("project_id")
+  title      String
+  startAt    DateTime          @map("start_at") @db.Timestamptz(6)
+  endAt      DateTime          @map("end_at") @db.Timestamptz(6)
+  allDay     Boolean           @default(false) @map("all_day")
+  location   String?
+  link       String?
+  notes      String?
+  type       CalendarEventType @default(EVENT)
+  archivedAt DateTime?         @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project    Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([startAt, endAt])
+  @@index([projectId, archivedAt, startAt])
+  @@map("calendar_events")
   @@schema("app")
 }
 

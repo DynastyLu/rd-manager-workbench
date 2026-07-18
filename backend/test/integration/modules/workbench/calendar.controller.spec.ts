@@ -1,0 +1,172 @@
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { PrismaClient } from '@prisma/client';
+import request from 'supertest';
+import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
+import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
+import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+
+describe('Calendar API', () => {
+  const prisma = new PrismaClient();
+  const prefix = `TEST-CALENDAR-${Date.now()}`;
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const { AppModule } = await import('../../../../src/app.module');
+    const module = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = module.createNestApplication({ bodyParser: false });
+    configureBodyParser(app);
+    app.setGlobalPrefix('api');
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }),
+    );
+    app.useGlobalFilters(app.get(HttpExceptionFilter));
+    app.useGlobalInterceptors(app.get(ResponseInterceptor));
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await prisma.workTask.deleteMany({ where: { title: { startsWith: prefix } } });
+    await prisma.meeting.deleteMany({ where: { title: { startsWith: prefix } } });
+    await prisma.calendarEvent.deleteMany({ where: { title: { startsWith: prefix } } });
+    await prisma.$disconnect();
+    await app.close();
+  });
+
+  it('returns calendar entries for a valid half-open range', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/calendar/entries')
+      .query({ from: '2026-08-01T00:00:00.000Z', to: '2026-08-02T00:00:00.000Z' })
+      .expect(200);
+
+    expect(response.body.data).toEqual(expect.any(Array));
+  });
+
+  it('aggregates persisted events, meetings and task deadlines with source identities', async () => {
+    const [event, meeting, task] = await Promise.all([
+      prisma.calendarEvent.create({
+        data: {
+          title: `${prefix} 聚合日程`,
+          startAt: new Date('2026-08-03T01:00:00.000Z'),
+          endAt: new Date('2026-08-03T02:00:00.000Z'),
+        },
+      }),
+      prisma.meeting.create({
+        data: {
+          title: `${prefix} 聚合会议`,
+          scheduledAt: new Date('2026-08-03T03:00:00.000Z'),
+        },
+      }),
+      prisma.workTask.create({
+        data: {
+          title: `${prefix} 聚合任务`,
+          dueAt: new Date('2026-08-03T04:00:00.000Z'),
+        },
+      }),
+    ]);
+
+    const response = await request(app.getHttpServer())
+      .get('/api/calendar/entries')
+      .query({ from: '2026-08-03T00:00:00.000Z', to: '2026-08-04T00:00:00.000Z' })
+      .expect(200);
+
+    expect(response.body.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceType: 'CALENDAR_EVENT', sourceId: event.id }),
+        expect.objectContaining({ sourceType: 'MEETING', sourceId: meeting.id }),
+        expect.objectContaining({ sourceType: 'TASK', sourceId: task.id }),
+      ]),
+    );
+  });
+
+  it('supports the complete active calendar event lifecycle', async () => {
+    const createdResponse = await request(app.getHttpServer())
+      .post('/api/calendar/events')
+      .send({
+        title: `${prefix} 面试`,
+        startAt: '2026-08-01T02:00:00.000Z',
+        endAt: '2026-08-01T03:00:00.000Z',
+        type: 'INTERVIEW',
+        location: '会议室 A',
+      })
+      .expect(201);
+
+    expect(createdResponse.body.data).toMatchObject({
+      title: `${prefix} 面试`,
+      type: 'INTERVIEW',
+      allDay: false,
+      location: '会议室 A',
+    });
+    const eventId = createdResponse.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .get('/api/calendar/events')
+      .query({ from: '2026-08-01T00:00:00.000Z', to: '2026-08-02T00:00:00.000Z' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toEqual(
+          expect.arrayContaining([expect.objectContaining({ id: eventId })]),
+        );
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/calendar/events/${eventId}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.id).toBe(eventId);
+      });
+
+    await request(app.getHttpServer())
+      .patch(`/api/calendar/events/${eventId}`)
+      .send({ title: `${prefix} 二面`, endAt: '2026-08-01T04:00:00.000Z' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({
+          title: `${prefix} 二面`,
+          endAt: '2026-08-01T04:00:00.000Z',
+        });
+      });
+
+    await request(app.getHttpServer()).delete(`/api/calendar/events/${eventId}`).expect(204);
+    await request(app.getHttpServer()).get(`/api/calendar/events/${eventId}`).expect(404);
+  });
+
+  it('rejects invalid event time ordering with a stable business error', async () => {
+    await request(app.getHttpServer())
+      .post('/api/calendar/events')
+      .send({
+        title: `${prefix} 无效时间`,
+        startAt: '2026-08-01T03:00:00.000Z',
+        endAt: '2026-08-01T03:00:00.000Z',
+      })
+      .expect(422)
+      .expect(({ body }) => {
+        expect(body.error.code).toBe('CALENDAR_EVENT_TIME_INVALID');
+      });
+  });
+
+  it('rejects a reference to a missing or archived project', async () => {
+    await request(app.getHttpServer())
+      .post('/api/calendar/events')
+      .send({
+        title: `${prefix} 无效项目`,
+        startAt: '2026-08-01T03:00:00.000Z',
+        endAt: '2026-08-01T04:00:00.000Z',
+        projectId: 'missing-project',
+      })
+      .expect(404)
+      .expect(({ body }) => {
+        expect(body.error.code).toBe('PROJECT_NOT_FOUND');
+      });
+  });
+
+  it('rejects an oversized aggregate range before querying entries', async () => {
+    await request(app.getHttpServer())
+      .get('/api/calendar/entries')
+      .query({ from: '2026-01-01T00:00:00.000Z', to: '2027-01-03T00:00:00.000Z' })
+      .expect(422)
+      .expect(({ body }) => {
+        expect(body.error.code).toBe('CALENDAR_RANGE_INVALID');
+      });
+  });
+});
