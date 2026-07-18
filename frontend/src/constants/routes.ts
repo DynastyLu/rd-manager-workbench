@@ -5,6 +5,12 @@ export const ROUTES = {
   PROJECT_SPACES: '/spaces/projects',
   projectWorkspace: (projectId: string, section = 'overview') =>
     `/spaces/projects/${encodeURIComponent(projectId)}/${section}`,
+  DOCS: '/docs',
+  BASE: '/base',
+  CALENDAR: '/calendar',
+  SEARCH: '/search',
+
+  // Compatibility paths remain reachable outside the primary navigation.
   LIBRARY: '/library',
   APPLICATIONS: '/library/applications',
   governance: (kind: string) => `/library/governance/${kind}`,

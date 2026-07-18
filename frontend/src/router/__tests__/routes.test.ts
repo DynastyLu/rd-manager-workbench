@@ -17,43 +17,42 @@ afterEach(() => {
 })
 
 describe('workspace route registry', () => {
-  it('exposes the eight top-level workspace entries in product order', () => {
+  it('exposes the seven core apps in product order', () => {
     expect(primaryNavigation.map((item) => item.title)).toEqual([
       '工作台',
       '我的工作',
-      '项目空间',
-      '业务库',
-      '会议与资料',
-      '知识库',
-      '自动化与数据',
-      '设置',
+      '项目',
+      '文档与知识库',
+      '多维表格',
+      '日历',
+      '搜索',
     ])
     expect(primaryNavigation.map((item) => item.path)).toEqual([
       ROUTES.HOME,
       ROUTES.MY_WORK,
       ROUTES.PROJECT_SPACES,
-      ROUTES.LIBRARY,
-      ROUTES.MEETINGS,
-      ROUTES.KNOWLEDGE,
-      ROUTES.AUTOMATION_DATA,
-      ROUTES.SETTINGS,
+      ROUTES.DOCS,
+      ROUTES.BASE,
+      ROUTES.CALENDAR,
+      ROUTES.SEARCH,
     ])
   })
 
-  it('registers every canonical workspace route', () => {
-    expect(routes.filter((route) => !route.redirectTo).map((route) => route.path)).toEqual([
-      '/',
-      '/my-work',
-      '/spaces/projects',
-      '/spaces/projects/:projectId/:section?',
-      '/library',
-      '/library/applications',
-      '/library/governance/:kind',
-      '/meetings',
-      '/knowledge',
-      '/automation-data',
-      '/settings',
-      '*',
+  it('registers every core app at its canonical path and title', () => {
+    expect(primaryNavigation.map((item) => findRoute(item.path)?.title)).toEqual([
+      '工作台',
+      '我的工作',
+      '项目',
+      '文档与知识库',
+      '多维表格',
+      '日历',
+      '搜索',
+    ])
+    expect([ROUTES.DOCS, ROUTES.BASE, ROUTES.CALENDAR, ROUTES.SEARCH]).toEqual([
+      '/docs',
+      '/base',
+      '/calendar',
+      '/search',
     ])
   })
 
@@ -65,6 +64,21 @@ describe('workspace route registry', () => {
     expect(findRoute('/issues')?.redirectTo).toBe('/library/governance/issues')
     expect(findRoute('/decisions')?.redirectTo).toBe('/library/governance/decisions')
     expect(findRoute('/partners')?.redirectTo).toBe('/library/governance/partners')
+  })
+
+  it('keeps former workspace entry URLs available outside primary navigation', () => {
+    const formerEntryPaths = [
+      ROUTES.LIBRARY,
+      ROUTES.MEETINGS,
+      ROUTES.KNOWLEDGE,
+      ROUTES.AUTOMATION_DATA,
+      ROUTES.SETTINGS,
+    ]
+
+    expect(formerEntryPaths.every((path) => findRoute(path))).toBe(true)
+    expect(primaryNavigation.map((item) => item.path)).not.toEqual(
+      expect.arrayContaining(formerEntryPaths)
+    )
   })
 
   it('replaces a legacy URL at runtime with its canonical location', async () => {
@@ -92,25 +106,25 @@ describe('workspace route registry', () => {
     expect(await screen.findByText('/spaces/projects:REPLACE')).toBeInTheDocument()
   })
 
-  it('marks knowledge as planned without treating it as an unavailable route', () => {
-    expect(findRoute('/knowledge')?.availability).toBe('PLANNED')
-    expect(findRoute('/knowledge')?.component).toBeDefined()
+  it('keeps the documents app available while its dedicated experience evolves', () => {
+    expect(findRoute(ROUTES.DOCS)?.availability).toBe('AVAILABLE')
+    expect(findRoute(ROUTES.DOCS)?.component).toBeDefined()
   })
 
-  it('renders the planned knowledge route without requesting an API', () => {
-    const knowledgeRoute = findRoute(ROUTES.KNOWLEDGE)
+  it('renders the existing knowledge directory at the canonical documents path', () => {
+    const documentsRoute = findRoute(ROUTES.DOCS)
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
 
     render(
       createElement(
         MemoryRouter,
-        { initialEntries: [ROUTES.KNOWLEDGE] },
+        { initialEntries: [ROUTES.DOCS] },
         createElement(
           Routes,
           undefined,
           createElement(Route, {
-            path: ROUTES.KNOWLEDGE,
-            element: knowledgeRoute ? createElement(knowledgeRoute.component) : null,
+            path: ROUTES.DOCS,
+            element: documentsRoute ? createElement(documentsRoute.component) : null,
           })
         )
       )

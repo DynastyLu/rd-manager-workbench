@@ -1,8 +1,27 @@
+import {
+  IconBookOpenStroked,
+  IconBriefcaseStroked,
+  IconCalendarStroked,
+  IconChecklistStroked,
+  IconGridStroked,
+  IconHomeStroked,
+  IconSearchStroked,
+} from '@douyinfe/semi-icons'
 import { NavLink, useLocation } from 'react-router-dom'
-import type { NavigationItem } from '@/router/routes'
+import type { NavigationIcon, NavigationItem } from '@/router/routes'
 
 interface WorkspaceNavigationProps {
   items: NavigationItem[]
+}
+
+const navigationIcons: Record<NavigationIcon, typeof IconHomeStroked> = {
+  home: IconHomeStroked,
+  tasks: IconChecklistStroked,
+  projects: IconBriefcaseStroked,
+  docs: IconBookOpenStroked,
+  base: IconGridStroked,
+  calendar: IconCalendarStroked,
+  search: IconSearchStroked,
 }
 
 function isActivePath(item: NavigationItem, pathname: string) {
@@ -11,11 +30,10 @@ function isActivePath(item: NavigationItem, pathname: string) {
 
 export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
   const { pathname } = useLocation()
-  const settingsItem = items.find((item) => item.key === 'settings')
-  const workspaceItems = items.filter((item) => item.key !== 'settings')
 
   function renderItem(item: NavigationItem) {
     const active = isActivePath(item, pathname)
+    const NavigationIcon = navigationIcons[item.icon]
 
     return (
       <NavLink
@@ -25,12 +43,9 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
         aria-current={active ? 'page' : undefined}
       >
         <span className="workspace-navigation__icon" aria-hidden="true">
-          {item.icon}
+          <NavigationIcon size="large" />
         </span>
         <span className="workspace-navigation__label">{item.title}</span>
-        {item.availability === 'PLANNED' && (
-          <span className="workspace-navigation__planned">规划中</span>
-        )}
       </NavLink>
     )
   }
@@ -43,8 +58,7 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
         </span>
         <span className="workspace-navigation__brand-name">研发工作空间</span>
       </div>
-      <div className="workspace-navigation__links">{workspaceItems.map(renderItem)}</div>
-      <div className="workspace-navigation__footer">{settingsItem && renderItem(settingsItem)}</div>
+      <div className="workspace-navigation__links">{items.map(renderItem)}</div>
     </nav>
   )
 }

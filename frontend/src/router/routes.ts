@@ -9,10 +9,12 @@ import MeetingsAndMaterialsPage from '@/pages/MeetingsAndMaterialsPage'
 
 export type ModuleAvailability = 'AVAILABLE' | 'PLANNED'
 
+export type NavigationIcon = 'home' | 'tasks' | 'projects' | 'docs' | 'base' | 'calendar' | 'search'
+
 export interface NavigationItem {
   key: string
   title: string
-  icon: string
+  icon: NavigationIcon
   path: string
   availability: ModuleAvailability
 }
@@ -81,32 +83,49 @@ function RedirectToWorkbench() {
 }
 
 export const primaryNavigation: NavigationItem[] = [
-  { key: 'home', title: '工作台', icon: '⌂', path: ROUTES.HOME, availability: 'AVAILABLE' },
-  { key: 'my-work', title: '我的工作', icon: '✓', path: ROUTES.MY_WORK, availability: 'AVAILABLE' },
+  { key: 'home', title: '工作台', icon: 'home', path: ROUTES.HOME, availability: 'AVAILABLE' },
   {
-    key: 'project-spaces',
-    title: '项目空间',
-    icon: '▦',
+    key: 'my-work',
+    title: '我的工作',
+    icon: 'tasks',
+    path: ROUTES.MY_WORK,
+    availability: 'AVAILABLE',
+  },
+  {
+    key: 'projects',
+    title: '项目',
+    icon: 'projects',
     path: ROUTES.PROJECT_SPACES,
     availability: 'AVAILABLE',
   },
-  { key: 'library', title: '业务库', icon: '▤', path: ROUTES.LIBRARY, availability: 'AVAILABLE' },
   {
-    key: 'meetings',
-    title: '会议与资料',
-    icon: '◷',
-    path: ROUTES.MEETINGS,
+    key: 'docs',
+    title: '文档与知识库',
+    icon: 'docs',
+    path: ROUTES.DOCS,
     availability: 'AVAILABLE',
   },
-  { key: 'knowledge', title: '知识库', icon: '◫', path: ROUTES.KNOWLEDGE, availability: 'PLANNED' },
   {
-    key: 'automation-data',
-    title: '自动化与数据',
-    icon: '◌',
-    path: ROUTES.AUTOMATION_DATA,
-    availability: 'PLANNED',
+    key: 'base',
+    title: '多维表格',
+    icon: 'base',
+    path: ROUTES.BASE,
+    availability: 'AVAILABLE',
   },
-  { key: 'settings', title: '设置', icon: '⚙', path: ROUTES.SETTINGS, availability: 'AVAILABLE' },
+  {
+    key: 'calendar',
+    title: '日历',
+    icon: 'calendar',
+    path: ROUTES.CALENDAR,
+    availability: 'AVAILABLE',
+  },
+  {
+    key: 'search',
+    title: '搜索',
+    icon: 'search',
+    path: ROUTES.SEARCH,
+    availability: 'AVAILABLE',
+  },
 ]
 
 const canonicalRoutes: RouteDefinition[] = [
@@ -128,18 +147,50 @@ const canonicalRoutes: RouteDefinition[] = [
   },
   {
     path: ROUTES.PROJECT_SPACES,
-    title: '项目空间',
+    title: '项目',
     icon: '▦',
     component: ProjectsPage,
-    navigationKey: 'project-spaces',
+    navigationKey: 'projects',
     availability: 'AVAILABLE',
   },
   {
     path: '/spaces/projects/:projectId/:section?',
-    title: '项目空间',
+    title: '项目',
     icon: '▦',
     component: ProjectsPage,
-    navigationKey: 'project-spaces',
+    navigationKey: 'projects',
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.DOCS,
+    title: '文档与知识库',
+    icon: 'docs',
+    component: KnowledgeHomePage,
+    navigationKey: 'docs',
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.BASE,
+    title: '多维表格',
+    icon: 'base',
+    component: LibraryHomePage,
+    navigationKey: 'base',
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.CALENDAR,
+    title: '日历',
+    icon: 'calendar',
+    component: MeetingsAndMaterialsPage,
+    navigationKey: 'calendar',
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.SEARCH,
+    title: '搜索',
+    icon: 'search',
+    component: AutomationDataPage,
+    navigationKey: 'search',
     availability: 'AVAILABLE',
   },
   {
@@ -147,7 +198,6 @@ const canonicalRoutes: RouteDefinition[] = [
     title: '业务库',
     icon: '▤',
     component: LibraryHomePage,
-    navigationKey: 'library',
     availability: 'AVAILABLE',
   },
   {
@@ -155,7 +205,6 @@ const canonicalRoutes: RouteDefinition[] = [
     title: '申报认定',
     icon: '▤',
     component: ApplicationCasesPage,
-    navigationKey: 'library',
     availability: 'AVAILABLE',
   },
   {
@@ -163,7 +212,6 @@ const canonicalRoutes: RouteDefinition[] = [
     title: '业务库',
     icon: '▤',
     component: GovernancePage,
-    navigationKey: 'library',
     availability: 'AVAILABLE',
   },
   {
@@ -171,7 +219,6 @@ const canonicalRoutes: RouteDefinition[] = [
     title: '会议与资料',
     icon: '◷',
     component: MeetingsAndMaterialsPage,
-    navigationKey: 'meetings',
     availability: 'AVAILABLE',
   },
   {
@@ -179,7 +226,6 @@ const canonicalRoutes: RouteDefinition[] = [
     title: '知识库',
     icon: '◫',
     component: KnowledgeHomePage,
-    navigationKey: 'knowledge',
     availability: 'PLANNED',
   },
   {
@@ -187,7 +233,6 @@ const canonicalRoutes: RouteDefinition[] = [
     title: '自动化与数据',
     icon: '◌',
     component: AutomationDataPage,
-    navigationKey: 'automation-data',
     availability: 'PLANNED',
   },
   {
@@ -195,7 +240,6 @@ const canonicalRoutes: RouteDefinition[] = [
     title: '设置',
     icon: '⚙',
     component: WorkbenchSettings,
-    navigationKey: 'settings',
     availability: 'AVAILABLE',
   },
 ]
