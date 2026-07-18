@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ROUTES } from '@/constants/routes'
 import AutomationDataPage from '../AutomationDataPage'
 import KnowledgeHomePage from '../KnowledgeHomePage'
 import LibraryHomePage from '../LibraryHomePage'
@@ -27,10 +26,24 @@ const documentApi = vi.hoisted(() => ({
   uploadFileVersion: vi.fn(),
 }))
 
+const baseApi = vi.hoisted(() => ({
+  createBaseField: vi.fn(),
+  createBaseRecord: vi.fn(),
+  createBaseTable: vi.fn(),
+  createBaseView: vi.fn(),
+  deleteBaseView: vi.fn(),
+  listBaseRecords: vi.fn(),
+  listBaseWorkspaces: vi.fn(),
+  updateBaseRecord: vi.fn(),
+  updateBaseView: vi.fn(),
+}))
+
 vi.mock('@/modules/workbench/api/documents', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/workbench/api/documents')>()),
   ...documentApi,
 }))
+
+vi.mock('@/modules/base/api', () => baseApi)
 
 function renderPage(page: React.ReactNode, path = '/') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -45,6 +58,25 @@ function renderPage(page: React.ReactNode, path = '/') {
 describe('workspace directory pages', () => {
   beforeEach(() => {
     for (const mock of Object.values(documentApi)) mock.mockReset()
+    for (const mock of Object.values(baseApi)) mock.mockReset()
+    baseApi.listBaseWorkspaces.mockResolvedValue([{
+      id: 'workspace-1',
+      name: '研发工作台',
+      description: null,
+      sequence: 0,
+      tables: [{
+        id: 'table-projects',
+        workspaceId: 'workspace-1',
+        name: '项目台账',
+        description: null,
+        source: 'PROJECTS',
+        icon: null,
+        sequence: 0,
+        fields: [{ id: 'field-name', tableId: 'table-projects', key: 'name', name: '项目名称', type: 'TEXT', config: {}, isPrimary: true, isRequired: true, sequence: 0 }],
+        views: [{ id: 'view-grid', tableId: 'table-projects', name: '表格', type: 'GRID', config: {}, isDefault: true, sequence: 0 }],
+      }],
+    }])
+    baseApi.listBaseRecords.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 100, total: 0 } })
     documentApi.listKnowledgeSpaces.mockResolvedValue([
       { id: 'space-1', name: '研发知识', description: null, sequence: 0 },
     ])
@@ -95,33 +127,12 @@ describe('workspace directory pages', () => {
     })
   })
 
-  it('links the library to available modules and labels unavailable ones as planned', () => {
+  it('opens the real multidimensional base workspace instead of the old business-card directory', async () => {
     renderPage(<LibraryHomePage />)
 
-    expect(screen.getByRole('heading', { name: '业务库' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '申报认定' })).toHaveAttribute(
-      'href',
-      ROUTES.APPLICATIONS
-    )
-    expect(screen.getByRole('link', { name: '风险' })).toHaveAttribute(
-      'href',
-      ROUTES.governance('risks')
-    )
-    expect(screen.getByRole('link', { name: '问题' })).toHaveAttribute(
-      'href',
-      ROUTES.governance('issues')
-    )
-    expect(screen.getByRole('link', { name: '决策' })).toHaveAttribute(
-      'href',
-      ROUTES.governance('decisions')
-    )
-    expect(screen.getByRole('link', { name: '合作方' })).toHaveAttribute(
-      'href',
-      ROUTES.governance('partners')
-    )
-    expect(screen.getByText('行业情报')).toBeInTheDocument()
-    expect(screen.getByText('非项目研发')).toBeInTheDocument()
-    expect(screen.getAllByText('该能力正在规划中')).toHaveLength(2)
+    expect(await screen.findByRole('heading', { name: '研发工作台' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '项目台账' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '业务库' })).not.toBeInTheDocument()
   })
 
   it('loads the real document and knowledge workspace instead of a planned module', async () => {
