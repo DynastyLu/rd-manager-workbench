@@ -66,19 +66,14 @@ describe('workspace route registry', () => {
     expect(findRoute('/partners')?.redirectTo).toBe('/library/governance/partners')
   })
 
-  it('keeps former workspace entry URLs available outside primary navigation', () => {
-    const formerEntryPaths = [
-      ROUTES.LIBRARY,
-      ROUTES.MEETINGS,
-      ROUTES.KNOWLEDGE,
-      ROUTES.AUTOMATION_DATA,
-      ROUTES.SETTINGS,
-    ]
-
-    expect(formerEntryPaths.every((path) => findRoute(path))).toBe(true)
-    expect(primaryNavigation.map((item) => item.path)).not.toEqual(
-      expect.arrayContaining(formerEntryPaths)
-    )
+  it('redirects former workspace entries while keeping settings directly reachable', () => {
+    expect(findRoute(ROUTES.LIBRARY)?.redirectTo).toBe(ROUTES.BASE)
+    expect(findRoute(ROUTES.MEETINGS)?.redirectTo).toBe(ROUTES.CALENDAR)
+    expect(findRoute(ROUTES.KNOWLEDGE)?.redirectTo).toBe(ROUTES.DOCS)
+    expect(findRoute(ROUTES.AUTOMATION_DATA)?.redirectTo).toBe(ROUTES.SEARCH)
+    expect(findRoute(ROUTES.SETTINGS)?.redirectTo).toBeUndefined()
+    expect(findRoute(ROUTES.SETTINGS)?.component).toBeDefined()
+    expect(primaryNavigation.map((item) => item.path)).not.toContain(ROUTES.SETTINGS)
   })
 
   it('replaces a legacy URL at runtime with its canonical location', async () => {
