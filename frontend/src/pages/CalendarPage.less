@@ -1,0 +1,53 @@
+.calendar-page {
+  display: grid;
+  gap: 18px;
+  padding: var(--workspace-page-padding);
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+
+    h1 { margin: 0; color: var(--workspace-text); font-size: 26px; letter-spacing: -.02em; }
+    p { margin: 6px 0 0; color: var(--workspace-text-secondary); font-size: 13px; }
+  }
+
+  &__actions { display: flex; align-items: center; gap: 12px; }
+
+  &__surface {
+    overflow: hidden;
+    padding: 18px;
+    border: 1px solid var(--workspace-border);
+    border-radius: var(--workspace-radius-lg);
+    background: var(--workspace-surface);
+    box-shadow: var(--workspace-shadow-panel);
+
+    .fc { color: var(--workspace-text); font-family: var(--font-main); }
+    .fc .fc-toolbar-title { font-size: 18px; }
+    .fc .fc-button-primary { border-color: #d9dce1; background: #fff; color: var(--workspace-text-secondary); }
+    .fc .fc-button-primary:hover,
+    .fc .fc-button-primary:not(:disabled).fc-button-active { border-color: var(--workspace-brand); background: var(--workspace-brand); color: #fff; }
+    .fc-theme-standard td,
+    .fc-theme-standard th,
+    .fc-theme-standard .fc-scrollgrid { border-color: #e8e9eb; }
+    .fc .fc-daygrid-day.fc-day-today,
+    .fc .fc-timegrid-col.fc-day-today { background: #f2f6ff; }
+  }
+
+  &__event { display: flex; min-width: 0; align-items: center; gap: 4px; padding: 1px 3px; }
+  &__event strong { overflow: hidden; font-size: 11px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
+
+  &__form { display: grid; gap: 14px; }
+  &__form label { display: grid; gap: 7px; color: var(--workspace-text-secondary); font-size: 13px; }
+  &__form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  &__error { margin: 0; color: var(--workspace-danger); font-size: 12px; }
+}
+
+@media (max-width: 900px) {
+  .calendar-page {
+    &__header { align-items: flex-start; flex-direction: column; }
+    &__actions { width: 100%; justify-content: space-between; }
+    &__form-grid { grid-template-columns: 1fr; }
+  }
+}

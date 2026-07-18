@@ -5,7 +5,6 @@ import { ROUTES } from '@/constants/routes'
 import AutomationDataPage from '@/pages/AutomationDataPage'
 import KnowledgeHomePage from '@/pages/KnowledgeHomePage'
 import LibraryHomePage from '@/pages/LibraryHomePage'
-import MeetingsAndMaterialsPage from '@/pages/MeetingsAndMaterialsPage'
 
 export type ModuleAvailability = 'AVAILABLE' | 'PLANNED'
 
@@ -43,6 +42,7 @@ const WorkbenchHome = lazy(() => import('@/pages/WorkbenchHome'))
 const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
 const ProjectWorkspacePage = lazy(() => import('@/pages/ProjectWorkspacePage'))
 const TasksPage = lazy(() => import('@/pages/TasksPage'))
+const CalendarPage = lazy(() => import('@/pages/CalendarPage'))
 const ApplicationCasesPage = lazy(() => import('@/pages/ApplicationCasesPage'))
 const RisksPage = lazy(() => import('@/pages/RisksPage'))
 const IssuesPage = lazy(() => import('@/pages/IssuesPage'))
@@ -175,7 +175,7 @@ const canonicalRoutes: RouteDefinition[] = [
     path: ROUTES.CALENDAR,
     title: '日历',
     icon: 'calendar',
-    component: MeetingsAndMaterialsPage,
+    component: CalendarPage,
     navigationKey: 'calendar',
     availability: 'AVAILABLE',
   },
