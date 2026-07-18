@@ -4,6 +4,7 @@
   "testEnvironment": "node",
   "testMatch": ["<rootDir>/test/integration/**/*.spec.ts"],
   "moduleFileExtensions": ["ts", "js", "json"],
+  "maxWorkers": 1,
   "clearMocks": true,
   "setupFiles": ["<rootDir>/test/setup-environment.cjs"],
   "passWithNoTests": true

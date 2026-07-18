@@ -23,6 +23,7 @@ describe('Dashboard API', () => {
   const prefix = `TEST-DASHBOARD-${Date.now()}`;
   const prisma = new PrismaClient();
   let app: INestApplication;
+  let baselineHealthDistribution: { GREEN: number; YELLOW: number; RED: number };
 
   const createProject = (suffix: string, archivedAt: Date | null = null) =>
     prisma.project.create({
@@ -54,7 +55,7 @@ describe('Dashboard API', () => {
     await app?.close();
   });
 
-  it('returns all empty dashboard buckets in the standard response envelope', async () => {
+  it('returns the standard response envelope and all dashboard bucket keys', async () => {
     const response = await request(app.getHttpServer()).get('/api/dashboard').expect(200);
 
     expect(response.body.success).toBe(true);
@@ -66,14 +67,17 @@ describe('Dashboard API', () => {
       'recentProgressReports',
       'todayActions',
     ]);
-    expect(response.body.data).toMatchObject({
-      todayActions: [],
-      overdueTasks: [],
-      dueSoonMilestones: [],
-      healthDistribution: { GREEN: 0, YELLOW: 0, RED: 0 },
-      projectsNeedingAttention: [],
-      recentProgressReports: [],
-    });
+    expect(response.body.data.todayActions).toEqual(expect.any(Array));
+    expect(response.body.data.overdueTasks).toEqual(expect.any(Array));
+    expect(response.body.data.dueSoonMilestones).toEqual(expect.any(Array));
+    expect(response.body.data.projectsNeedingAttention).toEqual(expect.any(Array));
+    expect(response.body.data.recentProgressReports).toEqual(expect.any(Array));
+    expect(Object.keys(response.body.data.healthDistribution).sort()).toEqual([
+      'GREEN',
+      'RED',
+      'YELLOW',
+    ]);
+    baselineHealthDistribution = response.body.data.healthDistribution;
   });
 
   it('groups only in-window non-archived work and uses the latest health snapshot tie breaker', async () => {
@@ -210,33 +214,53 @@ describe('Dashboard API', () => {
     const response = await request(app.getHttpServer()).get('/api/dashboard').expect(200);
     const data = response.body.data;
 
-    expect(data.todayActions).toEqual(
+    expect(
+      data.todayActions.filter(({ title }: { title: string }) => title.startsWith(prefix)),
+    ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ title: `${prefix} today` }),
         expect.objectContaining({ title: `${prefix} blocked today` }),
       ]),
     );
-    expect(data.todayActions).toHaveLength(2);
-    expect(data.overdueTasks).toEqual(
-      expect.arrayContaining([expect.objectContaining({ title: `${prefix} overdue` })]),
-    );
-    expect(data.overdueTasks).toHaveLength(1);
-    expect(data.dueSoonMilestones).toEqual(
+    expect(
+      data.todayActions.filter(({ title }: { title: string }) => title.startsWith(prefix)),
+    ).toHaveLength(2);
+    expect(
+      data.overdueTasks.filter(({ title }: { title: string }) => title.startsWith(prefix)),
+    ).toEqual([expect.objectContaining({ title: `${prefix} overdue` })]);
+    expect(
+      data.dueSoonMilestones.filter(({ name }: { name: string }) => name.startsWith(prefix)),
+    ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: `${prefix} today milestone` }),
         expect.objectContaining({ name: `${prefix} seventh day milestone` }),
       ]),
     );
-    expect(data.dueSoonMilestones).toHaveLength(2);
-    expect(data.healthDistribution).toEqual({ GREEN: 1, YELLOW: 0, RED: 1 });
-    expect(data.projectsNeedingAttention).toEqual([
-      expect.objectContaining({
-        id: attentionProject.id,
-        health: 'RED',
-        reasons: ['最新快照'],
-      }),
-    ]);
-    expect(data.recentProgressReports).toEqual([
+    expect(
+      data.dueSoonMilestones.filter(({ name }: { name: string }) => name.startsWith(prefix)),
+    ).toHaveLength(2);
+    expect(data.healthDistribution).toEqual({
+      GREEN: baselineHealthDistribution.GREEN + 1,
+      YELLOW: baselineHealthDistribution.YELLOW,
+      RED: baselineHealthDistribution.RED + 1,
+    });
+    expect(data.projectsNeedingAttention).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: attentionProject.id,
+          health: 'RED',
+          reasons: ['最新快照'],
+        }),
+      ]),
+    );
+    expect(
+      data.projectsNeedingAttention.filter(({ id }: { id: string }) => id === attentionProject.id),
+    ).toHaveLength(1);
+    expect(
+      data.recentProgressReports.filter(({ summary }: { summary: string }) =>
+        summary.startsWith(prefix),
+      ),
+    ).toEqual([
       expect.objectContaining({
         summary: `${prefix} recent progress`,
         projectId: attentionProject.id,
