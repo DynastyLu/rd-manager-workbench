@@ -3,7 +3,7 @@ import { createElement } from 'react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ROUTES } from '@/constants/routes'
-import routes, { findRoute, primaryNavigation } from '../routes'
+import { findRoute, primaryNavigation } from '../routes'
 
 function LocationProbe() {
   const location = useLocation()
@@ -36,6 +36,7 @@ describe('workspace route registry', () => {
       ROUTES.CALENDAR,
       ROUTES.SEARCH,
     ])
+    expect(primaryNavigation.every((item) => !('availability' in item))).toBe(true)
   })
 
   it('registers every core app at its canonical path and title', () => {

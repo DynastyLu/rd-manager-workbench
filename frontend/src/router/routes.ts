@@ -16,7 +16,6 @@ export interface NavigationItem {
   title: string
   icon: NavigationIcon
   path: string
-  availability: ModuleAvailability
 }
 
 export interface RouteDefinition {
@@ -83,48 +82,42 @@ function RedirectToWorkbench() {
 }
 
 export const primaryNavigation: NavigationItem[] = [
-  { key: 'home', title: '工作台', icon: 'home', path: ROUTES.HOME, availability: 'AVAILABLE' },
+  { key: 'home', title: '工作台', icon: 'home', path: ROUTES.HOME },
   {
     key: 'my-work',
     title: '我的工作',
     icon: 'tasks',
     path: ROUTES.MY_WORK,
-    availability: 'AVAILABLE',
   },
   {
     key: 'projects',
     title: '项目',
     icon: 'projects',
     path: ROUTES.PROJECT_SPACES,
-    availability: 'AVAILABLE',
   },
   {
     key: 'docs',
     title: '文档与知识库',
     icon: 'docs',
     path: ROUTES.DOCS,
-    availability: 'AVAILABLE',
   },
   {
     key: 'base',
     title: '多维表格',
     icon: 'base',
     path: ROUTES.BASE,
-    availability: 'AVAILABLE',
   },
   {
     key: 'calendar',
     title: '日历',
     icon: 'calendar',
     path: ROUTES.CALENDAR,
-    availability: 'AVAILABLE',
   },
   {
     key: 'search',
     title: '搜索',
     icon: 'search',
     path: ROUTES.SEARCH,
-    availability: 'AVAILABLE',
   },
 ]
 
