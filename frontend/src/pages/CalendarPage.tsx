@@ -7,6 +7,7 @@ import interactionPlugin from '@fullcalendar/interaction'
 import { Banner, Button, ButtonGroup, Checkbox, Input, Modal, Select, TextArea } from '@douyinfe/semi-ui'
 import { IconCalendar, IconPlus } from '@douyinfe/semi-icons'
 import { toast } from 'sonner'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   archiveCalendarEvent,
@@ -24,6 +25,7 @@ import {
   listReminderRules,
 } from '@/modules/workbench/api/notifications'
 import { updateTask } from '@/modules/workbench/api/tasks'
+import { MeetingsWorkspace } from './MeetingsPage'
 import './CalendarPage.less'
 
 type CalendarView = 'dayGridMonth' | 'timeGridWeek' | 'timeGridDay'
@@ -64,6 +66,9 @@ function toLocalDateTime(value: Date) {
 
 export default function CalendarPage() {
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const isMeetingWorkspace =
+    searchParams.get('view') === 'meetings' || Boolean(searchParams.get('meetingId'))
   const [view, setView] = useState<CalendarView>('dayGridMonth')
   const [range, setRange] = useState(initialRange)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
@@ -331,6 +336,16 @@ export default function CalendarPage() {
     setIsArchiveConfirmOpen(true)
   }
 
+  function selectWorkspace(nextWorkspace: 'calendar' | 'meetings') {
+    const next = new URLSearchParams(searchParams)
+    if (nextWorkspace === 'meetings') next.set('view', 'meetings')
+    else {
+      next.delete('view')
+      next.delete('meetingId')
+    }
+    setSearchParams(next)
+  }
+
   return (
     <div className="calendar-page">
       <header className="calendar-page__header">
@@ -339,32 +354,54 @@ export default function CalendarPage() {
           <p>统一查看任务截止、会议、面试、评审和普通日程。</p>
         </div>
         <div className="calendar-page__actions">
-          <ButtonGroup aria-label="日历视图">
-            {VIEW_OPTIONS.map((option) => (
-              <Button
-                key={option.value}
-                theme={view === option.value ? 'solid' : 'light'}
-                type={view === option.value ? 'primary' : 'tertiary'}
-                aria-pressed={view === option.value}
-                onClick={() => setView(option.value)}
-              >
-                {option.label}
-              </Button>
-            ))}
+          <ButtonGroup aria-label="日历工作区">
+            <Button
+              theme={!isMeetingWorkspace ? 'solid' : 'light'}
+              type={!isMeetingWorkspace ? 'primary' : 'tertiary'}
+              aria-pressed={!isMeetingWorkspace}
+              onClick={() => selectWorkspace('calendar')}
+            >
+              日历视图
+            </Button>
+            <Button
+              theme={isMeetingWorkspace ? 'solid' : 'light'}
+              type={isMeetingWorkspace ? 'primary' : 'tertiary'}
+              aria-pressed={isMeetingWorkspace}
+              onClick={() => selectWorkspace('meetings')}
+            >
+              会议列表
+            </Button>
           </ButtonGroup>
-          <Button
-            theme="solid"
-            type="primary"
-            icon={<IconPlus />}
-            aria-label="新建日程"
-            onClick={() => openCreate()}
-          >
-            新建日程
-          </Button>
+          {!isMeetingWorkspace ? (
+            <>
+              <ButtonGroup aria-label="日历视图">
+                {VIEW_OPTIONS.map((option) => (
+                  <Button
+                    key={option.value}
+                    theme={view === option.value ? 'solid' : 'light'}
+                    type={view === option.value ? 'primary' : 'tertiary'}
+                    aria-pressed={view === option.value}
+                    onClick={() => setView(option.value)}
+                  >
+                    {option.label}
+                  </Button>
+                ))}
+              </ButtonGroup>
+              <Button
+                theme="solid"
+                type="primary"
+                icon={<IconPlus />}
+                aria-label="新建日程"
+                onClick={() => openCreate()}
+              >
+                新建日程
+              </Button>
+            </>
+          ) : null}
         </div>
       </header>
 
-      {entriesQuery.isError ? (
+      {!isMeetingWorkspace && entriesQuery.isError ? (
         <Banner
           type="danger"
           fullMode={false}
@@ -376,6 +413,11 @@ export default function CalendarPage() {
         </Banner>
       ) : null}
 
+      {isMeetingWorkspace ? (
+        <section className="calendar-page__meeting-surface">
+          <MeetingsWorkspace embedded />
+        </section>
+      ) : (
       <section className="calendar-page__surface" aria-label="工作日历">
         <FullCalendar
           key={view}
@@ -410,6 +452,13 @@ export default function CalendarPage() {
           eventClick={({ event }) => {
             const sourceType = String(event.extendedProps.sourceType ?? '')
             const sourceId = String(event.extendedProps.sourceId ?? '')
+            if (sourceType === 'MEETING' && sourceId) {
+              const next = new URLSearchParams(searchParams)
+              next.set('view', 'meetings')
+              next.set('meetingId', sourceId)
+              setSearchParams(next)
+              return
+            }
             const entry = entriesQuery.data?.find(
               (item) => item.sourceType === sourceType && item.sourceId === sourceId
             )
@@ -426,6 +475,7 @@ export default function CalendarPage() {
           )}
         />
       </section>
+      )}
 
       <Modal
         title={editingId ? '编辑日程' : '新建日程'}

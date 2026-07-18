@@ -31,6 +31,9 @@ vi.mock('@/modules/workbench/api/notifications', () => ({
   createReminderRule,
   listReminderRules,
 }))
+vi.mock('../MeetingsPage', () => ({
+  MeetingsWorkspace: () => <section aria-label="会议工作区">会议工作区</section>,
+}))
 vi.mock('@fullcalendar/react', () => ({
   default: ({
     events,
@@ -81,17 +84,29 @@ vi.mock('@fullcalendar/react', () => ({
       >
         打开普通日程
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          eventClick({
+            event: {
+              extendedProps: { sourceType: 'MEETING', sourceId: 'meeting-1' },
+            },
+          })
+        }
+      >
+        打开会议
+      </button>
     </div>
   ),
 }))
 
 import CalendarPage from '../CalendarPage'
 
-function renderPage() {
+function renderPage(path = '/calendar') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
         <CalendarPage />
       </MemoryRouter>
     </QueryClientProvider>
@@ -202,5 +217,29 @@ describe('CalendarPage', () => {
     await user.click(screen.getByRole('button', { name: '取消日程' }))
     await user.click(screen.getByRole('button', { name: 'confirm' }))
     await waitFor(() => expect(archiveCalendarEvent).toHaveBeenCalledWith('calendar-1'))
+  })
+
+  it('opens a meeting workspace from URL and from a calendar meeting entry', async () => {
+    const user = userEvent.setup()
+    const first = renderPage('/calendar?meetingId=meeting-1')
+    expect(screen.getByLabelText('会议工作区')).toBeInTheDocument()
+    first.unmount()
+
+    listCalendarEntries.mockResolvedValue([
+      {
+        id: 'MEETING:meeting-1',
+        sourceType: 'MEETING',
+        sourceId: 'meeting-1',
+        title: '项目周会',
+        startAt: '2026-07-20T02:00:00.000Z',
+        endAt: null,
+        allDay: false,
+        type: 'MEETING',
+      },
+    ])
+    renderPage()
+    await screen.findByText('项目周会')
+    await user.click(screen.getByRole('button', { name: '打开会议' }))
+    expect(screen.getByLabelText('会议工作区')).toBeInTheDocument()
   })
 })
