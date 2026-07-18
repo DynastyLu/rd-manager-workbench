@@ -9,10 +9,30 @@ const STORAGE_KEY = 'tabbar_state'
 interface Tab {
   path: string
   title: string
+  redirectTo?: string
 }
 
 interface TabBarProps {
   routes?: Tab[]
+}
+
+function normalizePath(path: string, routes: Tab[]) {
+  const routesByPath = new Map(routes.map((route) => [route.path, route]))
+  const seen = new Set<string>()
+  let normalizedPath = path
+
+  while (!seen.has(normalizedPath)) {
+    seen.add(normalizedPath)
+    const redirectTo = routesByPath.get(normalizedPath)?.redirectTo
+    if (!redirectTo) break
+    normalizedPath = redirectTo
+  }
+
+  return normalizedPath
+}
+
+function uniqueTabs(tabs: Tab[]) {
+  return tabs.filter((tab, index) => tabs.findIndex(({ path }) => path === tab.path) === index)
 }
 
 function loadTabs(initialPath: string, routes: Tab[]): Tab[] {
@@ -23,16 +43,18 @@ function loadTabs(initialPath: string, routes: Tab[]): Tab[] {
       const { tabs } = JSON.parse(saved) as { tabs: Tab[] }
       if (Array.isArray(tabs)) {
         const validTabs = tabs.flatMap((tab) => {
-          const route = routeByPath.get(tab.path)
+          const route = routeByPath.get(normalizePath(tab.path, routes))
           return route ? [{ path: route.path, title: route.title }] : []
         })
-        if (validTabs.length > 0) return validTabs
+        if (validTabs.length > 0) return uniqueTabs(validTabs)
       }
     }
   } catch {
     // ignore corrupted storage
   }
-  return [{ path: initialPath, title: initialPath }]
+  const normalizedPath = normalizePath(initialPath, routes)
+  const route = routeByPath.get(normalizedPath)
+  return [{ path: normalizedPath, title: route?.title ?? normalizedPath }]
 }
 
 function useNavigateCompat() {
@@ -53,7 +75,7 @@ export default function TabBar({ routes = [] }: TabBarProps) {
   const navigate = useNavigateCompat()
 
   const [tabs, setTabs] = useState<Tab[]>(() => loadTabs(location.pathname, routes))
-  const [activeTab, setActiveTab] = useState<string>(location.pathname)
+  const [activeTab, setActiveTab] = useState<string>(() => normalizePath(location.pathname, routes))
 
   const listRef = useRef<HTMLDivElement>(null)
   const [showArrows, setShowArrows] = useState<boolean>(false)
@@ -65,11 +87,12 @@ export default function TabBar({ routes = [] }: TabBarProps) {
 
   // 路由变化时同步 tab（自动添加或更新标题）
   useEffect(() => {
-    const route = routes.find((r) => r.path === location.pathname)
-    const title = route?.title ?? location.pathname
+    const path = normalizePath(location.pathname, routes)
+    const route = routes.find((r) => r.path === path)
+    const title = route?.title ?? path
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTabs((prev) => {
-      const idx = prev.findIndex((t) => t.path === location.pathname)
+      const idx = prev.findIndex((t) => t.path === path)
       if (idx !== -1) {
         const existing = prev[idx]!
         if (existing.title === title) return prev
@@ -77,9 +100,9 @@ export default function TabBar({ routes = [] }: TabBarProps) {
         updated[idx] = { ...existing, title }
         return updated
       }
-      return [...prev, { path: location.pathname, title }]
+      return [...prev, { path, title }]
     })
-    setActiveTab(location.pathname)
+    setActiveTab(path)
   }, [location.pathname, routes])
 
   // ResizeObserver 监听溢出

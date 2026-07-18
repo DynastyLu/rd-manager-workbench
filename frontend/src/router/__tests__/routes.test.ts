@@ -1,6 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { createElement } from 'react'
+import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ROUTES } from '@/constants/routes'
 import routes, { findRoute, primaryNavigation } from '../routes'
+
+function LocationProbe() {
+  const location = useLocation()
+  const navigationType = useNavigationType()
+
+  return createElement('output', undefined, `${location.pathname}:${navigationType}`)
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('workspace route registry', () => {
   it('exposes the eight top-level workspace entries in product order', () => {
@@ -53,9 +67,57 @@ describe('workspace route registry', () => {
     expect(findRoute('/partners')?.redirectTo).toBe('/library/governance/partners')
   })
 
+  it('replaces a legacy URL at runtime with its canonical location', async () => {
+    const legacyRoute = findRoute('/projects')
+
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/projects'] },
+        createElement(Routes, undefined, [
+          createElement(Route, {
+            key: 'legacy-projects',
+            path: '/projects',
+            element: legacyRoute ? createElement(legacyRoute.component) : null,
+          }),
+          createElement(Route, {
+            key: 'project-spaces',
+            path: '/spaces/projects',
+            element: createElement(LocationProbe),
+          }),
+        ])
+      )
+    )
+
+    expect(await screen.findByText('/spaces/projects:REPLACE')).toBeInTheDocument()
+  })
+
   it('marks knowledge as planned without treating it as an unavailable route', () => {
     expect(findRoute('/knowledge')?.availability).toBe('PLANNED')
     expect(findRoute('/knowledge')?.component).toBeDefined()
+  })
+
+  it('renders the planned knowledge route without requesting an API', () => {
+    const knowledgeRoute = findRoute(ROUTES.KNOWLEDGE)
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: [ROUTES.KNOWLEDGE] },
+        createElement(
+          Routes,
+          undefined,
+          createElement(Route, {
+            path: ROUTES.KNOWLEDGE,
+            element: knowledgeRoute ? createElement(knowledgeRoute.component) : null,
+          })
+        )
+      )
+    )
+
+    expect(screen.getByRole('heading', { name: '知识库' })).toBeInTheDocument()
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('builds project workspace and governance paths safely', () => {

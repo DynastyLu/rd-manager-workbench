@@ -23,7 +23,7 @@ export interface RouteDefinition {
 }
 
 /** @deprecated Use RouteDefinition for new route consumers. */
-export interface AppRoute extends RouteDefinition {}
+export type AppRoute = RouteDefinition
 
 /** @deprecated Kept only while the legacy sidebar is migrated to primaryNavigation. */
 export interface RouteCategory {

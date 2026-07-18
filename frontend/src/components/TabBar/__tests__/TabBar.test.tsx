@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
+import routes from '@/router/routes'
 import TabBar from '../TabBar'
 
 vi.mock('react-router-dom', async () => {
@@ -102,6 +103,48 @@ describe('TabBar', () => {
     expect(screen.queryByText('识别工具')).not.toBeInTheDocument()
     expect(screen.getByText('首页')).toBeInTheDocument()
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('normalizes legacy redirect tabs before persisting the canonical route', async () => {
+    const legacyProjectsRoute = routes.find((route) => route.path === '/projects')
+
+    render(
+      <MemoryRouter initialEntries={['/projects']}>
+        <TabBar routes={routes} />
+        <Routes>
+          <Route
+            path="/projects"
+            element={legacyProjectsRoute ? <legacyProjectsRoute.component /> : null}
+          />
+          <Route path="/spaces/projects" element={<p>项目空间</p>} />
+        </Routes>
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      const saved = localStorage.getItem('tabbar_state')
+      expect(saved).not.toBeNull()
+      expect(JSON.parse(saved!).tabs).toEqual([{ path: '/spaces/projects', title: '项目空间' }])
+    })
+  })
+
+  it('migrates persisted legacy redirect tabs to their canonical route', async () => {
+    localStorage.setItem(
+      'tabbar_state',
+      JSON.stringify({ tabs: [{ path: '/projects', title: '项目空间' }] })
+    )
+
+    render(
+      <Wrapper path="/spaces/projects">
+        <TabBar routes={routes} />
+      </Wrapper>
+    )
+
+    await waitFor(() => {
+      const saved = localStorage.getItem('tabbar_state')
+      expect(saved).not.toBeNull()
+      expect(JSON.parse(saved!).tabs).toEqual([{ path: '/spaces/projects', title: '项目空间' }])
+    })
   })
 
   it('closing active tab navigates to neighbor', async () => {
