@@ -1,0 +1,90 @@
+/*
+ * Local workspace product tokens.
+ * These deliberately sit after the migrated theme CSS so the application has
+ * one stable, light desktop appearance while the old theme system is retired.
+ */
+:root,
+[data-theme='classic'],
+[data-theme='cyberpunk'],
+[data-theme='ocean'],
+[data-theme='worldcup'] {
+  --workspace-sidebar-width: 208px;
+  --workspace-header-height: 56px;
+  --workspace-brand: #3370ff;
+  --workspace-brand-hover: #245bdb;
+  --workspace-brand-soft: #e8f0ff;
+  --workspace-canvas: #f5f6f7;
+  --workspace-surface: #ffffff;
+  --workspace-surface-subtle: #f8f9fa;
+  --workspace-border: #e5e7eb;
+  --workspace-border-strong: #d9dce1;
+  --workspace-text: #1f2329;
+  --workspace-text-secondary: #646a73;
+  --workspace-text-muted: #8f959e;
+  --workspace-success: #2f9b65;
+  --workspace-warning: #d98909;
+  --workspace-danger: #d83931;
+  --workspace-radius-sm: 6px;
+  --workspace-radius: 8px;
+  --workspace-radius-lg: 12px;
+  --workspace-shadow-float: 0 8px 28px rgba(31, 35, 41, 0.1);
+  --workspace-shadow-panel: 0 1px 2px rgba(31, 35, 41, 0.04);
+
+  /* Compatibility aliases while legacy pages move to Semi components. */
+  --bg-primary: var(--workspace-surface);
+  --bg-secondary: var(--workspace-canvas);
+  --bg-surface: var(--workspace-surface);
+  --bg-panel: var(--workspace-surface);
+  --bg-hover: #f0f2f5;
+  --accent-cyan: var(--workspace-brand);
+  --accent-pink: #8f5cff;
+  --accent-gold: var(--workspace-warning);
+  --accent-green: var(--workspace-success);
+  --text-primary: var(--workspace-text);
+  --text-secondary: var(--workspace-text-secondary);
+  --text-muted: var(--workspace-text-muted);
+  --text-inverse: #ffffff;
+  --border-color: var(--workspace-border);
+  --border-active: var(--workspace-brand);
+  --header-bg: var(--workspace-surface);
+  --header-border: var(--workspace-border);
+  --sidebar-bg: var(--workspace-surface);
+  --sidebar-width: var(--workspace-sidebar-width);
+  --font-main: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --radius: var(--workspace-radius);
+  --scanline-opacity: 0;
+  --neon-line-opacity: 0;
+  --dot-visibility: hidden;
+  --glow-cyan: none;
+  --glow-pink: none;
+  --glow-gold: none;
+
+  --semi-color-primary: var(--workspace-brand);
+  --semi-color-primary-hover: var(--workspace-brand-hover);
+  --semi-color-bg-0: var(--workspace-surface);
+  --semi-color-bg-1: var(--workspace-surface-subtle);
+  --semi-color-border: var(--workspace-border);
+  --semi-color-text-0: var(--workspace-text);
+  --semi-color-text-1: var(--workspace-text-secondary);
+  --semi-border-radius-small: var(--workspace-radius-sm);
+  --semi-border-radius-medium: var(--workspace-radius);
+}
+
+body {
+  min-width: 1024px;
+  background: var(--workspace-canvas);
+  color: var(--workspace-text);
+  font-family: var(--font-main);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body::before,
+body::after {
+  display: none !important;
+}
+
+::selection {
+  background: #cbdcff;
+  color: var(--workspace-text);
+}
