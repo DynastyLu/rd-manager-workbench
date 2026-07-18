@@ -7,6 +7,7 @@ import { ApplicationsModule } from './applications/applications.module';
 import { ManagementModule } from './management/management.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ContentModule } from './content/content.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ManagementModule,
     CalendarModule,
     NotificationsModule,
+    ContentModule,
   ],
   controllers: [WorkbenchStatusController],
 })

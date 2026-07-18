@@ -224,6 +224,28 @@ enum NotificationStatus {
   @@schema("app")
 }
 
+enum ContentDocumentType {
+  DOCUMENT
+  KNOWLEDGE_PAGE
+  MEETING_MINUTES
+
+  @@schema("app")
+}
+
+enum ContentStatus {
+  ACTIVE
+  TRASHED
+
+  @@schema("app")
+}
+
+enum FileAssetStatus {
+  ACTIVE
+  TRASHED
+
+  @@schema("app")
+}
+
 model Project {
   id                String                  @id @default(cuid())
   code              String                  @unique
@@ -254,6 +276,8 @@ model Project {
   communications    CommunicationRecord[]
   meetings          Meeting[]
   calendarEvents    CalendarEvent[]
+  contentDocuments  ContentDocument[]
+  fileAssets        FileAsset[]
 
   @@index([status, archivedAt])
   @@index([plannedEndAt])
@@ -388,6 +412,122 @@ model Notification {
   @@index([status, triggeredAt])
   @@index([status, snoozedUntil])
   @@map("notifications")
+  @@schema("app")
+}
+
+model KnowledgeSpace {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  sequence    Int               @default(0)
+  archivedAt  DateTime?         @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  documents   ContentDocument[]
+
+  @@index([archivedAt, sequence, name])
+  @@map("knowledge_spaces")
+  @@schema("app")
+}
+
+model ContentDocument {
+  id                String              @id @default(cuid())
+  type              ContentDocumentType
+  title             String
+  content           Json                @default("{}")
+  plainText         String              @default("") @map("plain_text")
+  tags              String[]            @default([])
+  isFavorite        Boolean             @default(false) @map("is_favorite")
+  spaceId           String?             @map("space_id")
+  parentId          String?             @map("parent_id")
+  projectId         String?             @map("project_id")
+  meetingId         String?             @map("meeting_id")
+  status            ContentStatus       @default(ACTIVE)
+  trashedAt         DateTime?           @map("trashed_at") @db.Timestamptz(6)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  space             KnowledgeSpace?     @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+  parent            ContentDocument?    @relation("ContentDocumentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children          ContentDocument[]   @relation("ContentDocumentHierarchy")
+  project           Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  meeting           Meeting?            @relation("MeetingDocuments", fields: [meetingId], references: [id], onDelete: SetNull)
+  minutesForMeeting Meeting?            @relation("MeetingMinutesDocument")
+  versions          DocumentVersion[]
+  fileAssets        FileAsset[]
+
+  @@index([status, updatedAt])
+  @@index([type, status, updatedAt])
+  @@index([spaceId, parentId, status])
+  @@index([projectId, status, updatedAt])
+  @@index([meetingId, status, updatedAt])
+  @@map("content_documents")
+  @@schema("app")
+}
+
+model DocumentVersion {
+  id                    String            @id @default(cuid())
+  documentId            String            @map("document_id")
+  versionNumber         Int               @map("version_number")
+  title                 String
+  content               Json
+  plainText             String            @map("plain_text")
+  tags                  String[]          @default([])
+  isFavorite            Boolean           @default(false) @map("is_favorite")
+  spaceId               String?           @map("space_id")
+  parentId              String?           @map("parent_id")
+  projectId             String?           @map("project_id")
+  meetingId             String?           @map("meeting_id")
+  restoredFromVersionId String?           @map("restored_from_version_id")
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  document              ContentDocument   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  restoredFromVersion   DocumentVersion?  @relation("DocumentVersionRestore", fields: [restoredFromVersionId], references: [id], onDelete: SetNull)
+  restorations          DocumentVersion[] @relation("DocumentVersionRestore")
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId, createdAt])
+  @@index([restoredFromVersionId])
+  @@map("document_versions")
+  @@schema("app")
+}
+
+model FileAsset {
+  id         String          @id @default(cuid())
+  name       String
+  documentId String?         @map("document_id")
+  projectId  String?         @map("project_id")
+  meetingId  String?         @map("meeting_id")
+  status     FileAssetStatus @default(ACTIVE)
+  trashedAt  DateTime?       @map("trashed_at") @db.Timestamptz(6)
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  document   ContentDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  project    Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  meeting    Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  versions   FileVersion[]
+
+  @@index([documentId, status, updatedAt])
+  @@index([projectId, status, updatedAt])
+  @@index([meetingId, status, updatedAt])
+  @@index([status, updatedAt])
+  @@map("file_assets")
+  @@schema("app")
+}
+
+model FileVersion {
+  id            String    @id @default(cuid())
+  fileAssetId   String    @map("file_asset_id")
+  versionNumber Int       @map("version_number")
+  storageKey    String    @unique @map("storage_key")
+  originalName  String    @map("original_name")
+  mimeType      String    @map("mime_type")
+  size          Int
+  sha256        String
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  fileAsset     FileAsset @relation(fields: [fileAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([fileAssetId, versionNumber])
+  @@index([fileAssetId, createdAt])
+  @@map("file_versions")
   @@schema("app")
 }
 
@@ -865,22 +1005,26 @@ model CommunicationRecord {
 }
 
 model Meeting {
-  id               String        @id @default(cuid())
-  projectId        String?       @map("project_id")
-  title            String
-  scheduledAt      DateTime      @map("scheduled_at") @db.Timestamptz(6)
-  heldAt           DateTime?     @map("held_at") @db.Timestamptz(6)
-  status           MeetingStatus @default(PLANNED)
-  agenda           String?
-  minutes          String?
-  participantNames String[]      @default([]) @map("participant_names")
-  archivedAt       DateTime?     @map("archived_at") @db.Timestamptz(6)
-  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  project          Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  actions          MeetingAction[]
-  agendaItems      MeetingAgendaItem[]
-  decisions        Decision[]
+  id                String           @id @default(cuid())
+  projectId         String?          @map("project_id")
+  minutesDocumentId String?          @unique @map("minutes_document_id")
+  title             String
+  scheduledAt       DateTime         @map("scheduled_at") @db.Timestamptz(6)
+  heldAt            DateTime?        @map("held_at") @db.Timestamptz(6)
+  status            MeetingStatus    @default(PLANNED)
+  agenda            String?
+  minutes           String?
+  participantNames  String[]         @default([]) @map("participant_names")
+  archivedAt        DateTime?        @map("archived_at") @db.Timestamptz(6)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project           Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  minutesDocument   ContentDocument? @relation("MeetingMinutesDocument", fields: [minutesDocumentId], references: [id], onDelete: SetNull)
+  documents         ContentDocument[] @relation("MeetingDocuments")
+  fileAssets        FileAsset[]
+  actions           MeetingAction[]
+  agendaItems       MeetingAgendaItem[]
+  decisions         Decision[]
 
   @@index([projectId, archivedAt, status])
   @@index([scheduledAt])
