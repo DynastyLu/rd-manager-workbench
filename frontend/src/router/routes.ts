@@ -1,6 +1,11 @@
 import { createElement, lazy, type ComponentType } from 'react'
 import { Navigate, useParams } from 'react-router-dom'
+import { PlannedModuleState } from '@/components/AppShell/PlannedModuleState'
 import { ROUTES } from '@/constants/routes'
+import AutomationDataPage from '@/pages/AutomationDataPage'
+import KnowledgeHomePage from '@/pages/KnowledgeHomePage'
+import LibraryHomePage from '@/pages/LibraryHomePage'
+import MeetingsAndMaterialsPage from '@/pages/MeetingsAndMaterialsPage'
 
 export type ModuleAvailability = 'AVAILABLE' | 'PLANNED'
 
@@ -41,47 +46,15 @@ const RisksPage = lazy(() => import('@/pages/RisksPage'))
 const IssuesPage = lazy(() => import('@/pages/IssuesPage'))
 const DecisionsPage = lazy(() => import('@/pages/DecisionsPage'))
 const PartnersPage = lazy(() => import('@/pages/PartnersPage'))
-const MeetingsPage = lazy(() => import('@/pages/MeetingsPage'))
 const WorkbenchSettings = lazy(() => import('@/pages/WorkbenchSettings'))
 
-function createPlannedModuleState(title: string, description: string): ComponentType {
-  return function PlannedModuleState() {
-    return createElement(
-      'div',
-      { className: 'app-page' },
-      createElement(
-        'div',
-        { className: 'app-page__inner' },
-        createElement(
-          'div',
-          { className: 'app-page__hero' },
-          createElement('div', undefined, [
-            createElement('h1', { className: 'app-page__title', key: 'title' }, title),
-            createElement(
-              'p',
-              { className: 'app-page__subtitle', key: 'description' },
-              description
-            ),
-          ])
-        )
-      )
-    )
-  }
+function PlannedGovernancePage() {
+  return createElement(PlannedModuleState, {
+    title: '业务库',
+    description: '该业务库模块尚未开放。',
+    nextStep: '下一步：确认该模块的本地记录范围。',
+  })
 }
-
-const LibraryPage = createPlannedModuleState('业务库', '业务库总览正在整理中。')
-const KnowledgePage = createPlannedModuleState(
-  '知识库',
-  '知识库正在规划中，当前不会读取或请求知识库数据。'
-)
-const AutomationDataPage = createPlannedModuleState(
-  '自动化与数据',
-  '自动化与数据能力正在规划中，当前不会发起未实现的请求。'
-)
-const PlannedGovernancePage = createPlannedModuleState(
-  '业务库',
-  '该业务库模块正在规划中，当前不会发起未实现的请求。'
-)
 
 const governancePages: Record<string, ComponentType> = {
   risks: RisksPage,
@@ -173,7 +146,7 @@ const canonicalRoutes: RouteDefinition[] = [
     path: ROUTES.LIBRARY,
     title: '业务库',
     icon: '▤',
-    component: LibraryPage,
+    component: LibraryHomePage,
     navigationKey: 'library',
     availability: 'AVAILABLE',
   },
@@ -197,7 +170,7 @@ const canonicalRoutes: RouteDefinition[] = [
     path: ROUTES.MEETINGS,
     title: '会议与资料',
     icon: '◷',
-    component: MeetingsPage,
+    component: MeetingsAndMaterialsPage,
     navigationKey: 'meetings',
     availability: 'AVAILABLE',
   },
@@ -205,7 +178,7 @@ const canonicalRoutes: RouteDefinition[] = [
     path: ROUTES.KNOWLEDGE,
     title: '知识库',
     icon: '◫',
-    component: KnowledgePage,
+    component: KnowledgeHomePage,
     navigationKey: 'knowledge',
     availability: 'PLANNED',
   },

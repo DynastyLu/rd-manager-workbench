@@ -120,6 +120,30 @@ describe('workspace route registry', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it('uses the shared planned state for an unknown governance module', () => {
+    const governanceRoute = findRoute('/library/governance/:kind')
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: ['/library/governance/unknown'] },
+        createElement(
+          Routes,
+          undefined,
+          createElement(Route, {
+            path: '/library/governance/:kind',
+            element: governanceRoute ? createElement(governanceRoute.component) : null,
+          })
+        )
+      )
+    )
+
+    expect(screen.getByRole('heading', { name: '业务库' })).toBeInTheDocument()
+    expect(screen.getByText('该能力正在规划中')).toBeInTheDocument()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('builds project workspace and governance paths safely', () => {
     expect(ROUTES.projectWorkspace('项目 / A')).toBe(
       '/spaces/projects/%E9%A1%B9%E7%9B%AE%20%2F%20A/overview'
