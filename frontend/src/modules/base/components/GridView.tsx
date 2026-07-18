@@ -46,6 +46,7 @@ export function GridView({
   onRecordChange,
   onViewChange,
   onRecordSelect,
+  isSaving = false,
 }: {
   fields: DataField[]
   records: BaseRecord[]
@@ -53,6 +54,7 @@ export function GridView({
   onRecordChange: (recordId: string, values: Record<string, unknown>) => Promise<unknown> | void
   onViewChange: (config: DataViewConfig) => void
   onRecordSelect?: (record: BaseRecord) => void
+  isSaving?: boolean
 }) {
   const [config, setConfig] = useState<DataViewConfig>(view.config)
   const [editing, setEditing] = useState<{ recordId: string; fieldKey: string } | null>(null)
@@ -96,6 +98,13 @@ export function GridView({
       const record = row.original
       const value = record.values[field.key]
       const isEditing = editing?.recordId === record.id && editing.fieldKey === field.key
+      const readOnlyRecordTypes = Array.isArray(field.config.readOnlyRecordTypes)
+        ? field.config.readOnlyRecordTypes.filter((item): item is string => typeof item === 'string')
+        : []
+      const recordType = typeof record.values.recordType === 'string' ? record.values.recordType : ''
+      const readOnly = isSaving
+        || field.config.readOnly === true
+        || readOnlyRecordTypes.includes(recordType)
       return (
         <div className="base-grid__cell-content">
           <FieldEditor
@@ -103,6 +112,7 @@ export function GridView({
             field={field}
             value={value}
             editing={isEditing}
+            readOnly={readOnly}
             onStartEdit={() => setEditing({ recordId: record.id, fieldKey: field.key })}
             onCancel={() => setEditing(null)}
             onCommit={(nextValue) => {
@@ -116,7 +126,7 @@ export function GridView({
         </div>
       )
     },
-  })), [editing, onRecordChange, visibleFields])
+  })), [editing, isSaving, onRecordChange, visibleFields])
 
   // TanStack Table intentionally exposes non-memoizable callbacks managed by its own state model.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -196,32 +206,36 @@ export function GridView({
               ))}
             </thead>
             <tbody>
-              {table.getRowModel().rows.map((row, index) => {
-                if (row.getIsGrouped()) {
-                  return (
-                    <tr key={row.id} className="base-grid__group-row">
-                      <td colSpan={row.getVisibleCells().length + 1}>
-                        <Tag color="blue">{renderCompact(row.getGroupingValue(row.groupingColumnId!))}</Tag>
-                        <span>{row.subRows.length} 条记录</span>
-                      </td>
-                    </tr>
-                  )
+              {table.getRowModel().rows.flatMap((row, index) => {
+                const renderRow = (currentRow: typeof row, rowIndex: number): React.ReactNode[] => {
+                  if (currentRow.getIsGrouped()) {
+                    return [
+                      <tr key={currentRow.id} className="base-grid__group-row">
+                        <td colSpan={currentRow.getVisibleCells().length + 1}>
+                          <Tag color="blue">{renderCompact(currentRow.getGroupingValue(currentRow.groupingColumnId!))}</Tag>
+                          <span>{currentRow.subRows.length} 条记录</span>
+                        </td>
+                      </tr>,
+                      ...currentRow.subRows.flatMap((subRow, subIndex) => renderRow(subRow, subIndex)),
+                    ]
+                  }
+                  return [
+                    <tr
+                      key={currentRow.id}
+                      onClick={(event) => {
+                        if ((event.target as Element).closest('button, a, input, textarea, select, [role="checkbox"]')) return
+                        onRecordSelect?.(currentRow.original)
+                      }}
+                    >
+                      <td className="base-grid__row-number">{currentRow.index + 1 || rowIndex + 1}</td>
+                      {currentRow.getVisibleCells().map((cell) => {
+                        const field = fields.find((item) => item.key === cell.column.id)
+                        return <td key={cell.id} className={field?.isPrimary ? 'base-grid__primary' : ''}>{cell.getIsPlaceholder() ? null : flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+                      })}
+                    </tr>,
+                  ]
                 }
-                return (
-                  <tr
-                    key={row.id}
-                    onClick={(event) => {
-                      if ((event.target as Element).closest('button, a, input, textarea, select, [role="checkbox"]')) return
-                      onRecordSelect?.(row.original)
-                    }}
-                  >
-                    <td className="base-grid__row-number">{index + 1}</td>
-                    {row.getVisibleCells().map((cell) => {
-                      const field = fields.find((item) => item.key === cell.column.id)
-                      return <td key={cell.id} className={field?.isPrimary ? 'base-grid__primary' : ''}>{cell.getIsPlaceholder() ? null : flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
-                    })}
-                  </tr>
-                )
+                return renderRow(row, index)
               })}
             </tbody>
           </table>

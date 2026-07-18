@@ -14,6 +14,8 @@ const FIELD_TYPES: Array<{ value: DataFieldType; label: string }> = [
   { value: 'LINK', label: '链接' },
   { value: 'ATTACHMENT', label: '附件' },
   { value: 'RELATION', label: '关联记录' },
+  { value: 'CREATED_AT', label: '创建时间' },
+  { value: 'UPDATED_AT', label: '更新时间' },
 ]
 
 const COMMON_KEYS: Record<string, string> = {
@@ -42,12 +44,16 @@ export function FieldManager({
   visible,
   onClose,
   onCreateField,
+  onUpdateField,
+  onDeleteField,
   isSaving = false,
 }: {
   table: DataTable
   visible: boolean
   onClose: () => void
   onCreateField: (input: CreateDataFieldInput) => void
+  onUpdateField?: (id: string, input: Partial<CreateDataFieldInput>) => unknown
+  onDeleteField?: (id: string) => unknown
   isSaving?: boolean
 }) {
   const fields = useMemo(() => [...(table.fields ?? [])].sort((a, b) => a.sequence - b.sequence), [table.fields])
@@ -55,6 +61,15 @@ export function FieldManager({
   const [name, setName] = useState('')
   const [type, setType] = useState<DataFieldType>('TEXT')
   const [options, setOptions] = useState('')
+  const [editingField, setEditingField] = useState<DataField | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editRequired, setEditRequired] = useState(false)
+
+  function startEditing(field: DataField) {
+    setEditingField(field)
+    setEditName(field.name)
+    setEditRequired(field.isRequired)
+  }
 
   function closeCreate() {
     setIsCreateOpen(false)
@@ -72,12 +87,30 @@ export function FieldManager({
             {table.source === 'CUSTOM' ? <Button aria-label="新增字段" icon={<IconPlus />} theme="solid" type="primary" onClick={() => setIsCreateOpen(true)}>新增字段</Button> : <Tag color="blue">系统字段只读</Tag>}
           </header>
           <ol>
-            {fields.map((field: DataField) => (
+            {fields.map((field: DataField, index) => (
               <li key={field.id}>
                 <span className="field-manager__drag">⋮⋮</span>
                 <div><strong>{field.name}</strong><code>{field.key}</code></div>
                 <Tag>{FIELD_TYPES.find((item) => item.value === field.type)?.label ?? field.type}</Tag>
                 {field.isPrimary ? <Tag color="blue">主字段</Tag> : null}
+                {table.source === 'CUSTOM' ? (
+                  <span className="field-manager__actions">
+                    <button type="button" aria-label={`前移字段：${field.name}`} disabled={isSaving || index === 0} onClick={() => {
+                      const previous = fields[index - 1]
+                      if (!previous) return
+                      void onUpdateField?.(field.id, { sequence: previous.sequence })
+                      void onUpdateField?.(previous.id, { sequence: field.sequence })
+                    }}>↑</button>
+                    <button type="button" aria-label={`后移字段：${field.name}`} disabled={isSaving || index === fields.length - 1} onClick={() => {
+                      const next = fields[index + 1]
+                      if (!next) return
+                      void onUpdateField?.(field.id, { sequence: next.sequence })
+                      void onUpdateField?.(next.id, { sequence: field.sequence })
+                    }}>↓</button>
+                    <button type="button" aria-label={`编辑字段：${field.name}`} disabled={isSaving} onClick={() => startEditing(field)}>编辑</button>
+                    {!field.isPrimary ? <button type="button" aria-label={`删除字段：${field.name}`} disabled={isSaving} onClick={() => void onDeleteField?.(field.id)}>删除</button> : null}
+                  </span>
+                ) : null}
               </li>
             ))}
           </ol>
@@ -88,7 +121,7 @@ export function FieldManager({
           className="field-manager__form"
           onSubmit={(event) => {
             event.preventDefault()
-            if (!name.trim()) return
+            if (!name.trim() || isSaving) return
             const optionList = options.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean)
             onCreateField({
               name: name.trim(),
@@ -112,6 +145,18 @@ export function FieldManager({
             <label htmlFor="base-field-options"><span>选项</span><Input id="base-field-options" aria-label="选项" value={options} onChange={setOptions} placeholder="使用逗号分隔，例如：高、中、低" /></label>
           ) : null}
           <Button htmlType="submit" theme="solid" type="primary" loading={isSaving} disabled={!name.trim()}>保存字段</Button>
+        </form>
+      </Modal>
+      <Modal title="编辑字段" visible={Boolean(editingField)} footer={null} onCancel={() => setEditingField(null)} width={460}>
+        <form className="field-manager__form" onSubmit={(event) => {
+          event.preventDefault()
+          if (!editingField || !editName.trim() || isSaving) return
+          void onUpdateField?.(editingField.id, { name: editName.trim(), isRequired: editRequired })
+          setEditingField(null)
+        }}>
+          <label htmlFor="base-field-edit-name"><span>字段名称</span><Input id="base-field-edit-name" aria-label="编辑字段名称" value={editName} onChange={setEditName} /></label>
+          <label htmlFor="base-field-edit-required" className="field-manager__checkbox"><input id="base-field-edit-required" aria-label="字段必填" type="checkbox" checked={editRequired} onChange={(event) => setEditRequired(event.target.checked)} /><span>必填字段</span></label>
+          <Button htmlType="submit" theme="solid" type="primary" loading={isSaving} disabled={!editName.trim()}>保存字段修改</Button>
         </form>
       </Modal>
     </>

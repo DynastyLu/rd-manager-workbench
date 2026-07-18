@@ -89,10 +89,14 @@
   li > div { display: grid; min-width: 0; flex: 1; }
   li code { color: #8f959e; font-size: 10px; }
   &__drag { color: #b0b5bd; }
+  &__actions { display: flex; gap: 3px; }
+  &__actions button { min-width: 26px; height: 26px; padding: 0 6px; border: 1px solid #dee0e3; border-radius: 5px; background: #fff; color: #646a73; font-size: 11px; cursor: pointer; }
+  &__actions button:disabled { opacity: .4; cursor: default; }
   &__form { display: grid; gap: 16px; }
   &__form label { display: grid; gap: 6px; }
   &__form label > span { font-size: 12px; font-weight: 600; }
   &__form select { min-height: 34px; padding: 0 9px; border: 1px solid #d9dce3; border-radius: 6px; background: #fff; }
+  &__checkbox { display: flex !important; align-items: center; gap: 8px !important; }
 }
 
 .base-dialog-form { display: grid; gap: 16px; }

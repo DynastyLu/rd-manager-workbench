@@ -30,6 +30,7 @@ export function FieldEditor({
   field,
   value,
   editing,
+  readOnly = false,
   onStartEdit,
   onCancel,
   onCommit,
@@ -37,13 +38,14 @@ export function FieldEditor({
   field: DataField
   value: unknown
   editing: boolean
+  readOnly?: boolean
   onStartEdit: () => void
   onCancel: () => void
   onCommit: (value: unknown) => void
 }) {
   const [draft, setDraft] = useState(value)
 
-  if (field.type === 'CREATED_AT' || field.type === 'UPDATED_AT') {
+  if (readOnly || field.type === 'CREATED_AT' || field.type === 'UPDATED_AT') {
     return <span className="base-grid__readonly">{displayValue(value)}</span>
   }
 
@@ -102,7 +104,8 @@ export function FieldEditor({
     const commitTextArea = () => {
       if (field.type === 'ATTACHMENT' || field.type === 'RELATION') {
         const text = typeof draft === 'string' ? draft : Array.isArray(draft) ? draft.filter((item): item is string => typeof item === 'string').join(', ') : ''
-        onCommit(text.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean))
+        const values = text.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean)
+        onCommit(field.type === 'RELATION' && field.config.multiple !== true ? (values[0] ?? '') : values)
       } else {
         onCommit(draft)
       }

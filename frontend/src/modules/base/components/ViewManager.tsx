@@ -47,6 +47,7 @@ export function ViewManager({
 
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (isSaving) return
     const trimmedName = name.trim()
     if (!trimmedName) return
     await onCreate({ name: trimmedName, type, config: {} })
@@ -159,7 +160,7 @@ export function ViewManager({
               ))}
             </select>
           </label>
-          <button type="submit" style={primaryButtonStyle}>
+          <button type="submit" disabled={isSaving} style={primaryButtonStyle}>
             确认新增
           </button>
         </form>

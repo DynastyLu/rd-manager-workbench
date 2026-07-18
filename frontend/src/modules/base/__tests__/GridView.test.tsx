@@ -92,6 +92,28 @@ describe('GridView', () => {
     }))
   })
 
+  it('keeps attachment editing multiline until blur instead of submitting a string on Enter', async () => {
+    const onRecordChange = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <GridView fields={fields} records={records} view={view} onRecordChange={onRecordChange} onViewChange={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    await user.dblClick(screen.getByText('file-1'))
+    const editor = screen.getByLabelText('编辑附件')
+    await user.clear(editor)
+    await user.type(editor, 'file-2')
+    fireEvent.keyDown(editor, { key: 'Enter' })
+
+    expect(onRecordChange).not.toHaveBeenCalled()
+    fireEvent.blur(editor)
+    await waitFor(() => expect(onRecordChange).toHaveBeenCalledWith('record-1', {
+      files: ['file-2'],
+    }))
+  })
+
   it('does not open the record drawer when the user is editing a cell', async () => {
     const onRecordSelect = vi.fn()
     const user = userEvent.setup()
@@ -122,5 +144,59 @@ describe('GridView', () => {
     expect(onViewChange).toHaveBeenLastCalledWith(expect.objectContaining({
       fieldOrder: ['field-name', 'field-active', 'field-budget', 'field-files'],
     }))
+  })
+
+  it('renders grouped child records instead of replacing them with group headers', async () => {
+    const groupedView = { ...view, config: { groupField: 'active' } }
+    const groupedRecords: BaseRecord[] = [
+      records[0]!,
+      { ...records[0]!, id: 'record-2', values: { ...records[0]!.values, name: '火星项目' } },
+    ]
+    render(
+      <MemoryRouter>
+        <GridView fields={fields} records={groupedRecords} view={groupedView} onRecordChange={vi.fn()} onViewChange={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByText('北斗项目')).toBeInTheDocument()
+    expect(screen.getByText('火星项目')).toBeInTheDocument()
+    expect(screen.getByText('2 条记录')).toBeInTheDocument()
+  })
+
+  it('keeps configured system fields read-only for matching record types', async () => {
+    const onRecordChange = vi.fn()
+    const readOnlyFields: DataField[] = [
+      fields[0]!,
+      { ...fields[1]!, config: { readOnlyRecordTypes: ['PROJECT'] } },
+    ]
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <GridView fields={readOnlyFields} records={[{ ...records[0]!, values: { ...records[0]!.values, recordType: 'PROJECT' } }]} view={view} onRecordChange={onRecordChange} onViewChange={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    await user.dblClick(screen.getByText('120'))
+    expect(screen.queryByLabelText('编辑预算')).not.toBeInTheDocument()
+    expect(onRecordChange).not.toHaveBeenCalled()
+  })
+
+  it('submits a single relation as a string unless the field enables multiple values', async () => {
+    const onRecordChange = vi.fn().mockResolvedValue(undefined)
+    const relationField: DataField = { ...fields[3]!, id: 'field-relation', key: 'relation', name: '关联项目', type: 'RELATION', config: {} }
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <GridView fields={[fields[0]!, relationField]} records={[{ ...records[0]!, values: { name: '北斗项目', relation: 'project-1' } }]} view={view} onRecordChange={onRecordChange} onViewChange={vi.fn()} />
+      </MemoryRouter>,
+    )
+
+    await user.dblClick(screen.getByText('project-1'))
+    const editor = screen.getByLabelText('编辑关联项目')
+    await user.clear(editor)
+    await user.type(editor, 'project-2')
+    fireEvent.blur(editor)
+
+    await waitFor(() => expect(onRecordChange).toHaveBeenCalledWith('record-1', { relation: 'project-2' }))
   })
 })

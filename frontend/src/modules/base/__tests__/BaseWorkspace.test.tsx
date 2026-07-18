@@ -8,10 +8,12 @@ import LibraryHomePage from '@/pages/LibraryHomePage'
 
 const api = vi.hoisted(() => ({
   createBaseField: vi.fn(),
+  deleteBaseField: vi.fn(),
   createBaseTable: vi.fn(),
   listBaseRecords: vi.fn(),
   listBaseWorkspaces: vi.fn(),
   updateBaseRecord: vi.fn(),
+  updateBaseField: vi.fn(),
   updateBaseView: vi.fn(),
 }))
 
@@ -151,5 +153,52 @@ describe('multidimensional base workspace', () => {
       type: 'SINGLE_SELECT',
       config: { options: [{ label: '高', value: '高' }, { label: '中', value: '中' }, { label: '低', value: '低' }] },
     })
+  })
+
+  it('can add automatic created-time and updated-time fields to custom tables', async () => {
+    api.createBaseField.mockResolvedValue({ id: 'field-created', tableId: 'table-custom', key: 'created_at', name: 'created_at', type: 'CREATED_AT', config: {}, isPrimary: false, isRequired: false, sequence: 2 })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '自定义清单' }))
+    await user.click(screen.getByRole('button', { name: '字段管理' }))
+    await user.click(screen.getByRole('button', { name: '新增字段' }))
+    await user.type(screen.getByLabelText('字段名称'), 'created_at')
+    await user.selectOptions(screen.getByLabelText('字段类型'), 'CREATED_AT')
+    await user.click(screen.getByRole('button', { name: '保存字段' }))
+
+    expect(api.createBaseField).toHaveBeenCalledWith('table-custom', {
+      name: 'created_at', key: 'created_at', type: 'CREATED_AT',
+    })
+  })
+
+  it('supports renaming, requiring, reordering and deleting fields only on custom tables', async () => {
+    const editableTable = {
+      ...customTable,
+      fields: [
+        customTable.fields[0],
+        { ...projectTable.fields[1], id: 'field-custom-status', tableId: 'table-custom', name: '进度', key: 'progress', sequence: 1 },
+      ],
+    }
+    api.listBaseWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: '研发工作台', description: '本地数据空间', sequence: 0, tables: [projectTable, editableTable] },
+    ])
+    api.updateBaseField.mockResolvedValue({})
+    api.deleteBaseField.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '自定义清单' }))
+    await user.click(screen.getByRole('button', { name: '字段管理' }))
+    await user.click(screen.getByRole('button', { name: '编辑字段：进度' }))
+    await user.clear(screen.getByLabelText('编辑字段名称'))
+    await user.type(screen.getByLabelText('编辑字段名称'), '阶段')
+    await user.click(screen.getByLabelText('字段必填'))
+    await user.click(screen.getByRole('button', { name: '保存字段修改' }))
+
+    expect(api.updateBaseField).toHaveBeenCalledWith('field-custom-status', expect.objectContaining({ name: '阶段', isRequired: true }))
+
+    await user.click(screen.getByRole('button', { name: '删除字段：进度' }))
+    expect(api.deleteBaseField).toHaveBeenCalledWith('field-custom-status')
   })
 })

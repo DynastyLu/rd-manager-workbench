@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Banner, Button, Empty, Input, Modal, SideSheet, Skeleton, Toast } from '@douyinfe/semi-ui'
 import { Link } from 'react-router-dom'
 import { BaseSidebar } from '@/modules/base/components/BaseSidebar'
@@ -15,7 +15,10 @@ import {
   useCreateBaseField,
   useCreateBaseRecord,
   useCreateBaseTable,
+  useDebouncedViewConfigSave,
+  useDeleteBaseField,
   useUpdateBaseRecord,
+  useUpdateBaseField,
   useUpdateBaseView,
 } from '@/modules/base/hooks'
 import { createBaseView, deleteBaseView, updateBaseView } from '@/modules/base/api'
@@ -54,13 +57,18 @@ export default function LibraryHomePage() {
   const [isCreateTableOpen, setIsCreateTableOpen] = useState(false)
   const [tableName, setTableName] = useState('')
   const [isFieldManagerOpen, setIsFieldManagerOpen] = useState(false)
+  const [isViewSaving, setIsViewSaving] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<BaseRecord | null>(null)
-  const viewSaveTimer = useRef<number | undefined>(undefined)
   const createTableMutation = useCreateBaseTable()
   const createFieldMutation = useCreateBaseField()
+  const updateFieldMutation = useUpdateBaseField()
+  const deleteFieldMutation = useDeleteBaseField()
   const createRecordMutation = useCreateBaseRecord()
   const updateRecordMutation = useUpdateBaseRecord()
   const updateViewMutation = useUpdateBaseView()
+  const debounceViewSave = useDebouncedViewConfigSave((id, config) => {
+    updateViewMutation.mutate({ id, config })
+  }, VIEW_SAVE_DELAY_MS)
 
   const workspace = workspacesQuery.data?.[0]
   const tables = useMemo(() => workspace?.tables ?? [], [workspace?.tables])
@@ -73,10 +81,6 @@ export default function LibraryHomePage() {
   } : null, [selectedView, viewOverrides])
   const recordsQuery = useBaseRecords(selectedTable?.id ?? null, viewQuery(resolvedView?.config ?? {}))
 
-  useEffect(() => () => {
-    if (viewSaveTimer.current !== undefined) window.clearTimeout(viewSaveTimer.current)
-  }, [])
-
   function selectTable(table: DataTable) {
     setSelectedTableId(table.id)
     setSelectedViewId(table.views?.find((view) => view.isDefault)?.id ?? table.views?.[0]?.id ?? null)
@@ -86,14 +90,24 @@ export default function LibraryHomePage() {
   function saveViewConfig(config: DataViewConfig) {
     if (!resolvedView) return
     setViewOverrides((current) => ({ ...current, [resolvedView.id]: config }))
-    if (viewSaveTimer.current !== undefined) window.clearTimeout(viewSaveTimer.current)
-    viewSaveTimer.current = window.setTimeout(() => {
-      updateViewMutation.mutate({ id: resolvedView.id, config }, { onError: () => Toast.error('视图配置保存失败。') })
-    }, VIEW_SAVE_DELAY_MS)
+    debounceViewSave(resolvedView.id, config)
   }
 
   async function refreshViews() {
     await workspacesQuery.refetch()
+  }
+
+  async function runViewOperation<T>(operation: () => Promise<T>, errorMessage: string) {
+    if (isViewSaving) return undefined
+    setIsViewSaving(true)
+    try {
+      return await operation()
+    } catch {
+      Toast.error(errorMessage)
+      return undefined
+    } finally {
+      setIsViewSaving(false)
+    }
   }
 
   if (workspacesQuery.isPending) {
@@ -123,36 +137,44 @@ export default function LibraryHomePage() {
           <>
             <BaseToolbar
               table={selectedTable}
+              isCreatingRecord={createRecordMutation.isPending}
               onManageFields={() => setIsFieldManagerOpen(true)}
               onCreateRecord={() => {
                 const primaryField = fields.find((field) => field.isPrimary)
                 createRecordMutation.mutate(
                   { tableId: selectedTable.id, values: primaryField ? { [primaryField.key]: '未命名记录' } : {} },
-                  { onError: () => Toast.error('新增记录失败。') },
                 )
               }}
             />
             <ViewManager
               views={views}
               activeViewId={resolvedView?.id}
+              isSaving={isViewSaving || updateViewMutation.isPending}
               onSelect={(id) => setSelectedViewId(id)}
-              onCreate={async ({ name, type, config }: { name: string; type: DataViewType; config: Record<string, unknown> }) => { const created = await createBaseView(selectedTable.id, { name, type, config }); await refreshViews(); setSelectedViewId(created.id) }}
-              onRename={async (id, name) => { await updateBaseView(id, { name }); await refreshViews() }}
-              onSave={async (id) => { await updateBaseView(id, { config: resolvedView?.config ?? {} }); await refreshViews() }}
-              onDelete={async (id) => { await deleteBaseView(id); await refreshViews() }}
+              onCreate={async ({ name, type, config }: { name: string; type: DataViewType; config: Record<string, unknown> }) => {
+                const created = await runViewOperation(async () => {
+                  const next = await createBaseView(selectedTable.id, { name, type, config })
+                  await refreshViews()
+                  return next
+                }, '创建视图失败。')
+                if (created) setSelectedViewId(created.id)
+              }}
+              onRename={(id, name) => runViewOperation(async () => { await updateBaseView(id, { name }); await refreshViews() }, '重命名视图失败。')}
+              onSave={(id) => runViewOperation(async () => { await updateBaseView(id, { config: resolvedView?.config ?? {} }); await refreshViews() }, '保存视图失败。')}
+              onDelete={(id) => runViewOperation(async () => { await deleteBaseView(id); await refreshViews() }, '删除视图失败。')}
             />
             <div className="base-page__content">
               {recordsQuery.isPending ? <Skeleton loading placeholder={<Skeleton.Paragraph rows={10} />} /> : null}
               {recordsQuery.isError ? <Banner type="danger" fullMode={false} title="无法读取数据记录" description="数据表结构已加载，但记录服务暂时不可用。" closeIcon={null}><Button onClick={() => void recordsQuery.refetch()}>重试</Button></Banner> : null}
               {recordsQuery.data && resolvedView ? (
                 resolvedView.type === 'GRID' ? (
-                  <GridView fields={fields} records={records} view={resolvedView} onRecordSelect={setSelectedRecord} onRecordChange={(recordId, values) => updateRecordMutation.mutateAsync({ tableId: selectedTable.id, recordId, values })} onViewChange={saveViewConfig} />
+                  <GridView fields={fields} records={records} view={resolvedView} isSaving={updateRecordMutation.isPending} onRecordSelect={setSelectedRecord} onRecordChange={(recordId, values) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values })} onViewChange={saveViewConfig} />
                 ) : resolvedView.type === 'KANBAN' ? (
-                  <KanbanView fields={fields} records={records} groupFieldKey={String(resolvedView.config.groupField ?? '') || undefined} onGroupFieldChange={(groupField) => saveViewConfig({ ...resolvedView.config, groupField })} onRecordUpdate={(recordId, input) => updateRecordMutation.mutateAsync({ tableId: selectedTable.id, recordId, values: input.values })} onOpenRecord={setSelectedRecord} />
+                  <KanbanView fields={fields} records={records} groupFieldKey={String(resolvedView.config.groupField ?? '') || undefined} onGroupFieldChange={(groupField) => saveViewConfig({ ...resolvedView.config, groupField })} onRecordUpdate={(recordId, input) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values: input.values })} onOpenRecord={setSelectedRecord} />
                 ) : resolvedView.type === 'CALENDAR' ? (
                   <CalendarView fields={fields} records={records} dateFieldKey={String(resolvedView.config.dateField ?? '') || undefined} onDateFieldChange={(dateField) => saveViewConfig({ ...resolvedView.config, dateField })} onOpenRecord={setSelectedRecord} />
                 ) : (
-                  <FormView tableSource={selectedTable.source} fields={fields} onCreateRecord={(input) => createRecordMutation.mutateAsync({ tableId: selectedTable.id, values: input.values })} />
+                  <FormView tableSource={selectedTable.source} fields={fields} isSubmitting={createRecordMutation.isPending} onCreateRecord={(input) => createRecordMutation.mutateAsync({ tableId: selectedTable.id, values: input.values })} />
                 )
               ) : null}
             </div>
@@ -161,13 +183,21 @@ export default function LibraryHomePage() {
       </main>
 
       <Modal title="新建数据表" visible={isCreateTableOpen} footer={null} onCancel={() => setIsCreateTableOpen(false)} width={480}>
-        <form className="base-dialog-form" onSubmit={(event) => { event.preventDefault(); if (!tableName.trim()) return; createTableMutation.mutate({ workspaceId: workspace.id, name: tableName.trim() }, { onSuccess: (created) => { setSelectedTableId(created.id); setTableName(''); setIsCreateTableOpen(false) }, onError: () => Toast.error('创建数据表失败。') }) }}>
+        <form className="base-dialog-form" onSubmit={(event) => { event.preventDefault(); if (!tableName.trim() || createTableMutation.isPending) return; createTableMutation.mutate({ workspaceId: workspace.id, name: tableName.trim() }, { onSuccess: (created) => { setSelectedTableId(created.id); setTableName(''); setIsCreateTableOpen(false) } }) }}>
           <label htmlFor="base-table-name"><span>数据表名称</span><Input id="base-table-name" aria-label="数据表名称" value={tableName} onChange={setTableName} placeholder="例如：面试候选人" /></label>
           <Button htmlType="submit" theme="solid" type="primary" loading={createTableMutation.isPending} disabled={!tableName.trim()}>保存数据表</Button>
         </form>
       </Modal>
 
-      {selectedTable ? <FieldManager table={selectedTable} visible={isFieldManagerOpen} onClose={() => setIsFieldManagerOpen(false)} isSaving={createFieldMutation.isPending} onCreateField={(input) => createFieldMutation.mutate({ tableId: selectedTable.id, input }, { onError: () => Toast.error('新增字段失败。') })} /> : null}
+      {selectedTable ? <FieldManager
+        table={selectedTable}
+        visible={isFieldManagerOpen}
+        onClose={() => setIsFieldManagerOpen(false)}
+        isSaving={createFieldMutation.isPending || updateFieldMutation.isPending || deleteFieldMutation.isPending}
+        onCreateField={(input) => createFieldMutation.mutate({ tableId: selectedTable.id, input })}
+        onUpdateField={(id, input) => updateFieldMutation.mutate({ id, input })}
+        onDeleteField={(id) => deleteFieldMutation.mutate({ id })}
+      /> : null}
 
       <SideSheet title="记录详情" visible={Boolean(selectedRecord)} onCancel={() => setSelectedRecord(null)} width={460}>
         {selectedRecord && selectedTable ? <div className="base-record-detail">{fields.map((field) => <div key={field.id}><span>{field.name}</span><strong>{valueText(selectedRecord.values[field.key])}</strong></div>)}{selectedRecord.sourcePath ? <Link to={selectedRecord.sourcePath}>打开原业务对象 →</Link> : null}</div> : null}

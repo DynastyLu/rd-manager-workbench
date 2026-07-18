@@ -6,10 +6,12 @@ export function BaseToolbar({
   table,
   onManageFields,
   onCreateRecord,
+  isCreatingRecord = false,
 }: {
   table: DataTable
   onManageFields: () => void
   onCreateRecord?: () => void
+  isCreatingRecord?: boolean
 }) {
   return (
     <header className="base-toolbar">
@@ -25,7 +27,7 @@ export function BaseToolbar({
         <div className="base-toolbar__actions">
           <Button aria-label="字段管理" icon={<IconSetting />} onClick={onManageFields}>字段管理</Button>
           {table.source === 'CUSTOM' && onCreateRecord ? (
-            <Button icon={<IconPlus />} theme="solid" type="primary" onClick={onCreateRecord}>新增记录</Button>
+            <Button icon={<IconPlus />} theme="solid" type="primary" loading={isCreatingRecord} disabled={isCreatingRecord} onClick={onCreateRecord}>新增记录</Button>
           ) : null}
         </div>
       </div>
