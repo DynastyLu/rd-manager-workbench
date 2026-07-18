@@ -143,11 +143,30 @@ describe('TasksService later and reminder settings', () => {
     const laterUpsert = jest.fn().mockResolvedValue({ taskId: 'task-1', deferredUntil });
     const laterDeleteMany = jest.fn().mockResolvedValue({ count: 1 });
     const reminderUpsert = jest.fn().mockResolvedValue({ taskId: 'task-1', remindAt });
+    const reminderFindUnique = jest.fn().mockResolvedValue({
+      remindAt: new Date('2026-07-18T01:00:00.000Z'),
+    });
     const reminderDeleteMany = jest.fn().mockResolvedValue({ count: 1 });
+    const reminderRuleUpsert = jest.fn().mockResolvedValue({ id: 'rule-1' });
+    const reminderRuleUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const tx = {
+      taskReminder: {
+        findUnique: reminderFindUnique,
+        upsert: reminderUpsert,
+        deleteMany: reminderDeleteMany,
+      },
+      reminderRule: { upsert: reminderRuleUpsert, updateMany: reminderRuleUpdateMany },
+    };
     const prisma = {
       workTask: { findFirst },
       taskLater: { upsert: laterUpsert, deleteMany: laterDeleteMany },
-      taskReminder: { upsert: reminderUpsert, deleteMany: reminderDeleteMany },
+      taskReminder: {
+        findUnique: reminderFindUnique,
+        upsert: reminderUpsert,
+        deleteMany: reminderDeleteMany,
+      },
+      reminderRule: { upsert: reminderRuleUpsert, updateMany: reminderRuleUpdateMany },
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PlatformPrismaService;
     const service = new TasksService(prisma, new ProjectHealthService()) as unknown as MyWorkServiceContract;
     return {
@@ -156,7 +175,10 @@ describe('TasksService later and reminder settings', () => {
       laterUpsert,
       laterDeleteMany,
       reminderUpsert,
+      reminderFindUnique,
       reminderDeleteMany,
+      reminderRuleUpsert,
+      reminderRuleUpdateMany,
     };
   }
 
@@ -185,7 +207,7 @@ describe('TasksService later and reminder settings', () => {
   });
 
   it('upserts a reminder and revives a previously dismissed one', async () => {
-    const { service, reminderUpsert } = setup();
+    const { service, reminderUpsert, reminderRuleUpsert, reminderRuleUpdateMany } = setup();
 
     await service.upsertReminder('task-1', { remindAt });
 
@@ -194,14 +216,43 @@ describe('TasksService later and reminder settings', () => {
       create: { taskId: 'task-1', remindAt: new Date(remindAt) },
       update: { remindAt: new Date(remindAt), dismissedAt: null },
     });
+    expect(reminderRuleUpdateMany).toHaveBeenCalledWith({
+      where: {
+        sourceType: 'TASK',
+        sourceId: 'task-1',
+        remindAt: new Date('2026-07-18T01:00:00.000Z'),
+        archivedAt: null,
+      },
+      data: { archivedAt: expect.any(Date) },
+    });
+    expect(reminderRuleUpsert).toHaveBeenCalledWith({
+      where: {
+        sourceType_sourceId_remindAt: {
+          sourceType: 'TASK',
+          sourceId: 'task-1',
+          remindAt: new Date(remindAt),
+        },
+      },
+      create: { sourceType: 'TASK', sourceId: 'task-1', remindAt: new Date(remindAt) },
+      update: { archivedAt: null },
+    });
   });
 
   it('deletes a reminder idempotently after verifying the active task', async () => {
-    const { service, reminderDeleteMany } = setup();
+    const { service, reminderDeleteMany, reminderRuleUpdateMany } = setup();
 
     await service.deleteReminder('task-1');
 
     expect(reminderDeleteMany).toHaveBeenCalledWith({ where: { taskId: 'task-1' } });
+    expect(reminderRuleUpdateMany).toHaveBeenCalledWith({
+      where: {
+        sourceType: 'TASK',
+        sourceId: 'task-1',
+        remindAt: new Date('2026-07-18T01:00:00.000Z'),
+        archivedAt: null,
+      },
+      data: { archivedAt: expect.any(Date) },
+    });
   });
 
   it.each([TaskStatus.DONE, TaskStatus.CANCELLED])(

@@ -207,6 +207,23 @@ enum CalendarEventType {
   @@schema("app")
 }
 
+enum ReminderSourceType {
+  TASK
+  CALENDAR_EVENT
+  MEETING
+
+  @@schema("app")
+}
+
+enum NotificationStatus {
+  UNREAD
+  READ
+  DISMISSED
+  SNOOZED
+
+  @@schema("app")
+}
+
 model Project {
   id                String                  @id @default(cuid())
   code              String                  @unique
@@ -330,6 +347,47 @@ model TaskLater {
 
   @@index([deferredUntil])
   @@map("task_laters")
+  @@schema("app")
+}
+
+model ReminderRule {
+  id           String             @id @default(cuid())
+  sourceType   ReminderSourceType @map("source_type")
+  sourceId     String             @map("source_id")
+  remindAt     DateTime           @map("remind_at") @db.Timestamptz(6)
+  archivedAt   DateTime?          @map("archived_at") @db.Timestamptz(6)
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  notification Notification?
+
+  @@unique([sourceType, sourceId, remindAt])
+  @@index([archivedAt, remindAt])
+  @@map("reminder_rules")
+  @@schema("app")
+}
+
+model Notification {
+  id             String             @id @default(cuid())
+  reminderRuleId String             @unique @map("reminder_rule_id")
+  title          String
+  body           String
+  status         NotificationStatus @default(UNREAD)
+  sourceType     ReminderSourceType @map("source_type")
+  sourceId       String             @map("source_id")
+  sourcePath     String             @map("source_path")
+  scheduledFor   DateTime           @map("scheduled_for") @db.Timestamptz(6)
+  triggeredAt    DateTime           @map("triggered_at") @db.Timestamptz(6)
+  readAt         DateTime?          @map("read_at") @db.Timestamptz(6)
+  dismissedAt    DateTime?          @map("dismissed_at") @db.Timestamptz(6)
+  snoozedUntil   DateTime?          @map("snoozed_until") @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  reminderRule   ReminderRule       @relation(fields: [reminderRuleId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceType, sourceId, scheduledFor])
+  @@index([status, triggeredAt])
+  @@index([status, snoozedUntil])
+  @@map("notifications")
   @@schema("app")
 }
 

@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { Prisma, TaskStatus } from '@prisma/client';
+import { Prisma, ReminderSourceType, TaskStatus } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
@@ -151,16 +151,50 @@ export class TasksService {
 
   async upsertReminder(taskId: string, dto: UpsertTaskReminderDto) {
     await this.assertActionableTask(taskId);
-    return this.prisma.taskReminder.upsert({
-      where: { taskId },
-      create: { taskId, remindAt: new Date(dto.remindAt) },
-      update: { remindAt: new Date(dto.remindAt), dismissedAt: null },
+    const remindAt = new Date(dto.remindAt);
+    return this.prisma.$transaction(async (tx) => {
+      const existingReminder = await tx.taskReminder.findUnique({
+        where: { taskId },
+        select: { remindAt: true },
+      });
+      if (existingReminder) {
+        await this.archiveTaskReminderRule(tx, taskId, existingReminder.remindAt, new Date());
+      }
+      await tx.reminderRule.upsert({
+        where: {
+          sourceType_sourceId_remindAt: {
+            sourceType: ReminderSourceType.TASK,
+            sourceId: taskId,
+            remindAt,
+          },
+        },
+        create: {
+          sourceType: ReminderSourceType.TASK,
+          sourceId: taskId,
+          remindAt,
+        },
+        update: { archivedAt: null },
+      });
+      return tx.taskReminder.upsert({
+        where: { taskId },
+        create: { taskId, remindAt },
+        update: { remindAt, dismissedAt: null },
+      });
     });
   }
 
   async deleteReminder(taskId: string): Promise<void> {
     await this.assertTaskExists(taskId);
-    await this.prisma.taskReminder.deleteMany({ where: { taskId } });
+    await this.prisma.$transaction(async (tx) => {
+      const existingReminder = await tx.taskReminder.findUnique({
+        where: { taskId },
+        select: { remindAt: true },
+      });
+      await tx.taskReminder.deleteMany({ where: { taskId } });
+      if (existingReminder) {
+        await this.archiveTaskReminderRule(tx, taskId, existingReminder.remindAt, new Date());
+      }
+    });
   }
 
   async updateTask(id: string, dto: UpdateTaskDto) {
@@ -194,6 +228,7 @@ export class TasksService {
       if (dto.status === TaskStatus.DONE || dto.status === TaskStatus.CANCELLED) {
         await tx.taskReminder.deleteMany({ where: { taskId: id } });
         await tx.taskLater.deleteMany({ where: { taskId: id } });
+        await this.archiveTaskReminderRules(tx, id, new Date());
       }
       const task = await tx.workTask.update({
         where: { id },
@@ -230,6 +265,9 @@ export class TasksService {
       const task = await tx.workTask.findFirst({ where: { id, archivedAt: null } });
       if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
       await this.acquireProjectHealthLocks(tx, [task.projectId]);
+      await tx.taskReminder.deleteMany({ where: { taskId: id } });
+      await tx.taskLater.deleteMany({ where: { taskId: id } });
+      await this.archiveTaskReminderRules(tx, id, new Date());
       await tx.workTask.update({ where: { id }, data: { archivedAt: new Date() } });
       if (task.projectId) await this.recalculateHealth(tx, task.projectId);
     });
@@ -389,6 +427,38 @@ export class TasksService {
       select: { id: true },
     });
     if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
+  }
+
+  private async archiveTaskReminderRules(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+    archivedAt: Date,
+  ) {
+    await tx.reminderRule.updateMany({
+      where: {
+        sourceType: ReminderSourceType.TASK,
+        sourceId: taskId,
+        archivedAt: null,
+      },
+      data: { archivedAt },
+    });
+  }
+
+  private async archiveTaskReminderRule(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+    remindAt: Date,
+    archivedAt: Date,
+  ) {
+    await tx.reminderRule.updateMany({
+      where: {
+        sourceType: ReminderSourceType.TASK,
+        sourceId: taskId,
+        remindAt,
+        archivedAt: null,
+      },
+      data: { archivedAt },
+    });
   }
 
   private assertCompleteSourceReference(sourceType: string | null | undefined, sourceId: string | null | undefined) {

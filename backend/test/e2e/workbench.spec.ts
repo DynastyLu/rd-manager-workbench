@@ -58,9 +58,10 @@ describe('Workbench e2e', () => {
     const response = await request(app.getHttpServer())
       .options('/api/dashboard')
       .set('Origin', 'http://127.0.0.1:4312')
-      .set('Access-Control-Request-Method', 'GET')
+      .set('Access-Control-Request-Method', 'PUT')
       .expect(204);
 
     expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:4312');
+    expect(response.headers['access-control-allow-methods']).toContain('PUT');
   });
 });
