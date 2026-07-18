@@ -14,6 +14,7 @@ describe('WorkspaceHeader', () => {
   it('uses readable theme tokens for local status, planned labels, and breadcrumbs', () => {
     expect(appShellStyles).toMatch(/&__status,\s*&__planned\s*{\s*color: var\(--text-secondary\)/)
     expect(appShellStyles).toMatch(/&__route\s*{[\s\S]*?color: var\(--text-secondary\)/)
+    expect(appShellStyles).toMatch(/&-label\s*{\s*color: var\(--text-secondary\)/)
   })
 
   it('marks search and theme captions for narrow-screen hiding while preserving button names', () => {
