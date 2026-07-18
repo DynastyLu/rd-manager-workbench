@@ -48,6 +48,7 @@ export function TaskForm({ onSuccess, projectId }: TaskFormProps) {
     onSuccess: async (task) => {
       const invalidations = [
         queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+        queryClient.invalidateQueries({ queryKey: ['my-work'] }),
         queryClient.invalidateQueries({ queryKey: ['projects'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
       ]

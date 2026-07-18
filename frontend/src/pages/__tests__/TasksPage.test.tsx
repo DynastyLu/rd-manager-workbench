@@ -181,7 +181,32 @@ describe('TasksPage', () => {
 
     await user.click(screen.getByRole('button', { name: '更多操作：整理评审材料' }))
     await user.click(await screen.findByRole('menuitem', { name: '取消任务' }))
+    expect(updateTask).not.toHaveBeenCalledWith('task-1', { status: 'CANCELLED' })
+    await user.click(screen.getByRole('button', { name: 'confirm' }))
     await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-1', { status: 'CANCELLED' }))
+  })
+
+  it('does not expose scheduling or cancellation actions for completed tasks', async () => {
+    mockViews({
+      COMPLETED: [
+        {
+          ...task,
+          id: 'done-task',
+          title: '已经完成的任务',
+          status: 'DONE',
+          completedAt: task.updatedAt,
+        },
+      ],
+    })
+    const user = userEvent.setup()
+
+    renderTasksPage()
+    await user.click(await screen.findByRole('button', { name: /已完成.*8/ }))
+
+    expect(await screen.findByText('已经完成的任务')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '稍后处理：已经完成的任务' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '设置提醒：已经完成的任务' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '更多操作：已经完成的任务' })).not.toBeInTheDocument()
   })
 
   it('defers a task to a date and restores an existing deferred task', async () => {

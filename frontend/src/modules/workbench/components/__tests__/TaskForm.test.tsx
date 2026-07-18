@@ -10,7 +10,7 @@ const { createTask, updateTask } = vi.hoisted(() => ({ createTask: vi.fn(), upda
 vi.mock('@/modules/workbench/api/tasks', () => ({ createTask, updateTask }))
 
 describe('TaskForm', () => {
-  it('creates a trimmed task and invalidates the task, project and dashboard views', async () => {
+  it('creates a trimmed task and invalidates every task view', async () => {
     createTask.mockResolvedValue({ id: 'task-1' })
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
@@ -27,6 +27,7 @@ describe('TaskForm', () => {
     await waitFor(() => {
       expect(createTask).toHaveBeenCalledWith({ title: '整理评审材料' })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['tasks'] })
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['my-work'] })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['projects'] })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['dashboard'] })
     })

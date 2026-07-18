@@ -136,13 +136,16 @@ function TaskRow({
   isUpdating,
   onAction,
   onOpenSchedule,
+  onRequestCancel,
 }: {
   task: WorkTask
   isUpdating: boolean
   onAction: (action: TaskAction) => void
   onOpenSchedule: (kind: ScheduleKind, task: WorkTask) => void
+  onRequestCancel: (task: WorkTask) => void
 }) {
   const priority = PRIORITY_META[task.priority]
+  const isTerminal = task.status === 'DONE' || task.status === 'CANCELLED'
 
   return (
     <article className="my-work-task" aria-label={`任务：${task.title}`}>
@@ -151,7 +154,7 @@ function TaskRow({
         theme="borderless"
         icon={<IconTick />}
         aria-label={`完成任务：${task.title}`}
-        disabled={isUpdating || task.status === 'DONE'}
+        disabled={isUpdating || isTerminal}
         onClick={() => onAction({ type: 'status', taskId: task.id, status: 'DONE' })}
       />
 
@@ -179,7 +182,7 @@ function TaskRow({
         </div>
       </div>
 
-      <div className="my-work-task__actions">
+      {!isTerminal ? <div className="my-work-task__actions">
         {task.later ? (
           <Button
             theme="borderless"
@@ -220,9 +223,7 @@ function TaskRow({
               </Dropdown.Item>
               <Dropdown.Item
                 type="danger"
-                onClick={() =>
-                  onAction({ type: 'status', taskId: task.id, status: 'CANCELLED' })
-                }
+                onClick={() => onRequestCancel(task)}
               >
                 取消任务
               </Dropdown.Item>
@@ -236,7 +237,7 @@ function TaskRow({
             disabled={isUpdating}
           />
         </Dropdown>
-      </div>
+      </div> : null}
     </article>
   )
 }
@@ -249,6 +250,7 @@ export default function TasksPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [scheduleDialog, setScheduleDialog] = useState<ScheduleDialogState | null>(null)
   const [scheduleValue, setScheduleValue] = useState('')
+  const [cancelTask, setCancelTask] = useState<WorkTask | null>(null)
 
   const viewQueries = useQueries({
     queries: VIEW_OPTIONS.map(({ value }) => ({
@@ -426,6 +428,7 @@ export default function TasksPage() {
                   isUpdating={actionMutation.isPending}
                   onAction={(action) => actionMutation.mutate(action)}
                   onOpenSchedule={openSchedule}
+                  onRequestCancel={setCancelTask}
                 />
               ))}
             </div>
@@ -491,6 +494,22 @@ export default function TasksPage() {
             />
           </label>
         </div>
+      </Modal>
+
+      <Modal
+        title="确认取消任务"
+        visible={cancelTask !== null}
+        okText="确认取消"
+        cancelText="返回"
+        okButtonProps={{ type: 'danger' }}
+        onCancel={() => setCancelTask(null)}
+        onOk={() => {
+          if (!cancelTask) return
+          actionMutation.mutate({ type: 'status', taskId: cancelTask.id, status: 'CANCELLED' })
+          setCancelTask(null)
+        }}
+      >
+        <p>取消后任务将退出当前执行视图。历史记录仍会保留。</p>
       </Modal>
     </div>
   )
