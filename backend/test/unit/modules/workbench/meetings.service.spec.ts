@@ -214,6 +214,7 @@ describe('MeetingsService', () => {
       reminder: null,
       later: null,
       dependencyIds: [],
+      archivedAt: new Date('2026-07-19T00:00:00.000Z'),
     };
     const transaction = {
       $executeRaw: jest.fn().mockResolvedValue(0),
@@ -225,7 +226,7 @@ describe('MeetingsService', () => {
         }),
       },
       workTask: {
-        findFirst: jest.fn().mockResolvedValue({
+        findUnique: jest.fn().mockResolvedValue({
           ...existingTask,
           dependencyIds: undefined,
           dependencies: [],
@@ -246,8 +247,8 @@ describe('MeetingsService', () => {
       task: existingTask,
       alreadyExists: true,
     });
-    expect(transaction.workTask.findFirst).toHaveBeenCalledWith({
-      where: { id: existingTask.id, archivedAt: null },
+    expect(transaction.workTask.findUnique).toHaveBeenCalledWith({
+      where: { id: existingTask.id },
       include: {
         dependencies: { select: { dependsOnTaskId: true } },
         reminder: true,
