@@ -69,6 +69,11 @@ export class UpdatePartnerAgreementDto extends CreatePartnerAgreementDto {}
 export class CreateCommunicationDto { @IsEnum(CommunicationType) type!: CommunicationType; @IsDateString() occurredAt!: string; @Transform(trim) @IsString() @IsNotEmpty() subject!: string; @Transform(trim) @IsOptional() @IsString() projectId?: string; @Transform(trim) @IsOptional() @IsString() contactId?: string; @Transform(trim) @IsOptional() @IsString() summary?: string; @Transform(trim) @IsOptional() @IsString() promises?: string; @Transform(trim) @IsOptional() @IsString() ownerName?: string; @IsOptional() @IsDateString() nextFollowUpAt?: string; }
 export class UpdateCommunicationDto extends CreateCommunicationDto {}
 export class ListCommunicationsQueryDto extends PageQueryDto { @IsOptional() @IsDateString() nextFollowUpBefore?: string; }
+export class ListMeetingsQueryDto extends ProjectFilterDto {
+  @IsOptional() @IsEnum(MeetingStatus) status?: MeetingStatus;
+  @IsOptional() @IsDateString() startFrom?: string;
+  @IsOptional() @IsDateString() startTo?: string;
+}
 export class CreateMeetingDto { @Transform(trim) @IsString() @IsNotEmpty() title!: string; @IsDateString() scheduledAt!: string; @Transform(trim) @IsOptional() @IsString() projectId?: string; @IsOptional() @IsDateString() heldAt?: string; @IsOptional() @IsEnum(MeetingStatus) status?: MeetingStatus; @Transform(trim) @IsOptional() @IsString() agenda?: string; @Transform(trim) @IsOptional() @IsString() minutes?: string; @Transform(strings) @IsOptional() @IsArray() @ArrayUnique() @IsString({ each: true }) @IsNotEmpty({ each: true }) participantNames?: string[]; }
 export class UpdateMeetingDto extends CreateMeetingDto {}
 export class CreateMeetingActionDto { @Transform(trim) @IsString() @IsNotEmpty() title!: string; @Transform(trim) @IsOptional() @IsString() description?: string; @Transform(trim) @IsOptional() @IsString() ownerName?: string; @IsOptional() @IsDateString() dueAt?: string; @IsOptional() @IsEnum(MeetingActionStatus) status?: MeetingActionStatus; }
