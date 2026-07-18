@@ -9,6 +9,8 @@
 
 ## 前端
 
+前端开发地址固定为 `http://127.0.0.1:4300/#/`。
+
 ```sh
 cd frontend
 pnpm install
@@ -21,6 +23,8 @@ pnpm dev
 ```
 
 ## 后端
+
+后端默认地址固定为 `http://127.0.0.1:4301`；前端后续接入 API 时使用 `http://127.0.0.1:4301/api`。
 
 先从 `backend/.env.example` 创建本地环境文件并按本机 PostgreSQL 配置 `DATABASE_URL`，再运行：
 
