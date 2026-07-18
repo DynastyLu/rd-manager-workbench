@@ -345,3 +345,10 @@
 | 目标是什么？ | 构建 Electron + React + NestJS + 本机 PostgreSQL 的研发主管本地工作台 |
 | 我学到了什么？ | 见 `findings.md` |
 | 我做了什么？ | 完成 Task 1 根 workspace、Task 2 共享契约、Task 3 Backend、Task 4 PostgreSQL 和 Task 5 React renderer 壳 |
+
+## 2026-07-18：产品范围重新收敛
+
+- 用户确认界面参考飞书的工作台、项目空间、文档知识、多维表格和日历组织方式，但保持 Electron 本地单人使用。
+- 明确 UI 基础改为 Semi Design；TanStack Table、FullCalendar、Tiptap、dnd-kit 分别用于多维表格、日历、文档和拖拽交互。
+- 新增并自检完整功能清单 `docs/product/2026-07-18-local-feishu-style-functional-backlog.md`：将功能按 P0/P1/P2、统一对象模型、现有工程缺口、验收标准和实际交付批次重新整理。
+- 当前下一步不是继续扩张旧后台模块，而是待用户审阅功能清单后，先形成“P0-A：Semi UI 基座 + 七入口导航 + 项目空间”的独立设计和实施计划。
