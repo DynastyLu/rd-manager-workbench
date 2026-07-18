@@ -50,7 +50,7 @@ export class SystemRecordsAdapter {
   }
 
   async update(source: DataTableSource, recordId: string, values: Values) {
-    this.assertWritable(source, recordId, Object.keys(values));
+    this.assertWritable(source, recordId, values);
     switch (source) {
       case DataTableSource.PROJECTS:
         await this.projects.update(recordId, {
@@ -256,12 +256,14 @@ export class SystemRecordsAdapter {
     const separator = recordId.indexOf(':');
     return separator > 0 ? [recordId.slice(0, separator), recordId.slice(separator + 1)] : ['', recordId];
   }
-  private assertWritable(source: DataTableSource, recordId: string, keys: string[]) {
+  private assertWritable(source: DataTableSource, recordId: string, values: Values) {
     let allowed: ReadonlySet<string>;
+    let nullable = new Set<string>();
     if (source === DataTableSource.MEETING_ACTIONS) {
       const [kind] = this.parseCompositeId(recordId);
       if (kind !== 'MEETING' && kind !== 'ACTION') throw new BadRequestException('Meeting record id must include MEETING: or ACTION:');
       allowed = kind === 'MEETING' ? MEETING_WRITABLE_KEYS : ACTION_WRITABLE_KEYS;
+      if (kind === 'ACTION') nullable = new Set(['ownerName', 'dateAt']);
     } else if (source === DataTableSource.RISKS_DECISIONS) {
       const [kind] = this.parseCompositeId(recordId);
       if (kind !== 'RISK' && kind !== 'DECISION') throw new BadRequestException('Governance record id must include RISK: or DECISION:');
@@ -270,9 +272,14 @@ export class SystemRecordsAdapter {
       throw new BadRequestException('Custom records are not handled by the system adapter');
     } else {
       allowed = WRITABLE_KEYS[source];
+      if (source === DataTableSource.DOCUMENTS) nullable = new Set(['projectId']);
     }
-    const readonly = keys.filter((key) => !allowed.has(key));
+    const readonly = Object.keys(values).filter((key) => !allowed.has(key));
     if (readonly.length) throw new BadRequestException(`Fields are read-only for this record: ${readonly.join(', ')}`);
+    const unsupportedEmpty = Object.entries(values)
+      .filter(([key, value]) => (value === null || value === undefined || value === '') && !nullable.has(key))
+      .map(([key]) => key);
+    if (unsupportedEmpty.length) throw new BadRequestException(`Fields cannot be cleared for this record: ${unsupportedEmpty.join(', ')}`);
   }
   private enumValue<T extends Record<string, string>>(value: unknown, enumeration: T): T[keyof T] | undefined {
     if (value === undefined) return undefined;

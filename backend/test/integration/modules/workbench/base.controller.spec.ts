@@ -118,6 +118,7 @@ describe('Multi-dimensional base API', () => {
     const table = await prisma.dataTable.findFirstOrThrow({ where: { source: DataTableSource.WORK_TASKS, archivedAt: null } });
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/${task.id}`).send({ values: { unexpected: true } }).expect(400);
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/${task.id}`).send({ values: { updatedAt: new Date().toISOString() } }).expect(400);
+    await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/${task.id}`).send({ values: { assigneeName: null } }).expect(400);
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/${task.id}`).send({ values: { status: 'DONE', dueAt: '2026-07-26T01:00:00.000Z' } }).expect(200).expect(({ body }) => {
       expect(body.data).toMatchObject({ id: task.id, sourcePath: `/my-work?taskId=${task.id}`, values: { status: 'DONE' } });
     });
@@ -127,7 +128,7 @@ describe('Multi-dimensional base API', () => {
 
   it('projects both meetings and actions into one preset without copies', async () => {
     const meeting = await prisma.meeting.create({ data: { title: `${prefix} 评审会`, scheduledAt: new Date('2026-07-27T02:00:00.000Z') } });
-    const action = await prisma.meetingAction.create({ data: { meetingId: meeting.id, title: `${prefix} 修订方案` } });
+    const action = await prisma.meetingAction.create({ data: { meetingId: meeting.id, title: `${prefix} 修订方案`, dueAt: new Date('2026-07-28T02:00:00.000Z') } });
     const table = await prisma.dataTable.findFirstOrThrow({ where: { source: DataTableSource.MEETING_ACTIONS, archivedAt: null } });
     await request(app.getHttpServer()).get(`/api/base/tables/${table.id}/records`).query({ query: prefix }).expect(200).expect(({ body }) => {
       expect(body.data.data).toEqual(expect.arrayContaining([
@@ -136,7 +137,10 @@ describe('Multi-dimensional base API', () => {
       ]));
     });
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/MEETING:${meeting.id}`).send({ values: { ownerName: '不能写入' } }).expect(400);
+    await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/MEETING:${meeting.id}`).send({ values: { dateAt: null } }).expect(400);
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/ACTION:${action.id}`).send({ values: { meetingTitle: '不能写入' } }).expect(400);
+    await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/ACTION:${action.id}`).send({ values: { dateAt: null } }).expect(200);
+    await expect(prisma.meetingAction.findUniqueOrThrow({ where: { id: action.id } })).resolves.toMatchObject({ dueAt: null });
     await expect(prisma.dataRecord.count({ where: { tableId: table.id } })).resolves.toBe(0);
   });
 
@@ -162,6 +166,7 @@ describe('Multi-dimensional base API', () => {
     ]);
     const table = await prisma.dataTable.findFirstOrThrow({ where: { source: DataTableSource.RISKS_DECISIONS, archivedAt: null } });
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/DECISION:${decision.id}`).send({ values: { level: 'LOW' } }).expect(400);
+    await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/RISK:${risk.id}`).send({ values: { projectId: null } }).expect(400);
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/RISK:${risk.id}`).send({ values: { projectId: secondProject.id } }).expect(200);
     await request(app.getHttpServer()).patch(`/api/base/tables/${table.id}/records/DECISION:${decision.id}`).send({ values: { projectId: secondProject.id } }).expect(200);
     await expect(prisma.risk.findUniqueOrThrow({ where: { id: risk.id } })).resolves.toMatchObject({ projectId: secondProject.id });
