@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Button, Dropdown, Input, Modal, Popover } from '@douyinfe/semi-ui'
 import {
   IconBellStroked,
@@ -48,8 +48,23 @@ function HeaderPopoverContent({
 
 export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
   const [createTarget, setCreateTarget] = useState<CreateTarget>(null)
+  const [recentProjectId, setRecentProjectId] = useState(() => getRecentProjectIds()[0])
   const routeTitle = route?.title ?? '工作台'
-  const recentProjectId = getRecentProjectIds()[0]
+
+  useEffect(() => {
+    const refreshRecentProjects = () => setRecentProjectId(getRecentProjectIds()[0])
+    window.addEventListener('rd-workbench:recent-projects-changed', refreshRecentProjects)
+    return () => {
+      window.removeEventListener('rd-workbench:recent-projects-changed', refreshRecentProjects)
+    }
+  }, [])
+
+  function openFromKeyboard(event: KeyboardEvent, target: Exclude<CreateTarget, null>) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      setCreateTarget(target)
+    }
+  }
 
   return (
     <>
@@ -79,8 +94,18 @@ export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
             position="bottomRight"
             render={
               <Dropdown.Menu className="workspace-header__create-menu">
-                <Dropdown.Item onClick={() => setCreateTarget('project')}>新建项目</Dropdown.Item>
-                <Dropdown.Item onClick={() => setCreateTarget('task')}>新建任务</Dropdown.Item>
+                <Dropdown.Item
+                  onClick={() => setCreateTarget('project')}
+                  onKeyDown={(event) => openFromKeyboard(event, 'project')}
+                >
+                  新建项目
+                </Dropdown.Item>
+                <Dropdown.Item
+                  onClick={() => setCreateTarget('task')}
+                  onKeyDown={(event) => openFromKeyboard(event, 'task')}
+                >
+                  新建任务
+                </Dropdown.Item>
               </Dropdown.Menu>
             }
           >

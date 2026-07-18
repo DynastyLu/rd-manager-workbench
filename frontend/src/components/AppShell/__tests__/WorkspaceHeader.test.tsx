@@ -34,7 +34,9 @@ describe('WorkspaceHeader', () => {
     renderHeader()
 
     await user.click(screen.getByRole('button', { name: '全局新建' }))
-    await user.click(await screen.findByRole('menuitem', { name: '新建项目' }))
+    const projectItem = await screen.findByRole('menuitem', { name: '新建项目' })
+    projectItem.focus()
+    await user.keyboard('{Enter}')
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
     expect(screen.getByLabelText('项目编号')).toBeInTheDocument()
@@ -51,6 +53,20 @@ describe('WorkspaceHeader', () => {
     expect(await screen.findByRole('link', { name: '打开最近访问的项目' })).toHaveAttribute(
       'href',
       '/spaces/projects/project-9/overview'
+    )
+  })
+
+  it('refreshes recent projects when a project is opened without a route change', async () => {
+    const user = userEvent.setup()
+    renderHeader()
+    localStorage.setItem('rd-workbench:recent-projects', JSON.stringify(['project-live']))
+    window.dispatchEvent(new Event('rd-workbench:recent-projects-changed'))
+
+    await user.click(screen.getByRole('button', { name: '最近访问' }))
+
+    expect(await screen.findByRole('link', { name: '打开最近访问的项目' })).toHaveAttribute(
+      'href',
+      '/spaces/projects/project-live/overview'
     )
   })
 })

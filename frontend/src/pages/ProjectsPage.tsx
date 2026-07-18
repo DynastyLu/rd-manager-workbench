@@ -182,24 +182,49 @@ export default function ProjectsPage() {
       <section className="projects-page__surface" aria-label="项目目录">
         <div className="projects-page__tabs" role="tablist" aria-label="项目视图">
           <button
+            id="projects-tab-recent"
             type="button"
             role="tab"
+            aria-controls="projects-view-panel"
             aria-selected={view === 'recent'}
+            tabIndex={view === 'recent' ? 0 : -1}
             onClick={() => setView('recent')}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                event.preventDefault()
+                setView('all')
+                document.getElementById('projects-tab-all')?.focus()
+              }
+            }}
           >
             最近访问
           </button>
           <button
+            id="projects-tab-all"
             type="button"
             role="tab"
+            aria-controls="projects-view-panel"
             aria-selected={view === 'all'}
+            tabIndex={view === 'all' ? 0 : -1}
             onClick={() => setView('all')}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                event.preventDefault()
+                setView('recent')
+                document.getElementById('projects-tab-recent')?.focus()
+              }
+            }}
           >
             全部项目
           </button>
         </div>
 
-        <div className="projects-page__toolbar">
+        <div
+          id="projects-view-panel"
+          role="tabpanel"
+          aria-labelledby={view === 'recent' ? 'projects-tab-recent' : 'projects-tab-all'}
+        >
+          <div className="projects-page__toolbar">
           <Input
             aria-label="搜索项目"
             prefix={<IconSearch />}
@@ -226,9 +251,9 @@ export default function ProjectsPage() {
               ...STATUS_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
             ]}
           />
-        </div>
+          </div>
 
-        {activeQuery.isError ? (
+          {activeQuery.isError ? (
           <Banner
             type="danger"
             fullMode={false}
@@ -238,9 +263,9 @@ export default function ProjectsPage() {
           >
             <Button onClick={() => void activeQuery.refetch()}>重试</Button>
           </Banner>
-        ) : null}
+          ) : null}
 
-        {!activeQuery.isError ? (
+          {!activeQuery.isError ? (
           <Table<Project>
             className="projects-page__table"
             rowKey="id"
@@ -269,7 +294,8 @@ export default function ProjectsPage() {
               />
             }
           />
-        ) : null}
+          ) : null}
+        </div>
       </section>
 
       <Modal

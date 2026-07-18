@@ -50,6 +50,24 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('button', { name: '新建项目' })).toBeInTheDocument()
   })
 
+  it('connects the project tabs to their panel and supports arrow-key switching', async () => {
+    listProjects.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0 } })
+    const user = userEvent.setup()
+    renderProjectsPage()
+
+    const allTab = await screen.findByRole('tab', { name: '全部项目' })
+    const panel = screen.getByRole('tabpanel')
+    expect(allTab).toHaveAttribute('aria-controls', panel.id)
+    allTab.focus()
+    await user.keyboard('{ArrowLeft}')
+
+    expect(screen.getByRole('tab', { name: '最近访问' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    expect(screen.getByRole('tab', { name: '最近访问' })).toHaveFocus()
+  })
+
   it('shows project records with a textual health state', async () => {
     listProjects.mockResolvedValue({
       data: [

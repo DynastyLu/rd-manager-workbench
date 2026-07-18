@@ -16,7 +16,7 @@ document.documentElement.setAttribute('data-theme', _initialTheme)
 import { type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HashRouter, Routes, Route } from 'react-router-dom'
-import '@douyinfe/semi-ui/dist/css/semi.min.css'
+import '@douyinfe/semi-ui/lib/es/_base/base.css'
 import '@/index.css'
 import '@/styles/workspace-tokens.css'
 import '@/lib/i18n' // i18n initialisation (side effect)
