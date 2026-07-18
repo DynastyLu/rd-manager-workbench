@@ -44,7 +44,9 @@ export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
           type="button"
           className="workspace-header__search"
           aria-label="搜索工作台"
-          onClick={() => navigate('/search')}
+          onClick={() => {
+            void navigate('/search')
+          }}
         >
           <IconSearch size="small" />
           <span>搜索项目、任务、会议和文档</span>
