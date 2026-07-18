@@ -145,6 +145,21 @@ describe('Calendar API', () => {
       });
   });
 
+  it('accepts the frontend ordinary calendar type contract', async () => {
+    await request(app.getHttpServer())
+      .post('/api/calendar/events')
+      .send({
+        title: `${prefix} 专注时间`,
+        startAt: '2026-08-01T05:00:00.000Z',
+        endAt: '2026-08-01T06:00:00.000Z',
+        type: 'FOCUS',
+      })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data.type).toBe('FOCUS');
+      });
+  });
+
   it('rejects a reference to a missing or archived project', async () => {
     await request(app.getHttpServer())
       .post('/api/calendar/events')

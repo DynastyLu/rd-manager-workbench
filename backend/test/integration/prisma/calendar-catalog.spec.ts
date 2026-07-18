@@ -36,7 +36,7 @@ describe('calendar catalog', () => {
 
     expect(tables).toHaveLength(1);
     expect(enumValues.map(({ enumlabel }) => enumlabel)).toEqual([
-      'EVENT',
+      'FOCUS',
       'INTERVIEW',
       'REVIEW',
       'OTHER',

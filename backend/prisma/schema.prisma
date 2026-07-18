@@ -199,7 +199,7 @@ enum MeetingActionStatus {
 }
 
 enum CalendarEventType {
-  EVENT
+  FOCUS
   INTERVIEW
   REVIEW
   OTHER
@@ -840,7 +840,7 @@ model CalendarEvent {
   location   String?
   link       String?
   notes      String?
-  type       CalendarEventType @default(EVENT)
+  type       CalendarEventType @default(FOCUS)
   archivedAt DateTime?         @map("archived_at") @db.Timestamptz(6)
   createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
