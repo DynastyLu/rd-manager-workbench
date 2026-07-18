@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Banner,
@@ -85,24 +85,35 @@ function MeetingMinutesEditor({
     plainText: string
   } | null>(null)
   const saveTimer = useRef<number | undefined>(undefined)
+  const isSaving = useRef(false)
   const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'error'>('saved')
   const content =
     document.content && typeof document.content === 'object' && !Array.isArray(document.content)
       ? document.content
       : {}
-  const saveMutation = useMutation({
-    mutationFn: (input: { content: Record<string, unknown>; plainText: string }) =>
-      updateDocument(document.id, input),
-    onSuccess: () => setSaveStatus('saved'),
-    onError: () => setSaveStatus('error'),
-  })
+  const flushPendingSave = useCallback(async (): Promise<void> => {
+    if (isSaving.current || !pendingSave.current) return
+    const input = pendingSave.current
+    pendingSave.current = null
+    isSaving.current = true
+    setSaveStatus('saving')
+    try {
+      await updateDocument(document.id, input)
+      if (!pendingSave.current) setSaveStatus('saved')
+    } catch {
+      setSaveStatus('error')
+    } finally {
+      isSaving.current = false
+      if (pendingSave.current) void flushPendingSave()
+    }
+  }, [document.id])
 
   useEffect(
     () => () => {
       if (saveTimer.current !== undefined) window.clearTimeout(saveTimer.current)
-      if (pendingSave.current) void updateDocument(document.id, pendingSave.current)
+      void flushPendingSave()
     },
-    [document.id],
+    [flushPendingSave],
   )
 
   return (
@@ -118,9 +129,7 @@ function MeetingMinutesEditor({
           setSaveStatus('saving')
           if (saveTimer.current !== undefined) window.clearTimeout(saveTimer.current)
           saveTimer.current = window.setTimeout(() => {
-            const input = pendingSave.current
-            pendingSave.current = null
-            if (input) saveMutation.mutate(input)
+            void flushPendingSave()
           }, 500)
         }}
       />
@@ -490,12 +499,15 @@ export function MeetingsWorkspace({ embedded = false }: { embedded?: boolean }) 
   const [status, setStatus] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [page, setPage] = useState(1)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [scheduledAt, setScheduledAt] = useState('')
   const [participants, setParticipants] = useState('')
   const queryClient = useQueryClient()
   const filters = {
+    page,
+    pageSize: 20,
     ...(projectId ? { projectId } : {}),
     ...(status ? { status } : {}),
     ...(startDate ? { startFrom: new Date(`${startDate}T00:00`).toISOString() } : {}),
@@ -560,11 +572,11 @@ export function MeetingsWorkspace({ embedded = false }: { embedded?: boolean }) 
 
       <div className="meetings-workspace__toolbar">
         <div className="meetings-workspace__filters">
-          <select aria-label="会议状态" value={status} onChange={(event) => setStatus(event.target.value)}>
+          <select aria-label="会议状态" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }}>
             {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
-          <label htmlFor="meeting-start-date"><span>从</span><input id="meeting-start-date" aria-label="会议开始日期" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
-          <label htmlFor="meeting-end-date"><span>至</span><input id="meeting-end-date" aria-label="会议结束日期" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
+          <label htmlFor="meeting-start-date"><span>从</span><input id="meeting-start-date" aria-label="会议开始日期" type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setPage(1) }} /></label>
+          <label htmlFor="meeting-end-date"><span>至</span><input id="meeting-end-date" aria-label="会议结束日期" type="date" value={endDate} onChange={(event) => { setEndDate(event.target.value); setPage(1) }} /></label>
         </div>
         <span>{meetingsQuery.data?.meta.total ?? 0} 场会议</span>
       </div>
@@ -587,6 +599,19 @@ export function MeetingsWorkspace({ embedded = false }: { embedded?: boolean }) 
             </button>
           ))}
         </section>
+      ) : null}
+
+      {meetingsQuery.data && meetingsQuery.data.meta.total > meetingsQuery.data.meta.pageSize ? (
+        <nav className="meetings-workspace__pagination" aria-label="会议分页">
+          <Button disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>上一页</Button>
+          <span>第 {page} / {Math.ceil(meetingsQuery.data.meta.total / meetingsQuery.data.meta.pageSize)} 页</span>
+          <Button
+            disabled={page * meetingsQuery.data.meta.pageSize >= meetingsQuery.data.meta.total}
+            onClick={() => setPage((current) => current + 1)}
+          >
+            下一页
+          </Button>
+        </nav>
       ) : null}
 
       <Modal title="新建会议" visible={isCreateOpen} footer={null} onCancel={() => setIsCreateOpen(false)} width={520}>

@@ -77,6 +77,12 @@ export class ListMeetingsQueryDto extends ProjectFilterDto {
 export class CreateMeetingDto { @Transform(trim) @IsString() @IsNotEmpty() title!: string; @IsDateString() scheduledAt!: string; @Transform(trim) @IsOptional() @IsString() projectId?: string; @IsOptional() @IsDateString() heldAt?: string; @IsOptional() @IsEnum(MeetingStatus) status?: MeetingStatus; @Transform(trim) @IsOptional() @IsString() agenda?: string; @Transform(trim) @IsOptional() @IsString() minutes?: string; @Transform(strings) @IsOptional() @IsArray() @ArrayUnique() @IsString({ each: true }) @IsNotEmpty({ each: true }) participantNames?: string[]; }
 export class UpdateMeetingDto extends CreateMeetingDto {}
 export class CreateMeetingActionDto { @Transform(trim) @IsString() @IsNotEmpty() title!: string; @Transform(trim) @IsOptional() @IsString() description?: string; @Transform(trim) @IsOptional() @IsString() ownerName?: string; @IsOptional() @IsDateString() dueAt?: string; @IsOptional() @IsEnum(MeetingActionStatus) status?: MeetingActionStatus; }
-export class UpdateMeetingActionDto extends CreateMeetingActionDto {}
+export class UpdateMeetingActionDto {
+  @Transform(trim) @IsOptional() @IsString() @IsNotEmpty() title?: string;
+  @Transform(trim) @IsOptional() @IsString() description?: string | null;
+  @Transform(trim) @IsOptional() @IsString() ownerName?: string | null;
+  @IsOptional() @IsDateString() dueAt?: string | null;
+  @IsOptional() @IsEnum(MeetingActionStatus) status?: MeetingActionStatus;
+}
 export class CreateMeetingAgendaItemDto { @Transform(trim) @IsString() @IsNotEmpty() title!: string; @Transform(trim) @IsOptional() @IsString() description?: string; @IsOptional() @IsInt() sequence?: number; }
 export class CreateSourceTaskDto { @Transform(trim) @IsString() @IsNotEmpty() title!: string; @Transform(trim) @IsOptional() @IsString() description?: string; @Transform(trim) @IsOptional() @IsString() projectId?: string; @Transform(trim) @IsOptional() @IsString() assigneeName?: string; @IsOptional() @IsDateString() dueAt?: string; @IsOptional() @IsEnum(TaskPriority) priority?: TaskPriority; }

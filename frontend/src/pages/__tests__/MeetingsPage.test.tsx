@@ -50,9 +50,14 @@ vi.mock('@/modules/workbench/api/notifications', () => ({
 }))
 vi.mock('@/modules/content/components/RichTextEditor', () => ({
   RichTextEditor: ({ onChange }: { onChange: (content: Record<string, unknown>, plainText: string) => void }) => (
-    <button type="button" onClick={() => onChange({ type: 'doc', content: [] }, '更新后的纪要')}>
-      模拟编辑纪要
-    </button>
+    <>
+      <button type="button" onClick={() => onChange({ type: 'doc', content: [{ text: '第一版' }] }, '更新后的纪要')}>
+        模拟编辑纪要
+      </button>
+      <button type="button" onClick={() => onChange({ type: 'doc', content: [{ text: '第二版' }] }, '最新纪要')}>
+        模拟再次编辑纪要
+      </button>
+    </>
   ),
 }))
 vi.mock('@/modules/content/components/FileAttachments', () => ({
@@ -148,7 +153,7 @@ describe('MeetingsPage project context', () => {
     renderMeetingsPage('/meetings?projectId=project-42')
 
     await waitFor(() => {
-      expect(listMeetings).toHaveBeenCalledWith({ projectId: 'project-42' })
+      expect(listMeetings).toHaveBeenCalledWith({ page: 1, pageSize: 20, projectId: 'project-42' })
     })
     expect(screen.getByText('当前仅显示本项目会议')).toBeInTheDocument()
   })
@@ -204,6 +209,8 @@ describe('MeetingsPage project context', () => {
 
     await waitFor(() =>
       expect(listMeetings).toHaveBeenLastCalledWith({
+        page: 1,
+        pageSize: 20,
         status: 'HELD',
         startFrom: new Date('2026-07-01T00:00').toISOString(),
         startTo: new Date('2026-07-31T23:59:59.999').toISOString(),
@@ -231,7 +238,7 @@ describe('MeetingsPage project context', () => {
     await waitFor(
       () =>
         expect(updateDocument).toHaveBeenCalledWith('document-1', {
-          content: { type: 'doc', content: [] },
+          content: { type: 'doc', content: [{ text: '第一版' }] },
           plainText: '更新后的纪要',
         }),
       { timeout: 1500 },
@@ -239,6 +246,52 @@ describe('MeetingsPage project context', () => {
 
     await user.click(screen.getByRole('tab', { name: '附件' }))
     expect(screen.getByLabelText('真实附件组件')).toHaveTextContent('会议附件 meeting-1')
+  })
+
+  it('serializes meeting minute saves so an older request cannot overwrite the latest edit', async () => {
+    getMeeting.mockResolvedValue({
+      ...meeting,
+      minutesDocument: {
+        id: 'document-1',
+        title: '项目周会 会议纪要',
+        type: 'MEETING_MINUTES',
+        content: { type: 'doc', content: [] },
+        plainText: '',
+      },
+    })
+    let resolveFirstSave!: (value: { id: string }) => void
+    updateDocument
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstSave = resolve }))
+      .mockResolvedValueOnce({ id: 'document-1' })
+    const user = userEvent.setup()
+    renderMeetingsPage('/meetings?meetingId=meeting-1')
+
+    await user.click(await screen.findByRole('tab', { name: '纪要' }))
+    await user.click(screen.getByRole('button', { name: '模拟编辑纪要' }))
+    await waitFor(() => expect(updateDocument).toHaveBeenCalledTimes(1), { timeout: 1500 })
+    await user.click(screen.getByRole('button', { name: '模拟再次编辑纪要' }))
+    await new Promise((resolve) => window.setTimeout(resolve, 600))
+    expect(updateDocument).toHaveBeenCalledTimes(1)
+
+    resolveFirstSave({ id: 'document-1' })
+    await waitFor(() => expect(updateDocument).toHaveBeenCalledTimes(2))
+    expect(updateDocument).toHaveBeenLastCalledWith('document-1', {
+      content: { type: 'doc', content: [{ text: '第二版' }] },
+      plainText: '最新纪要',
+    })
+  })
+
+  it('paginates meetings beyond the first twenty records', async () => {
+    listMeetings.mockResolvedValue({
+      data: [meeting],
+      meta: { page: 1, pageSize: 20, total: 21 },
+    })
+    const user = userEvent.setup()
+    renderMeetingsPage()
+
+    await user.click(await screen.findByRole('button', { name: '下一页' }))
+
+    await waitFor(() => expect(listMeetings).toHaveBeenLastCalledWith({ page: 2, pageSize: 20 }))
   })
 
   it('creates a meeting reminder and records a structured decision', async () => {

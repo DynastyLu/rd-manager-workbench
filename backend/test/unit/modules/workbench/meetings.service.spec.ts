@@ -2,8 +2,32 @@ import { MeetingStatus } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
 import { MeetingsService } from '../../../../src/modules/workbench/management/application/meetings.service';
 import { TasksService } from '../../../../src/modules/workbench/tasks/application/tasks.service';
+import { UpdateMeetingActionDto } from '../../../../src/modules/workbench/management/interface/http/dto/management.dto';
+import { validate } from 'class-validator';
 
 describe('MeetingsService', () => {
+  it('accepts partial action updates without requiring the title', async () => {
+    const dto = Object.assign(new UpdateMeetingActionDto(), { status: 'DONE' });
+
+    await expect(validate(dto)).resolves.toEqual([]);
+  });
+
+  it('clears an action due date when the update explicitly sends null', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const findUnique = jest.fn().mockResolvedValue({ id: 'action-1', dueAt: null });
+    const prisma = {
+      meetingAction: { updateMany, findUnique },
+    } as unknown as PlatformPrismaService;
+    const service = new MeetingsService(prisma, {} as TasksService);
+
+    await service.updateAction('meeting-1', 'action-1', { dueAt: null });
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 'action-1', meetingId: 'meeting-1', archivedAt: null },
+      data: { dueAt: null },
+    });
+  });
+
   it('filters meetings by project, status, and scheduled time range', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const count = jest.fn().mockResolvedValue(0);
