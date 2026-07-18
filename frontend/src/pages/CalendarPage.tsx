@@ -146,7 +146,7 @@ export default function CalendarPage() {
   const rescheduleMutation = useMutation({
     mutationFn: async ({
       end,
-      revert,
+      revert: _revert,
       sourceId,
       sourceType,
       start,
