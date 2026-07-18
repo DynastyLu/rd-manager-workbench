@@ -197,6 +197,44 @@ describe('FormView', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('本地服务不可用')
     expect(screen.getByLabelText('事项')).toHaveValue('保留这条草稿')
   })
+
+  it('normalizes comma and line separated attachment paths into an array', async () => {
+    const onCreateRecord = vi.fn().mockResolvedValue(undefined)
+    const attachmentField = {
+      id: 'field-attachments',
+      tableId: 'table-1',
+      name: '附件',
+      key: 'attachments',
+      type: 'ATTACHMENT' as const,
+      config: {},
+      isPrimary: false,
+      isRequired: false,
+      sequence: 4,
+      createdAt: '2026-07-19T00:00:00.000Z',
+      updatedAt: '2026-07-19T00:00:00.000Z',
+    }
+    const user = userEvent.setup()
+
+    render(
+      <FormView
+        tableSource="CUSTOM"
+        fields={[...fields, attachmentField]}
+        onCreateRecord={onCreateRecord}
+      />
+    )
+
+    await user.type(screen.getByLabelText('事项'), '归档材料')
+    fireEvent.change(screen.getByLabelText('附件'), {
+      target: { value: '/docs/spec.pdf, /docs/design.png\n/docs/notes.docx' },
+    })
+    await user.click(screen.getByRole('button', { name: '提交记录' }))
+
+    expect(onCreateRecord).toHaveBeenCalledWith({
+      values: expect.objectContaining({
+        attachments: ['/docs/spec.pdf', '/docs/design.png', '/docs/notes.docx'],
+      }),
+    })
+  })
 })
 
 describe('ViewManager', () => {

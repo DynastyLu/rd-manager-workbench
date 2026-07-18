@@ -43,8 +43,24 @@ function isBlank(value: unknown) {
 
 function emptyValue(field: DataField) {
   if (field.type === 'CHECKBOX') return false
-  if (field.type === 'MULTI_SELECT') return []
+  if (field.type === 'MULTI_SELECT' || field.type === 'ATTACHMENT') return []
   return ''
+}
+
+function normalizeAttachmentValue(value: unknown) {
+  const paths = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[,\n]+/)
+      : []
+  return [
+    ...new Set(
+      paths
+        .filter((path): path is string => typeof path === 'string')
+        .map((path) => path.trim())
+        .filter(Boolean)
+    ),
+  ]
 }
 
 function FieldControl({
@@ -162,6 +178,18 @@ function FieldControl({
           style={commonStyle}
         />
       )
+    case 'ATTACHMENT':
+      return (
+        <textarea
+          id={`base-form-${field.id}`}
+          aria-label={field.name}
+          value={Array.isArray(value) ? value.join('\n') : typeof value === 'string' ? value : ''}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="每行一个本地文件路径，也可以用逗号分隔"
+          rows={3}
+          style={{ ...commonStyle, padding: 10, resize: 'vertical' }}
+        />
+      )
     default:
       return (
         <input
@@ -207,7 +235,15 @@ export function FormView({
     }
     setError('')
     try {
-      await onCreateRecord({ values })
+      const normalizedValues = Object.fromEntries(
+        writableFields.map((field) => [
+          field.key,
+          field.type === 'ATTACHMENT'
+            ? normalizeAttachmentValue(values[field.key])
+            : values[field.key],
+        ])
+      )
+      await onCreateRecord({ values: normalizedValues })
       setValues(buildInitialValues())
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '保存记录失败，请稍后重试。')
