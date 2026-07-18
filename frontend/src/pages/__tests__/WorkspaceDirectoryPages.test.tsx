@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,6 +13,7 @@ import MeetingsAndMaterialsPage from '../MeetingsAndMaterialsPage'
 const documentApi = vi.hoisted(() => ({
   createDocument: vi.fn(),
   createDocumentVersion: vi.fn(),
+  createKnowledgeSpace: vi.fn(),
   getDocument: vi.fn(),
   listDocuments: vi.fn(),
   listDocumentVersions: vi.fn(),
@@ -122,6 +124,23 @@ describe('workspace directory pages', () => {
     expect(screen.queryByText(/规划/)).not.toBeInTheDocument()
     expect(documentApi.listDocuments).toHaveBeenCalled()
     expect(documentApi.getDocument).toHaveBeenCalledWith('document-1')
+  })
+
+  it('creates a real knowledge space from the directory', async () => {
+    const user = userEvent.setup()
+    documentApi.createKnowledgeSpace.mockResolvedValue({
+      id: 'space-2',
+      name: '团队规范',
+      description: null,
+      sequence: 1,
+    })
+    renderPage(<KnowledgeHomePage />, '/docs')
+
+    await user.click(await screen.findByRole('button', { name: '新建知识空间' }))
+    await user.type(screen.getByLabelText('空间名称'), '团队规范')
+    await user.click(screen.getByRole('button', { name: '保存知识空间' }))
+
+    expect(documentApi.createKnowledgeSpace).toHaveBeenCalledWith({ name: '团队规范' })
   })
 
   it('lists every planned automation and data module without requesting an API', () => {

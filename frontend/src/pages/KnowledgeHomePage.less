@@ -23,6 +23,7 @@
 .knowledge-workspace__directory > button:hover,
 .knowledge-workspace__directory > button[data-active='true'] { background: #e8f3ff; color: #1456f0; }
 .knowledge-workspace__space-title { display: flex; justify-content: space-between; padding: 22px 10px 8px; color: #8f959e; font-size: 12px; }
+.knowledge-workspace__space-title button { border: 0; background: transparent; color: inherit; cursor: pointer; }
 
 .knowledge-workspace__list { background: #fff; }
 .knowledge-workspace__list > header { padding: 14px; border-bottom: 1px solid #eef0f3; }
@@ -76,6 +77,10 @@
 .knowledge-workspace__versions li { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eef0f3; }
 .knowledge-workspace__versions li div { display: grid; }
 .knowledge-workspace__versions li span { color: #8f959e; font-size: 12px; }
+.knowledge-workspace__space-form { display: grid; gap: 10px; }
+.knowledge-workspace__space-form label { color: #4e5969; font-size: 13px; }
+.knowledge-workspace__space-form input { padding: 9px 11px; border: 1px solid #d0d3d8; border-radius: 6px; outline: 0; }
+.knowledge-workspace__space-form input:focus { border-color: #1456f0; box-shadow: 0 0 0 2px rgba(20, 86, 240, .12); }
 
 @media (max-width: 1100px) {
   .knowledge-workspace { grid-template-columns: 176px 280px minmax(430px, 1fr); }

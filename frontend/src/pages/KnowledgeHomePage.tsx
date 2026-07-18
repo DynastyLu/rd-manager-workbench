@@ -15,6 +15,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   createDocument,
   createDocumentVersion,
+  createKnowledgeSpace,
   getDocument,
   listDocuments,
   listDocumentVersions,
@@ -61,6 +62,8 @@ export default function KnowledgeHomePage() {
   const [query, setQuery] = useState('')
   const [draft, setDraft] = useState<DocumentDraft | null>(null)
   const [versionsOpen, setVersionsOpen] = useState(false)
+  const [spaceModalOpen, setSpaceModalOpen] = useState(false)
+  const [spaceName, setSpaceName] = useState('')
   const handledCreate = useRef<string | null>(null)
 
   const spacesQuery = useQuery({ queryKey: ['knowledge-spaces'], queryFn: listKnowledgeSpaces })
@@ -128,6 +131,17 @@ export default function KnowledgeHomePage() {
       })
     },
     onError: () => Toast.error('新建文档失败，请确认本地服务已启动。'),
+  })
+  const createSpaceMutation = useMutation({
+    mutationFn: () => createKnowledgeSpace({ name: spaceName.trim() }),
+    onSuccess: (space) => {
+      setSpaceId(space.id)
+      setDirectoryView('all')
+      setSpaceName('')
+      setSpaceModalOpen(false)
+      void queryClient.invalidateQueries({ queryKey: ['knowledge-spaces'] })
+    },
+    onError: () => Toast.error('新建知识空间失败。'),
   })
 
   useEffect(() => {
@@ -214,7 +228,10 @@ export default function KnowledgeHomePage() {
         <button data-active={directoryView === 'all' && !spaceId} onClick={() => { setDirectoryView('all'); setSpaceId(undefined) }}><IconFile /> 全部文档</button>
         <button data-active={directoryView === 'favorites'} onClick={() => { setDirectoryView('favorites'); setSpaceId(undefined) }}><IconStar /> 收藏</button>
         <button data-active={directoryView === 'trash'} onClick={() => { setDirectoryView('trash'); setSpaceId(undefined) }}><IconDelete /> 回收站</button>
-        <div className="knowledge-workspace__space-title"><span>知识空间</span><IconPlus /></div>
+        <div className="knowledge-workspace__space-title">
+          <span>知识空间</span>
+          <button type="button" aria-label="新建知识空间" onClick={() => setSpaceModalOpen(true)}><IconPlus /></button>
+        </div>
         {spacesQuery.isPending ? <Skeleton.Paragraph rows={2} /> : null}
         {spacesQuery.data?.map((space) => (
           <button key={space.id} data-active={space.id === spaceId} onClick={() => { setDirectoryView('all'); setSpaceId(space.id) }}>
@@ -308,6 +325,25 @@ export default function KnowledgeHomePage() {
             <li key={version.id}><div><strong>版本 {version.versionNumber}</strong><span>{new Date(version.createdAt).toLocaleString('zh-CN')}</span></div><Button onClick={() => restoreVersionMutation.mutate(version.id)}>恢复此版本</Button></li>
           ))}
         </ol>
+      </Modal>
+      <Modal
+        title="新建知识空间"
+        visible={spaceModalOpen}
+        onCancel={() => setSpaceModalOpen(false)}
+        footer={null}
+        width={420}
+      >
+        <form
+          className="knowledge-workspace__space-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (spaceName.trim()) createSpaceMutation.mutate()
+          }}
+        >
+          <label htmlFor="knowledge-space-name">空间名称</label>
+          <input id="knowledge-space-name" aria-label="空间名称" value={spaceName} onChange={(event) => setSpaceName(event.target.value)} placeholder="例如：研发知识" />
+          <Button htmlType="submit" aria-label="保存知识空间" theme="solid" type="primary" disabled={!spaceName.trim()} loading={createSpaceMutation.isPending}>保存</Button>
+        </form>
       </Modal>
     </div>
   )
