@@ -45,7 +45,7 @@ function getApiBaseUrl(): string {
   }
 
   if (import.meta.env.DEV) {
-    return 'http://127.0.0.1:4301/api'
+    return 'http://127.0.0.1:4311/api'
   }
 
   throw new Error('VITE_API_BASE_URL is required in production.')

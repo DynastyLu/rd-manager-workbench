@@ -45,7 +45,7 @@ export const appEnvSchema = z
       .min(1)
       .default(() => process.env.HOSTNAME || 'local-instance'),
     HOST: z.literal('127.0.0.1').default('127.0.0.1'),
-    PORT: z.coerce.number().int().min(1).max(65535).default(4301),
+    PORT: z.coerce.number().int().min(1).max(65535).default(4311),
     DATABASE_URL: approvedDatabaseUrl,
     LOCAL_STORAGE_ROOT: z.string().min(1).default('var/storage'),
   })

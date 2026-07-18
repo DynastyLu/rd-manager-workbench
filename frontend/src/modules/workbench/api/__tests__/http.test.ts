@@ -20,7 +20,7 @@ describe('workbench HTTP client', () => {
       name: '研发平台',
     })
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://127.0.0.1:4301/api/projects/p1',
+      'http://127.0.0.1:4311/api/projects/p1',
       expect.objectContaining({ headers: expect.any(Headers) }),
     )
   })

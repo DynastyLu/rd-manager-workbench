@@ -22,7 +22,7 @@ describe('local workbench database configuration', () => {
     });
 
     expect(environment.HOST).toBe('127.0.0.1');
-    expect(environment.PORT).toBe(4301);
+    expect(environment.PORT).toBe(4311);
   });
 
   it.each([

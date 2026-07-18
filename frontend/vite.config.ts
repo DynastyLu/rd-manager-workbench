@@ -18,12 +18,12 @@ export default defineConfig({
   },
   server: {
     host: '127.0.0.1',
-    port: 4300,
+    port: 4312,
     strictPort: true,
   },
   preview: {
     host: '127.0.0.1',
-    port: 4300,
+    port: 4312,
     strictPort: true,
   },
   build: {

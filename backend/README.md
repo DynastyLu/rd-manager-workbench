@@ -25,7 +25,7 @@ pnpm build
 pnpm start:dev
 ```
 
-开发服务固定监听 `http://127.0.0.1:4301`，避免占用旧项目的默认端口。请先从 `.env.example` 复制出 `.env`；Vite 前端默认请求 `http://127.0.0.1:4301/api`。
+开发服务固定监听 `http://127.0.0.1:4311`，避免占用旧项目的默认端口。请先从 `.env.example` 复制出 `.env`；Vite 前端默认请求 `http://127.0.0.1:4311/api`。
 
 Endpoints are loopback-only by default:
 

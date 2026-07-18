@@ -21,7 +21,7 @@ describe('workbench Vite configuration', () => {
 
     expect(config.server).toMatchObject({
       host: '127.0.0.1',
-      port: 4300,
+      port: 4312,
       strictPort: true,
     })
   })
@@ -31,7 +31,7 @@ describe('workbench Vite configuration', () => {
 
     expect(config.preview).toMatchObject({
       host: '127.0.0.1',
-      port: 4300,
+      port: 4312,
       strictPort: true,
     })
   })
