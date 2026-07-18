@@ -50,6 +50,7 @@ export class ProjectsService {
     const pageSize = this.toPageSize(query.pageSize);
     const where: Prisma.ProjectWhereInput = {
       archivedAt: null,
+      ...(query.ids ? { id: { in: query.ids } } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.search
         ? {

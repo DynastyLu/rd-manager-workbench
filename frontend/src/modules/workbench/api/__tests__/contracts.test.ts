@@ -205,6 +205,7 @@ const updateProjectInput = {
 } satisfies UpdateProjectInput
 
 const listProjectsParams = {
+  ids: ['project-150', 'project-5'],
   status: 'CANCELLED',
   phase: 'DELIVERY',
   page: 1,

@@ -35,7 +35,7 @@ const HEALTH_META: Record<ProjectHealth, { label: string; className: string }> =
 type ProjectView = 'all' | 'recent'
 
 const PROJECT_PAGE_SIZE = 20
-const RECENT_PROJECT_PAGE_SIZE = 100
+const RECENT_PROJECT_LIMIT = 8
 
 function projectStatusLabel(status: ProjectStatus) {
   return STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
@@ -43,7 +43,12 @@ function projectStatusLabel(status: ProjectStatus) {
 
 function getRecentProjectIds(): string[] {
   try {
-    return JSON.parse(localStorage.getItem('rd-workbench:recent-projects') ?? '[]') as string[]
+    const stored: unknown = JSON.parse(localStorage.getItem('rd-workbench:recent-projects') ?? '[]')
+    if (!Array.isArray(stored)) return []
+
+    return [
+      ...new Set(stored.filter((id): id is string => typeof id === 'string' && id.length > 0)),
+    ].slice(0, RECENT_PROJECT_LIMIT)
   } catch {
     return []
   }
@@ -60,6 +65,7 @@ export default function ProjectsPage() {
   const [view, setView] = useState<ProjectView>('all')
   const [page, setPage] = useState(1)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const recentProjectIds = useMemo(() => (view === 'recent' ? getRecentProjectIds() : []), [view])
   const projectsQuery = useQuery({
     queryKey: ['projects', { page, pageSize: PROJECT_PAGE_SIZE, search, status }],
     queryFn: () =>
@@ -72,14 +78,23 @@ export default function ProjectsPage() {
     enabled: view === 'all',
   })
   const recentProjectsQuery = useQuery({
-    queryKey: ['projects', 'recent', { search, status }],
-    queryFn: () =>
-      listProjects({
+    queryKey: ['projects', 'recent', { ids: recentProjectIds, search, status }],
+    queryFn: () => {
+      if (recentProjectIds.length === 0) {
+        return Promise.resolve({
+          data: [],
+          meta: { page: 1, pageSize: RECENT_PROJECT_LIMIT, total: 0 },
+        })
+      }
+
+      return listProjects({
+        ids: recentProjectIds,
         page: 1,
-        pageSize: RECENT_PROJECT_PAGE_SIZE,
+        pageSize: RECENT_PROJECT_LIMIT,
         search: search || undefined,
         status,
-      }),
+      })
+    },
     enabled: view === 'recent',
   })
   const activeQuery = view === 'recent' ? recentProjectsQuery : projectsQuery
@@ -87,12 +102,11 @@ export default function ProjectsPage() {
   const projects = useMemo(() => {
     const all = activeQuery.data?.data ?? []
     if (view === 'all') return all
-    const recent = getRecentProjectIds()
-    return recent.flatMap((id) => {
+    return recentProjectIds.flatMap((id) => {
       const project = all.find((item) => item.id === id)
       return project ? [project] : []
     })
-  }, [activeQuery.data, view])
+  }, [activeQuery.data, recentProjectIds, view])
 
   const columns: ColumnProps<Project>[] = [
     {

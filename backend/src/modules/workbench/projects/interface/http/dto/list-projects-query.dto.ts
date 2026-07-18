@@ -1,5 +1,15 @@
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsNotEmpty, IsString, Max, Min, ValidateIf } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsString,
+  Max,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { ProjectStatus } from '@prisma/client';
 
 const isDefined = (_object: object, value: unknown) => value !== undefined;
@@ -26,4 +36,14 @@ export class ListProjectsQueryDto {
   @IsString()
   @IsNotEmpty()
   search?: string;
+
+  @ValidateIf(isDefined)
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.split(',').map((id) => id.trim()) : value,
+  )
+  @IsArray()
+  @ArrayMaxSize(8)
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  ids?: string[];
 }

@@ -9,6 +9,7 @@ import type {
 } from '@/modules/workbench/types'
 
 export interface ListProjectsParams {
+  ids?: string[]
   page?: number
   pageSize?: number
   search?: string
@@ -55,7 +56,7 @@ function toQueryString(params: ListProjectsParams): string {
 
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) {
-      searchParams.set(key, String(value))
+      searchParams.set(key, Array.isArray(value) ? value.join(',') : String(value))
     }
   }
 

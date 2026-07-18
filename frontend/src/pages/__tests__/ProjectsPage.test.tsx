@@ -133,21 +133,40 @@ describe('ProjectsPage', () => {
     })
   })
 
-  it('loads a dedicated project set before resolving recent localStorage records', async () => {
-    localStorage.setItem('rd-workbench:recent-projects', JSON.stringify(['project-25']))
-    const recentProject = {
-      id: 'project-25',
-      code: 'RD-025',
-      name: '跨页最近项目',
+  it('resolves recent projects beyond the first hundred and preserves localStorage order', async () => {
+    localStorage.setItem(
+      'rd-workbench:recent-projects',
+      JSON.stringify([
+        'project-150',
+        'project-5',
+        'project-6',
+        'project-7',
+        'project-8',
+        'project-9',
+        'project-10',
+        'project-11',
+        'project-12',
+      ])
+    )
+    const recentProject150 = {
+      id: 'project-150',
+      code: 'RD-150',
+      name: '第 150 个项目',
       leadName: null,
       plannedEndAt: null,
       status: 'ACTIVE' as const,
       health: 'GREEN' as const,
     }
-    listProjects.mockImplementation(({ pageSize }: { pageSize?: number }) =>
+    const recentProject5 = {
+      ...recentProject150,
+      id: 'project-5',
+      code: 'RD-005',
+      name: '第 5 个项目',
+    }
+    listProjects.mockImplementation(({ ids }: { ids?: string[] }) =>
       Promise.resolve({
-        data: pageSize === 100 ? [recentProject] : [],
-        meta: { page: 1, pageSize: pageSize ?? 20, total: 25 },
+        data: ids ? [recentProject5, recentProject150] : [],
+        meta: { page: 1, pageSize: ids ? 8 : 20, total: ids ? 2 : 150 },
       })
     )
     const user = userEvent.setup()
@@ -158,13 +177,26 @@ describe('ProjectsPage', () => {
     )
     await user.click(screen.getByRole('tab', { name: '最近访问' }))
 
-    expect(await screen.findByText('跨页最近项目')).toBeInTheDocument()
+    expect(await screen.findByText('第 150 个项目')).toBeInTheDocument()
     expect(listProjects).toHaveBeenCalledWith({
+      ids: [
+        'project-150',
+        'project-5',
+        'project-6',
+        'project-7',
+        'project-8',
+        'project-9',
+        'project-10',
+        'project-11',
+      ],
       page: 1,
-      pageSize: 100,
+      pageSize: 8,
       search: undefined,
       status: undefined,
     })
+    expect(
+      screen.getAllByRole('link', { name: /打开项目空间/ }).map((link) => link.textContent)
+    ).toEqual(['第 150 个项目', '第 5 个项目'])
   })
 
   it('includes search in paginated list requests', async () => {

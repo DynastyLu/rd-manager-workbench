@@ -3,6 +3,35 @@ import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/pla
 import { ProjectsService } from '../../../../src/modules/workbench/projects/application/projects.service';
 
 describe('ProjectsService', () => {
+  it('filters by exact project identities alongside status and search', async () => {
+    const findMany = jest.fn().mockReturnValue('find-many-query');
+    const count = jest.fn().mockReturnValue('count-query');
+    const prisma = {
+      project: { findMany, count },
+      $transaction: jest.fn().mockResolvedValue([[], 0]),
+    } as unknown as PlatformPrismaService;
+    const service = new ProjectsService(prisma);
+
+    await service.list({
+      ids: ['project-150', 'project-5'],
+      search: 'alpha',
+      status: 'ACTIVE',
+      pageSize: 8,
+    });
+
+    const where = {
+      archivedAt: null,
+      id: { in: ['project-150', 'project-5'] },
+      status: 'ACTIVE',
+      OR: [
+        { code: { contains: 'alpha', mode: 'insensitive' } },
+        { name: { contains: 'alpha', mode: 'insensitive' } },
+      ],
+    };
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where, take: 8 }));
+    expect(count).toHaveBeenCalledWith({ where });
+  });
+
   it('searches project code or name case-insensitively', async () => {
     const findMany = jest.fn().mockReturnValue('find-many-query');
     const count = jest.fn().mockReturnValue('count-query');
