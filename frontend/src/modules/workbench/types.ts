@@ -66,6 +66,23 @@ export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLE
 
 export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 
+export interface TaskReminder {
+  id: string
+  taskId: string
+  remindAt: string
+  dismissedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TaskLater {
+  id: string
+  taskId: string
+  deferredUntil: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface WorkTask {
   id: string
   projectId: string | null
@@ -82,6 +99,8 @@ export interface WorkTask {
   sourceType: string | null
   sourceId: string | null
   archivedAt: string | null
+  reminder?: TaskReminder | null
+  later?: TaskLater | null
   createdAt: string
   updatedAt: string
 }
