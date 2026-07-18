@@ -2,8 +2,24 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceHeader } from '../WorkspaceHeader'
+
+const { listNotifications, subscribeToNotifications } = vi.hoisted(() => ({
+  listNotifications: vi.fn(),
+  subscribeToNotifications: vi.fn(),
+}))
+
+vi.mock('@/modules/workbench/api/notifications', () => ({
+  listNotifications,
+  markNotificationRead: vi.fn(),
+  dismissNotification: vi.fn(),
+  snoozeNotification: vi.fn(),
+}))
+
+vi.mock('@/modules/workbench/realtime/notificationSocket', () => ({
+  subscribeToNotifications,
+}))
 
 function renderHeader() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -17,15 +33,24 @@ function renderHeader() {
 }
 
 describe('WorkspaceHeader', () => {
-  beforeEach(() => localStorage.clear())
+  beforeEach(() => {
+    localStorage.clear()
+    listNotifications.mockReset()
+    subscribeToNotifications.mockReset()
+    listNotifications.mockResolvedValue({
+      data: [],
+      meta: { page: 1, pageSize: 20, total: 0 },
+    })
+    subscribeToNotifications.mockReturnValue(vi.fn())
+  })
 
-  it('labels unavailable search and notification capabilities honestly', async () => {
+  it('labels unavailable search honestly and exposes the real notification center', async () => {
     const user = userEvent.setup()
     renderHeader()
 
     expect(screen.getByRole('textbox', { name: '全局搜索（P1 开发中）' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: '通知中心' }))
-    expect(await screen.findByText('通知中心将在 P0-B 接入')).toBeInTheDocument()
+    expect(await screen.findByText('没有未读通知')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '切换主题' })).not.toBeInTheDocument()
   })
 

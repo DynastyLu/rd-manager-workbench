@@ -1,34 +1,64 @@
 import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppShell } from '../AppShell'
+
+const { listNotifications, subscribeToNotifications } = vi.hoisted(() => ({
+  listNotifications: vi.fn(),
+  subscribeToNotifications: vi.fn(),
+}))
+
+vi.mock('@/modules/workbench/api/notifications', () => ({
+  listNotifications,
+  markNotificationRead: vi.fn(),
+  dismissNotification: vi.fn(),
+  snoozeNotification: vi.fn(),
+}))
+
+vi.mock('@/modules/workbench/realtime/notificationSocket', () => ({
+  subscribeToNotifications,
+}))
 
 function CurrentPath() {
   return <output aria-label="当前路径">{useLocation().pathname}</output>
 }
 
 function renderShell(initialPath = '/docs') {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <Routes>
-        <Route element={<AppShell skeleton={<p>加载中</p>} />}>
-          <Route
-            path="*"
-            element={
-              <>
-                <CurrentPath />
-                <Outlet />
-              </>
-            }
-          />
-        </Route>
-      </Routes>
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <Routes>
+          <Route element={<AppShell skeleton={<p>加载中</p>} />}>
+            <Route
+              path="*"
+              element={
+                <>
+                  <CurrentPath />
+                  <Outlet />
+                </>
+              }
+            />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
   )
 }
 
 describe('AppShell', () => {
+  beforeEach(() => {
+    listNotifications.mockReset()
+    subscribeToNotifications.mockReset()
+    listNotifications.mockResolvedValue({
+      data: [],
+      meta: { page: 1, pageSize: 20, total: 0 },
+    })
+    subscribeToNotifications.mockReturnValue(vi.fn())
+  })
+
   it('renders semantic primary navigation, active documents app, and the route content area without tabs', () => {
     const { container } = renderShell()
 

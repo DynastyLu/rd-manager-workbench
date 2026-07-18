@@ -1,18 +1,12 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Button, Dropdown, Input, Modal, Popover } from '@douyinfe/semi-ui'
-import {
-  IconBellStroked,
-  IconChevronDown,
-  IconHistory,
-  IconPlus,
-  IconSearch,
-  IconSetting,
-} from '@douyinfe/semi-icons'
+import { IconChevronDown, IconHistory, IconPlus, IconSearch, IconSetting } from '@douyinfe/semi-icons'
 import { Link } from 'react-router-dom'
 import type { RouteDefinition } from '@/router/routes'
 import { ROUTES } from '@/constants/routes'
 import { ProjectForm } from '@/modules/workbench/components/ProjectForm'
 import { TaskForm } from '@/modules/workbench/components/TaskForm'
+import { NotificationCenter } from './NotificationCenter'
 
 interface WorkspaceHeaderProps {
   route?: RouteDefinition
@@ -147,22 +141,7 @@ export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
             />
           </Popover>
 
-          <Popover
-            trigger="click"
-            position="bottomRight"
-            content={
-              <HeaderPopoverContent title="通知中心将在 P0-B 接入">
-                <span>提醒调度、页面推送和桌面通知将在下一批完成。</span>
-              </HeaderPopoverContent>
-            }
-          >
-            <Button
-              theme="borderless"
-              icon={<IconBellStroked />}
-              aria-label="通知中心"
-              className="workspace-header__icon-button"
-            />
-          </Popover>
+          <NotificationCenter />
 
           <Link className="workspace-header__settings" to={ROUTES.SETTINGS} aria-label="设置">
             <IconSetting />
