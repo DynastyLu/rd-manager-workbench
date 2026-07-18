@@ -233,6 +233,8 @@ describe('CalendarView', () => {
       />
     )
 
+    expect(screen.getByRole('heading', { name: '2026年7月' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '星期一' })).toBeInTheDocument()
     expect(screen.getByText('完成评审')).toBeInTheDocument()
     await user.click(screen.getByText('完成评审'))
     expect(onOpenRecord).toHaveBeenCalledWith(records[0])

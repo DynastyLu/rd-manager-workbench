@@ -26,6 +26,9 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.2.8
+      '@fullcalendar/core':
+        specifier: 6.1.21
+        version: 6.1.21
       '@fullcalendar/daygrid':
         specifier: ^6.1.21
         version: 6.1.21(@fullcalendar/core@6.1.21)

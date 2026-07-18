@@ -1,3 +1,4 @@
+import zhCnLocale from '@fullcalendar/core/locales/zh-cn'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 
@@ -82,6 +83,7 @@ export function CalendarView({
       >
         <FullCalendar
           plugins={[dayGridPlugin]}
+          locale={zhCnLocale}
           initialView="dayGridMonth"
           initialDate={initialDate}
           events={events}
