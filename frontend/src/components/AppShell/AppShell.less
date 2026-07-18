@@ -131,7 +131,7 @@
 
   &__planned {
     margin-left: auto;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 10px;
   }
 }
@@ -168,7 +168,7 @@
 
   &__status,
   &__planned {
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 11px;
     white-space: nowrap;
   }
@@ -184,7 +184,7 @@
     align-items: center;
     gap: 7px;
     margin-left: 8px;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: 12px;
     white-space: nowrap;
 
@@ -349,7 +349,9 @@
     &__identity,
     &__status,
     &__create-label,
-    &__search > :not(:first-child) {
+    &__search-label,
+    &__theme-label,
+    &__search .workspace-header__planned {
       position: absolute;
       width: 1px;
       height: 1px;

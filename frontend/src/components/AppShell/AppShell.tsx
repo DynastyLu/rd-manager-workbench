@@ -1,5 +1,5 @@
 import { Suspense, type ReactNode } from 'react'
-import { matchPath, Outlet, useLocation } from 'react-router-dom'
+import { matchRoutes, Outlet, useLocation, type RouteObject } from 'react-router-dom'
 import routes, { primaryNavigation, type RouteDefinition } from '@/router/routes'
 import { WorkspaceHeader } from './WorkspaceHeader'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
@@ -9,27 +9,12 @@ interface AppShellProps {
   skeleton?: ReactNode
 }
 
-function routeMatchPriority(path: string) {
-  return path
-    .split('/')
-    .filter(Boolean)
-    .reduce((score, segment) => score + (segment.startsWith(':') ? 1 : 10), 0)
-}
+const routeMatchers: RouteObject[] = routes.map((route) => ({ id: route.path, path: route.path }))
 
 function findActiveRoute(pathname: string): RouteDefinition | undefined {
-  return routes
-    .filter(
-      (route) =>
-        route.path !== '*' &&
-        (route.path === '/'
-          ? pathname === route.path
-          : matchPath({ path: route.path, end: false }, pathname))
-    )
-    .sort(
-      (left, right) =>
-        routeMatchPriority(right.path) - routeMatchPriority(left.path) ||
-        right.path.length - left.path.length
-    )[0]
+  const matches = matchRoutes(routeMatchers, pathname)
+  const activeRouteId = matches?.[matches.length - 1]?.route.id
+  return routes.find((route) => route.path === activeRouteId)
 }
 
 export function AppShell({ skeleton = null }: AppShellProps) {

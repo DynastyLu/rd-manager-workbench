@@ -58,4 +58,14 @@ describe('AppShell', () => {
     expect(screen.getByLabelText('当前位置：工作空间，申报认定')).toBeInTheDocument()
     expect(screen.getByText('申报认定', { selector: 'strong' })).toBeInTheDocument()
   })
+
+  it.each([
+    ['/library/applications/extra', '申报认定'],
+    ['/spaces/projects/project-1/overview/extra', '项目空间'],
+  ])('does not treat invalid path %s as the specific %s page', (path, specificTitle) => {
+    renderShell(path)
+
+    expect(screen.getByLabelText('当前位置：工作空间，工作台')).toBeInTheDocument()
+    expect(screen.queryByText(specificTitle, { selector: 'strong' })).not.toBeInTheDocument()
+  })
 })

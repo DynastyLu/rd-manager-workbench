@@ -47,7 +47,7 @@ const WorkbenchSettings = lazy(() => import('@/pages/WorkbenchSettings'))
 function createPlannedModuleState(title: string, description: string): ComponentType {
   return function PlannedModuleState() {
     return createElement(
-      'main',
+      'div',
       { className: 'app-page' },
       createElement(
         'div',

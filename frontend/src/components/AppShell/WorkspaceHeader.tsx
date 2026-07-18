@@ -69,7 +69,7 @@ export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
           aria-describedby="planned-search-feedback"
         >
           <span aria-hidden="true">⌕</span>
-          搜索本地工作台
+          <span className="workspace-header__search-label">搜索本地工作台</span>
           <span className="workspace-header__planned">全局搜索（规划中）</span>
         </button>
         <span id="planned-search-feedback" className="workspace-header__sr-feedback" role="status">
@@ -94,7 +94,7 @@ export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
             onKeyDown={handleThemeEscape}
           >
             <span aria-hidden="true">{currentTheme.icon}</span>
-            <span>{currentTheme.label}</span>
+            <span className="workspace-header__theme-label">{currentTheme.label}</span>
           </button>
           <AnimatePresence>
             {themeMenuOpen && (
