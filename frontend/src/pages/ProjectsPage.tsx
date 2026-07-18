@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -32,6 +33,7 @@ import { HealthBadge } from '@/modules/workbench/components/HealthBadge'
 import { ProjectForm } from '@/modules/workbench/components/ProjectForm'
 import { listProjects } from '@/modules/workbench/api/projects'
 import type { ProjectStatus } from '@/modules/workbench/types'
+import { ROUTES } from '@/constants/routes'
 
 const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string }> = [
   { value: 'DRAFT', label: '草稿' },
@@ -146,7 +148,15 @@ export default function ProjectsPage() {
                     {projectsQuery.data.data.map((project) => (
                       <TableRow key={project.id}>
                         <TableCell className="font-medium">{project.code}</TableCell>
-                        <TableCell>{project.name}</TableCell>
+                        <TableCell>
+                          <Link
+                            className="font-medium underline-offset-4 hover:underline"
+                            to={ROUTES.projectWorkspace(project.id)}
+                            aria-label={`打开项目空间：${project.name}`}
+                          >
+                            {project.name}
+                          </Link>
+                        </TableCell>
                         <TableCell>{project.leadName ?? '未指定'}</TableCell>
                         <TableCell>{projectStatusLabel(project.status)}</TableCell>
                         <TableCell>

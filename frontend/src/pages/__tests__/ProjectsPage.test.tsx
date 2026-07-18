@@ -77,5 +77,9 @@ describe('ProjectsPage', () => {
     expect(await screen.findByText('耐盐材料筛选')).toBeInTheDocument()
     expect(screen.getByText('RD-001')).toBeInTheDocument()
     expect(screen.getByText('关注')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '打开项目空间：耐盐材料筛选' })).toHaveAttribute(
+      'href',
+      '/spaces/projects/project-1/overview'
+    )
   })
 })
