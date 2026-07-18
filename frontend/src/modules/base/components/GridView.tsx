@@ -223,7 +223,7 @@ export function GridView({
                     <tr
                       key={currentRow.id}
                       onClick={(event) => {
-                        if ((event.target as Element).closest('button, a, input, textarea, select, [role="checkbox"]')) return
+                        if ((event.target as Element).closest('button, a, input, textarea, select, [role="checkbox"], [role="combobox"]')) return
                         onRecordSelect?.(currentRow.original)
                       }}
                     >

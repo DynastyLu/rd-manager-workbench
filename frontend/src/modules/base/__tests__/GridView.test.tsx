@@ -129,6 +129,36 @@ describe('GridView', () => {
     expect(onRecordSelect).not.toHaveBeenCalled()
   })
 
+  it('does not open the record drawer when the user opens a select editor', async () => {
+    const onRecordSelect = vi.fn()
+    const selectField: DataField = {
+      ...fields[1]!,
+      id: 'field-status',
+      key: 'status',
+      name: '状态',
+      type: 'SINGLE_SELECT',
+      config: { options: [{ label: '待处理', value: 'TODO' }, { label: '进行中', value: 'IN_PROGRESS' }] },
+    }
+    const user = userEvent.setup()
+    render(
+      <MemoryRouter>
+        <GridView
+          fields={[fields[0]!, selectField]}
+          records={[{ ...records[0]!, values: { name: '北斗项目', status: 'TODO' } }]}
+          view={view}
+          onRecordChange={vi.fn()}
+          onViewChange={vi.fn()}
+          onRecordSelect={onRecordSelect}
+        />
+      </MemoryRouter>,
+    )
+
+    await user.click(screen.getByText('TODO'))
+    await user.click(screen.getByRole('combobox', { name: 'selected' }))
+
+    expect(onRecordSelect).not.toHaveBeenCalled()
+  })
+
   it('persists a user-defined column order while keeping the primary field first', async () => {
     const onViewChange = vi.fn()
     const user = userEvent.setup()
