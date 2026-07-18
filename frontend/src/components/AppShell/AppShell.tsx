@@ -11,7 +11,11 @@ interface AppShellProps {
 
 function findActiveRoute(pathname: string): RouteDefinition | undefined {
   return routes.find(
-    (route) => route.path !== '*' && matchPath({ path: route.path, end: false }, pathname)
+    (route) =>
+      route.path !== '*' &&
+      (route.path === '/'
+        ? pathname === route.path
+        : matchPath({ path: route.path, end: false }, pathname))
   )
 }
 

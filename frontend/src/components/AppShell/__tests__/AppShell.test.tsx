@@ -35,6 +35,8 @@ describe('AppShell', () => {
     expect(screen.getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
     expect(screen.getAllByRole('link')).toHaveLength(10)
     expect(screen.getByRole('link', { name: /业务库/ })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByLabelText('当前位置：工作空间，业务库')).toBeInTheDocument()
+    expect(screen.getByText('业务库', { selector: 'strong' })).toBeInTheDocument()
     expect(screen.getByRole('main')).toBeInTheDocument()
     expect(container.querySelector('.tab-bar')).not.toBeInTheDocument()
   })
