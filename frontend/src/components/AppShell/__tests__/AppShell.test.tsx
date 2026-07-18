@@ -51,4 +51,11 @@ describe('AppShell', () => {
 
     expect(screen.getByLabelText('当前路径')).toHaveTextContent('/settings')
   })
+
+  it('uses the more specific nested route title in the workspace header', () => {
+    renderShell('/library/applications')
+
+    expect(screen.getByLabelText('当前位置：工作空间，申报认定')).toBeInTheDocument()
+    expect(screen.getByText('申报认定', { selector: 'strong' })).toBeInTheDocument()
+  })
 })
