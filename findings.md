@@ -72,6 +72,13 @@
 - Electron Security：https://www.electronjs.org/docs/latest/tutorial/security
 - Tauri Sidecar：https://v2.tauri.app/develop/sidecar/
 
+## 飞书式本地工作台研究（2026-07-18）
+
+- 飞书项目公开资料将空间、工作项、实例、关联关系和多视图作为项目管理核心；本地单人版保留这些对象关系，排除协作角色、权限和跨空间同步。来源：https://www.feishu.cn/content/4ek1avnv
+- 飞书多维表格的表格、看板、日历、画册、甘特和表单是同一数据源的视图；本项目的预置表与自定义表同样要求单一记录源。来源：https://www.feishu.cn/hc/zh-CN/articles/360049067931-%E4%BD%BF%E7%94%A8%E5%A4%9A%E7%BB%B4%E8%A1%A8%E6%A0%BC%E8%A7%86%E5%9B%BE
+- 飞书文档/文件支持历史版本；本地文档和文件需采用稳定对象标识加版本记录，不能以多份独立附件替代版本。来源：https://www.feishu.cn/hc/zh-CN/articles/360049067469-%E5%A6%82%E4%BD%95%E6%9F%A5%E7%9C%8B%E5%92%8C%E6%9B%B4%E6%96%B0%E6%96%87%E4%BB%B6%E7%9A%84%E7%89%88%E6%9C%AC?slug=true
+- 飞书日历使用日程/会议提醒；本地版需由 PostgreSQL reminder + notification 记录、WebSocket、桌面系统通知组成。短信需要服务商配置，不能作为默认本地能力。来源：https://www.feishu.cn/hc/zh-CN/articles/049951025910-%E6%97%A5%E5%8E%86%E5%8A%A9%E6%89%8B%E4%BB%8B%E7%BB%8D
+
 ## 视觉/浏览器发现
 - 需求文档共 6 页，包含 13 个表格、完整 P0/P1/P2 优先级和 MVP 验收标准。
 - 页图版式完整，但渲染环境缺少相应中文字体，部分中文显示为方框；文字结构提取完整。

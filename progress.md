@@ -6,6 +6,7 @@
 - 新版工作空间路由、AppShell 和目录入口已直接提交到 `main`：`3d8fdd3`、`973943e`、`1435df8` 等。前端质量门禁在合并前为 29 个测试文件、73 项测试、lint、typecheck 和生产构建通过；目录页合并后实现代理报告 31 个文件、80 项测试与构建通过，待下一阶段开始前再次复验。
 - 新总规格：`docs/superpowers/specs/2026-07-18-feishu-style-rd-platform-delivery-design.md`。交付按五阶段依赖推进，第一阶段为项目空间与我的工作。
 - 用户要求后续功能实现直接写入主目录而非只停留在隔离工作区；已确认后续通过验证的原子提交直接进入 `main`。
+- 用户进一步收敛产品目标为：项目管理、日常工作整理、会议记录、文档/知识保存、日历提醒和多维表格。已新增完整需求规格 `docs/product/2026-07-18-local-feishu-style-rd-workbench-requirements.md`，作为后续替代旧菜单式需求的唯一功能依据。
 
 > **当前工程基线（2026-07-18）：** 直接工程迁移 Tasks 1–4 均已完成。当前代码与命令位于 `frontend/` 和 `backend/`；旧根 pnpm workspace、`apps/`、`packages/` 及其命令仅是以下日志中的历史记录，不应继续执行。
 
