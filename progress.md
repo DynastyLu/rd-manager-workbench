@@ -13,6 +13,8 @@
 
 ### 阶段 4：MVP 功能实现
 - **状态：** in_progress
+- 项目执行 P0 已直接合并至 `main`：项目、里程碑、任务及依赖、进展上报、项目健康度和首页驾驶舱均已接通 API；后端单元/集成/E2E、前后端 lint、类型检查和构建已在合并前验证。
+- 当前进入申报认定 P0：采用通用可配置流程，依次交付案件、条件、材料与不可覆盖版本、证据、节点完成校验、补正和提交快照。
 - 已在 `feature/full-prd-implementation` 隔离分支创建工作区：`/Users/dynastylu/Desktop/AICode/rd-manager-workbench/.worktrees/full-prd-implementation`。
 - 前端依赖安装后 `pnpm test` 通过：12 个文件、28 个测试。
 - 后端全新安装需先执行既有的 `pnpm prisma:generate`；生成后 `pnpm test:unit` 可运行。此为当前框架生成前置条件，后续计划在每项后端验证前显式执行。
