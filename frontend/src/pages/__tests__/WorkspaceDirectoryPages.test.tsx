@@ -24,6 +24,7 @@ const documentApi = vi.hoisted(() => ({
   trashDocument: vi.fn(),
   updateDocument: vi.fn(),
   uploadFile: vi.fn(),
+  uploadFileVersion: vi.fn(),
 }))
 
 vi.mock('@/modules/workbench/api/documents', async (importOriginal) => ({
@@ -79,8 +80,18 @@ describe('workspace directory pages', () => {
     })
     documentApi.listDocumentVersions.mockResolvedValue([])
     documentApi.listFiles.mockResolvedValue({
-      data: [],
-      meta: { page: 1, pageSize: 20, total: 0 },
+      data: [
+        {
+          id: 'file-1',
+          name: '技术方案.pdf',
+          status: 'ACTIVE',
+          documentId: 'document-1',
+          projectId: null,
+          meetingId: null,
+          versions: [{ id: 'version-1', versionNumber: 1, originalName: '技术方案.pdf', mimeType: 'application/pdf', size: 2048, sha256: 'hash' }],
+        },
+      ],
+      meta: { page: 1, pageSize: 20, total: 1 },
     })
   })
 
@@ -121,6 +132,7 @@ describe('workspace directory pages', () => {
     expect(await screen.findByDisplayValue('耐盐材料技术方案')).toBeInTheDocument()
     expect(screen.getByRole('toolbar', { name: '文档格式工具栏' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '保存版本' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '上传新版本' })).toBeInTheDocument()
     expect(screen.queryByText(/规划/)).not.toBeInTheDocument()
     expect(documentApi.listDocuments).toHaveBeenCalled()
     expect(documentApi.getDocument).toHaveBeenCalledWith('document-1')

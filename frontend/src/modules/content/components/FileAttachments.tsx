@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Toast } from '@douyinfe/semi-ui'
 import {
@@ -6,12 +6,15 @@ import {
   listFiles,
   trashFile,
   uploadFile,
+  uploadFileVersion,
 } from '@/modules/workbench/api/documents'
 
 type FileAssociations = { documentId?: string; projectId?: string; meetingId?: string }
 
 export function FileAttachments({ associations }: { associations: FileAssociations }) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const versionInputRef = useRef<HTMLInputElement>(null)
+  const [versionTargetId, setVersionTargetId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const queryKey = ['files', associations]
   const filesQuery = useQuery({ queryKey, queryFn: () => listFiles(associations) })
@@ -24,6 +27,11 @@ export function FileAttachments({ associations }: { associations: FileAssociatio
     mutationFn: trashFile,
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['files'] }),
     onError: () => Toast.error('附件移入回收站失败。'),
+  })
+  const versionMutation = useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) => uploadFileVersion(id, file),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['files'] }),
+    onError: () => Toast.error('上传附件新版本失败。'),
   })
 
   return (
@@ -44,6 +52,18 @@ export function FileAttachments({ associations }: { associations: FileAssociatio
             event.target.value = ''
           }}
         />
+        <input
+          ref={versionInputRef}
+          type="file"
+          hidden
+          aria-label="选择附件新版本"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file && versionTargetId) versionMutation.mutate({ id: versionTargetId, file })
+            event.target.value = ''
+            setVersionTargetId(null)
+          }}
+        />
       </header>
       {filesQuery.isPending ? <p>正在读取附件…</p> : null}
       {filesQuery.isError ? <p>无法读取附件。</p> : null}
@@ -55,7 +75,18 @@ export function FileAttachments({ associations }: { associations: FileAssociatio
               <li key={file.id}>
                 <a href={getFileDownloadUrl(file.id)} download>{file.name}</a>
                 <span>{latest ? `${Math.ceil(latest.size / 1024)} KB · v${latest.versionNumber}` : '暂无版本'}</span>
-                <button type="button" onClick={() => removeMutation.mutate(file.id)}>移入回收站</button>
+                <span className="file-attachments__actions">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVersionTargetId(file.id)
+                      versionInputRef.current?.click()
+                    }}
+                  >
+                    上传新版本
+                  </button>
+                  <button type="button" onClick={() => removeMutation.mutate(file.id)}>移入回收站</button>
+                </span>
               </li>
             )
           })}
