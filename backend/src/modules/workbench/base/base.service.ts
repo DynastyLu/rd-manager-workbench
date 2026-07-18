@@ -124,11 +124,11 @@ export class BaseService {
       const archived = await this.prisma.dataField.findUnique({ where: { tableId_key: { tableId, key: dto.key } } });
       if (archived?.archivedAt) {
         const { config, ...fields } = dto;
-        return this.prisma.dataField.update({ where: { id: archived.id }, data: { ...fields, archivedAt: null, config: (config ?? {}) as Prisma.InputJsonValue } });
+        return await this.prisma.dataField.update({ where: { id: archived.id }, data: { ...fields, archivedAt: null, config: (config ?? {}) as Prisma.InputJsonValue } });
       }
       return await this.prisma.dataField.create({ data: { ...dto, tableId, config: (dto.config ?? {}) as Prisma.InputJsonValue } });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('Field key already exists');
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException(dto.isPrimary ? 'The table already has a primary field' : 'Field key already exists');
       throw error;
     }
   }
@@ -137,9 +137,15 @@ export class BaseService {
     const field = await this.prisma.dataField.findFirst({ where: { id, archivedAt: null }, include: { table: true } });
     if (!field) throw new NotFoundException('Data field not found');
     if (field.table.source !== DataTableSource.CUSTOM) throw new BadRequestException('Preset fields cannot be changed');
+    if (field.isPrimary && dto.isPrimary === false) throw new BadRequestException('The primary field cannot be downgraded');
     if (dto.isPrimary && !field.isPrimary && await this.prisma.dataField.count({ where: { tableId: field.tableId, isPrimary: true, archivedAt: null } })) throw new ConflictException('The table already has a primary field');
     const { config, ...fields } = dto;
-    return this.prisma.dataField.update({ where: { id }, data: { ...fields, ...(config ? { config: config as Prisma.InputJsonValue } : {}) } });
+    try {
+      return await this.prisma.dataField.update({ where: { id }, data: { ...fields, ...(config ? { config: config as Prisma.InputJsonValue } : {}) } });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('The table already has a primary field');
+      throw error;
+    }
   }
 
   async deleteField(id: string) {
@@ -232,18 +238,27 @@ export class BaseService {
     const unknown = Object.keys(values).filter((key) => !fieldKeys.has(key));
     if (unknown.length) throw new BadRequestException(`Unknown fields: ${unknown.join(', ')}`);
     for (const field of fields) {
-      if (values[field.key] === undefined || values[field.key] === null) continue;
+      if (values[field.key] === undefined || values[field.key] === null || (values[field.key] === '' && !field.isRequired)) continue;
       const value = values[field.key];
       if (field.type === DataFieldType.CREATED_AT || field.type === DataFieldType.UPDATED_AT) throw new BadRequestException(`${field.name} is generated and cannot be written`);
       if (field.type === DataFieldType.NUMBER && typeof value !== 'number') throw new BadRequestException(`${field.name} must be a number`);
       if (field.type === DataFieldType.CHECKBOX && typeof value !== 'boolean') throw new BadRequestException(`${field.name} must be a boolean`);
       if ((field.type === DataFieldType.MULTI_SELECT || field.type === DataFieldType.ATTACHMENT) && !Array.isArray(value)) throw new BadRequestException(`${field.name} must be an array`);
+      if ((field.type === DataFieldType.MULTI_SELECT || field.type === DataFieldType.ATTACHMENT) && Array.isArray(value) && value.some((item) => typeof item !== 'string')) throw new BadRequestException(`${field.name} must contain only strings`);
       if (field.type === DataFieldType.RELATION && typeof value !== 'string' && !Array.isArray(value)) throw new BadRequestException(`${field.name} must be a relation id or id array`);
+      if (field.type === DataFieldType.RELATION && Array.isArray(value) && value.some((item) => typeof item !== 'string')) throw new BadRequestException(`${field.name} must contain only string ids`);
       if (field.type === DataFieldType.DATETIME && (typeof value !== 'string' || Number.isNaN(new Date(value).getTime()))) throw new BadRequestException(`${field.name} must be an ISO date`);
       if ((field.type === DataFieldType.TEXT || field.type === DataFieldType.LONG_TEXT || field.type === DataFieldType.LINK || field.type === DataFieldType.SINGLE_SELECT) && typeof value !== 'string') throw new BadRequestException(`${field.name} must be text`);
+      if (field.type === DataFieldType.LINK && typeof value === 'string' && !this.isHttpUrl(value)) throw new BadRequestException(`${field.name} must be a valid URL`);
+      const optionValues = this.optionValues(field.config);
+      if (field.type === DataFieldType.SINGLE_SELECT && optionValues.length && !optionValues.includes(String(value))) throw new BadRequestException(`${field.name} is not an allowed option`);
+      if (field.type === DataFieldType.MULTI_SELECT && Array.isArray(value) && optionValues.length && value.some((item) => !optionValues.includes(String(item)))) throw new BadRequestException(`${field.name} contains an unsupported option`);
     }
     if (requireFields) {
-      const missing = fields.filter((field) => field.isRequired && (values[field.key] === undefined || values[field.key] === null || values[field.key] === '')).map((field) => field.name);
+      const missing = fields.filter((field) => {
+        const value = values[field.key];
+        return field.isRequired && (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0));
+      }).map((field) => field.name);
       if (missing.length) throw new BadRequestException(`Required fields missing: ${missing.join(', ')}`);
     }
   }
@@ -262,6 +277,21 @@ export class BaseService {
   }
 
   private generatedFields(tableId: string) { return this.prisma.dataField.findMany({ where: { tableId, archivedAt: null, type: { in: [DataFieldType.CREATED_AT, DataFieldType.UPDATED_AT] } }, select: { key: true, type: true } }); }
+
+  private optionValues(config: Prisma.JsonValue): string[] {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return [];
+    const options = (config as Prisma.JsonObject).options;
+    if (!Array.isArray(options)) return [];
+    return options.flatMap((option) => {
+      if (typeof option === 'string') return [option];
+      if (option && typeof option === 'object' && !Array.isArray(option) && typeof option.value === 'string') return [option.value];
+      return [];
+    });
+  }
+
+  private isHttpUrl(value: string) {
+    try { const url = new URL(value); return url.protocol === 'http:' || url.protocol === 'https:'; } catch { return false; }
+  }
 
   private async assertWorkspace(id: string) { const workspace = await this.prisma.dataWorkspace.findFirst({ where: { id, archivedAt: null } }); if (!workspace) throw new NotFoundException('Data workspace not found'); return workspace; }
   private async assertTable(id: string) { const table = await this.prisma.dataTable.findFirst({ where: { id, archivedAt: null } }); if (!table) throw new NotFoundException('Data table not found'); return table; }

@@ -22,6 +22,16 @@ import { RecordQuery, UnifiedDataRecord } from '../domain/base.types';
 
 type Values = Record<string, unknown>;
 
+const WRITABLE_KEYS: Record<Exclude<DataTableSource, 'CUSTOM' | 'MEETING_ACTIONS' | 'RISKS_DECISIONS'>, ReadonlySet<string>> = {
+  PROJECTS: new Set(['name', 'code', 'status', 'phase', 'leadName', 'plannedStartAt', 'plannedEndAt']),
+  WORK_TASKS: new Set(['title', 'status', 'priority', 'assigneeName', 'description', 'dueAt', 'projectId']),
+  DOCUMENTS: new Set(['title', 'tags', 'isFavorite', 'projectId']),
+};
+const MEETING_WRITABLE_KEYS = new Set(['title', 'status', 'dateAt']);
+const ACTION_WRITABLE_KEYS = new Set(['title', 'status', 'ownerName', 'dateAt']);
+const RISK_WRITABLE_KEYS = new Set(['title', 'status', 'level', 'ownerName', 'projectId']);
+const DECISION_WRITABLE_KEYS = new Set(['title', 'status', 'projectId']);
+
 @Injectable()
 export class SystemRecordsAdapter {
   constructor(
@@ -40,6 +50,7 @@ export class SystemRecordsAdapter {
   }
 
   async update(source: DataTableSource, recordId: string, values: Values) {
+    this.assertWritable(source, recordId, Object.keys(values));
     switch (source) {
       case DataTableSource.PROJECTS:
         await this.projects.update(recordId, {
@@ -188,6 +199,7 @@ export class SystemRecordsAdapter {
         level: this.enumValue(values.level, RiskLevel) ?? current.level,
         ...(this.enumValue(values.status, RiskStatus) !== undefined ? { status: this.enumValue(values.status, RiskStatus)! } : {}),
         ...(this.string(values.ownerName) !== undefined ? { ownerName: this.string(values.ownerName)! } : {}),
+        ...(this.string(values.projectId) !== undefined ? { projectId: this.string(values.projectId)! } : {}),
       });
       return;
     }
@@ -198,6 +210,7 @@ export class SystemRecordsAdapter {
         title: this.string(values.title) ?? current.title,
         alternatives: Array.isArray(current.alternatives) ? current.alternatives.map(String) : [],
         ...(this.enumValue(values.status, DecisionStatus) !== undefined ? { status: this.enumValue(values.status, DecisionStatus)! } : {}),
+        ...(this.string(values.projectId) !== undefined ? { projectId: this.string(values.projectId)! } : {}),
       });
       return;
     }
@@ -242,6 +255,24 @@ export class SystemRecordsAdapter {
   private parseCompositeId(recordId: string): [string, string] {
     const separator = recordId.indexOf(':');
     return separator > 0 ? [recordId.slice(0, separator), recordId.slice(separator + 1)] : ['', recordId];
+  }
+  private assertWritable(source: DataTableSource, recordId: string, keys: string[]) {
+    let allowed: ReadonlySet<string>;
+    if (source === DataTableSource.MEETING_ACTIONS) {
+      const [kind] = this.parseCompositeId(recordId);
+      if (kind !== 'MEETING' && kind !== 'ACTION') throw new BadRequestException('Meeting record id must include MEETING: or ACTION:');
+      allowed = kind === 'MEETING' ? MEETING_WRITABLE_KEYS : ACTION_WRITABLE_KEYS;
+    } else if (source === DataTableSource.RISKS_DECISIONS) {
+      const [kind] = this.parseCompositeId(recordId);
+      if (kind !== 'RISK' && kind !== 'DECISION') throw new BadRequestException('Governance record id must include RISK: or DECISION:');
+      allowed = kind === 'RISK' ? RISK_WRITABLE_KEYS : DECISION_WRITABLE_KEYS;
+    } else if (source === DataTableSource.CUSTOM) {
+      throw new BadRequestException('Custom records are not handled by the system adapter');
+    } else {
+      allowed = WRITABLE_KEYS[source];
+    }
+    const readonly = keys.filter((key) => !allowed.has(key));
+    if (readonly.length) throw new BadRequestException(`Fields are read-only for this record: ${readonly.join(', ')}`);
   }
   private enumValue<T extends Record<string, string>>(value: unknown, enumeration: T): T[keyof T] | undefined {
     if (value === undefined) return undefined;

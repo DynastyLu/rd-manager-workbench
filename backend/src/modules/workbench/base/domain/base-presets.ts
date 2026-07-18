@@ -2,6 +2,11 @@ import { DataFieldType as F, DataTableSource as S, DataViewType as V } from '@pr
 import { PresetDefinition } from './base.types';
 
 const options = (values: string[]) => ({ options: values.map((value) => ({ label: value, value })) });
+const readOnly = { readOnly: true };
+const meetingStatuses = ['PLANNED', 'HELD', 'CANCELLED'];
+const actionStatuses = ['OPEN', 'IN_PROGRESS', 'DONE', 'CANCELLED'];
+const riskStatuses = ['OPEN', 'MITIGATING', 'CLOSED'];
+const decisionStatuses = ['DRAFT', 'DECIDED', 'SUPERSEDED'];
 
 export const DATA_TABLE_PRESETS: PresetDefinition[] = [
   {
@@ -14,7 +19,7 @@ export const DATA_TABLE_PRESETS: PresetDefinition[] = [
       { key: 'leadName', name: '负责人', type: F.TEXT, sequence: 4 },
       { key: 'plannedStartAt', name: '计划开始', type: F.DATETIME, sequence: 5 },
       { key: 'plannedEndAt', name: '计划结束', type: F.DATETIME, sequence: 6 },
-      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, sequence: 7 },
+      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, config: readOnly, sequence: 7 },
     ],
     views: [
       { name: '全部项目', type: V.GRID, isDefault: true, sequence: 0 },
@@ -32,7 +37,7 @@ export const DATA_TABLE_PRESETS: PresetDefinition[] = [
       { key: 'dueAt', name: '截止时间', type: F.DATETIME, sequence: 4 },
       { key: 'projectId', name: '关联项目', type: F.RELATION, config: { target: 'projects' }, sequence: 5 },
       { key: 'description', name: '说明', type: F.LONG_TEXT, sequence: 6 },
-      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, sequence: 7 },
+      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, config: readOnly, sequence: 7 },
     ],
     views: [
       { name: '全部任务', type: V.GRID, isDefault: true, sequence: 0 },
@@ -44,13 +49,13 @@ export const DATA_TABLE_PRESETS: PresetDefinition[] = [
     key: 'meeting-actions', name: '会议与行动项', description: '统一查看会议和会议结论后的执行事项', icon: 'meeting', source: S.MEETING_ACTIONS,
     fields: [
       { key: 'title', name: '会议 / 行动项', type: F.TEXT, isPrimary: true, sequence: 0 },
-      { key: 'recordType', name: '类型', type: F.SINGLE_SELECT, config: options(['MEETING', 'ACTION']), sequence: 1 },
-      { key: 'status', name: '状态', type: F.SINGLE_SELECT, sequence: 2 },
-      { key: 'ownerName', name: '负责人', type: F.TEXT, sequence: 3 },
+      { key: 'recordType', name: '类型', type: F.SINGLE_SELECT, config: { ...options(['MEETING', 'ACTION']), ...readOnly }, sequence: 1 },
+      { key: 'status', name: '状态', type: F.SINGLE_SELECT, config: { ...options([...meetingStatuses, ...actionStatuses.filter((status) => !meetingStatuses.includes(status))]), optionsByRecordType: { MEETING: meetingStatuses, ACTION: actionStatuses } }, sequence: 2 },
+      { key: 'ownerName', name: '负责人', type: F.TEXT, config: { readOnlyRecordTypes: ['MEETING'] }, sequence: 3 },
       { key: 'dateAt', name: '会议 / 截止时间', type: F.DATETIME, sequence: 4 },
-      { key: 'meetingTitle', name: '所属会议', type: F.RELATION, sequence: 5 },
-      { key: 'taskId', name: '关联任务', type: F.RELATION, sequence: 6 },
-      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, sequence: 7 },
+      { key: 'meetingTitle', name: '所属会议', type: F.RELATION, config: readOnly, sequence: 5 },
+      { key: 'taskId', name: '关联任务', type: F.RELATION, config: readOnly, sequence: 6 },
+      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, config: readOnly, sequence: 7 },
     ],
     views: [
       { name: '全部行动项', type: V.GRID, isDefault: true, sequence: 0 },
@@ -62,11 +67,11 @@ export const DATA_TABLE_PRESETS: PresetDefinition[] = [
     key: 'documents', name: '文档与知识', description: '统一查看文档、知识页和会议纪要', icon: 'document', source: S.DOCUMENTS,
     fields: [
       { key: 'title', name: '标题', type: F.TEXT, isPrimary: true, sequence: 0 },
-      { key: 'type', name: '类型', type: F.SINGLE_SELECT, config: options(['DOCUMENT', 'KNOWLEDGE_PAGE', 'MEETING_MINUTES']), sequence: 1 },
+      { key: 'type', name: '类型', type: F.SINGLE_SELECT, config: { ...options(['DOCUMENT', 'KNOWLEDGE_PAGE', 'MEETING_MINUTES']), ...readOnly }, sequence: 1 },
       { key: 'tags', name: '标签', type: F.MULTI_SELECT, sequence: 2 },
       { key: 'isFavorite', name: '收藏', type: F.CHECKBOX, sequence: 3 },
       { key: 'projectId', name: '关联项目', type: F.RELATION, sequence: 4 },
-      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, sequence: 5 },
+      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, config: readOnly, sequence: 5 },
     ],
     views: [{ name: '全部内容', type: V.GRID, isDefault: true, sequence: 0 }],
   },
@@ -74,12 +79,12 @@ export const DATA_TABLE_PRESETS: PresetDefinition[] = [
     key: 'risks-decisions', name: '风险与决策', description: '将项目风险和关键决策放在一个治理视图', icon: 'governance', source: S.RISKS_DECISIONS,
     fields: [
       { key: 'title', name: '标题', type: F.TEXT, isPrimary: true, sequence: 0 },
-      { key: 'recordType', name: '类型', type: F.SINGLE_SELECT, config: options(['RISK', 'DECISION']), sequence: 1 },
-      { key: 'status', name: '状态', type: F.SINGLE_SELECT, sequence: 2 },
-      { key: 'level', name: '风险等级', type: F.SINGLE_SELECT, config: options(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']), sequence: 3 },
-      { key: 'ownerName', name: '负责人', type: F.TEXT, sequence: 4 },
+      { key: 'recordType', name: '类型', type: F.SINGLE_SELECT, config: { ...options(['RISK', 'DECISION']), ...readOnly }, sequence: 1 },
+      { key: 'status', name: '状态', type: F.SINGLE_SELECT, config: { ...options([...riskStatuses, ...decisionStatuses]), optionsByRecordType: { RISK: riskStatuses, DECISION: decisionStatuses } }, sequence: 2 },
+      { key: 'level', name: '风险等级', type: F.SINGLE_SELECT, config: { ...options(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']), readOnlyRecordTypes: ['DECISION'] }, sequence: 3 },
+      { key: 'ownerName', name: '负责人', type: F.TEXT, config: { readOnlyRecordTypes: ['DECISION'] }, sequence: 4 },
       { key: 'projectId', name: '关联项目', type: F.RELATION, sequence: 5 },
-      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, sequence: 6 },
+      { key: 'updatedAt', name: '更新时间', type: F.UPDATED_AT, config: readOnly, sequence: 6 },
     ],
     views: [
       { name: '治理总表', type: V.GRID, isDefault: true, sequence: 0 },
