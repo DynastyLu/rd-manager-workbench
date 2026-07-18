@@ -25,7 +25,7 @@ pnpm build
 pnpm start:dev
 ```
 
-默认后端地址为 `http://127.0.0.1:4301`。若已有本地 `.env`，请确认其中是 `PORT=4301`。
+默认后端地址为 `http://127.0.0.1:4311`。若已有本地 `.env`，请确认其中是 `PORT=4311`。
 
 Endpoints are loopback-only in production by default:
 
