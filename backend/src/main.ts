@@ -8,6 +8,7 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { ResponseInterceptor } from './shared/interceptors/response.interceptor';
 import { AppLoggerService } from './infrastructure/logger/app-logger.service';
 import { configureBodyParser } from './bootstrap/body-parser';
+import { configureLocalCors } from './bootstrap/cors';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -16,6 +17,7 @@ async function bootstrap() {
   });
 
   configureBodyParser(app);
+  configureLocalCors(app);
   app.useLogger(app.get(AppLoggerService));
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
