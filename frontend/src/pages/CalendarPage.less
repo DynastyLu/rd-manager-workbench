@@ -40,8 +40,24 @@
 
   &__form { display: grid; gap: 14px; }
   &__form label { display: grid; gap: 7px; color: var(--workspace-text-secondary); font-size: 13px; }
+  &__native-select {
+    width: 100%;
+    height: 32px;
+    padding: 0 30px 0 12px;
+    border: 1px solid var(--workspace-border);
+    border-radius: 6px;
+    outline: none;
+    background: var(--workspace-surface);
+    color: var(--workspace-text);
+    font: inherit;
+  }
+  &__native-select:focus { border-color: var(--workspace-brand); box-shadow: 0 0 0 2px rgb(51 112 255 / 14%); }
   &__form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   &__error { margin: 0; color: var(--workspace-danger); font-size: 12px; }
+  &__form-actions { display: flex; justify-content: flex-end; gap: 10px; }
+  &__reference-detail { display: grid; gap: 12px; }
+  &__reference-detail p { display: grid; grid-template-columns: 72px 1fr; margin: 0; color: var(--workspace-text-secondary); }
+  &__reference-detail strong { color: var(--workspace-text); font-weight: 600; }
 }
 
 @media (max-width: 900px) {

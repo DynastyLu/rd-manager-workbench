@@ -4,11 +4,12 @@ import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import { Banner, Button, ButtonGroup, Input, Modal, Select, TextArea } from '@douyinfe/semi-ui'
+import { Banner, Button, ButtonGroup, Checkbox, Input, Modal, Select, TextArea } from '@douyinfe/semi-ui'
 import { IconCalendar, IconPlus } from '@douyinfe/semi-icons'
 import { toast } from 'sonner'
 
 import {
+  archiveCalendarEvent,
   createCalendarEvent,
   listCalendarEntries,
   updateCalendarEvent,
@@ -16,6 +17,7 @@ import {
   type CalendarEventType,
   type CreateCalendarEventInput,
 } from '@/modules/workbench/api/calendar'
+import { listProjects } from '@/modules/workbench/api/projects'
 import { updateTask } from '@/modules/workbench/api/tasks'
 import './CalendarPage.less'
 
@@ -60,6 +62,9 @@ export default function CalendarPage() {
   const [view, setView] = useState<CalendarView>('dayGridMonth')
   const [range, setRange] = useState(initialRange)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false)
+  const [referenceEntry, setReferenceEntry] = useState<CalendarEntry | null>(null)
   const [title, setTitle] = useState('')
   const [type, setType] = useState<CalendarEventType>('INTERVIEW')
   const [startAt, setStartAt] = useState('')
@@ -67,11 +72,17 @@ export default function CalendarPage() {
   const [location, setLocation] = useState('')
   const [link, setLink] = useState('')
   const [notes, setNotes] = useState('')
+  const [projectId, setProjectId] = useState<string | undefined>()
+  const [allDay, setAllDay] = useState(false)
   const [validationMessage, setValidationMessage] = useState('')
 
   const entriesQuery = useQuery({
     queryKey: ['calendar', range],
     queryFn: () => listCalendarEntries(range),
+  })
+  const projectsQuery = useQuery({
+    queryKey: ['projects', 'calendar-picker'],
+    queryFn: () => listProjects({ pageSize: 100 }),
   })
   const events = useMemo(
     () =>
@@ -88,6 +99,7 @@ export default function CalendarPage() {
           sourceType: entry.sourceType,
           sourceId: entry.sourceId,
           projectId: entry.projectId,
+          entry,
         },
       })),
     [entriesQuery.data]
@@ -105,17 +117,42 @@ export default function CalendarPage() {
       setLocation('')
       setLink('')
       setNotes('')
+      setProjectId(undefined)
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : '保存日程失败'),
+  })
+  const updateMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: CreateCalendarEventInput }) =>
+      updateCalendarEvent(id, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['calendar'] })
+      toast.success('日程已更新')
+      setIsCreateOpen(false)
+      setEditingId(null)
+      setIsArchiveConfirmOpen(false)
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : '更新日程失败'),
+  })
+  const archiveMutation = useMutation({
+    mutationFn: (id: string) => archiveCalendarEvent(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['calendar'] })
+      toast.success('日程已取消')
+      setIsCreateOpen(false)
+      setEditingId(null)
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : '取消日程失败'),
   })
   const rescheduleMutation = useMutation({
     mutationFn: async ({
       end,
+      revert,
       sourceId,
       sourceType,
       start,
     }: {
       end: Date | null
+      revert: () => void
       sourceId: string
       sourceType: string
       start: Date
@@ -133,10 +170,14 @@ export default function CalendarPage() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['calendar'] }),
         queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+        queryClient.invalidateQueries({ queryKey: ['my-work'] }),
       ])
       toast.success('时间已更新')
     },
-    onError: (error) => toast.error(error instanceof Error ? error.message : '调整时间失败'),
+    onError: (error, variables) => {
+      variables.revert()
+      toast.error(error instanceof Error ? error.message : '调整时间失败')
+    },
   })
 
   function submitEvent(event: FormEvent<HTMLFormElement>) {
@@ -158,12 +199,64 @@ export default function CalendarPage() {
       type,
       startAt: start.toISOString(),
       endAt: end.toISOString(),
-      allDay: false,
+      allDay,
+      ...(projectId ? { projectId } : {}),
       ...(location.trim() ? { location: location.trim() } : {}),
       ...(link.trim() ? { link: link.trim() } : {}),
       ...(notes.trim() ? { notes: notes.trim() } : {}),
     }
-    createMutation.mutate(input)
+    if (editingId) updateMutation.mutate({ id: editingId, input })
+    else createMutation.mutate(input)
+  }
+
+  function resetForm() {
+    setEditingId(null)
+    setTitle('')
+    setType('INTERVIEW')
+    setStartAt('')
+    setEndAt('')
+    setLocation('')
+    setLink('')
+    setNotes('')
+    setProjectId(undefined)
+    setAllDay(false)
+    setValidationMessage('')
+  }
+
+  function openCreate(start?: Date, clickedAllDay = false) {
+    resetForm()
+    if (start) {
+      const normalizedStart = new Date(start)
+      if (clickedAllDay) normalizedStart.setHours(9, 0, 0, 0)
+      setStartAt(toLocalDateTime(normalizedStart))
+      setEndAt(toLocalDateTime(new Date(normalizedStart.getTime() + 60 * 60 * 1000)))
+      setAllDay(clickedAllDay)
+    }
+    setIsCreateOpen(true)
+  }
+
+  function openEntry(entry: CalendarEntry) {
+    if (entry.sourceType !== 'CALENDAR_EVENT') {
+      setReferenceEntry(entry)
+      return
+    }
+    setEditingId(entry.sourceId)
+    setTitle(entry.title)
+    setType(entry.type as CalendarEventType)
+    setStartAt(toLocalDateTime(new Date(entry.startAt)))
+    setEndAt(toLocalDateTime(new Date(entry.endAt ?? new Date(entry.startAt).getTime() + 3_600_000)))
+    setLocation(entry.location ?? '')
+    setLink(entry.link ?? '')
+    setNotes(entry.notes ?? '')
+    setProjectId(entry.projectId ?? undefined)
+    setAllDay(entry.allDay)
+    setValidationMessage('')
+    setIsCreateOpen(true)
+  }
+
+  function confirmArchive() {
+    if (!editingId) return
+    setIsArchiveConfirmOpen(true)
   }
 
   return (
@@ -180,6 +273,7 @@ export default function CalendarPage() {
                 key={option.value}
                 theme={view === option.value ? 'solid' : 'light'}
                 type={view === option.value ? 'primary' : 'tertiary'}
+                aria-pressed={view === option.value}
                 onClick={() => setView(option.value)}
               >
                 {option.label}
@@ -191,7 +285,7 @@ export default function CalendarPage() {
             type="primary"
             icon={<IconPlus />}
             aria-label="新建日程"
-            onClick={() => setIsCreateOpen(true)}
+            onClick={() => openCreate()}
           >
             新建日程
           </Button>
@@ -238,15 +332,19 @@ export default function CalendarPage() {
               sourceType,
               start: event.start,
               end: event.end,
+              revert,
             })
           }}
-          dateClick={({ date }) => {
-            const start = new Date(date)
-            start.setHours(9, 0, 0, 0)
-            const end = new Date(start.getTime() + 60 * 60 * 1000)
-            setStartAt(toLocalDateTime(start))
-            setEndAt(toLocalDateTime(end))
-            setIsCreateOpen(true)
+          eventClick={({ event }) => {
+            const sourceType = String(event.extendedProps.sourceType ?? '')
+            const sourceId = String(event.extendedProps.sourceId ?? '')
+            const entry = entriesQuery.data?.find(
+              (item) => item.sourceType === sourceType && item.sourceId === sourceId
+            )
+            if (entry) openEntry(entry)
+          }}
+          dateClick={({ date, allDay: clickedAllDay }) => {
+            openCreate(date, clickedAllDay)
           }}
           eventContent={(info) => (
             <div className="calendar-page__event">
@@ -258,9 +356,12 @@ export default function CalendarPage() {
       </section>
 
       <Modal
-        title="新建日程"
+        title={editingId ? '编辑日程' : '新建日程'}
         visible={isCreateOpen}
-        onCancel={() => setIsCreateOpen(false)}
+        onCancel={() => {
+          setIsCreateOpen(false)
+          resetForm()
+        }}
         footer={null}
         width={560}
       >
@@ -279,6 +380,25 @@ export default function CalendarPage() {
               optionList={EVENT_TYPE_OPTIONS}
             />
           </label>
+          <label htmlFor="calendar-project">
+            <span>关联项目（可选）</span>
+            <select
+              id="calendar-project"
+              name="projectId"
+              value={projectId ?? ''}
+              disabled={projectsQuery.isLoading}
+              onChange={(event) => setProjectId(event.target.value || undefined)}
+              className="calendar-page__native-select"
+            >
+              <option value="">不关联项目</option>
+              {(projectsQuery.data?.data ?? []).map((project) => (
+                <option key={project.id} value={project.id}>{project.code} · {project.name}</option>
+              ))}
+            </select>
+          </label>
+          <Checkbox checked={allDay} onChange={(event) => setAllDay(Boolean(event.target.checked))}>
+            全天日程
+          </Checkbox>
           <div className="calendar-page__form-grid">
             <label htmlFor="calendar-start">
               <span>开始时间</span>
@@ -290,15 +410,56 @@ export default function CalendarPage() {
             </label>
           </div>
           <div className="calendar-page__form-grid">
-            <label htmlFor="calendar-location"><span>地点（可选）</span><Input id="calendar-location" value={location} onChange={setLocation} /></label>
-            <label htmlFor="calendar-link"><span>链接（可选）</span><Input id="calendar-link" value={link} onChange={setLink} /></label>
+            <label htmlFor="calendar-location"><span>地点（可选）</span><Input id="calendar-location" name="location" value={location} onChange={setLocation} /></label>
+            <label htmlFor="calendar-link"><span>链接（可选）</span><Input id="calendar-link" name="link" type="url" value={link} onChange={setLink} /></label>
           </div>
           <label htmlFor="calendar-notes"><span>备注（可选）</span><TextArea id="calendar-notes" value={notes} onChange={setNotes} rows={3} /></label>
           {validationMessage ? <p role="alert" className="calendar-page__error">{validationMessage}</p> : null}
-          <Button htmlType="submit" theme="solid" type="primary" block loading={createMutation.isPending}>
-            保存日程
-          </Button>
+          <div className="calendar-page__form-actions">
+            {editingId ? (
+              <Button type="danger" onClick={confirmArchive} loading={archiveMutation.isPending}>
+                取消日程
+              </Button>
+            ) : null}
+            <Button
+              htmlType="submit"
+              theme="solid"
+              type="primary"
+              loading={createMutation.isPending || updateMutation.isPending}
+            >
+              {editingId ? '保存修改' : '保存日程'}
+            </Button>
+          </div>
         </form>
+      </Modal>
+      <Modal
+        title="确认取消日程"
+        visible={isArchiveConfirmOpen}
+        okText="确认取消日程"
+        cancelText="返回"
+        okButtonProps={{ type: 'danger' }}
+        confirmLoading={archiveMutation.isPending}
+        onCancel={() => setIsArchiveConfirmOpen(false)}
+        onOk={() => {
+          if (editingId) archiveMutation.mutate(editingId)
+        }}
+      >
+        <p>取消后该日程将从日历隐藏，但历史数据仍会保留。</p>
+      </Modal>
+      <Modal
+        title={referenceEntry?.title ?? '关联事项'}
+        visible={Boolean(referenceEntry)}
+        footer={<Button theme="solid" type="primary" onClick={() => setReferenceEntry(null)}>知道了</Button>}
+        onCancel={() => setReferenceEntry(null)}
+      >
+        {referenceEntry ? (
+          <div className="calendar-page__reference-detail">
+            <p><strong>来源</strong>{referenceEntry.sourceType === 'MEETING' ? '会议' : '任务'}</p>
+            <p><strong>时间</strong>{new Date(referenceEntry.startAt).toLocaleString('zh-CN')}</p>
+            {referenceEntry.location ? <p><strong>地点</strong>{referenceEntry.location}</p> : null}
+            {referenceEntry.notes ? <p><strong>备注</strong>{referenceEntry.notes}</p> : null}
+          </div>
+        ) : null}
       </Modal>
     </div>
   )

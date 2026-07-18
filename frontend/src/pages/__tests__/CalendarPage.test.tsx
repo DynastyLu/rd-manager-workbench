@@ -4,28 +4,33 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { createCalendarEvent, listCalendarEntries, updateCalendarEvent, updateTask } = vi.hoisted(
+const { archiveCalendarEvent, createCalendarEvent, listCalendarEntries, listProjects, updateCalendarEvent, updateTask } = vi.hoisted(
   () => ({
+    archiveCalendarEvent: vi.fn(),
     createCalendarEvent: vi.fn(),
     listCalendarEntries: vi.fn(),
+    listProjects: vi.fn(),
     updateCalendarEvent: vi.fn(),
     updateTask: vi.fn(),
   })
 )
 
 vi.mock('@/modules/workbench/api/calendar', () => ({
+  archiveCalendarEvent,
   createCalendarEvent,
   listCalendarEntries,
   updateCalendarEvent,
 }))
+vi.mock('@/modules/workbench/api/projects', () => ({ listProjects }))
 vi.mock('@/modules/workbench/api/tasks', () => ({ updateTask }))
 vi.mock('@fullcalendar/react', () => ({
   default: ({
     events,
     eventDrop,
+    eventClick,
     initialView,
   }: {
-    events: Array<{ id: string; title: string }>
+    events: Array<{ id: string; title: string; extendedProps: { sourceType: string; sourceId: string } }>
     eventDrop: (input: {
       event: {
         id: string
@@ -35,6 +40,7 @@ vi.mock('@fullcalendar/react', () => ({
       }
       revert: () => void
     }) => void
+    eventClick: (input: { event: { extendedProps: { sourceType: string; sourceId: string } } }) => void
     initialView: string
   }) => (
     <div data-testid="calendar" data-view={initialView}>
@@ -54,6 +60,18 @@ vi.mock('@fullcalendar/react', () => ({
         }
       >
         模拟拖动普通日程
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          eventClick({
+            event: {
+              extendedProps: { sourceType: 'CALENDAR_EVENT', sourceId: 'calendar-1' },
+            },
+          })
+        }
+      >
+        打开普通日程
       </button>
     </div>
   ),
@@ -78,6 +96,12 @@ describe('CalendarPage', () => {
     listCalendarEntries.mockReset()
     updateCalendarEvent.mockReset()
     updateTask.mockReset()
+    archiveCalendarEvent.mockReset()
+    listProjects.mockReset()
+    listProjects.mockResolvedValue({
+      data: [{ id: 'project-1', name: '工作台重构', code: 'RD-001' }],
+      meta: { page: 1, pageSize: 100, total: 1 },
+    })
     listCalendarEntries.mockResolvedValue([
       {
         id: 'CALENDAR_EVENT:calendar-1',
@@ -114,11 +138,13 @@ describe('CalendarPage', () => {
     await user.type(screen.getByLabelText('日程主题'), '明天面试')
     await user.type(screen.getByLabelText('开始时间'), '2026-07-21T10:00')
     await user.type(screen.getByLabelText('结束时间'), '2026-07-21T11:00')
+    await waitFor(() => expect(screen.getByLabelText('关联项目（可选）')).not.toBeDisabled())
+    await user.selectOptions(screen.getByLabelText('关联项目（可选）'), 'project-1')
     await user.click(screen.getByRole('button', { name: '保存日程' }))
 
     await waitFor(() => {
       expect(createCalendarEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ title: '明天面试', type: 'INTERVIEW' })
+        expect.objectContaining({ title: '明天面试', type: 'INTERVIEW', projectId: 'project-1' })
       )
     })
 
@@ -129,5 +155,31 @@ describe('CalendarPage', () => {
         endAt: '2026-07-22T03:00:00.000Z',
       })
     })
+  })
+
+  it('opens, edits and cancels a calendar event', async () => {
+    updateCalendarEvent.mockResolvedValue({ id: 'calendar-1' })
+    archiveCalendarEvent.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByText('候选人面试')
+    await user.click(screen.getByRole('button', { name: '打开普通日程' }))
+    expect(screen.getByRole('dialog', { name: '编辑日程' })).toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText('日程主题'))
+    await user.type(screen.getByLabelText('日程主题'), '技术复试')
+    await user.click(screen.getByRole('button', { name: '保存修改' }))
+    await waitFor(() => {
+      expect(updateCalendarEvent).toHaveBeenCalledWith(
+        'calendar-1',
+        expect.objectContaining({ title: '技术复试' })
+      )
+    })
+
+    await user.click(screen.getByRole('button', { name: '打开普通日程' }))
+    await user.click(screen.getByRole('button', { name: '取消日程' }))
+    await user.click(screen.getByRole('button', { name: 'confirm' }))
+    await waitFor(() => expect(archiveCalendarEvent).toHaveBeenCalledWith('calendar-1'))
   })
 })
