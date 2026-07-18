@@ -1,5 +1,6 @@
 # Isolated Codex worktrees
 .worktrees/
+.superpowers/
 
 # Root local environment files; examples remain trackable
 .env
