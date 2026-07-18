@@ -23,7 +23,7 @@ import { MotionConfig } from 'framer-motion'
 import { useThemeStore } from '@/stores/theme'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary'
-import Layout from '@/components/Layout/Layout'
+import { AppShell } from '@/components/AppShell/AppShell'
 import { Skeleton } from '@/components/ui/skeleton'
 
 import { Toaster } from 'sonner'
@@ -73,7 +73,7 @@ createRoot(document.getElementById('root')!).render(
             <Routes>
               <Route
                 element={
-                  <Layout
+                  <AppShell
                     skeleton={
                       <div className="flex flex-col gap-4 p-6">
                         <Skeleton className="h-8 w-48" />
