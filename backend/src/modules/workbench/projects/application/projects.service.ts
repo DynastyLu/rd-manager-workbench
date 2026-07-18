@@ -65,6 +65,12 @@ export class ProjectsService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.project.findMany({
         where,
+        include: {
+          healthSnapshots: {
+            orderBy: [{ calculatedAt: 'desc' }, { id: 'desc' }],
+            take: 1,
+          },
+        },
         orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -72,7 +78,13 @@ export class ProjectsService {
       this.prisma.project.count({ where }),
     ]);
 
-    return { data, meta: { page, pageSize, total } };
+    return {
+      data: data.map(({ healthSnapshots, ...project }) => ({
+        ...project,
+        health: healthSnapshots[0]?.health ?? null,
+      })),
+      meta: { page, pageSize, total },
+    };
   }
 
   async get(id: string) {

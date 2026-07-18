@@ -26,7 +26,7 @@ export interface Project {
   actualEndAt: string | null
   status: ProjectStatus
   phase: ProjectPhase
-  health: ProjectHealth
+  health: ProjectHealth | null
   archivedAt: string | null
   createdAt: string
   updatedAt: string

@@ -53,12 +53,39 @@ describe('ProjectsService', () => {
     };
     expect(findMany).toHaveBeenCalledWith({
       where,
+      include: {
+        healthSnapshots: {
+          orderBy: [{ calculatedAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+        },
+      },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       skip: 20,
       take: 20,
     });
     expect(count).toHaveBeenCalledWith({ where });
     expect(transaction).toHaveBeenCalledWith(['find-many-query', 'count-query']);
+  });
+
+  it('maps the latest health snapshot and keeps projects without one explicitly unassessed', async () => {
+    const prisma = {
+      project: { findMany: jest.fn(), count: jest.fn() },
+      $transaction: jest.fn().mockResolvedValue([
+        [
+          { id: 'project-yellow', healthSnapshots: [{ health: 'YELLOW' }] },
+          { id: 'project-unassessed', healthSnapshots: [] },
+        ],
+        2,
+      ]),
+    } as unknown as PlatformPrismaService;
+    const service = new ProjectsService(prisma);
+
+    await expect(service.list({})).resolves.toMatchObject({
+      data: [
+        { id: 'project-yellow', health: 'YELLOW' },
+        { id: 'project-unassessed', health: null },
+      ],
+    });
   });
 
   it('does not update a project that is archived after an earlier active read', async () => {

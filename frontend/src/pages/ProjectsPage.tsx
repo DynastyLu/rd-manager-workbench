@@ -147,7 +147,8 @@ export default function ProjectsPage() {
       title: '健康度',
       dataIndex: 'health',
       width: 120,
-      render: (value: ProjectHealth) => {
+      render: (value: ProjectHealth | null | undefined) => {
+        if (!value) return <span className="project-health">未评估</span>
         const meta = HEALTH_META[value]
         return <span className={meta.className}>{meta.label}</span>
       },

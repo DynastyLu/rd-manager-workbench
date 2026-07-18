@@ -107,6 +107,20 @@ describe('ProjectsPage', () => {
     )
   })
 
+  it('renders real project rows without a health snapshot instead of crashing', async () => {
+    listProjects.mockResolvedValue({
+      data: [{ id: 'project-new', code: 'RD-NEW', name: '新建项目', status: 'DRAFT' }],
+      meta: { page: 1, pageSize: 20, total: 1 },
+    })
+
+    renderProjectsPage()
+
+    expect(
+      await screen.findByRole('link', { name: '打开项目空间：新建项目' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('未评估')).toBeInTheDocument()
+  })
+
   it('requests explicit pages and exposes server-side pagination from meta.total', async () => {
     const firstPageProject = {
       id: 'project-1',

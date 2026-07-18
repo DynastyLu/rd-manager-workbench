@@ -81,7 +81,7 @@ describe('Projects API', () => {
     expect(listed.body).toMatchObject({
       success: true,
       data: {
-        data: [expect.objectContaining({ id: projectId, code: firstCode })],
+        data: [expect.objectContaining({ id: projectId, code: firstCode, health: 'YELLOW' })],
         meta: { page: 1, pageSize: 1, total: 1 },
       },
     });
