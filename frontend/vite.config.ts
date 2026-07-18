@@ -26,16 +26,6 @@ export default defineConfig({
     // 注入构建版本号，供版本更新检测使用（Plan 3）
     __APP_VERSION__: JSON.stringify(process.env['npm_package_version'] ?? '0.0.0'),
   },
-  server: {
-    host: '127.0.0.1',
-    port: 4312,
-    strictPort: true,
-  },
-  preview: {
-    host: '127.0.0.1',
-    port: 4312,
-    strictPort: true,
-  },
   build: {
     rollupOptions: {
       output: {
