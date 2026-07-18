@@ -8,8 +8,9 @@
     "dev": "tsc && electron .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsc && electron-builder --dir",
-    "dist": "tsc && electron-builder"
+    "prepare:app": "pnpm --dir ../frontend build && pnpm --dir ../backend build",
+    "build": "pnpm prepare:app && tsc && electron-builder --dir",
+    "dist": "pnpm prepare:app && tsc && electron-builder"
   },
   "dependencies": {
     "socket.io-client": "^4.8.1"

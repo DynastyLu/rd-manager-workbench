@@ -1,9 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { NotificationClickBuffer } from './notification-click-buffer.js'
+
+const notificationClickBuffer = new NotificationClickBuffer()
+
+ipcRenderer.on('desktop:notification-clicked', (_event, sourcePath: string) => {
+  notificationClickBuffer.push(sourcePath)
+})
 
 contextBridge.exposeInMainWorld('rdWorkbenchDesktop', {
   onNotificationClicked(callback: (sourcePath: string) => void) {
-    const listener = (_event: Electron.IpcRendererEvent, sourcePath: string) => callback(sourcePath)
-    ipcRenderer.on('desktop:notification-clicked', listener)
-    return () => ipcRenderer.removeListener('desktop:notification-clicked', listener)
+    return notificationClickBuffer.subscribe(callback)
   },
 })
