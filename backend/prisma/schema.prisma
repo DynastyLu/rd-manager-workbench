@@ -14,8 +14,8 @@ model AppMetadata {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  @@schema("app")
   @@map("app_metadata")
+  @@schema("app")
 }
 
 enum ProjectStatus {
@@ -75,6 +75,60 @@ enum ProjectHealth {
   @@schema("app")
 }
 
+enum ApplicationCaseStatus {
+  DRAFT
+  IN_PROGRESS
+  SUBMITTED
+  COMPLETED
+  CANCELLED
+
+  @@schema("app")
+}
+
+enum ApplicationNodeStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+
+  @@schema("app")
+}
+
+enum RequirementStatus {
+  SATISFIED
+  PENDING
+  TO_VERIFY
+  NOT_APPLICABLE
+
+  @@schema("app")
+}
+
+enum MaterialReviewStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  REJECTED
+
+  @@schema("app")
+}
+
+enum CorrectionStatus {
+  OPEN
+  RESOLVED
+  WAIVED
+
+  @@schema("app")
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  ACCEPTED
+  REJECTED
+
+  @@schema("app")
+}
+
 model Project {
   id                String                  @id @default(cuid())
   code              String                  @unique
@@ -98,6 +152,7 @@ model Project {
   tasks             WorkTask[]
   progressReports   ProgressReport[]
   healthSnapshots   ProjectHealthSnapshot[]
+  applicationCases  ApplicationCase[]
 
   @@index([status, archivedAt])
   @@index([plannedEndAt])
@@ -199,5 +254,271 @@ model ProjectHealthSnapshot {
 
   @@index([projectId, calculatedAt])
   @@map("project_health_snapshots")
+  @@schema("app")
+}
+
+model WorkflowTemplate {
+  id               String                 @id @default(cuid())
+  name             String
+  description      String?
+  category         String?
+  version          Int                    @default(1)
+  archivedAt       DateTime?              @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  nodes            WorkflowTemplateNode[]
+  applicationCases ApplicationCase[]
+
+  @@index([archivedAt, name])
+  @@map("workflow_templates")
+  @@schema("app")
+}
+
+model WorkflowTemplateNode {
+  id                       String            @id @default(cuid())
+  workflowTemplateId       String            @map("workflow_template_id")
+  code                     String
+  title                    String
+  description              String?
+  sequence                 Int
+  prerequisiteNodeCodes    String[]          @default([]) @map("prerequisite_node_codes")
+  requiredRequirementCodes String[]          @default([]) @map("required_requirement_codes")
+  requiredMaterialCodes    String[]          @default([]) @map("required_material_codes")
+  isRequired               Boolean           @default(true) @map("is_required")
+  createdAt                DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  workflowTemplate         WorkflowTemplate  @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+  applicationNodes         ApplicationNode[]
+
+  @@unique([workflowTemplateId, code])
+  @@index([workflowTemplateId, sequence])
+  @@map("workflow_template_nodes")
+  @@schema("app")
+}
+
+model ApplicationCase {
+  id                 String                   @id @default(cuid())
+  code               String                   @unique
+  projectId          String                   @map("project_id")
+  workflowTemplateId String                   @map("workflow_template_id")
+  title              String
+  subjectName        String?                  @map("subject_name")
+  region             String?
+  organization       String?
+  batch              String?
+  deadlineAt         DateTime?                @map("deadline_at") @db.Timestamptz(6)
+  collaboratorNames  String[]                 @default([]) @map("collaborator_names")
+  status             ApplicationCaseStatus    @default(DRAFT)
+  archivedAt         DateTime?                @map("archived_at") @db.Timestamptz(6)
+  createdAt          DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project            Project                  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  workflowTemplate   WorkflowTemplate         @relation(fields: [workflowTemplateId], references: [id], onDelete: Restrict)
+  nodes              ApplicationNode[]
+  requirements       ApplicationRequirement[]
+  materials          ApplicationMaterial[]
+  evidenceRecords    EvidenceRecord[]
+  corrections        CorrectionRecord[]
+  submissions        SubmissionRecord[]
+
+  @@index([projectId, archivedAt])
+  @@index([workflowTemplateId, archivedAt])
+  @@index([status, deadlineAt])
+  @@map("application_cases")
+  @@schema("app")
+}
+
+model ApplicationNode {
+  id                       String                   @id @default(cuid())
+  applicationCaseId        String                   @map("application_case_id")
+  workflowTemplateNodeId   String?                  @map("workflow_template_node_id")
+  code                     String
+  title                    String
+  description              String?
+  sequence                 Int
+  prerequisiteNodeCodes    String[]                 @default([]) @map("prerequisite_node_codes")
+  requiredRequirementCodes String[]                 @default([]) @map("required_requirement_codes")
+  requiredMaterialCodes    String[]                 @default([]) @map("required_material_codes")
+  snapshot                 Json
+  status                   ApplicationNodeStatus    @default(PENDING)
+  completedAt              DateTime?                @map("completed_at") @db.Timestamptz(6)
+  createdAt                DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  applicationCase          ApplicationCase          @relation(fields: [applicationCaseId], references: [id], onDelete: Cascade)
+  workflowTemplateNode     WorkflowTemplateNode?    @relation(fields: [workflowTemplateNodeId], references: [id], onDelete: SetNull)
+  requirements             ApplicationRequirement[]
+  materials                ApplicationMaterial[]
+
+  @@unique([applicationCaseId, code])
+  @@index([applicationCaseId, sequence])
+  @@index([workflowTemplateNodeId])
+  @@map("application_nodes")
+  @@schema("app")
+}
+
+model ApplicationRequirement {
+  id                String               @id @default(cuid())
+  applicationCaseId String               @map("application_case_id")
+  applicationNodeId String?              @map("application_node_id")
+  code              String
+  title             String
+  description       String?
+  isRequired        Boolean              @default(true) @map("is_required")
+  status            RequirementStatus    @default(PENDING)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  applicationCase   ApplicationCase      @relation(fields: [applicationCaseId], references: [id], onDelete: Cascade)
+  applicationNode   ApplicationNode?     @relation(fields: [applicationNodeId], references: [id], onDelete: SetNull)
+  evidenceLinks     EvidenceRecordLink[]
+
+  @@unique([applicationCaseId, code])
+  @@index([applicationCaseId, status])
+  @@index([applicationNodeId])
+  @@map("application_requirements")
+  @@schema("app")
+}
+
+model ApplicationMaterial {
+  id                String               @id @default(cuid())
+  applicationCaseId String               @map("application_case_id")
+  applicationNodeId String?              @map("application_node_id")
+  code              String
+  title             String
+  category          String?
+  isRequired        Boolean              @default(true) @map("is_required")
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  applicationCase   ApplicationCase      @relation(fields: [applicationCaseId], references: [id], onDelete: Cascade)
+  applicationNode   ApplicationNode?     @relation(fields: [applicationNodeId], references: [id], onDelete: SetNull)
+  versions          MaterialVersion[]
+  evidenceLinks     EvidenceRecordLink[]
+
+  @@unique([applicationCaseId, code])
+  @@index([applicationCaseId, isRequired])
+  @@index([applicationNodeId])
+  @@map("application_materials")
+  @@schema("app")
+}
+
+model MaterialVersion {
+  id                    String                      @id @default(cuid())
+  applicationMaterialId String                      @map("application_material_id")
+  versionNumber         Int                         @map("version_number")
+  fileName              String                      @map("file_name")
+  storageKey            String?                     @map("storage_key")
+  checksum              String?
+  fileSize              Int?                        @map("file_size")
+  note                  String?
+  reviewStatus          MaterialReviewStatus        @default(DRAFT) @map("review_status")
+  isFinal               Boolean                     @default(false) @map("is_final")
+  createdAt             DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  applicationMaterial   ApplicationMaterial         @relation(fields: [applicationMaterialId], references: [id], onDelete: Cascade)
+  correctionLinks       CorrectionMaterialVersion[]
+  submissionLinks       SubmissionMaterialVersion[]
+
+  @@unique([applicationMaterialId, versionNumber])
+  @@index([applicationMaterialId, createdAt])
+  @@map("material_versions")
+  @@schema("app")
+}
+
+model EvidenceRecord {
+  id                String               @id @default(cuid())
+  applicationCaseId String               @map("application_case_id")
+  title             String
+  description       String?
+  sourceUri         String?              @map("source_uri")
+  collectedAt       DateTime?            @map("collected_at") @db.Timestamptz(6)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  applicationCase   ApplicationCase      @relation(fields: [applicationCaseId], references: [id], onDelete: Cascade)
+  links             EvidenceRecordLink[]
+
+  @@index([applicationCaseId, collectedAt])
+  @@map("evidence_records")
+  @@schema("app")
+}
+
+model EvidenceRecordLink {
+  id                       String                  @id @default(cuid())
+  evidenceRecordId         String                  @map("evidence_record_id")
+  applicationRequirementId String?                 @map("application_requirement_id")
+  applicationMaterialId    String?                 @map("application_material_id")
+  createdAt                DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  evidenceRecord           EvidenceRecord          @relation(fields: [evidenceRecordId], references: [id], onDelete: Cascade)
+  applicationRequirement   ApplicationRequirement? @relation(fields: [applicationRequirementId], references: [id], onDelete: Cascade)
+  applicationMaterial      ApplicationMaterial?    @relation(fields: [applicationMaterialId], references: [id], onDelete: Cascade)
+
+  @@index([evidenceRecordId])
+  @@index([applicationRequirementId])
+  @@index([applicationMaterialId])
+  @@map("evidence_record_links")
+  @@schema("app")
+}
+
+model CorrectionRecord {
+  id                 String                      @id @default(cuid())
+  applicationCaseId  String                      @map("application_case_id")
+  submissionRecordId String?                     @map("submission_record_id")
+  title              String
+  details            String?
+  dueAt              DateTime?                   @map("due_at") @db.Timestamptz(6)
+  status             CorrectionStatus            @default(OPEN)
+  resolvedAt         DateTime?                   @map("resolved_at") @db.Timestamptz(6)
+  createdAt          DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  applicationCase    ApplicationCase             @relation(fields: [applicationCaseId], references: [id], onDelete: Cascade)
+  submissionRecord   SubmissionRecord?           @relation(fields: [submissionRecordId], references: [id], onDelete: SetNull)
+  materialVersions   CorrectionMaterialVersion[]
+
+  @@index([applicationCaseId, status, dueAt])
+  @@index([submissionRecordId])
+  @@map("correction_records")
+  @@schema("app")
+}
+
+model SubmissionRecord {
+  id                String                      @id @default(cuid())
+  applicationCaseId String                      @map("application_case_id")
+  referenceNumber   String?                     @map("reference_number")
+  submittedByName   String?                     @map("submitted_by_name")
+  submittedAt       DateTime?                   @map("submitted_at") @db.Timestamptz(6)
+  status            SubmissionStatus            @default(DRAFT)
+  note              String?
+  createdAt         DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  applicationCase   ApplicationCase             @relation(fields: [applicationCaseId], references: [id], onDelete: Cascade)
+  materialVersions  SubmissionMaterialVersion[]
+  corrections       CorrectionRecord[]
+
+  @@index([applicationCaseId, submittedAt])
+  @@index([status, submittedAt])
+  @@map("submission_records")
+  @@schema("app")
+}
+
+model CorrectionMaterialVersion {
+  correctionRecordId String           @map("correction_record_id")
+  materialVersionId  String           @map("material_version_id")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  correctionRecord   CorrectionRecord @relation(fields: [correctionRecordId], references: [id], onDelete: Cascade)
+  materialVersion    MaterialVersion  @relation(fields: [materialVersionId], references: [id], onDelete: Restrict)
+
+  @@id([correctionRecordId, materialVersionId])
+  @@index([materialVersionId])
+  @@map("correction_material_versions")
+  @@schema("app")
+}
+
+model SubmissionMaterialVersion {
+  submissionRecordId String           @map("submission_record_id")
+  materialVersionId  String           @map("material_version_id")
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  submissionRecord   SubmissionRecord @relation(fields: [submissionRecordId], references: [id], onDelete: Cascade)
+  materialVersion    MaterialVersion  @relation(fields: [materialVersionId], references: [id], onDelete: Restrict)
+
+  @@id([submissionRecordId, materialVersionId])
+  @@index([materialVersionId])
+  @@map("submission_material_versions")
   @@schema("app")
 }
