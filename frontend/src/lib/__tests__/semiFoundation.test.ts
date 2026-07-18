@@ -15,7 +15,7 @@ describe('Semi workspace foundation', () => {
 
     expect(packageJson.dependencies['@douyinfe/semi-ui']).toBeDefined()
     expect(packageJson.dependencies['@douyinfe/semi-icons']).toBeDefined()
-    expect(mainSource).toContain("@douyinfe/semi-ui/dist/css/semi.min.css")
+    expect(mainSource).toContain("@douyinfe/semi-ui/lib/es/_base/base.css")
     expect(mainSource).toContain("@/styles/workspace-tokens.css")
   })
 

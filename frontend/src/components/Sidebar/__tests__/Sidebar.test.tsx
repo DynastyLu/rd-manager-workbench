@@ -18,10 +18,10 @@ describe('Sidebar', () => {
       </MemoryRouter>
     )
 
-    const settings = screen.getByRole('link', { name: /设置/ })
-    settings.focus()
+    const projects = screen.getByRole('link', { name: /项目/ })
+    projects.focus()
     await user.keyboard('{Enter}')
 
-    expect(screen.getByRole('status')).toHaveTextContent('/settings')
+    expect(screen.getByRole('status')).toHaveTextContent('/spaces/projects')
   })
 })

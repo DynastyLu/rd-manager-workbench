@@ -124,7 +124,7 @@ describe('TabBar', () => {
     await waitFor(() => {
       const saved = localStorage.getItem('tabbar_state')
       expect(saved).not.toBeNull()
-      expect(JSON.parse(saved!).tabs).toEqual([{ path: '/spaces/projects', title: '项目空间' }])
+      expect(JSON.parse(saved!).tabs).toEqual([{ path: '/spaces/projects', title: '项目' }])
     })
   })
 
@@ -143,7 +143,7 @@ describe('TabBar', () => {
     await waitFor(() => {
       const saved = localStorage.getItem('tabbar_state')
       expect(saved).not.toBeNull()
-      expect(JSON.parse(saved!).tabs).toEqual([{ path: '/spaces/projects', title: '项目空间' }])
+      expect(JSON.parse(saved!).tabs).toEqual([{ path: '/spaces/projects', title: '项目' }])
     })
   })
 
