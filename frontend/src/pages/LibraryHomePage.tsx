@@ -110,6 +110,21 @@ export default function LibraryHomePage() {
     }
   }
 
+  async function openCreateRecordForm() {
+    if (!selectedTable) return
+    const formView = views.find((view) => view.type === 'FORM')
+    if (formView) {
+      setSelectedViewId(formView.id)
+      return
+    }
+    const created = await runViewOperation(async () => {
+      const next = await createBaseView(selectedTable.id, { name: '表单', type: 'FORM', config: {} })
+      await refreshViews()
+      return next
+    }, '创建表单视图失败。')
+    if (created) setSelectedViewId(created.id)
+  }
+
   if (workspacesQuery.isPending) {
     return <div className="base-loading"><Skeleton loading placeholder={<Skeleton.Paragraph rows={8} />} /><p>正在加载多维表格…</p></div>
   }
@@ -139,12 +154,7 @@ export default function LibraryHomePage() {
               table={selectedTable}
               isCreatingRecord={createRecordMutation.isPending}
               onManageFields={() => setIsFieldManagerOpen(true)}
-              onCreateRecord={() => {
-                const primaryField = fields.find((field) => field.isPrimary)
-                createRecordMutation.mutate(
-                  { tableId: selectedTable.id, values: primaryField ? { [primaryField.key]: '未命名记录' } : {} },
-                )
-              }}
+              onCreateRecord={() => void openCreateRecordForm()}
             />
             <ViewManager
               views={views}
@@ -170,7 +180,7 @@ export default function LibraryHomePage() {
                 resolvedView.type === 'GRID' ? (
                   <GridView fields={fields} records={records} view={resolvedView} isSaving={updateRecordMutation.isPending} onRecordSelect={setSelectedRecord} onRecordChange={(recordId, values) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values })} onViewChange={saveViewConfig} />
                 ) : resolvedView.type === 'KANBAN' ? (
-                  <KanbanView fields={fields} records={records} groupFieldKey={String(resolvedView.config.groupField ?? '') || undefined} onGroupFieldChange={(groupField) => saveViewConfig({ ...resolvedView.config, groupField })} onRecordUpdate={(recordId, input) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values: input.values })} onOpenRecord={setSelectedRecord} />
+                  <KanbanView fields={fields} records={records} groupFieldKey={String(resolvedView.config.groupField ?? '') || undefined} isUpdating={updateRecordMutation.isPending} onGroupFieldChange={(groupField) => saveViewConfig({ ...resolvedView.config, groupField })} onRecordUpdate={(recordId, input) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values: input.values })} onOpenRecord={setSelectedRecord} />
                 ) : resolvedView.type === 'CALENDAR' ? (
                   <CalendarView fields={fields} records={records} dateFieldKey={String(resolvedView.config.dateField ?? '') || undefined} onDateFieldChange={(dateField) => saveViewConfig({ ...resolvedView.config, dateField })} onOpenRecord={setSelectedRecord} />
                 ) : (

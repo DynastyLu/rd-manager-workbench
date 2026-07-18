@@ -8,6 +8,7 @@ import LibraryHomePage from '@/pages/LibraryHomePage'
 
 const api = vi.hoisted(() => ({
   createBaseField: vi.fn(),
+  createBaseRecord: vi.fn(),
   deleteBaseField: vi.fn(),
   createBaseTable: vi.fn(),
   listBaseRecords: vi.fn(),
@@ -113,6 +114,31 @@ describe('multidimensional base workspace', () => {
     await user.click(screen.getByRole('button', { name: '保存数据表' }))
 
     expect(api.createBaseTable).toHaveBeenCalledWith('workspace-1', { name: '面试候选人' })
+  })
+
+  it('opens the full form instead of creating an incomplete record from the toolbar', async () => {
+    const requiredCustomTable = {
+      ...customTable,
+      fields: [
+        customTable.fields[0],
+        { ...projectTable.fields[1], id: 'field-required-status', tableId: 'table-custom', isRequired: true },
+      ],
+      views: [
+        ...customTable.views,
+        { id: 'view-custom-form', tableId: 'table-custom', name: '表单', type: 'FORM', config: {}, isDefault: false, sequence: 1 },
+      ],
+    }
+    api.listBaseWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: '研发工作台', description: '本地数据空间', sequence: 0, tables: [projectTable, requiredCustomTable] },
+    ])
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '自定义清单' }))
+    await user.click(screen.getByRole('button', { name: /新增记录/ }))
+
+    expect(await screen.findByRole('heading', { name: '新增记录' })).toBeInTheDocument()
+    expect(api.createBaseRecord).not.toHaveBeenCalled()
   })
 
   it('adds a field with a stable key to the selected table', async () => {

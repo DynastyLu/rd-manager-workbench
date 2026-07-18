@@ -38,7 +38,10 @@ function isUnknownRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isBlank(value: unknown) {
-  return value === null || value === undefined || (typeof value === 'string' && value.trim() === '')
+  return value === null
+    || value === undefined
+    || (typeof value === 'string' && value.trim() === '')
+    || (Array.isArray(value) && value.length === 0)
 }
 
 function emptyValue(field: DataField) {
@@ -63,13 +66,19 @@ function normalizeAttachmentValue(value: unknown) {
   ]
 }
 
+function normalizeFieldValue(field: DataField, value: unknown) {
+  return field.type === 'ATTACHMENT' ? normalizeAttachmentValue(value) : value
+}
+
 function FieldControl({
   field,
   value,
+  required,
   onChange,
 }: {
   field: DataField
   value: unknown
+  required: boolean
   onChange: (value: unknown) => void
 }) {
   const commonStyle = {
@@ -89,6 +98,7 @@ function FieldControl({
         <textarea
           id={`base-form-${field.id}`}
           aria-label={field.name}
+          required={required}
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
           rows={4}
@@ -100,6 +110,7 @@ function FieldControl({
         <input
           id={`base-form-${field.id}`}
           aria-label={field.name}
+          required={required}
           type="number"
           value={typeof value === 'number' || typeof value === 'string' ? value : ''}
           onChange={(event) =>
@@ -113,6 +124,7 @@ function FieldControl({
         <input
           id={`base-form-${field.id}`}
           aria-label={field.name}
+          required={required}
           type="datetime-local"
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
@@ -124,6 +136,7 @@ function FieldControl({
         <select
           id={`base-form-${field.id}`}
           aria-label={field.name}
+          required={required}
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
           style={commonStyle}
@@ -141,6 +154,7 @@ function FieldControl({
         <select
           id={`base-form-${field.id}`}
           aria-label={field.name}
+          required={required}
           multiple
           value={Array.isArray(value) ? value.map(String) : []}
           onChange={(event) =>
@@ -160,6 +174,7 @@ function FieldControl({
         <input
           id={`base-form-${field.id}`}
           aria-label={field.name}
+          required={required}
           type="checkbox"
           checked={Boolean(value)}
           onChange={(event) => onChange(event.target.checked)}
@@ -171,6 +186,7 @@ function FieldControl({
         <input
           id={`base-form-${field.id}`}
           aria-label={field.name}
+          required={required}
           type="url"
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
@@ -183,6 +199,7 @@ function FieldControl({
         <textarea
           id={`base-form-${field.id}`}
           aria-label={field.name}
+          required={required}
           value={Array.isArray(value) ? value.join('\n') : typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
           placeholder="每行一个本地文件路径，也可以用逗号分隔"
@@ -195,6 +212,7 @@ function FieldControl({
         <input
           id={`base-form-${field.id}`}
           aria-label={field.name}
+          required={required}
           type="text"
           value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
           onChange={(event) => onChange(event.target.value)}
@@ -226,23 +244,18 @@ export function FormView({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const missingPrimary = writableFields.some(
-      (field) => field.isPrimary && isBlank(values[field.key])
+    const normalizedValues = Object.fromEntries(
+      writableFields.map((field) => [field.key, normalizeFieldValue(field, values[field.key])])
     )
-    if (missingPrimary) {
-      setError('请填写主字段。')
+    const missingRequired = writableFields.filter(
+      (field) => (field.isPrimary || field.isRequired) && isBlank(normalizedValues[field.key])
+    )
+    if (missingRequired.length) {
+      setError(`请填写必填字段：${missingRequired.map((field) => field.name).join('、')}。`)
       return
     }
     setError('')
     try {
-      const normalizedValues = Object.fromEntries(
-        writableFields.map((field) => [
-          field.key,
-          field.type === 'ATTACHMENT'
-            ? normalizeAttachmentValue(values[field.key])
-            : values[field.key],
-        ])
-      )
       await onCreateRecord({ values: normalizedValues })
       setValues(buildInitialValues())
     } catch (saveError) {
@@ -258,16 +271,17 @@ export function FormView({
           填写后直接写入当前自定义数据表。
         </p>
       </header>
-      <form onSubmit={(event) => void submit(event)} style={{ display: 'grid', gap: 17 }}>
+      <form noValidate onSubmit={(event) => void submit(event)} style={{ display: 'grid', gap: 17 }}>
         {writableFields.map((field) => (
           <div key={field.id} style={{ display: 'grid', gap: 7 }}>
             <label htmlFor={`base-form-${field.id}`} style={{ color: '#1f2329', fontSize: 13 }}>
               {field.name}
-              {field.isPrimary ? <span style={{ marginLeft: 3, color: '#f54a45' }}>*</span> : null}
+              {field.isPrimary || field.isRequired ? <span style={{ marginLeft: 3, color: '#f54a45' }}>*</span> : null}
             </label>
             <FieldControl
               field={field}
               value={values[field.key]}
+              required={field.isPrimary || field.isRequired}
               onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))}
             />
           </div>
