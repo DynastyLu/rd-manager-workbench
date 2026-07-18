@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Banner, Button, Progress, Skeleton, Tag } from '@douyinfe/semi-ui'
+import { Banner, Button, Modal, Progress, Skeleton, Tag } from '@douyinfe/semi-ui'
 import {
   IconCalendarStroked,
   IconChevronLeft,
@@ -17,6 +17,8 @@ import type {
   TaskStatus,
 } from '@/modules/workbench/types'
 import { ROUTES } from '@/constants/routes'
+import { ProgressReportForm } from '@/modules/workbench/components/ProgressReportForm'
+import { TaskForm } from '@/modules/workbench/components/TaskForm'
 import './ProjectWorkspacePage.less'
 
 const SECTIONS = [
@@ -66,8 +68,10 @@ function rememberProjectVisit(id: string) {
     ) as string[]
     const next = [id, ...current.filter((item) => item !== id)].slice(0, 8)
     localStorage.setItem('rd-workbench:recent-projects', JSON.stringify(next))
+    window.dispatchEvent(new Event('rd-workbench:recent-projects-changed'))
   } catch {
     localStorage.setItem('rd-workbench:recent-projects', JSON.stringify([id]))
+    window.dispatchEvent(new Event('rd-workbench:recent-projects-changed'))
   }
 }
 
@@ -148,6 +152,17 @@ function OverviewSection({ project }: { project: ProjectDetail }) {
         </section>
 
         <section className="project-workspace__panel">
+          <header><h2>最近进展</h2></header>
+          {latestProgress ? (
+            <div className="project-workspace__latest-progress">
+              <strong>{latestProgress.summary}</strong>
+              <time>{formatDate(latestProgress.reportedAt)}</time>
+              {latestProgress.blockers ? <p>阻塞：{latestProgress.blockers}</p> : null}
+            </div>
+          ) : <p className="project-workspace__muted">尚未提交项目进展。</p>}
+        </section>
+
+        <section className="project-workspace__panel">
           <header><h2>里程碑</h2><span>{project.milestones.length}</span></header>
           {project.milestones.length ? (
             <ul className="project-workspace__list">
@@ -183,7 +198,13 @@ function OverviewSection({ project }: { project: ProjectDetail }) {
   )
 }
 
-function WorkItemsSection({ project }: { project: ProjectDetail }) {
+function WorkItemsSection({
+  project,
+  onCreate,
+}: {
+  project: ProjectDetail
+  onCreate: () => void
+}) {
   return project.tasks.length ? (
     <section className="project-workspace__panel project-workspace__panel--section">
       <header><h2>全部工作项</h2><span>{project.tasks.length}</span></header>
@@ -200,11 +221,17 @@ function WorkItemsSection({ project }: { project: ProjectDetail }) {
       </ul>
     </section>
   ) : (
-    <EmptySection title="还没有工作项" description="为这个项目创建第一个可执行任务。" action={<Link to={`${ROUTES.MY_WORK}?projectId=${project.id}`}>新建任务</Link>} />
+    <EmptySection title="还没有工作项" description="为这个项目创建第一个可执行任务。" action={<Button onClick={onCreate}>新建任务</Button>} />
   )
 }
 
-function ProgressSection({ project }: { project: ProjectDetail }) {
+function ProgressSection({
+  project,
+  onCreate,
+}: {
+  project: ProjectDetail
+  onCreate: () => void
+}) {
   return project.progressReports.length ? (
     <section className="project-workspace__panel project-workspace__panel--section">
       <header><h2>进展记录</h2><span>{project.progressReports.length}</span></header>
@@ -218,13 +245,23 @@ function ProgressSection({ project }: { project: ProjectDetail }) {
       </ol>
     </section>
   ) : (
-    <EmptySection title="还没有进展记录" description="提交本周进展和当前阻塞项。" action={<Button theme="solid" type="primary">提交进展</Button>} />
+    <EmptySection title="还没有进展记录" description="提交本周进展和当前阻塞项。" action={<Button theme="solid" type="primary" onClick={onCreate}>提交进展</Button>} />
   )
 }
 
-function ProjectSectionContent({ section, project }: { section: ProjectSection; project: ProjectDetail }) {
-  if (section === 'work-items') return <WorkItemsSection project={project} />
-  if (section === 'progress') return <ProgressSection project={project} />
+function ProjectSectionContent({
+  section,
+  project,
+  onCreateProgress,
+  onCreateTask,
+}: {
+  section: ProjectSection
+  project: ProjectDetail
+  onCreateProgress: () => void
+  onCreateTask: () => void
+}) {
+  if (section === 'work-items') return <WorkItemsSection project={project} onCreate={onCreateTask} />
+  if (section === 'progress') return <ProgressSection project={project} onCreate={onCreateProgress} />
   if (section === 'risks') {
     return <EmptySection title="集中管理风险、问题与决策" description="现有风险、问题和决策记录将按当前项目筛选。" action={<Link to={`${ROUTES.governance('risks')}?projectId=${project.id}`}>打开风险与问题</Link>} />
   }
@@ -232,7 +269,7 @@ function ProjectSectionContent({ section, project }: { section: ProjectSection; 
     return <EmptySection title="项目会议" description="从日历创建会议，并把纪要和行动项关联到当前项目。" action={<Link to={`${ROUTES.CALENDAR}?projectId=${project.id}`}><IconCalendarStroked /> 新建会议</Link>} />
   }
   if (section === 'docs') {
-    return <EmptySection title="文档与资料" description="把计划、方案、纪要和附件沉淀在项目上下文中。" action={<Link to={`${ROUTES.DOCS}?projectId=${project.id}`}><IconFolderStroked /> 新建文档</Link>} />
+    return <EmptySection title="文档与资料" description="项目级文档与附件将在 P0-B 接入，当前不会创建无法关联的假文档。" action={<Link to={ROUTES.DOCS}><IconFolderStroked /> 查看文档规划</Link>} />
   }
   return <OverviewSection project={project} />
 }
@@ -243,6 +280,7 @@ export default function ProjectWorkspacePage() {
     section: string
   }>()
   const navigate = useNavigate()
+  const [createTarget, setCreateTarget] = useState<'task' | 'progress' | null>(null)
   const section = SECTIONS.some((item) => item.key === requestedSection)
     ? (requestedSection as ProjectSection)
     : 'overview'
@@ -288,7 +326,15 @@ export default function ProjectWorkspacePage() {
           <div><h1>{project.name}</h1><Tag color="blue">{STATUS_LABELS[project.status]}</Tag>{health ? <Tag color={health === 'GREEN' ? 'green' : health === 'YELLOW' ? 'amber' : 'red'}>{HEALTH_LABELS[health]}</Tag> : null}</div>
           <p><span>{project.code}</span><span>负责人：{project.leadName || '未指定'}</span><span>{formatDate(project.plannedStartAt)} — {formatDate(project.plannedEndAt)}</span></p>
         </div>
-        <Button theme="solid" type="primary" icon={<IconPlus />}>新建工作项</Button>
+        <Button
+          theme="solid"
+          type="primary"
+          icon={<IconPlus />}
+          aria-label="新建工作项"
+          onClick={() => setCreateTarget('task')}
+        >
+          新建工作项
+        </Button>
       </header>
 
       <div className="project-workspace__tabs" aria-label="项目空间页签" role="tablist">
@@ -307,9 +353,29 @@ export default function ProjectWorkspacePage() {
         ))}
       </div>
 
-      <main className="project-workspace__content">
-        <ProjectSectionContent section={section} project={project} />
-      </main>
+      <section className="project-workspace__content" aria-label="项目内容">
+        <ProjectSectionContent
+          section={section}
+          project={project}
+          onCreateProgress={() => setCreateTarget('progress')}
+          onCreateTask={() => setCreateTarget('task')}
+        />
+      </section>
+
+      <Modal
+        title={createTarget === 'progress' ? '提交项目进展' : '新建项目工作项'}
+        visible={createTarget !== null}
+        onCancel={() => setCreateTarget(null)}
+        footer={null}
+        width={520}
+      >
+        {createTarget === 'task' ? (
+          <TaskForm projectId={project.id} onSuccess={() => setCreateTarget(null)} />
+        ) : null}
+        {createTarget === 'progress' ? (
+          <ProgressReportForm projectId={project.id} onSuccess={() => setCreateTarget(null)} />
+        ) : null}
+      </Modal>
     </div>
   )
 }

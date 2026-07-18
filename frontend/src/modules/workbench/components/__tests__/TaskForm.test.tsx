@@ -43,4 +43,23 @@ describe('TaskForm', () => {
 
     expect(screen.getByText('已取消', { selector: 'option' })).toBeInTheDocument()
   })
+
+  it('keeps a task inside the project that opened the form', async () => {
+    createTask.mockResolvedValue({ id: 'task-project-1' })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TaskForm projectId="project-1" />
+      </QueryClientProvider>
+    )
+
+    await user.type(screen.getByLabelText('任务名称'), '项目任务')
+    await user.click(screen.getByRole('button', { name: '保存任务' }))
+
+    await waitFor(() => {
+      expect(createTask).toHaveBeenCalledWith({ title: '项目任务', projectId: 'project-1' })
+    })
+  })
 })

@@ -1,13 +1,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProjectWorkspacePage from '../ProjectWorkspacePage'
 
-const { getProject } = vi.hoisted(() => ({ getProject: vi.fn() }))
+const { createProgressReport, createTask, getProject } = vi.hoisted(() => ({
+  createProgressReport: vi.fn(),
+  createTask: vi.fn(),
+  getProject: vi.fn(),
+}))
 
-vi.mock('@/modules/workbench/api/projects', () => ({ getProject }))
+vi.mock('@/modules/workbench/api/projects', () => ({ createProgressReport, getProject }))
+vi.mock('@/modules/workbench/api/tasks', () => ({ createTask }))
 
 function CurrentPath() {
   return <output aria-label="当前项目路径">{useLocation().pathname}</output>
@@ -113,6 +118,8 @@ const project = {
 
 describe('ProjectWorkspacePage', () => {
   beforeEach(() => {
+    createProgressReport.mockReset()
+    createTask.mockReset()
     getProject.mockReset()
     getProject.mockResolvedValue(project)
   })
@@ -133,6 +140,8 @@ describe('ProjectWorkspacePage', () => {
     ])
     expect(screen.getByText('完成初筛')).toBeInTheDocument()
     expect(screen.getByText('整理实验样本')).toBeInTheDocument()
+    expect(screen.getByText('已完成样本准备')).toBeInTheDocument()
+    expect(screen.getByText('2026/7/18')).toBeInTheDocument()
   })
 
   it('updates the URL when the user changes project sections', async () => {
@@ -154,5 +163,43 @@ describe('ProjectWorkspacePage', () => {
 
     expect(await screen.findByText('无法读取项目空间')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '重试' })).toBeInTheDocument()
+  })
+
+  it('creates a work item in the current project from the project header', async () => {
+    createTask.mockResolvedValue({ id: 'task-2', projectId: 'project-1' })
+    const user = userEvent.setup()
+    renderWorkspace()
+
+    await user.click(await screen.findByRole('button', { name: '新建工作项' }))
+    await user.type(screen.getByLabelText('任务名称'), '验证候选材料')
+    await user.click(screen.getByRole('button', { name: '保存任务' }))
+
+    await waitFor(() => {
+      expect(createTask).toHaveBeenCalledWith({
+        title: '验证候选材料',
+        projectId: 'project-1',
+      })
+    })
+  })
+
+  it('submits a progress report to the current project', async () => {
+    getProject.mockResolvedValue({ ...project, progressReports: [] })
+    createProgressReport.mockResolvedValue({ id: 'progress-2', projectId: 'project-1' })
+    const user = userEvent.setup()
+    renderWorkspace('/spaces/projects/project-1/progress')
+
+    await user.click(await screen.findByRole('button', { name: '提交进展' }))
+    await user.type(screen.getByLabelText('进展摘要'), '已完成第二轮验证')
+    await user.clear(screen.getByLabelText('完成百分比'))
+    await user.type(screen.getByLabelText('完成百分比'), '55')
+    await user.click(screen.getByRole('button', { name: '保存进展' }))
+
+    await waitFor(() => {
+      expect(createProgressReport).toHaveBeenCalledWith('project-1', {
+        summary: '已完成第二轮验证',
+        completionPercent: 55,
+        reportedAt: expect.any(String),
+      })
+    })
   })
 })

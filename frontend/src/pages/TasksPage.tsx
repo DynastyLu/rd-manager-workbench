@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useSearchParams } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,12 +37,14 @@ const STATUS_OPTIONS: Array<{ value: TaskStatus; label: string }> = [
 
 export default function TasksPage() {
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const projectId = searchParams.get('projectId')?.trim() || undefined
   const [status, setStatus] = useState<TaskStatus | undefined>()
   const [assigneeName, setAssigneeName] = useState('')
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const tasksQuery = useQuery({
-    queryKey: ['tasks', { status, assigneeName }],
-    queryFn: () => listTasks({ status, assigneeName: assigneeName || undefined }),
+    queryKey: ['tasks', { projectId, status, assigneeName }],
+    queryFn: () => listTasks({ projectId, status, assigneeName: assigneeName || undefined }),
   })
   const statusMutation = useMutation({
     mutationFn: ({ taskId, nextStatus }: { taskId: string; nextStatus: TaskStatus }) =>
@@ -77,10 +80,14 @@ export default function TasksPage() {
                 <DialogTitle>新建任务</DialogTitle>
                 <DialogDescription>记录一个可追踪的研发行动项。</DialogDescription>
               </DialogHeader>
-              <TaskForm onSuccess={() => setIsCreateOpen(false)} />
+              <TaskForm projectId={projectId} onSuccess={() => setIsCreateOpen(false)} />
             </DialogContent>
           </Dialog>
         </div>
+
+        {projectId ? (
+          <p className="mb-4 text-sm text-muted-foreground">当前仅显示本项目任务</p>
+        ) : null}
 
         <Card className="mb-4">
           <CardContent className="grid gap-3 pt-4 sm:grid-cols-2">

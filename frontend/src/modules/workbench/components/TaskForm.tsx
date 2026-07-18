@@ -17,6 +17,7 @@ import type { TaskPriority, TaskStatus, WorkTask } from '@/modules/workbench/typ
 
 interface TaskFormProps {
   onSuccess?: (task: WorkTask) => void
+  projectId?: string
 }
 
 const PRIORITY_OPTIONS: Array<{ value: TaskPriority; label: string }> = [
@@ -34,7 +35,7 @@ const STATUS_OPTIONS: Array<{ value: TaskStatus; label: string }> = [
   { value: 'CANCELLED', label: '已取消' },
 ]
 
-export function TaskForm({ onSuccess }: TaskFormProps) {
+export function TaskForm({ onSuccess, projectId }: TaskFormProps) {
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState('')
@@ -70,6 +71,7 @@ export function TaskForm({ onSuccess }: TaskFormProps) {
     setValidationMessage('')
     mutation.mutate({
       title: trimmedTitle,
+      ...(projectId ? { projectId } : {}),
       ...(dueAt ? { dueAt } : {}),
       ...(priority ? { priority } : {}),
       ...(status ? { status } : {}),

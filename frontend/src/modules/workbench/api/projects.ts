@@ -6,6 +6,7 @@ import type {
   ProjectDetail,
   ProjectPhase,
   ProjectStatus,
+  ProgressReport,
 } from '@/modules/workbench/types'
 
 export interface ListProjectsParams {
@@ -51,6 +52,13 @@ export interface UpdateProjectInput {
   phase?: ProjectPhase
 }
 
+export interface CreateProgressReportInput {
+  summary: string
+  completionPercent: number
+  reportedAt: string
+  blockers?: string
+}
+
 function toQueryString(params: ListProjectsParams): string {
   const searchParams = new URLSearchParams()
 
@@ -85,4 +93,14 @@ export function updateProject(id: string, input: UpdateProjectInput): Promise<Pr
 
 export function archiveProject(id: string): Promise<void> {
   return request<void>(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function createProgressReport(
+  projectId: string,
+  input: CreateProgressReportInput
+): Promise<ProgressReport> {
+  return request<ProgressReport>(
+    `/projects/${encodeURIComponent(projectId)}/progress-reports`,
+    { method: 'POST', body: JSON.stringify(input) }
+  )
 }

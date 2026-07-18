@@ -14,12 +14,15 @@ const { listTasks, createTask, updateTask } = vi.hoisted(() => ({
 
 vi.mock('@/modules/workbench/api/tasks', () => ({ listTasks, createTask, updateTask }))
 
-function renderTasksPage(queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+function renderTasksPage(
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  path = '/my-work'
+) {
   return {
     queryClient,
     ...render(
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
+        <MemoryRouter initialEntries={[path]}>
           <TasksPage />
         </MemoryRouter>
       </QueryClientProvider>
@@ -155,5 +158,28 @@ describe('TasksPage', () => {
     })
     fireEvent.click(screen.getByRole('option', { name: '待开始' }))
     await waitFor(() => expect(updateTask).toHaveBeenCalledWith('task-reopen', { status: 'TODO' }))
+  })
+
+  it('filters and creates tasks in the project supplied by the workspace URL', async () => {
+    listTasks.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 20, total: 0 } })
+    createTask.mockResolvedValue({ ...task, id: 'project-task', projectId: 'project-1' })
+    const user = userEvent.setup()
+
+    renderTasksPage(undefined, '/my-work?projectId=project-1')
+
+    await waitFor(() => {
+      expect(listTasks).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: 'project-1' })
+      )
+    })
+    expect(screen.getByText('当前仅显示本项目任务')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '新建任务' }))
+    await user.type(screen.getByLabelText('任务名称'), '项目任务')
+    await user.click(screen.getByRole('button', { name: '保存任务' }))
+
+    await waitFor(() => {
+      expect(createTask).toHaveBeenCalledWith({ title: '项目任务', projectId: 'project-1' })
+    })
   })
 })
