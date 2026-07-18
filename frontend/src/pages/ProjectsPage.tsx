@@ -1,39 +1,14 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Banner, Button, Empty, Input, Modal, Select, Table, Tag } from '@douyinfe/semi-ui'
+import { IconPlus, IconSearch } from '@douyinfe/semi-icons'
+import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
 import { Link } from 'react-router-dom'
-
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { HealthBadge } from '@/modules/workbench/components/HealthBadge'
 import { ProjectForm } from '@/modules/workbench/components/ProjectForm'
 import { listProjects } from '@/modules/workbench/api/projects'
-import type { ProjectStatus } from '@/modules/workbench/types'
+import type { Project, ProjectHealth, ProjectStatus } from '@/modules/workbench/types'
 import { ROUTES } from '@/constants/routes'
+import './ProjectsPage.less'
 
 const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string }> = [
   { value: 'DRAFT', label: '草稿' },
@@ -43,140 +18,219 @@ const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string }> = [
   { value: 'CANCELLED', label: '已取消' },
 ]
 
+const STATUS_COLORS: Record<ProjectStatus, 'blue' | 'green' | 'amber' | 'grey' | 'red'> = {
+  DRAFT: 'grey',
+  ACTIVE: 'blue',
+  ON_HOLD: 'amber',
+  COMPLETED: 'green',
+  CANCELLED: 'red',
+}
+
+const HEALTH_META: Record<ProjectHealth, { label: string; className: string }> = {
+  GREEN: { label: '正常', className: 'project-health project-health--green' },
+  YELLOW: { label: '关注', className: 'project-health project-health--yellow' },
+  RED: { label: '风险', className: 'project-health project-health--red' },
+}
+
+type ProjectView = 'all' | 'recent'
+
 function projectStatusLabel(status: ProjectStatus) {
   return STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
+}
+
+function getRecentProjectIds(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem('rd-workbench:recent-projects') ?? '[]') as string[]
+  } catch {
+    return []
+  }
+}
+
+function rememberProject(id: string) {
+  const next = [id, ...getRecentProjectIds().filter((item) => item !== id)].slice(0, 8)
+  localStorage.setItem('rd-workbench:recent-projects', JSON.stringify(next))
 }
 
 export default function ProjectsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<ProjectStatus | undefined>()
+  const [view, setView] = useState<ProjectView>('all')
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const projectsQuery = useQuery({
     queryKey: ['projects', { search, status }],
     queryFn: () => listProjects({ search: search || undefined, status }),
   })
 
-  return (
-    <div className="app-page">
-      <div className="app-page__inner app-page__inner--wide">
-        <div className="app-page__hero">
+  const projects = useMemo(() => {
+    const all = projectsQuery.data?.data ?? []
+    if (view === 'all') return all
+    const recent = getRecentProjectIds()
+    return recent.flatMap((id) => {
+      const project = all.find((item) => item.id === id)
+      return project ? [project] : []
+    })
+  }, [projectsQuery.data, view])
+
+  const columns: ColumnProps<Project>[] = [
+    {
+      title: '项目',
+      dataIndex: 'name',
+      width: 320,
+      render: (_value, project) => (
+        <div className="project-name-cell">
+          <span className="project-name-cell__mark">{project.name.slice(0, 1)}</span>
           <div>
-            <p className="app-page__eyebrow">Project Portfolio</p>
-            <h1 className="app-page__title">项目</h1>
-            <p className="app-page__subtitle">集中查看项目状态、负责人和健康度。</p>
+            <Link
+              to={ROUTES.projectWorkspace(project.id)}
+              onClick={() => rememberProject(project.id)}
+              aria-label={`打开项目空间：${project.name}`}
+            >
+              {project.name}
+            </Link>
+            <span>{project.code}</span>
           </div>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button>新建项目</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>新建项目</DialogTitle>
-                <DialogDescription>先填写基础信息，后续可在项目详情中继续完善。</DialogDescription>
-              </DialogHeader>
-              <ProjectForm onSuccess={() => setIsCreateOpen(false)} />
-            </DialogContent>
-          </Dialog>
+        </div>
+      ),
+    },
+    {
+      title: '负责人',
+      dataIndex: 'leadName',
+      width: 140,
+      render: (value: string | null) => value || '未指定',
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 130,
+      render: (value: ProjectStatus) => (
+        <Tag color={STATUS_COLORS[value]}>{projectStatusLabel(value)}</Tag>
+      ),
+    },
+    {
+      title: '健康度',
+      dataIndex: 'health',
+      width: 120,
+      render: (value: ProjectHealth) => {
+        const meta = HEALTH_META[value]
+        return <span className={meta.className}>{meta.label}</span>
+      },
+    },
+    {
+      title: '计划结束',
+      dataIndex: 'plannedEndAt',
+      width: 140,
+      render: (value: string | null) =>
+        value ? new Date(value).toLocaleDateString('zh-CN') : '未设置',
+    },
+  ]
+
+  return (
+    <div className="projects-page">
+      <header className="projects-page__header">
+        <div>
+          <h1>项目</h1>
+          <p>围绕目标、工作项、会议和资料推进研发工作。</p>
+        </div>
+        <Button
+          theme="solid"
+          type="primary"
+          icon={<IconPlus />}
+          aria-label="新建项目"
+          onClick={() => setIsCreateOpen(true)}
+        >
+          新建项目
+        </Button>
+      </header>
+
+      <section className="projects-page__surface" aria-label="项目目录">
+        <div className="projects-page__tabs" role="tablist" aria-label="项目视图">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'recent'}
+            onClick={() => setView('recent')}
+          >
+            最近访问
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === 'all'}
+            onClick={() => setView('all')}
+          >
+            全部项目
+          </button>
         </div>
 
-        <Card className="mb-4">
-          <CardContent className="grid gap-3 pt-4 sm:grid-cols-[minmax(0,1fr)_180px]">
-            <Input
-              aria-label="筛选项目"
-              placeholder="按项目编号或名称筛选"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-            <Select
-              value={status ?? 'ALL'}
-              onValueChange={(value) =>
-                setStatus(value === 'ALL' ? undefined : (value as ProjectStatus))
-              }
-            >
-              <SelectTrigger aria-label="按状态筛选">
-                <SelectValue placeholder="全部状态" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">全部状态</SelectItem>
-                {STATUS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </CardContent>
-        </Card>
-
-        {projectsQuery.isPending ? (
-          <Card aria-busy="true" aria-label="正在加载项目">
-            <CardContent className="grid gap-3 pt-4">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </CardContent>
-          </Card>
-        ) : null}
+        <div className="projects-page__toolbar">
+          <Input
+            aria-label="搜索项目"
+            prefix={<IconSearch />}
+            placeholder="搜索项目名称或编号"
+            value={search}
+            onChange={setSearch}
+            showClear
+          />
+          <span id="project-status-label" className="projects-page__sr-only">
+            项目状态
+          </span>
+          <Select
+            aria-labelledby="project-status-label"
+            value={status ?? 'ALL'}
+            onChange={(value) =>
+              setStatus(value === 'ALL' ? undefined : (value as ProjectStatus))
+            }
+            optionList={[
+              { value: 'ALL', label: '全部状态' },
+              ...STATUS_OPTIONS.map((option) => ({ value: option.value, label: option.label })),
+            ]}
+          />
+        </div>
 
         {projectsQuery.isError ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>无法读取项目列表</CardTitle>
-              <CardDescription>请确认本地服务已启动后重试。</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button onClick={() => void projectsQuery.refetch()}>重试</Button>
-            </CardContent>
-          </Card>
+          <Banner
+            type="danger"
+            fullMode={false}
+            title="无法读取项目列表"
+            description="请确认本地服务已启动后重试。"
+            closeIcon={null}
+          >
+            <Button onClick={() => void projectsQuery.refetch()}>重试</Button>
+          </Banner>
         ) : null}
 
-        {projectsQuery.data ? (
-          projectsQuery.data.data.length ? (
-            <Card>
-              <CardContent className="pt-4">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>项目编号</TableHead>
-                      <TableHead>项目名称</TableHead>
-                      <TableHead>负责人</TableHead>
-                      <TableHead>状态</TableHead>
-                      <TableHead>健康度</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {projectsQuery.data.data.map((project) => (
-                      <TableRow key={project.id}>
-                        <TableCell className="font-medium">{project.code}</TableCell>
-                        <TableCell>
-                          <Link
-                            className="font-medium underline-offset-4 hover:underline"
-                            to={ROUTES.projectWorkspace(project.id)}
-                            aria-label={`打开项目空间：${project.name}`}
-                          >
-                            {project.name}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{project.leadName ?? '未指定'}</TableCell>
-                        <TableCell>{projectStatusLabel(project.status)}</TableCell>
-                        <TableCell>
-                          <HealthBadge health={project.health} />
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle>还没有项目，先新建一个项目吧。</CardTitle>
-              </CardHeader>
-            </Card>
-          )
-        ) : null}
-      </div>
+        <Table<Project>
+          className="projects-page__table"
+          rowKey="id"
+          size="middle"
+          pagination={false}
+          loading={projectsQuery.isPending}
+          columns={columns}
+          dataSource={projects}
+          empty={
+            <Empty
+              title={
+                view === 'recent'
+                  ? '还没有最近访问的项目。'
+                  : '还没有项目，先新建一个项目吧。'
+              }
+              description={view === 'recent' ? '打开一个项目后，它会出现在这里。' : undefined}
+            />
+          }
+        />
+      </section>
+
+      <Modal
+        title="新建项目"
+        visible={isCreateOpen}
+        onCancel={() => setIsCreateOpen(false)}
+        footer={null}
+        closeOnEsc
+        width={520}
+      >
+        <p className="projects-page__modal-copy">先填写项目编号和名称，创建后进入项目空间继续完善。</p>
+        <ProjectForm onSuccess={() => setIsCreateOpen(false)} />
+      </Modal>
     </div>
   )
 }
