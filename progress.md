@@ -15,6 +15,7 @@
 - **状态：** in_progress
 - 项目执行 P0 已直接合并至 `main`：项目、里程碑、任务及依赖、进展上报、项目健康度和首页驾驶舱均已接通 API；后端单元/集成/E2E、前后端 lint、类型检查和构建已在合并前验证。
 - 当前进入申报认定 P0：采用通用可配置流程，依次交付案件、条件、材料与不可覆盖版本、证据、节点完成校验、补正和提交快照。
+- 申报认定 P0 已直接合并至 `main`：Prisma 前向迁移已部署到本机库；流程模板、案件、节点、条件、材料追加版本、证据、补正和提交 API 与案件工作台均已接通。节点完成会校验前置节点、必需条件和必需材料；案件与项目关联为必填。合并后前端 25 个文件/56 项测试、lint、类型检查、生产构建通过；后端单元 14 套件/32 项、集成 9 套件/31 项、E2E 2 项、lint 与 Nest build 通过；运行中服务的申报模板和案件列表接口返回正常。
 - 已在 `feature/full-prd-implementation` 隔离分支创建工作区：`/Users/dynastylu/Desktop/AICode/rd-manager-workbench/.worktrees/full-prd-implementation`。
 - 前端依赖安装后 `pnpm test` 通过：12 个文件、28 个测试。
 - 后端全新安装需先执行既有的 `pnpm prisma:generate`；生成后 `pnpm test:unit` 可运行。此为当前框架生成前置条件，后续计划在每项后端验证前显式执行。
