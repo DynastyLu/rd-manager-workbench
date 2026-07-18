@@ -46,11 +46,15 @@ export function TaskForm({ onSuccess, projectId }: TaskFormProps) {
   const mutation = useMutation({
     mutationFn: (input: CreateTaskInput) => createTask(input),
     onSuccess: async (task) => {
-      await Promise.all([
+      const invalidations = [
         queryClient.invalidateQueries({ queryKey: ['tasks'] }),
         queryClient.invalidateQueries({ queryKey: ['projects'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
-      ])
+      ]
+      if (projectId) {
+        invalidations.push(queryClient.invalidateQueries({ queryKey: ['project', projectId] }))
+      }
+      await Promise.all(invalidations)
       toast.success('任务已创建')
       onSuccess?.(task)
     },

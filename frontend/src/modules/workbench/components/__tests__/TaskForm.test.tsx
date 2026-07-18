@@ -47,6 +47,7 @@ describe('TaskForm', () => {
   it('keeps a task inside the project that opened the form', async () => {
     createTask.mockResolvedValue({ id: 'task-project-1' })
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
     const user = userEvent.setup()
 
     render(
@@ -60,6 +61,7 @@ describe('TaskForm', () => {
 
     await waitFor(() => {
       expect(createTask).toHaveBeenCalledWith({ title: '项目任务', projectId: 'project-1' })
+      expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['project', 'project-1'] })
     })
   })
 })
