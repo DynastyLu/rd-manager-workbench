@@ -152,6 +152,47 @@ describe('NotificationCenter', () => {
     )
   })
 
+  it('rejects a past snooze time before calling the API', async () => {
+    listNotifications.mockResolvedValue({
+      data: [notification],
+      meta: { page: 1, pageSize: 20, total: 1 },
+    })
+    const user = userEvent.setup()
+
+    renderCenter()
+    await user.click(screen.getByRole('button', { name: '通知中心' }))
+    await user.click(await screen.findByRole('button', { name: '稍后提醒：项目评审即将开始' }))
+    fireEvent.change(screen.getByLabelText('再次提醒时间'), {
+      target: { value: '2020-01-01T09:30' },
+    })
+    await user.click(screen.getByRole('button', { name: '确认稍后提醒' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('再次提醒时间必须晚于当前时间')
+    expect(snoozeNotification).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('再次提醒时间')).toHaveValue('2020-01-01T09:30')
+  })
+
+  it('keeps the snooze dialog and user input when the API rejects the request', async () => {
+    listNotifications.mockResolvedValue({
+      data: [notification],
+      meta: { page: 1, pageSize: 20, total: 1 },
+    })
+    snoozeNotification.mockRejectedValue(new Error('保存失败'))
+    const user = userEvent.setup()
+
+    renderCenter()
+    await user.click(screen.getByRole('button', { name: '通知中心' }))
+    await user.click(await screen.findByRole('button', { name: '稍后提醒：项目评审即将开始' }))
+    fireEvent.change(screen.getByLabelText('再次提醒时间'), {
+      target: { value: '2027-07-21T09:30' },
+    })
+    await user.click(screen.getByRole('button', { name: '确认稍后提醒' }))
+
+    await waitFor(() => expect(snoozeNotification).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('dialog', { name: '稍后提醒' })).toBeInTheDocument()
+    expect(screen.getByLabelText('再次提醒时间')).toHaveValue('2027-07-21T09:30')
+  })
+
   it('refetches REST data after reconnect and a pushed notification', async () => {
     listNotifications.mockResolvedValue({
       data: [],

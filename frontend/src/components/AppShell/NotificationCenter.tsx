@@ -99,6 +99,7 @@ export function NotificationCenter() {
   const queryClient = useQueryClient()
   const [snoozeTarget, setSnoozeTarget] = useState<WorkbenchNotification | null>(null)
   const [snoozeUntil, setSnoozeUntil] = useState('')
+  const [snoozeValidationMessage, setSnoozeValidationMessage] = useState('')
   const notificationsQuery = useQuery({
     queryKey: ['notifications', 'UNREAD'],
     queryFn: () => listNotifications({ status: 'UNREAD', page: 1, pageSize: 20 }),
@@ -126,6 +127,7 @@ export function NotificationCenter() {
     },
     onSuccess: async (_result, action) => {
       await queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      if (action.type === 'snooze') closeSnooze()
       toast.success(
         action.type === 'read'
           ? '已标记为已读'
@@ -142,21 +144,27 @@ export function NotificationCenter() {
   function openSnooze(notification: WorkbenchNotification) {
     setSnoozeTarget(notification)
     setSnoozeUntil('')
+    setSnoozeValidationMessage('')
   }
 
   function closeSnooze() {
     setSnoozeTarget(null)
     setSnoozeUntil('')
+    setSnoozeValidationMessage('')
   }
 
   function submitSnooze() {
     if (!snoozeTarget || !snoozeUntil) return
+    const selectedTime = new Date(snoozeUntil)
+    if (Number.isNaN(selectedTime.getTime()) || selectedTime.getTime() <= Date.now()) {
+      setSnoozeValidationMessage('再次提醒时间必须晚于当前时间')
+      return
+    }
     actionMutation.mutate({
       type: 'snooze',
       id: snoozeTarget.id,
-      snoozeUntil: new Date(snoozeUntil).toISOString(),
+      snoozeUntil: selectedTime.toISOString(),
     })
-    closeSnooze()
   }
 
   const unreadCount = notificationsQuery.data?.meta.total
@@ -233,7 +241,10 @@ export function NotificationCenter() {
         onOk={submitSnooze}
         okText="保存"
         cancelText="取消"
-        okButtonProps={{ disabled: !snoozeUntil, 'aria-label': '确认稍后提醒' }}
+        okButtonProps={{
+          disabled: !snoozeUntil || actionMutation.isPending,
+          'aria-label': '确认稍后提醒',
+        }}
         closeOnEsc
       >
         <div className="notification-center__snooze-form">
@@ -243,9 +254,25 @@ export function NotificationCenter() {
             <input
               type="datetime-local"
               value={snoozeUntil}
-              onChange={(event) => setSnoozeUntil(event.target.value)}
+              onChange={(event) => {
+                setSnoozeUntil(event.target.value)
+                setSnoozeValidationMessage('')
+              }}
+              aria-invalid={Boolean(snoozeValidationMessage)}
+              aria-describedby={
+                snoozeValidationMessage ? 'notification-snooze-validation' : undefined
+              }
             />
           </label>
+          {snoozeValidationMessage ? (
+            <span
+              id="notification-snooze-validation"
+              role="alert"
+              className="notification-center__validation"
+            >
+              {snoozeValidationMessage}
+            </span>
+          ) : null}
         </div>
       </Modal>
     </>
