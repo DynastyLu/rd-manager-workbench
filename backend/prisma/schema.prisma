@@ -284,6 +284,8 @@ model WorkTask {
   risks             Risk[]
   issues            Issue[]
   decisions         Decision[]
+  reminder          TaskReminder?
+  later             TaskLater?
 
   @@index([projectId, status, dueAt])
   @@index([milestoneId])
@@ -291,6 +293,33 @@ model WorkTask {
   @@index([archivedAt, dueAt])
   @@index([assigneeName, archivedAt, dueAt])
   @@map("tasks")
+  @@schema("app")
+}
+
+model TaskReminder {
+  id          String    @id @default(cuid())
+  taskId      String    @unique @map("task_id")
+  remindAt    DateTime  @map("remind_at") @db.Timestamptz(6)
+  dismissedAt DateTime? @map("dismissed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  task        WorkTask  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([remindAt, dismissedAt])
+  @@map("task_reminders")
+  @@schema("app")
+}
+
+model TaskLater {
+  id            String   @id @default(cuid())
+  taskId        String   @unique @map("task_id")
+  deferredUntil DateTime @map("deferred_until") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  task          WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([deferredUntil])
+  @@map("task_laters")
   @@schema("app")
 }
 
