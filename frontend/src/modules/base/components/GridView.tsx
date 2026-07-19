@@ -12,7 +12,7 @@ import {
 } from '@tanstack/react-table'
 import { Empty, Tag } from '@douyinfe/semi-ui'
 import { Link } from 'react-router-dom'
-import type { BaseRecord, ComputedFieldError, DataField, DataTable, DataView, DataViewConfig } from '../types'
+import type { BaseRecord, ComputedFieldError, DataField, DataTable, DataView, DataViewConfig, RelationRecordLookup } from '../types'
 import { FieldEditor } from './FieldEditor'
 
 function renderCompact(value: unknown) {
@@ -41,6 +41,7 @@ function orderedFields(fields: DataField[], config: DataViewConfig) {
 
 const COMPUTED_TYPES = new Set(['LOOKUP', 'ROLLUP', 'FORMULA'])
 const EMPTY_TABLES: DataTable[] = []
+const EMPTY_RELATION_LOOKUPS = new Map<string, RelationRecordLookup>()
 
 function ComputedCell({ value, error }: { value: unknown; error?: ComputedFieldError }) {
   if (!error) return <span className="base-grid__readonly">{renderCompact(value)}</span>
@@ -61,6 +62,7 @@ export function GridView({
   onRecordSelect,
   isSaving = false,
   tables = EMPTY_TABLES,
+  relationLookups = EMPTY_RELATION_LOOKUPS,
 }: {
   fields: DataField[]
   records: BaseRecord[]
@@ -70,6 +72,7 @@ export function GridView({
   onRecordSelect?: (record: BaseRecord) => void
   isSaving?: boolean
   tables?: DataTable[]
+  relationLookups?: Map<string, RelationRecordLookup>
 }) {
   const [config, setConfig] = useState<DataViewConfig>(view.config)
   const [editing, setEditing] = useState<{ recordId: string; fieldKey: string } | null>(null)
@@ -137,6 +140,7 @@ export function GridView({
               editing={isEditing}
               readOnly={readOnly}
               relationTargetTable={relationTargetTable}
+              relationLookup={relationTargetTable ? relationLookups.get(relationTargetTable.id) : undefined}
               onStartEdit={() => setEditing({ recordId: record.id, fieldKey: field.key })}
               onCancel={() => setEditing(null)}
               onCommit={(nextValue) => {
@@ -151,7 +155,7 @@ export function GridView({
         </div>
       )
     },
-  })), [editing, isSaving, onRecordChange, tables, visibleFields])
+  })), [editing, isSaving, onRecordChange, relationLookups, tables, visibleFields])
 
   // TanStack Table intentionally exposes non-memoizable callbacks managed by its own state model.
   // eslint-disable-next-line react-hooks/incompatible-library

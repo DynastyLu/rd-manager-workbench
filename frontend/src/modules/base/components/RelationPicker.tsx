@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Empty, Spin } from '@douyinfe/semi-ui'
 
 import { useInfiniteBaseRecords, useSelectedBaseRecords } from '../hooks'
-import type { BaseRecord, DataField, DataTable, RelationFieldConfig } from '../types'
+import type { BaseRecord, DataField, DataTable, RelationFieldConfig, RelationRecordLookup } from '../types'
 
 function readRelationConfig(field: DataField): RelationFieldConfig | null {
   const config = field.config
@@ -46,10 +46,36 @@ export function RelationValue({
   const config = readRelationConfig(field)
   const ids = selectedIds(value, config?.multiple === true)
   const recordsQuery = useSelectedBaseRecords(config?.targetTableId ?? null, ids)
+  return <ResolvedRelationValue
+    field={field}
+    targetTable={targetTable}
+    value={value}
+    lookup={{
+      records: recordsQuery.data?.data ?? [],
+      isPending: recordsQuery.isPending,
+      isError: recordsQuery.isError,
+      isSuccess: recordsQuery.isSuccess,
+    }}
+  />
+}
+
+export function ResolvedRelationValue({
+  field,
+  targetTable,
+  value,
+  lookup,
+}: {
+  field: DataField
+  targetTable: DataTable
+  value: unknown
+  lookup?: RelationRecordLookup
+}) {
+  const config = readRelationConfig(field)
+  const ids = selectedIds(value, config?.multiple === true)
   if (!ids.length) return <>—</>
-  if (recordsQuery.isPending) return <>正在读取…</>
-  if (recordsQuery.isError) return <span title="目标记录读取失败">⚠ 无法读取关联记录</span>
-  const records = new Map((recordsQuery.data?.data ?? []).map((record) => [record.id, record]))
+  if (!lookup || lookup.isPending) return <>正在读取关联记录…</>
+  if (lookup.isError) return <span title="目标记录读取失败">⚠ 无法读取关联记录</span>
+  const records = new Map(lookup.records.map((record) => [record.id, record]))
   return (
     <>
       {ids
@@ -78,12 +104,17 @@ export function RelationPicker({
 }) {
   const config = readRelationConfig(field)
   const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const selected = useMemo(
     () => selectedIds(value, config?.multiple === true),
     [config?.multiple, value]
   )
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 250)
+    return () => window.clearTimeout(timer)
+  }, [query])
   const recordsQuery = useInfiniteBaseRecords(config?.targetTableId ?? null, {
-    ...(query.trim() ? { query: query.trim() } : {}),
+    ...(debouncedQuery ? { query: debouncedQuery } : {}),
   })
   const selectedQuery = useSelectedBaseRecords(config?.targetTableId ?? null, selected)
 
@@ -138,6 +169,15 @@ export function RelationPicker({
           ))}
         </div>
       ) : null}
+      {selectedQuery.isError ? (
+        <button
+          type="button"
+          className="relation-picker__retry"
+          onClick={() => void selectedQuery.refetch()}
+        >
+          重试已选记录
+        </button>
+      ) : null}
       <input
         type="search"
         aria-label={`搜索${targetTable.name}记录`}
@@ -183,7 +223,7 @@ export function RelationPicker({
         ) : null}
       </div>
       {config.multiple && onComplete ? (
-        <button type="button" className="relation-picker__complete" onClick={onComplete}>
+        <button type="button" className="relation-picker__complete" disabled={disabled} onClick={onComplete}>
           完成选择
         </button>
       ) : null}

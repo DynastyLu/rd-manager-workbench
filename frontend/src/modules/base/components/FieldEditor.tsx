@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Checkbox, Input, InputNumber, Select, TextArea } from '@douyinfe/semi-ui'
-import type { DataField, DataTable } from '../types'
-import { RelationPicker, RelationValue } from './RelationPicker'
+import type { DataField, DataTable, RelationRecordLookup } from '../types'
+import { RelationPicker, ResolvedRelationValue } from './RelationPicker'
 
 function optionValues(field: DataField) {
   const options = Array.isArray(field.config.options) ? field.config.options : []
@@ -36,6 +36,7 @@ export function FieldEditor({
   onCancel,
   onCommit,
   relationTargetTable,
+  relationLookup,
 }: {
   field: DataField
   value: unknown
@@ -45,6 +46,7 @@ export function FieldEditor({
   onCancel: () => void
   onCommit: (value: unknown) => void
   relationTargetTable?: DataTable
+  relationLookup?: RelationRecordLookup
 }) {
   const [draft, setDraft] = useState(value)
 
@@ -66,7 +68,12 @@ export function FieldEditor({
     return (
       <button type="button" className="base-grid__cell-value" onDoubleClick={onStartEdit} onClick={onStartEdit}>
         {field.type === 'RELATION' && relationTargetTable ? (
-          <RelationValue field={field} targetTable={relationTargetTable} value={value} />
+          <ResolvedRelationValue
+            field={field}
+            targetTable={relationTargetTable}
+            value={value}
+            lookup={relationLookup}
+          />
         ) : displayValue(value)}
       </button>
     )

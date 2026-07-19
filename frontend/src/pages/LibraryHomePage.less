@@ -147,10 +147,11 @@
 .base-dialog-form label { display: grid; gap: 6px; }
 .base-dialog-form label > span { font-size: 12px; font-weight: 600; }
 .base-record-detail { display: grid; gap: 2px; }
-.base-record-detail > div { display: grid; grid-template-columns: 120px 1fr; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--base-border); }
+.base-record-detail > div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--base-border); }
 .base-record-detail span { color: var(--base-muted); font-size: 12px; }
 .base-record-detail strong { font-size: 13px; font-weight: 520; }
 .base-record-detail strong small { display: block; margin-top: 3px; color: #8f959e; font-size: 10px; font-weight: 400; }
+.base-record-detail strong small code { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
 .base-record-detail__error { color: #d83931; }
 .base-record-detail > a { margin-top: 16px; color: var(--base-blue); }
 .base-loading { display: grid; min-height: 520px; place-items: center; padding: 40px; background: #f7f8fa; color: #646a73; }

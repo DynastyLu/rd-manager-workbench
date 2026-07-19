@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -141,6 +141,25 @@ describe('RelationPicker', () => {
     })
   })
 
+  it('debounces server search instead of requesting on every keystroke', async () => {
+    api.listBaseRecords.mockResolvedValue(page([]))
+    picker()
+    await screen.findByText('没有匹配记录')
+    api.listBaseRecords.mockClear()
+
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索岗位记录' }), {
+      target: { value: '研发经理' },
+    })
+    expect(api.listBaseRecords).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect(api.listBaseRecords).toHaveBeenCalledWith('positions', {
+        query: '研发经理',
+        page: 1,
+        pageSize: 100,
+      })
+    )
+  })
+
   it('supports keyboard selection and stores the stable id', async () => {
     api.listBaseRecords.mockResolvedValue(page([record('position-1', '高级前端工程师')]))
     const onChange = vi.fn()
@@ -210,5 +229,33 @@ describe('RelationPicker', () => {
     )
     picker('missing-id')
     expect(await screen.findByText('目标记录不可用')).toBeInTheDocument()
+  })
+
+  it('retries an exact selected-record request and disables explicit completion when disabled', async () => {
+    api.listBaseRecords
+      .mockImplementationOnce(() => Promise.resolve(page([])))
+      .mockImplementationOnce(() => Promise.reject(new Error('offline')))
+      .mockImplementation(() => Promise.resolve(page([record('position-1', '高级前端工程师')])))
+    const multiField = {
+      ...relationField,
+      config: { ...relationField.config, multiple: true },
+    }
+    render(
+      <Providers>
+        <RelationPicker
+          field={multiField}
+          targetTable={targetTable}
+          value={['position-1']}
+          onChange={vi.fn()}
+          onComplete={vi.fn()}
+          disabled
+        />
+      </Providers>
+    )
+
+    expect(await screen.findByText('关联记录读取失败')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '完成选择' })).toBeDisabled()
+    await userEvent.setup().click(screen.getByRole('button', { name: '重试已选记录' }))
+    expect(await screen.findByText('高级前端工程师')).toBeInTheDocument()
   })
 })

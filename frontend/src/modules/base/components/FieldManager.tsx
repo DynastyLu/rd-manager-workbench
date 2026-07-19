@@ -77,6 +77,24 @@ function targetTableForRelation(fieldId: string, table: DataTable, tables: DataT
   return relation ? tables.find((item) => item.id === relationTargetId(relation)) : undefined
 }
 
+function formulaCandidates(fields: DataField[], currentFieldId?: string) {
+  if (!currentFieldId || !fields.some((field) => field.id === currentFieldId)) return fields
+  const byId = new Map(fields.map((field) => [field.id, field]))
+  const dependsOnCurrent = (field: DataField, visited = new Set<string>()): boolean => {
+    if (visited.has(field.id)) return false
+    visited.add(field.id)
+    const dependencies = Array.isArray(field.config.dependencies)
+      ? field.config.dependencies.filter((item): item is string => typeof item === 'string')
+      : []
+    return dependencies.some((dependencyId) => {
+      if (dependencyId === currentFieldId) return true
+      const dependency = byId.get(dependencyId)
+      return dependency?.type === 'FORMULA' && dependsOnCurrent(dependency, new Set(visited))
+    })
+  }
+  return fields.filter((field) => field.id !== currentFieldId && !dependsOnCurrent(field))
+}
+
 function FieldConfigControls({
   type,
   table,
@@ -287,7 +305,7 @@ function FieldConfigControls({
       <FormulaEditor
         tableId={table.id}
         identity={formulaIdentity}
-        fields={table.fields ?? []}
+        fields={formulaCandidates(table.fields ?? [], formulaIdentity)}
         value={typeof config.expression === 'string' ? config.expression : ''}
         onChange={(expression) => update({ expression })}
       />
@@ -326,8 +344,8 @@ export function FieldManager({
   tables?: DataTable[]
   visible: boolean
   onClose: () => void
-  onCreateField: (input: CreateDataFieldInput) => void
-  onUpdateField?: (id: string, input: Partial<CreateDataFieldInput>) => unknown
+  onCreateField: (input: CreateDataFieldInput) => void | Promise<unknown>
+  onUpdateField?: (id: string, input: Partial<CreateDataFieldInput>) => void | Promise<unknown>
   onDeleteField?: (id: string) => unknown
   isSaving?: boolean
 }) {
@@ -362,6 +380,61 @@ export function FieldManager({
     setConfig({})
     setInverseFieldName('')
     setInverseMultiple(true)
+  }
+
+  async function submitCreateField() {
+    if (!name.trim() || isSaving || !validComputedConfig(type, config)) return
+    const optionList = options
+      .split(/[,，\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+    const relationMode = config.relationMode === 'TWO_WAY' ? 'TWO_WAY' : 'ONE_WAY'
+    try {
+      await onCreateField({
+        name: name.trim(),
+        key: suggestKey(name, fields.length),
+        type,
+        ...((type === 'SINGLE_SELECT' || type === 'MULTI_SELECT') && optionList.length
+          ? { config: { options: optionList.map((value) => ({ label: value, value })) } }
+          : {}),
+        ...(['RELATION', 'LOOKUP', 'ROLLUP', 'FORMULA'].includes(type) ? { config } : {}),
+        ...(type === 'RELATION' && relationMode === 'TWO_WAY'
+          ? { inverseFieldName: inverseFieldName.trim(), inverseMultiple }
+          : {}),
+      })
+    } catch {
+      return
+    }
+    closeCreate()
+  }
+
+  async function submitFieldUpdate() {
+    if (
+      !editingField ||
+      !editName.trim() ||
+      isSaving ||
+      !validComputedConfig(editingField.type, editConfig)
+    )
+      return
+    try {
+      await onUpdateField?.(editingField.id, {
+        name: editName.trim(),
+        ...(!COMPUTED_TYPES.has(editingField.type) ? { isRequired: editRequired } : {}),
+        ...(['RELATION', 'LOOKUP', 'ROLLUP', 'FORMULA'].includes(editingField.type)
+          ? {
+              config:
+                editingField.type === 'RELATION'
+                  ? Object.fromEntries(
+                      Object.entries(editConfig).filter(([key]) => key !== 'inverseFieldId')
+                    )
+                  : editConfig,
+            }
+          : {}),
+      })
+    } catch {
+      return
+    }
+    setEditingField(null)
   }
 
   return (
@@ -463,25 +536,7 @@ export function FieldManager({
           className="field-manager__form"
           onSubmit={(event) => {
             event.preventDefault()
-            if (!name.trim() || isSaving || !validComputedConfig(type, config)) return
-            const optionList = options
-              .split(/[,，\n]/)
-              .map((item) => item.trim())
-              .filter(Boolean)
-            const relationMode = config.relationMode === 'TWO_WAY' ? 'TWO_WAY' : 'ONE_WAY'
-            onCreateField({
-              name: name.trim(),
-              key: suggestKey(name, fields.length),
-              type,
-              ...((type === 'SINGLE_SELECT' || type === 'MULTI_SELECT') && optionList.length
-                ? { config: { options: optionList.map((value) => ({ label: value, value })) } }
-                : {}),
-              ...(['RELATION', 'LOOKUP', 'ROLLUP', 'FORMULA'].includes(type) ? { config } : {}),
-              ...(type === 'RELATION' && relationMode === 'TWO_WAY'
-                ? { inverseFieldName: inverseFieldName.trim(), inverseMultiple }
-                : {}),
-            })
-            closeCreate()
+            void submitCreateField()
           }}
         >
           <label htmlFor="base-field-name">
@@ -563,28 +618,7 @@ export function FieldManager({
           className="field-manager__form"
           onSubmit={(event) => {
             event.preventDefault()
-            if (
-              !editingField ||
-              !editName.trim() ||
-              isSaving ||
-              !validComputedConfig(editingField.type, editConfig)
-            )
-              return
-            void onUpdateField?.(editingField.id, {
-              name: editName.trim(),
-              ...(!COMPUTED_TYPES.has(editingField.type) ? { isRequired: editRequired } : {}),
-              ...(['RELATION', 'LOOKUP', 'ROLLUP', 'FORMULA'].includes(editingField.type)
-                ? {
-                    config:
-                      editingField.type === 'RELATION'
-                        ? Object.fromEntries(
-                            Object.entries(editConfig).filter(([key]) => key !== 'inverseFieldId')
-                          )
-                        : editConfig,
-                  }
-                : {}),
-            })
-            setEditingField(null)
+            void submitFieldUpdate()
           }}
         >
           <label htmlFor="base-field-edit-name">

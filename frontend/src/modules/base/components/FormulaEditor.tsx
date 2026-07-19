@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '@douyinfe/semi-ui'
 
 import { ApiError } from '@/lib/http'
@@ -52,19 +52,36 @@ export function FormulaEditor({
   const [result, setResult] = useState<FormulaPreviewResult | null>(null)
   const [error, setError] = useState('')
   const [pendingKey, setPendingKey] = useState('')
-  const pending = useRef<{ key: string; promise: Promise<FormulaPreviewResult> } | null>(null)
+  const pending = useRef<{ key: string; token: number } | null>(null)
+  const generation = useRef(0)
+  const mounted = useRef(true)
   const editor = useRef<HTMLTextAreaElement>(null)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    generation.current += 1
+    pending.current = null
     setDraft(value)
     setResult(null)
     setError('')
-  }, [identity, value])
+    setPendingKey('')
+  }, [tableId, identity, value, recordId])
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      generation.current += 1
+      pending.current = null
+    }
+  }, [])
 
   const updateDraft = (next: string) => {
+    generation.current += 1
+    pending.current = null
     setDraft(next)
     setResult(null)
     setError('')
+    setPendingKey('')
     onChange(next)
   }
 
@@ -85,19 +102,23 @@ export function FormulaEditor({
   const runPreview = async () => {
     const expression = draft.trim()
     if (!expression) return
-    const key = JSON.stringify({ expression, recordId: recordId ?? null })
+    const key = JSON.stringify({ tableId, identity: identity ?? null, expression, recordId: recordId ?? null })
     if (pending.current?.key === key) return undefined
+    const token = generation.current + 1
+    generation.current = token
     setPendingKey(key)
     setResult(null)
     setError('')
     const request = preview(tableId, { expression, ...(recordId ? { recordId } : {}) })
-    pending.current = { key, promise: request }
+    pending.current = { key, token }
     try {
       const next = await request
+      if (!mounted.current || generation.current !== token) return undefined
       setResult(next)
       if (next.error) setError(next.error.message)
       return next
     } catch (previewError) {
+      if (!mounted.current || generation.current !== token) return undefined
       const message = previewError instanceof Error ? previewError.message : '公式预览失败'
       const position =
         previewError instanceof ApiError
@@ -106,8 +127,10 @@ export function FormulaEditor({
       setError(position ? `${message}（位置 ${position}）` : message)
       return undefined
     } finally {
-      if (pending.current?.key === key) pending.current = null
-      setPendingKey('')
+      if (mounted.current && generation.current === token) {
+        pending.current = null
+        setPendingKey('')
+      }
     }
   }
 

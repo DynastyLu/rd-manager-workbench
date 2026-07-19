@@ -180,6 +180,14 @@ export interface BaseRecord {
   updatedAt: string
 }
 
+export interface RelationRecordLookup {
+  records: BaseRecord[]
+  isPending: boolean
+  isError: boolean
+  isSuccess: boolean
+  refetch?: () => void | Promise<unknown>
+}
+
 export type DataRecord = BaseRecord
 
 export interface PageResult<T> {

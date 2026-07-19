@@ -90,6 +90,47 @@ describe('multidimensional base workspace', () => {
     await waitFor(() => expect(api.listBaseRecords).toHaveBeenLastCalledWith('table-tasks', expect.any(Object)))
   })
 
+  it('does not fetch relation labels while a non-grid view is active', async () => {
+    const kanbanTable = {
+      ...projectTable,
+      fields: [
+        ...projectTable.fields,
+        {
+          id: 'field-relation',
+          tableId: 'table-projects',
+          key: 'partner',
+          name: '合作方',
+          type: 'RELATION',
+          config: { targetTableId: 'table-partners', multiple: false, relationMode: 'ONE_WAY' },
+          isPrimary: false,
+          isRequired: false,
+          sequence: 2,
+        },
+      ],
+      views: [{ ...projectTable.views[0], id: 'view-kanban', name: '看板', type: 'KANBAN' }],
+    }
+    api.listBaseWorkspaces.mockResolvedValue([
+      { id: 'workspace-1', name: '研发工作台', description: null, sequence: 0, tables: [kanbanTable] },
+    ])
+    api.listBaseRecords.mockResolvedValue({
+      data: [{
+        id: 'project-1',
+        values: { name: '北斗项目', status: 'ACTIVE', partner: 'partner-1' },
+        sourceType: 'PROJECT',
+        sourceId: 'project-1',
+        sourcePath: '/spaces/projects/project-1',
+        createdAt: '2026-07-19T00:00:00.000Z',
+        updatedAt: '2026-07-19T00:00:00.000Z',
+      }],
+      meta: { page: 1, pageSize: 100, total: 1 },
+    })
+
+    renderPage()
+
+    expect(await screen.findByText('北斗项目')).toBeInTheDocument()
+    expect(api.listBaseRecords.mock.calls.filter((call) => call[1]?.recordIds)).toHaveLength(0)
+  })
+
   it('shows a retry action when the local base service fails', async () => {
     api.listBaseWorkspaces.mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce([
       { id: 'workspace-1', name: '研发工作台', sequence: 0, tables: [projectTable] },

@@ -19,6 +19,7 @@ import {
   useCreateBaseTable,
   useDebouncedViewConfigSave,
   useDeleteBaseField,
+  useGridRelationRecords,
   useUpdateBaseRecord,
   useUpdateBaseField,
   useUpdateBaseView,
@@ -111,6 +112,12 @@ export default function LibraryHomePage() {
     config: viewOverrides[selectedView.id] ?? selectedView.config,
   } : null, [selectedView, viewOverrides])
   const recordsQuery = useBaseRecords(selectedTable?.id ?? null, viewQuery(resolvedView?.config ?? {}))
+  const fields = selectedTable?.fields ?? []
+  const records = recordsQuery.data?.data ?? []
+  const relationLookups = useGridRelationRecords(
+    fields,
+    resolvedView?.type === 'GRID' ? records : []
+  )
 
   function selectTable(table: DataTable) {
     setSelectedTableId(table.id)
@@ -172,9 +179,6 @@ export default function LibraryHomePage() {
 
   if (!workspace) return <div className="base-loading"><Empty title="还没有数据工作区" description="后端将在首次访问时创建研发工作台。" /></div>
 
-  const fields = selectedTable?.fields ?? []
-  const records = recordsQuery.data?.data ?? []
-
   return (
     <div className="base-page">
       <BaseSidebar workspace={workspace} selectedTableId={selectedTable?.id ?? null} onSelectTable={selectTable} onCreateTable={() => setIsCreateTableOpen(true)} />
@@ -209,7 +213,7 @@ export default function LibraryHomePage() {
               {recordsQuery.isError ? <Banner type="danger" fullMode={false} title="无法读取数据记录" description="数据表结构已加载，但记录服务暂时不可用。" closeIcon={null}><Button onClick={() => void recordsQuery.refetch()}>重试</Button></Banner> : null}
               {recordsQuery.data && resolvedView ? (
                 resolvedView.type === 'GRID' ? (
-                  <GridView fields={fields} tables={tables} records={records} view={resolvedView} isSaving={updateRecordMutation.isPending} onRecordSelect={setSelectedRecord} onRecordChange={(recordId, values) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values })} onViewChange={saveViewConfig} />
+                  <GridView fields={fields} tables={tables} records={records} relationLookups={relationLookups} view={resolvedView} isSaving={updateRecordMutation.isPending} onRecordSelect={setSelectedRecord} onRecordChange={(recordId, values) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values })} onViewChange={saveViewConfig} />
                 ) : resolvedView.type === 'KANBAN' ? (
                   <KanbanView fields={fields} records={records} groupFieldKey={String(resolvedView.config.groupField ?? '') || undefined} isUpdating={updateRecordMutation.isPending} onGroupFieldChange={(groupField) => saveViewConfig({ ...resolvedView.config, groupField })} onRecordUpdate={(recordId, input) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values: input.values })} onOpenRecord={setSelectedRecord} />
                 ) : resolvedView.type === 'CALENDAR' ? (
@@ -236,8 +240,8 @@ export default function LibraryHomePage() {
         visible={isFieldManagerOpen}
         onClose={() => setIsFieldManagerOpen(false)}
         isSaving={createFieldMutation.isPending || updateFieldMutation.isPending || deleteFieldMutation.isPending}
-        onCreateField={(input) => createFieldMutation.mutate({ tableId: selectedTable.id, input })}
-        onUpdateField={(id, input) => updateFieldMutation.mutate({ id, input })}
+        onCreateField={(input) => createFieldMutation.mutateAsync({ tableId: selectedTable.id, input })}
+        onUpdateField={(id, input) => updateFieldMutation.mutateAsync({ id, input })}
         onDeleteField={(id) => deleteFieldMutation.mutate({ id })}
       /> : null}
 

@@ -13,7 +13,7 @@ import {
   updateBaseRecord,
   updateBaseView,
 } from './api'
-import type { BaseRecordQuery, CreateDataFieldInput, DataViewConfig, FormulaPreviewInput } from './types'
+import type { BaseRecord, BaseRecordQuery, CreateDataFieldInput, DataField, DataViewConfig, FormulaPreviewInput, RelationRecordLookup } from './types'
 
 export const baseKeys = {
   workspaces: ['base', 'workspaces'] as const,
@@ -78,6 +78,60 @@ export function useSelectedBaseRecords(tableId: string | null, recordIds: string
     isSuccess: results.length > 0 && results.every((result) => result.isSuccess),
     refetch: () => Promise.all(results.map((result) => result.refetch())),
   }
+}
+
+export function useGridRelationRecords(fields: DataField[], records: BaseRecord[]) {
+  const idsByTable = new Map<string, string[]>()
+  const seenByTable = new Map<string, Set<string>>()
+  for (const field of fields) {
+    if (field.type !== 'RELATION' || typeof field.config.targetTableId !== 'string') continue
+    const targetTableId = field.config.targetTableId
+    const ids = idsByTable.get(targetTableId) ?? []
+    const seen = seenByTable.get(targetTableId) ?? new Set<string>()
+    idsByTable.set(targetTableId, ids)
+    seenByTable.set(targetTableId, seen)
+    for (const record of records) {
+      const value = record.values[field.key]
+      const recordIds = Array.isArray(value) ? value : typeof value === 'string' ? [value] : []
+      for (const recordId of recordIds) {
+        if (typeof recordId !== 'string' || !recordId || seen.has(recordId)) continue
+        seen.add(recordId)
+        ids.push(recordId)
+      }
+    }
+  }
+  const batches = [...idsByTable].flatMap(([tableId, recordIds]) =>
+    Array.from({ length: Math.ceil(recordIds.length / 100) }, (_, index) => ({
+      tableId,
+      recordIds: recordIds.slice(index * 100, (index + 1) * 100),
+    }))
+  )
+  const results = useQueries({
+    queries: batches.map(({ tableId, recordIds }) => ({
+      queryKey: baseKeys.selectedRecords(tableId, recordIds),
+      queryFn: () => listBaseRecords(tableId, { recordIds, page: 1, pageSize: 100 }),
+    })),
+  })
+  const lookups = new Map<string, RelationRecordLookup>()
+  for (const [tableId] of idsByTable) {
+    const indexes = batches.flatMap((batch, index) => batch.tableId === tableId ? [index] : [])
+    const tableResults = indexes.map((index) => results[index]!)
+    const byId = new Map(
+      tableResults.flatMap((result) => result.data?.data ?? []).map((record) => [record.id, record])
+    )
+    const ordered = (idsByTable.get(tableId) ?? []).flatMap((id) => {
+      const record = byId.get(id)
+      return record ? [record] : []
+    })
+    lookups.set(tableId, {
+      records: ordered,
+      isPending: tableResults.some((result) => result.isPending),
+      isError: tableResults.some((result) => result.isError),
+      isSuccess: tableResults.every((result) => result.isSuccess),
+      refetch: () => Promise.all(tableResults.map((result) => result.refetch())),
+    })
+  }
+  return lookups
 }
 
 export function useCreateBaseTable() {
