@@ -524,6 +524,63 @@ describe('LibraryHomePage saved views', () => {
     })
   })
 
+  it('returns a paged gallery to page one when its saved result config changes', async () => {
+    const galleryView: DataView = {
+      ...views[0],
+      id: 'view-gallery',
+      name: '项目画册',
+      type: 'GALLERY',
+      config: {
+        titleFieldKey: 'title',
+        cardSize: 'STANDARD',
+        coverFit: 'COVER',
+        visibleFieldIds: ['field-status'],
+      },
+    }
+    api.listBaseWorkspaces.mockResolvedValue([
+      {
+        id: 'workspace-1',
+        name: '研发工作台',
+        description: null,
+        sequence: 0,
+        tables: [{ ...table, views: [galleryView] }],
+      },
+    ])
+    api.listBaseRecords.mockResolvedValue({
+      data: [],
+      meta: { page: 1, pageSize: 100, total: 101 },
+    })
+    api.updateBaseView.mockImplementation(
+      async (_id: string, input: { config: DataView['config'] }) => ({
+        ...galleryView,
+        config: input.config,
+      })
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await screen.findByRole('heading', { name: '研发工作台' })
+    await user.click(await screen.findByRole('button', { name: '下一页' }))
+    await waitFor(() =>
+      expect(api.listBaseRecords).toHaveBeenLastCalledWith('table-1', {
+        viewId: 'view-gallery',
+        page: 2,
+        pageSize: 100,
+      })
+    )
+
+    await user.click(screen.getByRole('button', { name: '视图设置' }))
+    await user.click(screen.getByRole('button', { name: '添加排序条件' }))
+    await user.selectOptions(screen.getByLabelText('排序字段 1'), 'score')
+    await waitFor(() =>
+      expect(api.listBaseRecords).toHaveBeenLastCalledWith('table-1', {
+        viewId: 'view-gallery',
+        page: 1,
+        pageSize: 100,
+      })
+    )
+  })
+
   it('serializes saves and never lets an older response replace a newer draft', async () => {
     const first = deferred<DataView>()
     const second = deferred<DataView>()

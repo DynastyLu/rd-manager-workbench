@@ -18,10 +18,10 @@
 - Modify: `frontend/src/modules/base/types.ts`
 - Modify: `backend/test/integration/prisma/data-table-catalog.spec.ts`
 
-- [ ] Add failing assertions for `GANTT` and `GALLERY`, run `cd backend && pnpm test:integration -- --runInBand data-table-catalog`, and confirm failure.
-- [ ] Add enum values with `ALTER TYPE ... ADD VALUE IF NOT EXISTS` and define `ViewFilter`, `ViewSort`, `GanttViewConfig`, and `GalleryViewConfig` exactly as the approved spec.
-- [ ] Run Prisma generation and the catalog test; expect PASS.
-- [ ] Commit with `feat: add advanced table view types`.
+- [x] Add failing assertions for `GANTT` and `GALLERY`, run `cd backend && pnpm test:integration -- --runInBand data-table-catalog`, and confirm failure.
+- [x] Add enum values with `ALTER TYPE ... ADD VALUE IF NOT EXISTS` and define `ViewFilter`, `ViewSort`, `GanttViewConfig`, and `GalleryViewConfig` exactly as the approved spec.
+- [x] Run Prisma generation and the catalog test; expect PASS.
+- [x] Commit with `feat: add advanced table view types`.
 
 ### Task 2: Execute saved views on the backend
 
@@ -35,8 +35,8 @@
 - Create: `backend/test/unit/modules/workbench/base/view-query.service.spec.ts`
 - Modify: `backend/test/integration/modules/workbench/base.controller.spec.ts`
 
-- [ ] Write failing tests for legacy conversion, 20-filter/5-sort limits, type-aware operators, ignored archived fields, AND evaluation, `viewId` ownership, and filtered `meta.total`.
-- [ ] Implement the normalized shape:
+- [x] Write failing tests for legacy conversion, 20-filter/5-sort limits, type-aware operators, ignored archived fields, AND evaluation, `viewId` ownership, and filtered `meta.total`.
+- [x] Implement the normalized shape:
 
 ```ts
 export interface NormalizedRecordQuery {
@@ -48,10 +48,10 @@ export interface NormalizedRecordQuery {
 }
 ```
 
-- [ ] Extend `ListRecordsQueryDto` with optional `viewId`; load and normalize its config before applying pagination.
-- [ ] Pass the same normalized query to `SystemRecordsAdapter`; reject computed-field filtering/sorting and foreign view IDs.
-- [ ] Run `pnpm test:unit -- --runInBand view-query` and `pnpm test:integration -- --runInBand base.controller`; expect PASS.
-- [ ] Commit with `feat: execute persisted table views`.
+- [x] Extend `ListRecordsQueryDto` with optional `viewId`; load and normalize its config before applying pagination.
+- [x] Pass the same normalized query to `SystemRecordsAdapter`; reject computed-field filtering/sorting and foreign view IDs.
+- [x] Run `pnpm test:unit -- --runInBand view-query` and `pnpm test:integration -- --runInBand base.controller`; expect PASS.
+- [x] Commit with `feat: execute persisted table views`.
 
 ### Task 3: Build the shared view settings drawer
 
@@ -64,11 +64,11 @@ export interface NormalizedRecordQuery {
 - Modify: `frontend/src/modules/base/types.ts`
 - Create: `frontend/src/modules/base/__tests__/ViewSettings.test.tsx`
 
-- [ ] Write failing tests that add two filters and two sorts, save them, switch views, restore independent configs, set a default, and roll back after a failed save.
-- [ ] Build field-type operator maps and value editors; prevent invalid conditions from calling `onSave`.
-- [ ] Replace inline view settings with the Semi `SideSheet`, preserving rename/delete and adding default-view action.
-- [ ] Query records with `viewId`, while the top search text remains a temporary override.
-- [ ] Run `cd frontend && pnpm test -- ViewSettings`; expect PASS, then commit with `feat: add saved personal table views`.
+- [x] Write failing tests that add two filters and two sorts, save them, switch views, restore independent configs, set a default, and roll back after a failed save.
+- [x] Build field-type operator maps and value editors; prevent invalid conditions from calling `onSave`.
+- [x] Replace inline view settings with the Semi `SideSheet`, preserving rename/delete and adding default-view action.
+- [x] Query records with `viewId`, while the top search text remains a temporary override.
+- [x] Run `cd frontend && pnpm test -- ViewSettings`; expect PASS, then commit with `feat: add saved personal table views`.
 
 ### Task 4: Implement Gantt view
 
@@ -79,11 +79,11 @@ export interface NormalizedRecordQuery {
 - Modify: `frontend/src/pages/LibraryHomePage.tsx`
 - Modify: `frontend/src/pages/LibraryHomePage.less`
 
-- [ ] Write failing tests for missing config, unplanned rows, end-before-start errors, day/week/month scale, today marker, read-only preset rows, move/resize payloads, and failed-update rollback.
-- [ ] Implement `shiftRange` and `resizeRange` as pure date helpers tested without DOM geometry.
-- [ ] Render a frozen record column and scrollable CSS-grid time axis; use pointer capture for move/resize and call existing `onRecordChange` with ISO dates.
-- [ ] Connect record click to the existing detail sheet/source path.
-- [ ] Run `cd frontend && pnpm test -- GanttView`; expect PASS, then commit with `feat: add gantt table view`.
+- [x] Write failing tests for missing config, unplanned rows, end-before-start errors, day/week/month scale, today marker, read-only preset rows, move/resize payloads, and failed-update rollback.
+- [x] Implement `shiftRange` and `resizeRange` as pure date helpers tested without DOM geometry.
+- [x] Render a frozen record column and scrollable CSS-grid time axis; use pointer capture for move/resize and call existing `onRecordChange` with ISO dates.
+- [x] Connect record click to the existing detail sheet/source path.
+- [x] Run `cd frontend && pnpm test -- GanttView`; expect PASS, then commit with `feat: add gantt table view`.
 
 ### Task 5: Implement Gallery view
 
@@ -94,10 +94,10 @@ export interface NormalizedRecordQuery {
 - Modify: `frontend/src/pages/LibraryHomePage.tsx`
 - Modify: `frontend/src/pages/LibraryHomePage.less`
 
-- [ ] Write failing tests for primary-title fallback, attachment/link cover, broken-image fallback, stable gradient placeholder, eight-field limit, three card sizes, and record open.
-- [ ] Implement cover resolution with `http/https` validation and deterministic title hashing for placeholder colors.
-- [ ] Render typed values and P1-01A computed errors without enabling inline edits.
-- [ ] Run `cd frontend && pnpm test -- GalleryView`; expect PASS, then commit with `feat: add gallery table view`.
+- [x] Write failing tests for primary-title fallback, attachment/link cover, broken-image fallback, stable gradient placeholder, eight-field limit, three card sizes, and record open.
+- [x] Implement cover resolution with `http/https` validation and deterministic title hashing for placeholder colors.
+- [x] Render typed values and P1-01A computed errors without enabling inline edits.
+- [x] Run `cd frontend && pnpm test -- GalleryView`; expect PASS, then commit with `feat: add gallery table view`.
 
 ### Task 6: Complete B verification
 
