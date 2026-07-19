@@ -386,6 +386,7 @@
 - 用户选择子代理驱动执行；主线程负责共享迁移、集成和双阶段复核，实施代理按任务顺序直接修改当前主工程，不创建 worktree。
 - P1-01A Task 1 完成：新增 LOOKUP/ROLLUP/FORMULA 枚举、独立迁移和前端受控类型；RED 三项断言失败，GREEN schema/migration 测试 17/17、Prisma generate、前端 typecheck 通过。规格复核通过；质量复核发现并补强迁移测试后批准。提交 `d59b178`、`3a9aea1`。
 - P1-01A Task 2 完成：安全 parser/evaluator 支持全部 DSL、2,000 字符/256 节点/32 深度限制、短路、数组、严格 ISO 日期和结构化错误。经规格与质量复核补齐日期溢出、未知异常传播、arity 预检、readonly AST 和对抗测试；最终 2 suites / 76 tests、lint、build、Prettier、diff-check 通过。提交 `1e8d276`、`fe0d826`、`d87e40a`。
+- P1-01A Task 3 完成：关系/LOOKUP/ROLLUP/FORMULA 配置规范化、服务器 AST、循环检测、key/type 不可变、局部 config PATCH 和 preview API 已接入。经复核补齐 server-owned inverse、COUNT 目标、prospective 依赖验证、生成时间预览、computed preview 明确拒绝和同事务 advisory lock；最终 unit 16/16、integration 8/8、lint/build/Prettier/diff-check 通过，并发相反公式 PATCH 为 `[200,400]` 且无循环。提交 `54b9777`、`42dac79`、`c4caf5b`。
 
 ## 2026-07-18：P0-A 飞书式工作台与项目空间完成
 

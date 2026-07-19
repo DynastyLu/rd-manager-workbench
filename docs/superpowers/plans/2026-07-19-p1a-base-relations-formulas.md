@@ -120,7 +120,7 @@ git commit -m "feat: add safe table formula engine"
 - Modify: `backend/src/modules/workbench/base/base.service.ts`
 - Create: `backend/test/unit/modules/workbench/base/field-config.service.spec.ts`
 
-- [ ] **Step 1: Test legal and illegal configurations**
+- [x] **Step 1: Test legal and illegal configurations**
 
 ```ts
 await expect(service.normalizeCreate(tableId, {
@@ -130,14 +130,14 @@ await expect(service.normalizeCreate(tableId, {
 await expect(service.normalizeCreate(tableId, formulaDependingOnItself)).rejects.toThrow('Circular computed field dependency')
 ```
 
-- [ ] **Step 2: Confirm the test fails, then implement the service**
+- [x] **Step 2: Confirm the test fails, then implement the service**
 
 Run: `cd backend && pnpm test:unit -- --runInBand field-config.service`  
 Expected before implementation: FAIL; after implementation: PASS.
 
 `FieldConfigService` must normalize server-owned formula AST/dependencies, forbid computed primary/required fields, keep `key` immutable on update, restrict LOOKUP/ROLLUP targets to base fields, and validate the complete same-table dependency graph.
 
-- [ ] **Step 3: Wire normalized configs into field CRUD and preview**
+- [x] **Step 3: Wire normalized configs into field CRUD and preview**
 
 ```ts
 @Post('tables/:tableId/formula-preview')
@@ -146,12 +146,12 @@ previewFormula(@Param('tableId') tableId: string, @Body() dto: FormulaPreviewDto
 }
 ```
 
-- [ ] **Step 4: Run unit and existing integration tests**
+- [x] **Step 4: Run unit and existing integration tests**
 
 Run: `cd backend && pnpm test:unit -- --runInBand field-config.service && pnpm test:integration -- --runInBand base.controller`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/modules/workbench/base backend/test/unit/modules/workbench/base
