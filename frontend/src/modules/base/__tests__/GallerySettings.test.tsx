@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { GallerySettingsSection } from '../components/GallerySettingsSection'
-import type { DataField, GalleryViewConfig } from '../types'
+import { ViewSettingsDrawer } from '../components/ViewSettingsDrawer'
+import type { DataField, DataView, GalleryViewConfig } from '../types'
 
 const fields: DataField[] = [
   { id: 'title-id', tableId: 'table', key: 'title', name: '事项', type: 'TEXT', config: {}, isPrimary: true, isRequired: true, sequence: 0, createdAt: '', updatedAt: '' },
@@ -13,6 +14,38 @@ const fields: DataField[] = [
 ]
 
 describe('GallerySettingsSection', () => {
+  it('is available inside the shared view settings drawer and uses its save flow', async () => {
+    const user = userEvent.setup()
+    const onConfigChange = vi.fn()
+    const view: DataView = {
+      id: 'gallery-view',
+      tableId: 'table',
+      name: '候选人画册',
+      type: 'GALLERY',
+      config: { cardSize: 'STANDARD' },
+      isDefault: false,
+      sequence: 1,
+      createdAt: '',
+      updatedAt: '',
+    }
+    render(
+      <ViewSettingsDrawer
+        visible
+        view={view}
+        fields={fields}
+        onClose={vi.fn()}
+        onConfigChange={onConfigChange}
+        onRename={vi.fn()}
+        onDelete={vi.fn()}
+        onSetDefault={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: '画册设置' })).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('画册卡片尺寸'), 'WIDE')
+    expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ cardSize: 'WIDE' }))
+  })
+
   it('updates all gallery-specific settings and only offers valid cover fields', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()

@@ -3,6 +3,7 @@ import { Button, Checkbox, Input, SideSheet } from '@douyinfe/semi-ui'
 
 import type { DataField, DataView, DataViewConfig, ViewSort } from '../types'
 import { isComputedFieldType, isFilterValid, normalizeClientViewConfig } from '../viewSettings'
+import { GallerySettingsSection } from './GallerySettingsSection'
 import { ViewFilterBuilder } from './ViewFilterBuilder'
 
 const SORT_LIMIT = 5
@@ -333,6 +334,9 @@ export function ViewSettingsDrawer({
 
         {view.type === 'GANTT' ? (
           <GanttSettings fields={fields} config={draft} onChange={updateDraft} />
+        ) : null}
+        {view.type === 'GALLERY' ? (
+          <GallerySettingsSection fields={fields} config={draft} onChange={updateDraft} />
         ) : null}
 
         <section className="view-settings__section">
