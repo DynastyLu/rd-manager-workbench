@@ -1,5 +1,10 @@
 import { DataFieldType, DataTableSource, DataViewType } from '@prisma/client';
 
+export interface ComputedFieldError {
+  code: 'INVALID_FORMULA' | 'TYPE_ERROR' | 'DIV_ZERO' | 'CYCLE' | 'MISSING_TARGET';
+  message: string;
+}
+
 export interface UnifiedDataRecord {
   id: string;
   values: Record<string, unknown>;
@@ -8,6 +13,7 @@ export interface UnifiedDataRecord {
   sourcePath: string;
   createdAt: Date;
   updatedAt: Date;
+  computedErrors?: Record<string, ComputedFieldError>;
 }
 
 export interface RecordQuery {

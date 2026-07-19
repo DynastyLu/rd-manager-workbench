@@ -1806,4 +1806,181 @@ describe('Multi-dimensional base API', () => {
       prisma.decision.findUniqueOrThrow({ where: { id: decision.id } }),
     ).resolves.toMatchObject({ projectId: secondProject.id });
   });
+
+  it('resolves computed values on every custom record response and rejects computed writes', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 计算响应工作区` })
+      .expect(201);
+    const [sourceTable, targetTable] = await Promise.all(
+      ['计算来源', '计算目标'].map((name) =>
+        request(app.getHttpServer())
+          .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+          .send({ name: `${prefix} ${name}` })
+          .expect(201),
+      ),
+    );
+    const sourceTableId = sourceTable.body.data.id as string;
+    const targetTableId = targetTable.body.data.id as string;
+    const targetTitle = targetTable.body.data.fields.find(
+      (field: { key: string }) => field.key === 'title',
+    );
+    const score = await request(app.getHttpServer())
+      .post(`/api/base/tables/${targetTableId}/fields`)
+      .send({ key: 'score', name: '评分', type: DataFieldType.NUMBER })
+      .expect(201);
+    const [targetA, targetB] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/api/base/tables/${targetTableId}/records`)
+        .send({ values: { title: '岗位甲', score: 80 } })
+        .expect(201),
+      request(app.getHttpServer())
+        .post(`/api/base/tables/${targetTableId}/records`)
+        .send({ values: { title: '岗位乙', score: 100 } })
+        .expect(201),
+    ]);
+    const relation = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'positions',
+        name: '岗位',
+        type: DataFieldType.RELATION,
+        config: { targetTableId, multiple: true, relationMode: 'ONE_WAY' },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'positionNames',
+        name: '岗位名称',
+        type: DataFieldType.LOOKUP,
+        config: { relationFieldId: relation.body.data.id, targetFieldId: targetTitle.id },
+      })
+      .expect(201);
+    const average = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'averageScore',
+        name: '平均评分',
+        type: DataFieldType.ROLLUP,
+        config: {
+          relationFieldId: relation.body.data.id,
+          targetFieldId: score.body.data.id,
+          aggregation: 'AVG',
+        },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'result',
+        name: '结果',
+        type: DataFieldType.FORMULA,
+        config: { expression: 'IF({averageScore} >= 90, "通过", "继续评估")' },
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/records`)
+      .send({ values: { title: '不可写', averageScore: 90 } })
+      .expect(400);
+
+    const created = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/records`)
+      .send({
+        values: {
+          title: '候选人',
+          positions: [targetB.body.data.id, targetA.body.data.id],
+        },
+      })
+      .expect(201);
+    expect(created.body.data.values).toMatchObject({
+      positionNames: ['岗位乙', '岗位甲'],
+      averageScore: 90,
+      result: '通过',
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/base/tables/${sourceTableId}/records/${created.body.data.id}`)
+      .send({ values: { result: '伪造结果' } })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`/api/base/tables/${sourceTableId}/records/${created.body.data.id}`)
+      .send({ values: { title: '候选人（更新）' } })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.values).toMatchObject({
+          title: '候选人（更新）',
+          positionNames: ['岗位乙', '岗位甲'],
+          averageScore: 90,
+          result: '通过',
+        });
+      });
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${sourceTableId}/records`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.data).toEqual([
+          expect.objectContaining({
+            id: created.body.data.id,
+            values: expect.objectContaining({
+              positionNames: ['岗位乙', '岗位甲'],
+              averageScore: 90,
+              result: '通过',
+            }),
+          }),
+        ]);
+      });
+
+    expect(average.body.data.isRequired).toBe(false);
+  });
+
+  it('resolves lookups whose target is a system preset table through its adapter', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 系统引用工作区` })
+      .expect(201);
+    const sourceTable = await request(app.getHttpServer())
+      .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+      .send({ name: `${prefix} 系统引用来源` })
+      .expect(201);
+    const projectTable = await prisma.dataTable.findFirstOrThrow({
+      where: { source: DataTableSource.PROJECTS, archivedAt: null },
+      include: { fields: { where: { archivedAt: null } } },
+    });
+    const projectName = projectTable.fields.find((field) => field.key === 'name')!;
+    const project = await prisma.project.create({
+      data: { code: `${prefix}-SYSTEM-LOOKUP`, name: `${prefix} 系统项目` },
+    });
+    const relation = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/fields`)
+      .send({
+        key: 'project',
+        name: '项目',
+        type: DataFieldType.RELATION,
+        config: {
+          targetTableId: projectTable.id,
+          multiple: false,
+          relationMode: 'ONE_WAY',
+        },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/fields`)
+      .send({
+        key: 'projectName',
+        name: '项目名称',
+        type: DataFieldType.LOOKUP,
+        config: { relationFieldId: relation.body.data.id, targetFieldId: projectName.id },
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/records`)
+      .send({ values: { title: '系统引用', project: project.id } })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data.values.projectName).toBe(`${prefix} 系统项目`);
+      });
+  });
 });

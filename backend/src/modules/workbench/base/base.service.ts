@@ -7,6 +7,7 @@ import {
 import { DataFieldType, DataTableSource, DataViewType, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../infrastructure/prisma/platform-prisma.service';
 import { SystemRecordsAdapter } from './adapters/system-records.adapter';
+import { ComputedFieldResolver } from './computed-field-resolver.service';
 import { DATA_TABLE_PRESETS } from './domain/base-presets';
 import { RecordQuery, UnifiedDataRecord } from './domain/base.types';
 import {
@@ -31,6 +32,7 @@ export class BaseService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly systemRecords: SystemRecordsAdapter,
+    private readonly computedFields: ComputedFieldResolver,
     private readonly fieldConfig: FieldConfigService,
     private readonly relationSync: RelationSyncService,
   ) {}
@@ -491,10 +493,11 @@ export class BaseService {
       }),
       this.generatedFields(tableId),
     ]);
-    return this.applyCustomQuery(
+    const page = this.applyCustomQuery(
       records.map((record) => this.toCustomRecord(record, generatedFields)),
       query,
     );
+    return { ...page, data: await this.computedFields.resolve(tableId, page.data) };
   }
 
   async createRecord(tableId: string, dto: RecordValuesDto) {
@@ -511,7 +514,8 @@ export class BaseService {
       await this.relationSync.syncRecord(tx, tableId, created.id, {}, dto.values);
       return created;
     });
-    return this.toCustomRecord(record, await this.generatedFields(tableId));
+    const raw = this.toCustomRecord(record, await this.generatedFields(tableId));
+    return (await this.computedFields.resolve(tableId, [raw]))[0];
   }
 
   async updateRecord(tableId: string, id: string, dto: RecordValuesDto) {
@@ -530,7 +534,7 @@ export class BaseService {
       if (!record) throw new NotFoundException('Data record not found');
       const oldValues = record.values as Values;
       const values = { ...oldValues, ...dto.values };
-      await this.validateRecordValues(tableId, values, true, tx);
+      await this.validateRecordValues(tableId, values, true, tx, dto.values);
       const result = await tx.dataRecord.update({
         where: { id },
         data: { values: values as Prisma.InputJsonValue },
@@ -538,7 +542,8 @@ export class BaseService {
       await this.relationSync.syncRecord(tx, tableId, id, oldValues, values);
       return result;
     });
-    return this.toCustomRecord(updated, await this.generatedFields(tableId));
+    const raw = this.toCustomRecord(updated, await this.generatedFields(tableId));
+    return (await this.computedFields.resolve(tableId, [raw]))[0];
   }
 
   async deleteRecord(tableId: string, id: string) {
@@ -623,11 +628,26 @@ export class BaseService {
     values: Values,
     requireFields: boolean,
     client: BaseDataClient = this.prisma,
+    suppliedValues: Values = values,
   ) {
     const fields = await client.dataField.findMany({ where: { tableId, archivedAt: null } });
     const fieldKeys = new Set(fields.map((field) => field.key));
     const unknown = Object.keys(values).filter((key) => !fieldKeys.has(key));
     if (unknown.length) throw new BadRequestException(`Unknown fields: ${unknown.join(', ')}`);
+    const computedWrites = fields
+      .filter(
+        (field) =>
+          (field.type === DataFieldType.LOOKUP ||
+            field.type === DataFieldType.ROLLUP ||
+            field.type === DataFieldType.FORMULA) &&
+          Object.prototype.hasOwnProperty.call(suppliedValues, field.key),
+      )
+      .map((field) => field.name);
+    if (computedWrites.length) {
+      throw new BadRequestException(
+        `Computed fields cannot be written: ${computedWrites.join(', ')}`,
+      );
+    }
     for (const field of fields) {
       if (
         values[field.key] === undefined ||
@@ -706,6 +726,12 @@ export class BaseService {
     if (requireFields) {
       const missing = fields
         .filter((field) => {
+          if (
+            field.type === DataFieldType.LOOKUP ||
+            field.type === DataFieldType.ROLLUP ||
+            field.type === DataFieldType.FORMULA
+          )
+            return false;
           const value = values[field.key];
           return (
             field.isRequired &&

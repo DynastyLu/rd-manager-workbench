@@ -49,6 +49,11 @@ export class SystemRecordsAdapter {
     return this.applyQuery(records, query);
   }
 
+  async findByIds(source: DataTableSource, ids: readonly string[]): Promise<UnifiedDataRecord[]> {
+    const requested = new Set(ids);
+    return (await this.load(source)).filter((record) => requested.has(record.id));
+  }
+
   async update(source: DataTableSource, recordId: string, values: Values) {
     this.assertWritable(source, recordId, values);
     switch (source) {
