@@ -93,6 +93,9 @@
 - P1-01D 可复用 `DATA_TABLE_PRESETS` 的声明式字段/视图定义模式，但业务模板应通过独立模板目录和事务创建自定义表，不能混入五张只读系统预置表初始化流程。
 - 用户确认模板只创建表结构、字段和视图，不生成示例记录；确认 P1-01A～D 采用现有底座分层扩展方案，不创建 Base V2 或第二套数据模型。
 - 导入导出复用受控本地存储 key 并新增可过期的导入会话；进阶视图以 `viewId` 在服务端执行保存筛选，保证分页总数和完整数据集过滤正确。
+- 实施文件映射确认：后端 Base 目前只有控制器集成测试，没有公式/查询/模板专用单元测试；计划需为新服务分别建立 focused unit tests，并扩展 `base.controller.spec.ts` 做真实 PostgreSQL 契约验收。
+- `LocalStorageAdapter` 已阻止 storage key 越界，但读写采用 Buffer；20 MiB 导入上限可安全复用，导出则必须直接通过响应流/生成 Buffer 后发送，不能复用页面 100 条分页结果。
+- `StorageModule` 虽在 AppModule 和 ContentModule 中导入，但 ContentModule 未重新导出它；Base 导入服务必须在 BaseModule 直接导入 StorageModule。CSV/XLSX 导出采用可写流，避免完整导出常驻内存。
 
 ## 视觉/浏览器发现
 - 需求文档共 6 页，包含 13 个表格、完整 P0/P1/P2 优先级和 MVP 验收标准。
