@@ -72,6 +72,7 @@ export class FieldConfigService {
       { id: field.id, key: field.key },
       false,
       dto,
+      field.type === DataFieldType.RELATION ? field.config : undefined,
     );
     return {
       ...dto,
@@ -119,10 +120,11 @@ export class FieldConfigService {
     proposedField: { id: string; key: string },
     isCreate: boolean,
     request: CreateFieldDto | UpdateFieldDto,
+    trustedRelationConfig?: Prisma.JsonValue,
   ): Promise<Record<string, Prisma.JsonValue>> {
     const config = this.jsonRecord(input ?? {});
     if (type === DataFieldType.RELATION) {
-      return this.normalizeRelation(config, tableId, isCreate, request);
+      return this.normalizeRelation(config, tableId, isCreate, request, trustedRelationConfig);
     }
     if (type === DataFieldType.LOOKUP) return this.normalizeLookup(config, tableId);
     if (type === DataFieldType.ROLLUP) return this.normalizeRollup(config, tableId);
@@ -137,6 +139,7 @@ export class FieldConfigService {
     sourceTableId: string,
     isCreate: boolean,
     request: CreateFieldDto | UpdateFieldDto,
+    trustedConfig?: Prisma.JsonValue,
   ): Promise<Record<string, Prisma.JsonValue>> {
     const targetTableId = this.requiredString(config.targetTableId, 'targetTableId');
     if (typeof config.multiple !== 'boolean') {
@@ -179,8 +182,13 @@ export class FieldConfigService {
       multiple: config.multiple,
       relationMode: config.relationMode,
     };
-    if (typeof config.inverseFieldId === 'string' && config.inverseFieldId.length > 0) {
-      normalized.inverseFieldId = config.inverseFieldId;
+    const trusted = trustedConfig ? this.jsonRecord(trustedConfig) : undefined;
+    if (
+      config.relationMode === 'TWO_WAY' &&
+      trusted?.targetTableId === targetTableId &&
+      typeof trusted.inverseFieldId === 'string'
+    ) {
+      normalized.inverseFieldId = trusted.inverseFieldId;
     }
     return normalized;
   }
@@ -213,9 +221,9 @@ export class FieldConfigService {
       throw new BadRequestException('Unsupported rollup aggregation');
     }
     const relation = await this.requireRelationField(tableId, relationFieldId);
+    const targetTableId = await this.requireRelationTargetTableId(relation.config);
     if (aggregation === 'COUNT') return { relationFieldId, aggregation };
     const targetFieldId = this.requiredString(config.targetFieldId, 'targetFieldId');
-    const targetTableId = await this.requireRelationTargetTableId(relation.config);
     const target = await this.prisma.dataField.findFirst({
       where: { id: targetFieldId, tableId: targetTableId, archivedAt: null },
     });

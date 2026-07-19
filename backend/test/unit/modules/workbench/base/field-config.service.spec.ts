@@ -56,6 +56,17 @@ describe('FieldConfigService', () => {
         relationMode: 'ONE_WAY',
       }),
       field('archived-target', archivedTableId, 'title', DataFieldType.TEXT),
+      field('missing-target-relation', currentTableId, 'missingProject', DataFieldType.RELATION, {
+        targetTableId: 'missing-table',
+        multiple: false,
+        relationMode: 'ONE_WAY',
+      }),
+      field('trusted-relation', currentTableId, 'trustedProject', DataFieldType.RELATION, {
+        targetTableId,
+        multiple: true,
+        relationMode: 'TWO_WAY',
+        inverseFieldId: 'trusted-inverse',
+      }),
     ];
     const prisma = {
       dataTable: {
@@ -81,28 +92,66 @@ describe('FieldConfigService', () => {
   });
 
   it('normalizes valid relations and defaults inverseMultiple on two-way creation', async () => {
-    await expect(
-      service.normalizeCreate(currentTableId, {
-        key: 'owner',
-        name: '负责人',
-        type: DataFieldType.RELATION,
-        config: {
-          targetTableId,
-          multiple: false,
-          relationMode: 'TWO_WAY',
-          inverseFieldName: '需求',
-          ast: { client: true },
-        },
-      }),
-    ).resolves.toMatchObject({
+    const twoWay = await service.normalizeCreate(currentTableId, {
+      key: 'owner',
+      name: '负责人',
+      type: DataFieldType.RELATION,
       config: {
         targetTableId,
         multiple: false,
         relationMode: 'TWO_WAY',
+        inverseFieldName: '需求',
+        inverseFieldId: 'forged-inverse',
+        ast: { client: true },
       },
+    });
+    expect(twoWay).toMatchObject({
+      config: { targetTableId, multiple: false, relationMode: 'TWO_WAY' },
       inverseFieldName: '需求',
       inverseMultiple: true,
     });
+    expect(twoWay.config).not.toHaveProperty('inverseFieldId');
+    await expect(
+      service.normalizeCreate(currentTableId, {
+        key: 'oneWayOwner',
+        name: '单向负责人',
+        type: DataFieldType.RELATION,
+        config: {
+          targetTableId,
+          multiple: false,
+          relationMode: 'ONE_WAY',
+          inverseFieldId: 'forged-one-way-inverse',
+        },
+      }),
+    ).resolves.not.toHaveProperty('config.inverseFieldId');
+  });
+
+  it('preserves only the trusted inverse field id while the two-way target is unchanged', async () => {
+    const trusted = fields.find((item) => item.id === 'trusted-relation')!;
+    const unchanged = await service.normalizeUpdate(trusted, {
+      config: {
+        targetTableId,
+        multiple: false,
+        relationMode: 'TWO_WAY',
+        inverseFieldId: 'forged-inverse',
+      },
+    });
+    expect(unchanged.config).toMatchObject({ inverseFieldId: 'trusted-inverse' });
+
+    const switchedMode = await service.normalizeUpdate(trusted, {
+      config: { targetTableId, multiple: true, relationMode: 'ONE_WAY' },
+    });
+    expect(switchedMode.config).not.toHaveProperty('inverseFieldId');
+
+    const changedTarget = await service.normalizeUpdate(trusted, {
+      config: {
+        targetTableId: currentTableId,
+        multiple: true,
+        relationMode: 'TWO_WAY',
+        inverseFieldId: 'forged-other-target-inverse',
+      },
+    });
+    expect(changedTarget.config).not.toHaveProperty('inverseFieldId');
   });
 
   it('rejects missing or archived relation targets and malformed relation options', async () => {
@@ -184,6 +233,17 @@ describe('FieldConfigService', () => {
     ).resolves.toMatchObject({
       config: { relationFieldId: 'relation', aggregation: 'COUNT' },
     });
+
+    for (const relationFieldId of ['archived-relation', 'missing-target-relation']) {
+      await expect(
+        service.normalizeCreate(currentTableId, {
+          key: `invalidCount${relationFieldId}`,
+          name: '失效关系数量',
+          type: DataFieldType.ROLLUP,
+          config: { relationFieldId, aggregation: 'COUNT' },
+        }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    }
 
     await expect(
       service.normalizeCreate(currentTableId, {
