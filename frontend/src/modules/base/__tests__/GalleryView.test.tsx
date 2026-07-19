@@ -93,6 +93,21 @@ describe('GalleryView', () => {
     expect(screen.getByRole('img')).toHaveAttribute('src', '/docs/design.jpg')
   })
 
+  it.each([
+    'file:///Users/example/private.png',
+    '//server/share/private.png',
+    'data:image/png;base64,AAAA',
+    '/Users/example/private.png',
+    '../private.png',
+  ])('rejects unmanaged local attachment source %s', (source) => {
+    renderGallery({
+      records: [{ ...records[0]!, values: { ...records[0]!.values, cover: [source] } }],
+    })
+
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+    expect(screen.getByTestId('gallery-placeholder-record-1')).toBeInTheDocument()
+  })
+
   it('accepts an http link cover and rejects unsafe protocols', () => {
     const { rerender } = renderGallery({ config: { ...config, coverFieldKey: 'imageLink' } })
     expect(screen.getByRole('img')).toHaveAttribute('src', 'https://img.example.com/link.png')
@@ -165,5 +180,15 @@ describe('GalleryView', () => {
 
     expect(onOpenRecord).toHaveBeenCalledWith(records[0])
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('renders server pagination instead of mounting every matching record', async () => {
+    const user = userEvent.setup()
+    const onPageChange = vi.fn()
+    renderGallery({ totalRecords: 205, page: 1, pageSize: 100, onPageChange })
+
+    expect(screen.getByText('第 1 / 3 页')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '下一页' }))
+    expect(onPageChange).toHaveBeenCalledWith(2)
   })
 })

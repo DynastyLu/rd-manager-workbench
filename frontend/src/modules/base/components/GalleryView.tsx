@@ -18,11 +18,19 @@ export function GalleryView({
   records,
   config,
   onOpenRecord,
+  totalRecords = records.length,
+  page = 1,
+  pageSize = 100,
+  onPageChange,
 }: {
   fields: DataField[]
   records: BaseRecord[]
   config: GalleryViewConfig
   onOpenRecord: (record: BaseRecord) => void
+  totalRecords?: number
+  page?: number
+  pageSize?: number
+  onPageChange?: (page: number) => void
 }) {
   const titleField = fields.find((field) => field.key === config.titleFieldKey)
     ?? fields.find((field) => field.isPrimary)
@@ -37,6 +45,8 @@ export function GalleryView({
       .slice(0, 8)
   }, [config.visibleFieldIds, coverField?.id, fields, titleField?.id])
 
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize))
+
   if (!records.length) {
     return (
       <section className="gallery-view gallery-view--empty" aria-label="画册视图">
@@ -46,21 +56,30 @@ export function GalleryView({
   }
 
   return (
-    <section className={`gallery-view gallery-view--${(config.cardSize ?? 'STANDARD').toLowerCase()}`} aria-label="画册视图">
-      {records.map((record) => {
-        const title = recordTitle(record, titleField)
-        return (
-          <GalleryCard
-            key={record.id}
-            record={record}
-            title={title}
-            coverField={coverField}
-            visibleFields={visibleFields}
-            config={config}
-            onOpen={() => onOpenRecord(record)}
-          />
-        )
-      })}
-    </section>
+    <div className="gallery-view-shell">
+      <section className={`gallery-view gallery-view--${(config.cardSize ?? 'STANDARD').toLowerCase()}`} aria-label="画册视图">
+        {records.map((record) => {
+          const title = recordTitle(record, titleField)
+          return (
+            <GalleryCard
+              key={record.id}
+              record={record}
+              title={title}
+              coverField={coverField}
+              visibleFields={visibleFields}
+              config={config}
+              onOpen={() => onOpenRecord(record)}
+            />
+          )
+        })}
+      </section>
+      {totalPages > 1 ? (
+        <nav className="gallery-view__pagination" aria-label="画册分页">
+          <button type="button" disabled={page <= 1} onClick={() => onPageChange?.(page - 1)}>上一页</button>
+          <span>第 {page} / {totalPages} 页</span>
+          <button type="button" disabled={page >= totalPages} onClick={() => onPageChange?.(page + 1)}>下一页</button>
+        </nav>
+      ) : null}
+    </div>
   )
 }

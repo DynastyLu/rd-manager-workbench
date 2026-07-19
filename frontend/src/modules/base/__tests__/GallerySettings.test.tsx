@@ -69,7 +69,7 @@ describe('GallerySettingsSection', () => {
   })
 
   it('disables unchecked fields after eight visible fields are selected', () => {
-    const manyFields = Array.from({ length: 9 }, (_, index): DataField => ({
+    const manyFields = Array.from({ length: 10 }, (_, index): DataField => ({
       id: `field-${index}`,
       tableId: 'table',
       key: `field${index}`,
@@ -85,12 +85,31 @@ describe('GallerySettingsSection', () => {
     render(
       <GallerySettingsSection
         fields={manyFields}
-        config={{ visibleFieldIds: manyFields.slice(0, 8).map((field) => field.id) }}
+        config={{ visibleFieldIds: manyFields.slice(1, 9).map((field) => field.id) }}
         onChange={vi.fn()}
       />,
     )
 
-    expect(screen.getByRole('checkbox', { name: '字段8' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: '字段9' })).toBeDisabled()
     expect(screen.getByText('8/8')).toBeInTheDocument()
+  })
+
+  it('does not count the selected title and cover as additional card fields', () => {
+    render(
+      <GallerySettingsSection
+        fields={fields}
+        config={{
+          titleFieldKey: 'title',
+          coverFieldKey: 'cover',
+          visibleFieldIds: ['title-id', 'cover-id', 'date-id'],
+        }}
+        onChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('checkbox', { name: '事项' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: '附件封面' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '日期' })).toBeChecked()
+    expect(screen.getByText('1/8')).toBeInTheDocument()
   })
 })

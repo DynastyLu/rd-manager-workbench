@@ -40,11 +40,11 @@ import './LibraryHomePage.less'
 
 const VIEW_SAVE_DELAY_MS = 350
 
-function viewQuery(viewId: string | undefined, temporaryQuery: string): BaseRecordQuery {
+function viewQuery(viewId: string | undefined, temporaryQuery: string, page = 1): BaseRecordQuery {
   return {
     ...(viewId ? { viewId } : {}),
     ...(temporaryQuery.trim() ? { query: temporaryQuery.trim() } : {}),
-    page: 1,
+    page,
     pageSize: 100,
   }
 }
@@ -112,6 +112,7 @@ export default function LibraryHomePage() {
   const [isFieldManagerOpen, setIsFieldManagerOpen] = useState(false)
   const [isViewSaving, setIsViewSaving] = useState(false)
   const [configSaveCount, setConfigSaveCount] = useState(0)
+  const [galleryPagination, setGalleryPagination] = useState({ key: '', page: 1 })
   const [selectedRecord, setSelectedRecord] = useState<BaseRecord | null>(null)
   const serverViewConfigs = useRef(new Map<string, DataViewConfig>())
   const latestDraftConfigs = useRef(new Map<string, DataViewConfig>())
@@ -148,14 +149,16 @@ export default function LibraryHomePage() {
     () => views.map((view) => (view.id === resolvedView?.id ? resolvedView : view)),
     [resolvedView, views]
   )
+  const galleryPageKey = `${selectedTable?.id ?? ''}:${resolvedView?.id ?? ''}:${temporaryQuery}`
+  const galleryPage = galleryPagination.key === galleryPageKey ? galleryPagination.page : 1
   const recordQuery = useMemo(
-    () => viewQuery(resolvedView?.id, temporaryQuery),
-    [resolvedView?.id, temporaryQuery]
+    () => viewQuery(resolvedView?.id, temporaryQuery, resolvedView?.type === 'GALLERY' ? galleryPage : 1),
+    [galleryPage, resolvedView?.id, resolvedView?.type, temporaryQuery]
   )
-  const isAdvancedView = resolvedView?.type === 'GANTT' || resolvedView?.type === 'GALLERY'
-  const pagedRecordsQuery = useBaseRecords(selectedTable?.id ?? null, recordQuery, !isAdvancedView)
-  const allRecordsQuery = useAllBaseRecords(selectedTable?.id ?? null, recordQuery, isAdvancedView)
-  const recordsQuery = isAdvancedView ? allRecordsQuery : pagedRecordsQuery
+  const isGanttView = resolvedView?.type === 'GANTT'
+  const pagedRecordsQuery = useBaseRecords(selectedTable?.id ?? null, recordQuery, !isGanttView)
+  const allRecordsQuery = useAllBaseRecords(selectedTable?.id ?? null, recordQuery, isGanttView)
+  const recordsQuery = isGanttView ? allRecordsQuery : pagedRecordsQuery
   const activeViewIdRef = useRef<string | null>(resolvedView?.id ?? null)
   activeViewIdRef.current = resolvedView?.id ?? null
   const viewConfigSave = useDebouncedViewConfigSave(async (id, config) => {
@@ -426,6 +429,10 @@ export default function LibraryHomePage() {
                     records={records}
                     config={resolvedView.config}
                     onOpenRecord={setSelectedRecord}
+                    totalRecords={recordsQuery.data.meta.total}
+                    page={galleryPage}
+                    pageSize={recordQuery.pageSize ?? 100}
+                    onPageChange={(page) => setGalleryPagination({ key: galleryPageKey, page })}
                   />
                 ) : (
                   <FormView

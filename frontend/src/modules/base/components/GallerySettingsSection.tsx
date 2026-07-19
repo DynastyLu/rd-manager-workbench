@@ -12,8 +12,12 @@ export function GallerySettingsSection({
   onChange: (config: GalleryViewConfig) => void
 }) {
   const coverFields = fields.filter((field) => field.type === 'ATTACHMENT' || field.type === 'LINK')
+  const titleField = fields.find((field) => field.key === config.titleFieldKey)
+    ?? fields.find((field) => field.isPrimary)
+  const coverField = fields.find((field) => field.key === config.coverFieldKey)
+  const additionalFields = fields.filter((field) => field.id !== titleField?.id && field.id !== coverField?.id)
   const visibleIds = [...new Set(config.visibleFieldIds ?? [])].filter((id) =>
-    fields.some((field) => field.id === id))
+    additionalFields.some((field) => field.id === id))
   const atLimit = visibleIds.length >= VISIBLE_FIELD_LIMIT
 
   return (
@@ -29,7 +33,16 @@ export function GallerySettingsSection({
         <select
           aria-label="画册标题字段"
           value={config.titleFieldKey ?? ''}
-          onChange={(event) => onChange({ ...config, titleFieldKey: event.target.value || undefined })}
+          onChange={(event) => {
+            const titleFieldKey = event.target.value || undefined
+            const nextTitle = fields.find((field) => field.key === titleFieldKey)
+              ?? fields.find((field) => field.isPrimary)
+            onChange({
+              ...config,
+              titleFieldKey,
+              visibleFieldIds: visibleIds.filter((id) => id !== nextTitle?.id && id !== coverField?.id),
+            })
+          }}
         >
           <option value="">主字段</option>
           {fields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
@@ -40,7 +53,15 @@ export function GallerySettingsSection({
         <select
           aria-label="画册封面字段"
           value={config.coverFieldKey ?? ''}
-          onChange={(event) => onChange({ ...config, coverFieldKey: event.target.value || undefined })}
+          onChange={(event) => {
+            const coverFieldKey = event.target.value || undefined
+            const nextCover = fields.find((field) => field.key === coverFieldKey)
+            onChange({
+              ...config,
+              coverFieldKey,
+              visibleFieldIds: visibleIds.filter((id) => id !== titleField?.id && id !== nextCover?.id),
+            })
+          }}
         >
           <option value="">无封面</option>
           {coverFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
@@ -73,7 +94,7 @@ export function GallerySettingsSection({
       </div>
       <fieldset className="view-settings__gallery-fields">
         <legend>卡片字段 <span>{visibleIds.length}/{VISIBLE_FIELD_LIMIT}</span></legend>
-        {fields.map((field) => {
+        {additionalFields.map((field) => {
           const checked = visibleIds.includes(field.id)
           return (
             <label key={field.id}>

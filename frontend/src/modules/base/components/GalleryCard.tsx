@@ -18,12 +18,20 @@ function safeImageSource(value: unknown, allowWithoutExtension = false) {
   if (!source) return null
   const hasImageExtension = /\.(?:avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i.test(source)
   if (!allowWithoutExtension && !hasImageExtension) return null
-  if (/^(?:\/|\.\.?\/)/.test(source)) return source
   try {
     const url = new URL(source)
-    return ['http:', 'https:', 'file:'].includes(url.protocol) ? url.toString() : null
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : null
   } catch {
-    return !source.includes(':') ? source : null
+    const normalized = source.startsWith('docs/') ? `/${source}` : source
+    if (normalized.startsWith('//')) return null
+    let decoded = normalized
+    try {
+      decoded = decodeURIComponent(normalized)
+    } catch {
+      return null
+    }
+    if (decoded.split(/[\\/]/).includes('..')) return null
+    return /^\/(?:docs|api\/files)\//.test(normalized) ? normalized : null
   }
 }
 
@@ -95,7 +103,7 @@ function PlainValue({ field, value }: { field: DataField; value: unknown }) {
       </span>
     )
   }
-  if (typeof value === 'object') return <span>{JSON.stringify(value)}</span>
+  if (typeof value === 'object') return <span>{valueText(value)}</span>
   return <span>{valueText(value)}</span>
 }
 
