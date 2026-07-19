@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 
 import type { BaseRecord, DataField, GalleryViewConfig } from '../types'
 import { GalleryCard } from './GalleryCard'
@@ -11,6 +11,26 @@ function recordTitle(record: BaseRecord, titleField: DataField | undefined) {
     if (title) return title
   }
   return '未命名记录'
+}
+
+function GalleryPagination({
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  page: number
+  totalPages: number
+  onPageChange?: (page: number) => void
+}) {
+  if (totalPages <= 1) return null
+  const displayedPage = Math.min(page, totalPages)
+  return (
+    <nav className="gallery-view__pagination" aria-label="画册分页">
+      <button type="button" disabled={displayedPage <= 1} onClick={() => onPageChange?.(displayedPage - 1)}>上一页</button>
+      <span>第 {displayedPage} / {totalPages} 页</span>
+      <button type="button" disabled={displayedPage >= totalPages} onClick={() => onPageChange?.(displayedPage + 1)}>下一页</button>
+    </nav>
+  )
 }
 
 export function GalleryView({
@@ -46,12 +66,18 @@ export function GalleryView({
   }, [config.visibleFieldIds, coverField?.id, fields, titleField?.id])
 
   const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize))
+  useEffect(() => {
+    if (page > totalPages) onPageChange?.(totalPages)
+  }, [onPageChange, page, totalPages])
 
   if (!records.length) {
     return (
-      <section className="gallery-view gallery-view--empty" aria-label="画册视图">
-        <p>当前筛选条件下没有记录</p>
-      </section>
+      <div className="gallery-view-shell">
+        <section className="gallery-view gallery-view--empty" aria-label="画册视图">
+          <p>{totalRecords ? '当前页没有记录' : '当前筛选条件下没有记录'}</p>
+        </section>
+        <GalleryPagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
+      </div>
     )
   }
 
@@ -73,13 +99,7 @@ export function GalleryView({
           )
         })}
       </section>
-      {totalPages > 1 ? (
-        <nav className="gallery-view__pagination" aria-label="画册分页">
-          <button type="button" disabled={page <= 1} onClick={() => onPageChange?.(page - 1)}>上一页</button>
-          <span>第 {page} / {totalPages} 页</span>
-          <button type="button" disabled={page >= totalPages} onClick={() => onPageChange?.(page + 1)}>下一页</button>
-        </nav>
-      ) : null}
+      <GalleryPagination page={page} totalPages={totalPages} onPageChange={onPageChange} />
     </div>
   )
 }

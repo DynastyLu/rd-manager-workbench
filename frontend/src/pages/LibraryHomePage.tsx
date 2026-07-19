@@ -149,7 +149,14 @@ export default function LibraryHomePage() {
     () => views.map((view) => (view.id === resolvedView?.id ? resolvedView : view)),
     [resolvedView, views]
   )
-  const galleryPageKey = `${selectedTable?.id ?? ''}:${resolvedView?.id ?? ''}:${temporaryQuery}`
+  const galleryResultConfig = resolvedView?.type === 'GALLERY'
+    ? JSON.stringify({
+        query: resolvedView.config.query,
+        filters: resolvedView.config.filters,
+        sorts: resolvedView.config.sorts,
+      })
+    : ''
+  const galleryPageKey = `${selectedTable?.id ?? ''}:${resolvedView?.id ?? ''}:${temporaryQuery}:${galleryResultConfig}`
   const galleryPage = galleryPagination.key === galleryPageKey ? galleryPagination.page : 1
   const recordQuery = useMemo(
     () => viewQuery(resolvedView?.id, temporaryQuery, resolvedView?.type === 'GALLERY' ? galleryPage : 1),

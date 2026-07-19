@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -190,5 +190,14 @@ describe('GalleryView', () => {
     expect(screen.getByText('第 1 / 3 页')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '下一页' }))
     expect(onPageChange).toHaveBeenCalledWith(2)
+  })
+
+  it('clamps an empty out-of-range page after filtering or deleting records', async () => {
+    const onPageChange = vi.fn()
+    renderGallery({ records: [], totalRecords: 205, page: 4, pageSize: 100, onPageChange })
+
+    await waitFor(() => expect(onPageChange).toHaveBeenCalledWith(3))
+    expect(screen.getByText('当前页没有记录')).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: '画册分页' })).toBeInTheDocument()
   })
 })
