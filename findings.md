@@ -99,6 +99,9 @@
 - 公式 evaluator 必须只捕获自身 `FormulaEvaluationFailure`；未知编程异常应继续抛出。日期函数仅接受严格带时区 ISO 日期时间或有效 Date，且必须在 `toISOString` 前检查溢出。
 - 字段配置 create/update 必须在同表 advisory transaction lock 内用同一 TransactionClient 完成读取、依赖图验证和写入，避免并发公式更新形成循环；归档字段恢复必须复用原 ID。
 - 后续双向关系任务需明确拒绝在非 TWO_WAY RELATION 上提交顶层 inverse 选项；关系依赖校验当前为低频串行查询，可在 P1-01A 收尾时评估批量化。
+- 双向关系除了记录写入原子性，还必须覆盖表/字段生命周期：有活跃入站或出站关系的表禁止归档，有非空存量值时禁止直接修改目标表或多值基数，避免悬挂 ID 和静默丢数。
+- 表归档和表内写入必须共用同一组稳定 advisory locks，并在取得锁后用同一事务重新确认表仍 active；只在锁前查询会留下“等待期间已归档、拿锁后继续写”的竞态窗口。
+- 系统预置关系与规范化自定义关系的空值语义不同：自定义关系以 `targetTableId` 配置识别并拒绝空 ID，`DOCUMENTS.projectId` 等系统字段仍保留 `""` 清空为 `null` 的适配器契约。
 
 ## 视觉/浏览器发现
 - 需求文档共 6 页，包含 13 个表格、完整 P0/P1/P2 优先级和 MVP 验收标准。

@@ -166,16 +166,16 @@ git commit -m "feat: validate relational and computed fields"
 - Modify: `backend/src/modules/workbench/base/base.module.ts`
 - Modify: `backend/test/integration/modules/workbench/base.controller.spec.ts`
 
-- [ ] **Step 1: Add failing integration cases**
+- [x] **Step 1: Add failing integration cases**
 
 Create two custom tables and assert: paired inverse field creation, one-to-many add/remove, one-to-one conflict returns 409, deleting one field converts its inverse to one-way, and rollback leaves both records unchanged.
 
-- [ ] **Step 2: Run the integration test and confirm failure**
+- [x] **Step 2: Run the integration test and confirm failure**
 
 Run: `cd backend && pnpm test:integration -- --runInBand base.controller`  
 Expected: FAIL on inverse relation assertions.
 
-- [ ] **Step 3: Implement stable-lock synchronization**
+- [x] **Step 3: Implement stable-lock synchronization**
 
 ```ts
 const affectedIds = [...new Set([...previousIds, ...nextIds, sourceRecordId])].sort()
@@ -188,7 +188,7 @@ await tx.$executeRaw(Prisma.sql`
 
 Compute added/removed ID sets once, update inverse JSON values without recursive hooks, and reject cardinality violations before writes.
 
-- [ ] **Step 4: Run integration tests and commit**
+- [x] **Step 4: Run integration tests and commit**
 
 Run: `cd backend && pnpm test:integration -- --runInBand base.controller`  
 Expected: PASS.
