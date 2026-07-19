@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { DataFieldType } from '@prisma/client';
+import { DataFieldType, DataViewType } from '@prisma/client';
 import {
   NormalizedRecordQuery,
   RecordQuery,
@@ -7,7 +7,7 @@ import {
   ViewFilterOperator,
 } from './domain/base.types';
 
-type QueryField = { key: string; type: DataFieldType };
+type QueryField = { key: string; type: DataFieldType; archivedAt?: Date | null };
 type ConfigObject = Record<string, unknown>;
 
 const COMPUTED_TYPES = new Set<DataFieldType>([
@@ -67,65 +67,26 @@ export class ViewQueryService {
     fields: readonly QueryField[],
     rawConfig: unknown,
     request: RecordQuery = {},
+    viewType?: DataViewType,
   ): NormalizedRecordQuery {
-    const config = this.object(rawConfig);
-    const rawFilters = Array.isArray(config.filters)
-      ? config.filters
-      : typeof config.filterField === 'string' && config.filterField
-        ? [
-            {
-              fieldKey: config.filterField,
-              operator: 'EQ',
-              value: config.filterValue,
-            },
-          ]
-        : [];
-    const rawSorts = Array.isArray(config.sorts)
-      ? config.sorts
-      : typeof config.sortField === 'string' && config.sortField
-        ? [
-            {
-              fieldKey: config.sortField,
-              direction: config.sortOrder === 'desc' ? 'desc' : 'asc',
-            },
-          ]
-        : [];
-    if (rawFilters.length > 20)
-      throw new BadRequestException('A view can contain at most 20 filters');
-    if (rawSorts.length > 5) throw new BadRequestException('A view can contain at most 5 sorts');
-
+    const config = this.normalizeConfig(fields, rawConfig, viewType);
     const fieldByKey = new Map(fields.map((field) => [field.key, field]));
-    const filters = rawFilters.flatMap((raw) => {
+    const filters = (config.filters as unknown[]).flatMap((raw) => {
       const value = this.object(raw);
-      if (typeof value.fieldKey !== 'string' || typeof value.operator !== 'string')
-        throw new BadRequestException('Invalid saved filter');
-      const field = fieldByKey.get(value.fieldKey);
-      if (!field) return [];
-      this.assertBaseField(field);
-      if (!ALL_OPERATORS.has(value.operator as ViewFilterOperator))
-        throw new BadRequestException(`Unsupported filter operator: ${value.operator}`);
-      const operator = value.operator as ViewFilterOperator;
-      if (!this.operatorsFor(field.type).has(operator))
-        throw new BadRequestException(
-          `Operator ${operator} is not supported for field ${field.key}`,
-        );
-      const normalizedValue = this.normalizeValue(field.type, operator, value.value);
+      const field = fieldByKey.get(value.fieldKey as string)!;
+      if (field.archivedAt) return [];
       return [
         {
           fieldKey: field.key,
-          operator,
-          ...(!VALUELESS_OPERATORS.has(operator) ? { value: normalizedValue } : {}),
+          operator: value.operator as ViewFilterOperator,
+          ...('value' in value ? { value: value.value } : {}),
         },
       ];
     });
-    const sorts = rawSorts.flatMap((raw) => {
+    const sorts = (config.sorts as unknown[]).flatMap((raw) => {
       const value = this.object(raw);
-      if (typeof value.fieldKey !== 'string') throw new BadRequestException('Invalid saved sort');
-      const field = fieldByKey.get(value.fieldKey);
-      if (!field) return [];
-      this.assertBaseField(field);
-      if (value.direction !== 'asc' && value.direction !== 'desc')
-        throw new BadRequestException('Saved sort direction must be asc or desc');
+      const field = fieldByKey.get(value.fieldKey as string)!;
+      if (field.archivedAt) return [];
       return [
         {
           fieldKey: field.key,
@@ -143,6 +104,33 @@ export class ViewQueryService {
       page: request.page ?? 1,
       pageSize: request.pageSize ?? 100,
     };
+  }
+
+  normalizeConfig(
+    fields: readonly QueryField[],
+    rawConfig: unknown,
+    viewType?: DataViewType,
+  ): ConfigObject {
+    const config = this.object(rawConfig);
+    const rawFilters = this.rawFilters(config);
+    const rawSorts = this.rawSorts(config);
+    if (rawFilters.length > 20)
+      throw new BadRequestException('A view can contain at most 20 filters');
+    if (rawSorts.length > 5) throw new BadRequestException('A view can contain at most 5 sorts');
+    const fieldByKey = new Map(fields.map((field) => [field.key, field]));
+    const filters = rawFilters.map((raw) => this.normalizeFilter(fieldByKey, raw));
+    const sorts = rawSorts.map((raw) => this.normalizeSort(fieldByKey, raw));
+    this.validateFieldReference(fieldByKey, config.groupField, 'groupField');
+    if (viewType === DataViewType.GANTT) {
+      this.validateFieldReference(fieldByKey, config.startFieldKey, 'startFieldKey', true);
+      this.validateFieldReference(fieldByKey, config.endFieldKey, 'endFieldKey', true);
+    }
+    const normalized: ConfigObject = { ...config, filters, sorts };
+    delete normalized.filterField;
+    delete normalized.filterValue;
+    delete normalized.sortField;
+    delete normalized.sortOrder;
+    return normalized;
   }
 
   apply(records: readonly UnifiedDataRecord[], query: NormalizedRecordQuery) {
@@ -178,6 +166,92 @@ export class ViewQueryService {
         total: indexed.length,
       },
     };
+  }
+
+  private rawFilters(config: ConfigObject): unknown[] {
+    if (config.filters !== undefined && !Array.isArray(config.filters))
+      throw new BadRequestException('Saved filters must be an array');
+    if (Array.isArray(config.filters)) return config.filters;
+    return typeof config.filterField === 'string' && config.filterField
+      ? [
+          {
+            fieldKey: config.filterField,
+            operator: 'EQ',
+            value: config.filterValue,
+          },
+        ]
+      : [];
+  }
+
+  private rawSorts(config: ConfigObject): unknown[] {
+    if (config.sorts !== undefined && !Array.isArray(config.sorts))
+      throw new BadRequestException('Saved sorts must be an array');
+    if (Array.isArray(config.sorts)) return config.sorts;
+    return typeof config.sortField === 'string' && config.sortField
+      ? [
+          {
+            fieldKey: config.sortField,
+            direction: config.sortOrder === 'desc' ? 'desc' : 'asc',
+          },
+        ]
+      : [];
+  }
+
+  private normalizeFilter(fieldByKey: Map<string, QueryField>, raw: unknown) {
+    const value = this.object(raw);
+    if (typeof value.fieldKey !== 'string' || typeof value.operator !== 'string')
+      throw new BadRequestException('Invalid saved filter');
+    const field = this.field(fieldByKey, value.fieldKey);
+    if (field.archivedAt) return { ...value };
+    this.assertBaseField(field);
+    if (!ALL_OPERATORS.has(value.operator as ViewFilterOperator))
+      throw new BadRequestException(`Unsupported filter operator: ${value.operator}`);
+    const operator = value.operator as ViewFilterOperator;
+    if (!this.operatorsFor(field.type).has(operator))
+      throw new BadRequestException(`Operator ${operator} is not supported for field ${field.key}`);
+    const normalizedValue = this.normalizeValue(field.type, operator, value.value);
+    return {
+      fieldKey: field.key,
+      operator,
+      ...(!VALUELESS_OPERATORS.has(operator) ? { value: normalizedValue } : {}),
+    };
+  }
+
+  private normalizeSort(fieldByKey: Map<string, QueryField>, raw: unknown) {
+    const value = this.object(raw);
+    if (typeof value.fieldKey !== 'string') throw new BadRequestException('Invalid saved sort');
+    const field = this.field(fieldByKey, value.fieldKey);
+    if (field.archivedAt) return { ...value };
+    this.assertBaseField(field);
+    if (value.direction !== 'asc' && value.direction !== 'desc')
+      throw new BadRequestException('Saved sort direction must be asc or desc');
+    return { fieldKey: field.key, direction: value.direction };
+  }
+
+  private validateFieldReference(
+    fieldByKey: Map<string, QueryField>,
+    key: unknown,
+    property: string,
+    requireDate = false,
+  ) {
+    if (key === undefined || key === null || key === '') return;
+    if (typeof key !== 'string') throw new BadRequestException(`${property} must be a field key`);
+    const field = this.field(fieldByKey, key);
+    if (field.archivedAt) return;
+    this.assertBaseField(field);
+    if (
+      requireDate &&
+      field.type !== DataFieldType.DATETIME &&
+      field.type !== DataFieldType.CREATED_AT &&
+      field.type !== DataFieldType.UPDATED_AT
+    )
+      throw new BadRequestException('Gantt axes must use date fields');
+  }
+
+  private field(fieldByKey: Map<string, QueryField>, key: string) {
+    const field = fieldByKey.get(key);
+    if (!field) throw new BadRequestException(`Unknown view field: ${key}`);
+    return field;
   }
 
   private matches(actual: unknown, filter: NormalizedRecordQuery['filters'][number]): boolean {
@@ -250,6 +324,8 @@ export class ViewQueryService {
       return new Date(value).toISOString();
     }
     if (type === DataFieldType.CHECKBOX) {
+      if (value === 'true') return true;
+      if (value === 'false') return false;
       if (typeof value !== 'boolean')
         throw new BadRequestException('Checkbox filter value must be boolean');
       return value;

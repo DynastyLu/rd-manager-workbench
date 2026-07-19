@@ -12,6 +12,7 @@ describe('ViewQueryService', () => {
     field('labels', DataFieldType.MULTI_SELECT),
     field('done', DataFieldType.CHECKBOX),
     field('computed', DataFieldType.FORMULA),
+    field('archived_field', DataFieldType.TEXT, new Date('2026-07-01T00:00:00.000Z')),
   ];
 
   it('converts legacy filters and sorts and enforces configured limits', () => {
@@ -64,6 +65,11 @@ describe('ViewQueryService', () => {
         sorts: [{ fieldKey: 'archived_field', direction: 'asc' }],
       }),
     ).toMatchObject({ filters: [], sorts: [] });
+    expect(() =>
+      service.normalize(fields, {
+        filters: [{ fieldKey: 'never_existed', operator: 'EQ', value: 'old' }],
+      }),
+    ).toThrow('Unknown view field: never_existed');
     expect(() =>
       service.normalize(fields, {
         filters: [
@@ -143,10 +149,46 @@ describe('ViewQueryService', () => {
       pageSize: 20,
     });
   });
+
+  it('normalizes legacy config on save, including checkbox string compatibility', () => {
+    expect(
+      service.normalizeConfig(fields, {
+        filterField: 'done',
+        filterValue: 'true',
+        sortField: 'score',
+        sortOrder: 'desc',
+        customFutureKey: { retained: true },
+      }),
+    ).toEqual({
+      filters: [{ fieldKey: 'done', operator: 'EQ', value: true }],
+      sorts: [{ fieldKey: 'score', direction: 'desc' }],
+      customFutureKey: { retained: true },
+    });
+  });
+
+  it('rejects computed grouping and computed or non-date Gantt axes', () => {
+    expect(() => service.normalizeConfig(fields, { groupField: 'computed' })).toThrow(
+      'Computed fields cannot be used in saved queries',
+    );
+    expect(() =>
+      service.normalizeConfig(
+        fields,
+        { startFieldKey: 'computed', endFieldKey: 'dueAt' },
+        'GANTT',
+      ),
+    ).toThrow('Computed fields cannot be used in saved queries');
+    expect(() =>
+      service.normalizeConfig(
+        fields,
+        { startFieldKey: 'score', endFieldKey: 'dueAt' },
+        'GANTT',
+      ),
+    ).toThrow('Gantt axes must use date fields');
+  });
 });
 
-function field(key: string, type: DataFieldType) {
-  return { key, type };
+function field(key: string, type: DataFieldType, archivedAt: Date | null = null) {
+  return { key, type, archivedAt };
 }
 
 function record(id: string, values: Record<string, unknown>): UnifiedDataRecord {

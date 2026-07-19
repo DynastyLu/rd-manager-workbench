@@ -509,10 +509,15 @@ export class BaseService {
       };
     }
     const fields = await this.prisma.dataField.findMany({
-      where: { tableId, archivedAt: null },
-      select: { key: true, type: true },
+      where: { tableId },
+      select: { key: true, type: true, archivedAt: true },
     });
-    const normalizedQuery = this.viewQuery.normalize(fields, view?.config ?? query, query);
+    const normalizedQuery = this.viewQuery.normalize(
+      fields,
+      view?.config ?? query,
+      query,
+      view?.type,
+    );
     if (table.source !== DataTableSource.CUSTOM)
       return this.systemRecords.list(table.source, normalizedQuery);
     const [records, generatedFields] = await Promise.all([
@@ -611,10 +616,15 @@ export class BaseService {
     return this.prisma.$transaction(async (tx) => {
       await this.relationSync.lockTableConfigs(tx, [tableId]);
       await this.assertActiveTable(tx, tableId);
+      const fields = await tx.dataField.findMany({
+        where: { tableId },
+        select: { key: true, type: true, archivedAt: true },
+      });
+      const config = this.viewQuery.normalizeConfig(fields, dto.config ?? {}, dto.type);
       if (dto.isDefault)
         await tx.dataView.updateMany({ where: { tableId }, data: { isDefault: false } });
       return tx.dataView.create({
-        data: { ...dto, tableId, config: (dto.config ?? {}) as Prisma.InputJsonValue },
+        data: { ...dto, tableId, config: config as Prisma.InputJsonValue },
       });
     });
   }
@@ -632,10 +642,25 @@ export class BaseService {
           where: { tableId: view.tableId },
           data: { isDefault: false },
         });
-      const { config, ...fields } = dto;
+      const { config, ...viewFields } = dto;
+      const normalizedConfig = config
+        ? this.viewQuery.normalizeConfig(
+            await tx.dataField.findMany({
+              where: { tableId: view.tableId },
+              select: { key: true, type: true, archivedAt: true },
+            }),
+            config,
+            dto.type ?? current.type,
+          )
+        : undefined;
       return tx.dataView.update({
         where: { id },
-        data: { ...fields, ...(config ? { config: config as Prisma.InputJsonValue } : {}) },
+        data: {
+          ...viewFields,
+          ...(normalizedConfig
+            ? { config: normalizedConfig as Prisma.InputJsonValue }
+            : {}),
+        },
       });
     });
   }

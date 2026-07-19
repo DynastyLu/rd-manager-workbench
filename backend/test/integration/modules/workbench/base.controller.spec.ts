@@ -2117,17 +2117,29 @@ describe('Multi-dimensional base API', () => {
         config: { expression: '{score}' },
       })
       .expect(201);
-    const computedView = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post(`/api/base/tables/${tableId}/views`)
       .send({
         name: '非法计算筛选',
         type: 'GRID',
         config: { filters: [{ fieldKey: 'scoreCopy', operator: 'EQ', value: 90 }] },
       })
-      .expect(201);
+      .expect(400);
     await request(app.getHttpServer())
-      .get(`/api/base/tables/${tableId}/records`)
-      .query({ viewId: computedView.body.data.id })
+      .post(`/api/base/tables/${tableId}/views`)
+      .send({
+        name: '非法甘特轴',
+        type: 'GANTT',
+        config: { startFieldKey: 'scoreCopy', endFieldKey: 'score' },
+      })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/views`)
+      .send({
+        name: '非法字段',
+        type: 'GRID',
+        config: { filters: [{ fieldKey: 'foreignField', operator: 'EQ', value: 'x' }] },
+      })
       .expect(400);
 
     const legacyField = await request(app.getHttpServer())
@@ -2147,6 +2159,10 @@ describe('Multi-dimensional base API', () => {
         },
       })
       .expect(201);
+    expect(archivedView.body.data.config).toEqual({
+      filters: [{ fieldKey: 'legacy', operator: 'EQ', value: 'old' }],
+      sorts: [{ fieldKey: 'legacy', direction: 'asc' }],
+    });
     await request(app.getHttpServer())
       .delete(`/api/base/fields/${legacyField.body.data.id}`)
       .expect(204);
