@@ -50,8 +50,9 @@ export class SystemRecordsAdapter {
   }
 
   async findByIds(source: DataTableSource, ids: readonly string[]): Promise<UnifiedDataRecord[]> {
-    const requested = new Set(ids);
-    return (await this.load(source)).filter((record) => requested.has(record.id));
+    const requested = [...new Set(ids)].filter((id) => id.length > 0);
+    if (requested.length === 0) return [];
+    return this.load(source, requested);
   }
 
   async update(source: DataTableSource, recordId: string, values: Values) {
@@ -120,44 +121,69 @@ export class SystemRecordsAdapter {
       default:
         throw new BadRequestException('Custom records are not handled by the system adapter');
     }
-    const record = (await this.load(source)).find((candidate) => candidate.id === recordId);
+    const record = (await this.findByIds(source, [recordId]))[0];
     if (!record) throw new NotFoundException('Record not found');
     return record;
   }
 
-  private async load(source: DataTableSource): Promise<UnifiedDataRecord[]> {
+  private async load(
+    source: DataTableSource,
+    ids?: readonly string[],
+  ): Promise<UnifiedDataRecord[]> {
     switch (source) {
       case DataTableSource.PROJECTS:
-        return (await this.prisma.project.findMany({ where: { archivedAt: null }, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }] })).map((item) => ({
+        return (await this.prisma.project.findMany({
+          where: { archivedAt: null, ...(ids ? { id: { in: [...ids] } } : {}) },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        })).map((item) => ({
           id: item.id,
           values: this.pick(item, ['name', 'code', 'status', 'phase', 'leadName', 'plannedStartAt', 'plannedEndAt', 'updatedAt']),
           sourceType: 'PROJECT', sourceId: item.id, sourcePath: `/spaces/projects/${item.id}/overview`, createdAt: item.createdAt, updatedAt: item.updatedAt,
         }));
       case DataTableSource.WORK_TASKS:
-        return (await this.prisma.workTask.findMany({ where: { archivedAt: null }, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }] })).map((item) => ({
+        return (await this.prisma.workTask.findMany({
+          where: { archivedAt: null, ...(ids ? { id: { in: [...ids] } } : {}) },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        })).map((item) => ({
           id: item.id,
           values: this.pick(item, ['title', 'status', 'priority', 'assigneeName', 'dueAt', 'projectId', 'description', 'updatedAt']),
           sourceType: 'WORK_TASK', sourceId: item.id, sourcePath: `/my-work?taskId=${item.id}`, createdAt: item.createdAt, updatedAt: item.updatedAt,
         }));
       case DataTableSource.MEETING_ACTIONS:
-        return this.loadMeetingRecords();
+        return this.loadMeetingRecords(ids);
       case DataTableSource.DOCUMENTS:
-        return (await this.prisma.contentDocument.findMany({ where: { status: 'ACTIVE' }, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }] })).map((item) => ({
+        return (await this.prisma.contentDocument.findMany({
+          where: { status: 'ACTIVE', ...(ids ? { id: { in: [...ids] } } : {}) },
+          orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        })).map((item) => ({
           id: item.id,
           values: this.pick(item, ['title', 'type', 'tags', 'isFavorite', 'projectId', 'spaceId', 'updatedAt']),
           sourceType: item.type === 'KNOWLEDGE_PAGE' ? 'KNOWLEDGE_PAGE' : 'DOCUMENT', sourceId: item.id, sourcePath: `/docs?documentId=${item.id}`, createdAt: item.createdAt, updatedAt: item.updatedAt,
         }));
       case DataTableSource.RISKS_DECISIONS:
-        return this.loadGovernance();
+        return this.loadGovernance(ids);
       default:
         return [];
     }
   }
 
-  private async loadGovernance(): Promise<UnifiedDataRecord[]> {
+  private async loadGovernance(ids?: readonly string[]): Promise<UnifiedDataRecord[]> {
+    const riskIds = this.compositeIds(ids, 'RISK');
+    const decisionIds = this.compositeIds(ids, 'DECISION');
     const [risks, decisions] = await Promise.all([
-      this.prisma.risk.findMany({ where: { archivedAt: null } }),
-      this.prisma.decision.findMany({ where: { archivedAt: null } }),
+      riskIds?.length === 0
+        ? Promise.resolve([])
+        : this.prisma.risk.findMany({
+            where: { archivedAt: null, ...(riskIds ? { id: { in: riskIds } } : {}) },
+          }),
+      decisionIds?.length === 0
+        ? Promise.resolve([])
+        : this.prisma.decision.findMany({
+            where: {
+              archivedAt: null,
+              ...(decisionIds ? { id: { in: decisionIds } } : {}),
+            },
+          }),
     ]);
     return [
       ...risks.map((item) => ({
@@ -171,10 +197,21 @@ export class SystemRecordsAdapter {
     ].sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
   }
 
-  private async loadMeetingRecords(): Promise<UnifiedDataRecord[]> {
+  private async loadMeetingRecords(ids?: readonly string[]): Promise<UnifiedDataRecord[]> {
+    const meetingIds = this.compositeIds(ids, 'MEETING');
+    const actionIds = this.compositeIds(ids, 'ACTION');
     const [meetings, actions] = await Promise.all([
-      this.prisma.meeting.findMany({ where: { archivedAt: null } }),
-      this.prisma.meetingAction.findMany({ where: { archivedAt: null }, include: { meeting: { select: { title: true } } } }),
+      meetingIds?.length === 0
+        ? Promise.resolve([])
+        : this.prisma.meeting.findMany({
+            where: { archivedAt: null, ...(meetingIds ? { id: { in: meetingIds } } : {}) },
+          }),
+      actionIds?.length === 0
+        ? Promise.resolve([])
+        : this.prisma.meetingAction.findMany({
+            where: { archivedAt: null, ...(actionIds ? { id: { in: actionIds } } : {}) },
+            include: { meeting: { select: { title: true } } },
+          }),
     ]);
     return [
       ...meetings.map((item) => ({
@@ -266,6 +303,16 @@ export class SystemRecordsAdapter {
   private parseCompositeId(recordId: string): [string, string] {
     const separator = recordId.indexOf(':');
     return separator > 0 ? [recordId.slice(0, separator), recordId.slice(separator + 1)] : ['', recordId];
+  }
+  private compositeIds(
+    ids: readonly string[] | undefined,
+    expectedKind: string,
+  ): string[] | undefined {
+    if (!ids) return undefined;
+    return ids.flatMap((recordId) => {
+      const [kind, id] = this.parseCompositeId(recordId);
+      return kind === expectedKind && id.length > 0 ? [id] : [];
+    });
   }
   private assertWritable(source: DataTableSource, recordId: string, values: Values) {
     let allowed: ReadonlySet<string>;
