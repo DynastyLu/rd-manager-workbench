@@ -189,6 +189,34 @@ describe('GanttView', () => {
     expect(onConfigChange).toHaveBeenNthCalledWith(2, expect.objectContaining({ scale: 'MONTH' }))
   })
 
+  it('scrolls the timeline to the today marker when the view opens', () => {
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(240)
+    const { container } = renderGantt({ records: [records[0]!] })
+
+    expect(container.querySelector<HTMLElement>('.gantt-timeline__scroller')?.scrollLeft).toBeGreaterThan(0)
+    width.mockRestore()
+  })
+
+  it('moves a one-day bar backed by the same start and end field', async () => {
+    const onRecordChange = vi.fn().mockResolvedValue(undefined)
+    const oneDayRecord: BaseRecord = {
+      ...records[0]!,
+      values: { title: '单日发布', startAt: '2026-07-20T09:00:00.000Z' },
+    }
+    renderGantt({
+      records: [oneDayRecord],
+      config: { ...config, startFieldKey: 'startAt', endFieldKey: 'startAt' },
+      onRecordChange,
+    })
+
+    expect(screen.queryByLabelText('调整“单日发布”的开始时间')).not.toBeInTheDocument()
+    drag(screen.getByTestId('gantt-bar-scheduled'), 100, 140)
+
+    await waitFor(() => expect(onRecordChange).toHaveBeenCalledWith('scheduled', {
+      startAt: '2026-07-21T09:00:00.000Z',
+    }))
+  })
+
   it('keeps preset rows read-only when either date field disallows its record type', () => {
     const readOnlyFields: DataField[] = [
       fields[0]!,

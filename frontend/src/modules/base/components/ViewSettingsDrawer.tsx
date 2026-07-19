@@ -108,6 +108,131 @@ function SortBuilder({
   )
 }
 
+const GANTT_TITLE_FIELD_TYPES = new Set<DataField['type']>([
+  'TEXT',
+  'LONG_TEXT',
+  'NUMBER',
+  'DATETIME',
+  'SINGLE_SELECT',
+  'LINK',
+  'LOOKUP',
+  'ROLLUP',
+  'FORMULA',
+  'CREATED_AT',
+  'UPDATED_AT',
+])
+
+function GanttSettings({
+  fields,
+  config,
+  onChange,
+}: {
+  fields: DataField[]
+  config: DataViewConfig
+  onChange: (config: DataViewConfig) => void
+}) {
+  const primaryField = fields.find((field) => field.isPrimary)
+  const titleFields = fields.filter(
+    (field) => field.isPrimary || GANTT_TITLE_FIELD_TYPES.has(field.type)
+  )
+  const dateFields = fields.filter((field) => field.type === 'DATETIME')
+  const selectedTitleExists = !config.titleFieldKey
+    || titleFields.some((field) => field.key === config.titleFieldKey)
+  const selectedStartExists = !config.startFieldKey
+    || dateFields.some((field) => field.key === config.startFieldKey)
+  const selectedEndExists = !config.endFieldKey
+    || dateFields.some((field) => field.key === config.endFieldKey)
+
+  return (
+    <section className="view-settings__section" aria-labelledby="gantt-settings-heading">
+      <div className="view-settings__section-heading">
+        <div>
+          <h3 id="gantt-settings-heading">甘特设置</h3>
+          <p>日期字段可相同；同字段会显示为单日任务条</p>
+        </div>
+      </div>
+      <label className="view-settings__stacked-field">
+        <span>标题字段</span>
+        <select
+          aria-label="甘特标题字段"
+          value={String(config.titleFieldKey ?? '')}
+          onChange={(event) => onChange({
+            ...config,
+            titleFieldKey: event.target.value || undefined,
+          })}
+        >
+          <option value="">跟随主字段{primaryField ? `（${primaryField.name}）` : ''}</option>
+          {!selectedTitleExists ? <option value={config.titleFieldKey}>失效字段</option> : null}
+          {titleFields.map((field) => (
+            <option key={field.id} value={field.key}>
+              {field.name}{field.isPrimary ? '（主字段）' : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="view-settings__stacked-field">
+        <span>开始字段</span>
+        <select
+          aria-label="甘特开始字段"
+          value={String(config.startFieldKey ?? '')}
+          onChange={(event) => onChange({
+            ...config,
+            startFieldKey: event.target.value || undefined,
+          })}
+        >
+          <option value="">请选择基础日期字段</option>
+          {!selectedStartExists ? <option value={config.startFieldKey}>失效字段</option> : null}
+          {dateFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
+        </select>
+      </label>
+      <label className="view-settings__stacked-field">
+        <span>结束字段</span>
+        <select
+          aria-label="甘特结束字段"
+          value={String(config.endFieldKey ?? '')}
+          onChange={(event) => onChange({
+            ...config,
+            endFieldKey: event.target.value || undefined,
+          })}
+        >
+          <option value="">请选择基础日期字段</option>
+          {!selectedEndExists ? <option value={config.endFieldKey}>失效字段</option> : null}
+          {dateFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
+        </select>
+      </label>
+      <label className="view-settings__stacked-field">
+        <span>时间缩放</span>
+        <select
+          aria-label="甘特缩放"
+          value={config.scale ?? 'WEEK'}
+          onChange={(event) => onChange({
+            ...config,
+            scale: event.target.value as NonNullable<DataViewConfig['scale']>,
+          })}
+        >
+          <option value="DAY">日</option>
+          <option value="WEEK">周</option>
+          <option value="MONTH">月</option>
+        </select>
+      </label>
+      <label className="view-settings__stacked-field">
+        <span>行高</span>
+        <select
+          aria-label="甘特行高"
+          value={config.rowHeight ?? 'STANDARD'}
+          onChange={(event) => onChange({
+            ...config,
+            rowHeight: event.target.value as NonNullable<DataViewConfig['rowHeight']>,
+          })}
+        >
+          <option value="COMPACT">紧凑</option>
+          <option value="STANDARD">标准</option>
+        </select>
+      </label>
+    </section>
+  )
+}
+
 interface ViewSettingsDrawerProps {
   visible: boolean
   view: DataView
@@ -205,6 +330,10 @@ export function ViewSettingsDrawer({
           sorts={draft.sorts ?? []}
           onChange={(sorts) => updateDraft({ ...draft, sorts })}
         />
+
+        {view.type === 'GANTT' ? (
+          <GanttSettings fields={fields} config={draft} onChange={updateDraft} />
+        ) : null}
 
         <section className="view-settings__section">
           <div className="view-settings__section-heading">
