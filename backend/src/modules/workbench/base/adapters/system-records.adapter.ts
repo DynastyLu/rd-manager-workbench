@@ -18,7 +18,8 @@ import { MeetingsService } from '../../management/application/meetings.service';
 import { RisksService } from '../../management/application/risks.service';
 import { ProjectsService } from '../../projects/application/projects.service';
 import { TasksService } from '../../tasks/application/tasks.service';
-import { RecordQuery, UnifiedDataRecord } from '../domain/base.types';
+import { NormalizedRecordQuery, UnifiedDataRecord } from '../domain/base.types';
+import { ViewQueryService } from '../view-query.service';
 
 type Values = Record<string, unknown>;
 
@@ -42,11 +43,12 @@ export class SystemRecordsAdapter {
     private readonly documents: DocumentsService,
     private readonly risks: RisksService,
     private readonly decisions: DecisionsService,
+    private readonly viewQuery: ViewQueryService,
   ) {}
 
-  async list(source: DataTableSource, query: RecordQuery) {
+  async list(source: DataTableSource, query: NormalizedRecordQuery) {
     const records = await this.load(source);
-    return this.applyQuery(records, query);
+    return this.viewQuery.apply(records, query);
   }
 
   async findByIds(source: DataTableSource, ids: readonly string[]): Promise<UnifiedDataRecord[]> {
@@ -257,26 +259,6 @@ export class SystemRecordsAdapter {
       return;
     }
     throw new BadRequestException('Governance record id must include RISK: or DECISION:');
-  }
-
-  private applyQuery(records: UnifiedDataRecord[], query: RecordQuery) {
-    const searched = query.query
-      ? records.filter((record) => JSON.stringify(record.values).toLocaleLowerCase().includes(query.query!.toLocaleLowerCase()))
-      : records;
-    const filtered = query.filterField
-      ? searched.filter((record) => String(record.values[query.filterField!] ?? '') === String(query.filterValue ?? ''))
-      : searched;
-    const sorted = query.sortField
-      ? [...filtered].sort((left, right) => this.compare(left.values[query.sortField!], right.values[query.sortField!], query.sortOrder))
-      : filtered;
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 100;
-    return { data: sorted.slice((page - 1) * pageSize, page * pageSize), meta: { page, pageSize, total: sorted.length } };
-  }
-
-  private compare(left: unknown, right: unknown, order: 'asc' | 'desc' = 'asc') {
-    const direction = order === 'desc' ? -1 : 1;
-    return String(left ?? '').localeCompare(String(right ?? ''), 'zh-CN', { numeric: true }) * direction;
   }
 
   private pick<T extends object>(source: T, keys: string[]) {

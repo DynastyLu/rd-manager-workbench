@@ -18,6 +18,7 @@ export interface UnifiedDataRecord {
 
 export interface RecordQuery {
   recordIds?: string[];
+  viewId?: string;
   query?: string;
   filterField?: string;
   filterValue?: string;
@@ -25,6 +26,29 @@ export interface RecordQuery {
   sortOrder?: 'asc' | 'desc';
   page?: number;
   pageSize?: number;
+}
+
+export type ViewFilterOperator =
+  | 'EQ'
+  | 'NE'
+  | 'CONTAINS'
+  | 'NOT_CONTAINS'
+  | 'EMPTY'
+  | 'NOT_EMPTY'
+  | 'GT'
+  | 'GTE'
+  | 'LT'
+  | 'LTE'
+  | 'BEFORE'
+  | 'AFTER'
+  | 'IN';
+
+export interface NormalizedRecordQuery {
+  query?: string;
+  filters: Array<{ fieldKey: string; operator: ViewFilterOperator; value?: unknown }>;
+  sorts: Array<{ fieldKey: string; direction: 'asc' | 'desc' }>;
+  page: number;
+  pageSize: number;
 }
 
 export interface PresetField {

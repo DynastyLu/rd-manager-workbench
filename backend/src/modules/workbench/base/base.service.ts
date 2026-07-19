@@ -24,6 +24,7 @@ import {
 } from './dto/base.dto';
 import { FieldConfigService } from './field-config.service';
 import { RelationSyncService } from './relation-sync.service';
+import { ViewQueryService } from './view-query.service';
 
 const DEFAULT_WORKSPACE_ID = 'rd-workbench-default-data-workspace';
 
@@ -35,6 +36,7 @@ export class BaseService {
     private readonly computedFields: ComputedFieldResolver,
     private readonly fieldConfig: FieldConfigService,
     private readonly relationSync: RelationSyncService,
+    private readonly viewQuery: ViewQueryService,
   ) {}
 
   async ensureDefaultWorkspace() {
@@ -484,6 +486,12 @@ export class BaseService {
 
   async listRecords(tableId: string, query: RecordQuery) {
     const table = await this.assertTable(tableId);
+    const view = query.viewId
+      ? await this.prisma.dataView.findUnique({ where: { id: query.viewId } })
+      : null;
+    if (query.viewId && !view) throw new NotFoundException('Data view not found');
+    if (view && view.tableId !== tableId)
+      throw new BadRequestException('Data view does not belong to this table');
     if (query.recordIds?.length) {
       const ids = [...new Set(query.recordIds)];
       const records =
@@ -500,8 +508,13 @@ export class BaseService {
         meta: { page: 1, pageSize: query.pageSize ?? 100, total: ordered.length },
       };
     }
+    const fields = await this.prisma.dataField.findMany({
+      where: { tableId, archivedAt: null },
+      select: { key: true, type: true },
+    });
+    const normalizedQuery = this.viewQuery.normalize(fields, view?.config ?? query, query);
     if (table.source !== DataTableSource.CUSTOM)
-      return this.systemRecords.list(table.source, query);
+      return this.systemRecords.list(table.source, normalizedQuery);
     const [records, generatedFields] = await Promise.all([
       this.prisma.dataRecord.findMany({
         where: { tableId },
@@ -509,9 +522,9 @@ export class BaseService {
       }),
       this.generatedFields(tableId),
     ]);
-    const page = this.applyCustomQuery(
+    const page = this.viewQuery.apply(
       records.map((record) => this.toCustomRecord(record, generatedFields)),
-      query,
+      normalizedQuery,
     );
     return { ...page, data: await this.computedFields.resolve(tableId, page.data) };
   }
@@ -770,36 +783,6 @@ export class BaseService {
       if (missing.length)
         throw new BadRequestException(`Required fields missing: ${missing.join(', ')}`);
     }
-  }
-
-  private applyCustomQuery(records: UnifiedDataRecord[], query: RecordQuery) {
-    let result = query.query
-      ? records.filter((record) =>
-          JSON.stringify(record.values)
-            .toLocaleLowerCase()
-            .includes(query.query!.toLocaleLowerCase()),
-        )
-      : records;
-    if (query.filterField)
-      result = result.filter(
-        (record) =>
-          String(record.values[query.filterField!] ?? '') === String(query.filterValue ?? ''),
-      );
-    if (query.sortField)
-      result = [...result].sort(
-        (left, right) =>
-          String(left.values[query.sortField!] ?? '').localeCompare(
-            String(right.values[query.sortField!] ?? ''),
-            'zh-CN',
-            { numeric: true },
-          ) * (query.sortOrder === 'desc' ? -1 : 1),
-      );
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 100;
-    return {
-      data: result.slice((page - 1) * pageSize, page * pageSize),
-      meta: { page, pageSize, total: result.length },
-    };
   }
 
   private toCustomRecord(

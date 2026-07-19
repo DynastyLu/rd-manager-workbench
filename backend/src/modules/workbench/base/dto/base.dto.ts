@@ -96,6 +96,7 @@ export class ListRecordsQueryDto {
   @IsNotEmpty({ each: true })
   @MaxLength(300, { each: true })
   recordIds?: string[];
+  @Transform(trim) @IsOptional() @IsString() @IsNotEmpty() @MaxLength(300) viewId?: string;
   @Transform(trim) @IsOptional() @IsString() @MaxLength(500) query?: string;
   @Transform(trim) @IsOptional() @IsString() @MaxLength(100) filterField?: string;
   @Transform(trim) @IsOptional() @IsString() @MaxLength(500) filterValue?: string;

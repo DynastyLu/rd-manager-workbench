@@ -1,6 +1,7 @@
 import { DataTableSource } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../../src/infrastructure/prisma/platform-prisma.service';
 import { SystemRecordsAdapter } from '../../../../../src/modules/workbench/base/adapters/system-records.adapter';
+import { ViewQueryService } from '../../../../../src/modules/workbench/base/view-query.service';
 
 describe('SystemRecordsAdapter.findByIds', () => {
   let prisma: Record<string, { findMany: jest.Mock }>;
@@ -26,6 +27,7 @@ describe('SystemRecordsAdapter.findByIds', () => {
       {} as never,
       {} as never,
       {} as never,
+      new ViewQueryService(),
     );
   });
 

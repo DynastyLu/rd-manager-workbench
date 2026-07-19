@@ -2031,6 +2031,163 @@ describe('Multi-dimensional base API', () => {
       });
   });
 
+  it('executes persisted views before pagination for custom and system records', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 保存视图工作区` })
+      .expect(201);
+    const [table, otherTable] = await Promise.all(
+      ['保存筛选', '其他表'].map((name) =>
+        request(app.getHttpServer())
+          .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+          .send({ name: `${prefix} ${name}` })
+          .expect(201),
+      ),
+    );
+    const tableId = table.body.data.id as string;
+    const score = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/fields`)
+      .send({ key: 'score', name: '评分', type: DataFieldType.NUMBER })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/fields`)
+      .send({ key: 'status', name: '状态', type: DataFieldType.SINGLE_SELECT })
+      .expect(201);
+    const records = await Promise.all(
+      [
+        { title: `${prefix} 甲`, score: 90, status: 'OPEN' },
+        { title: `${prefix} 乙`, score: 80, status: 'OPEN' },
+        { title: `${prefix} 丙`, score: 100, status: 'CLOSED' },
+      ].map((values) =>
+        request(app.getHttpServer())
+          .post(`/api/base/tables/${tableId}/records`)
+          .send({ values })
+          .expect(201),
+      ),
+    );
+    const view = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/views`)
+      .send({
+        name: '高分开放项',
+        type: 'GRID',
+        config: {
+          query: prefix,
+          filters: [
+            { fieldKey: 'status', operator: 'EQ', value: 'OPEN' },
+            { fieldKey: 'score', operator: 'GTE', value: 80 },
+          ],
+          sorts: [{ fieldKey: 'score', direction: 'desc' }],
+        },
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${tableId}/records`)
+      .query({ viewId: view.body.data.id, pageSize: 1 })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.meta).toEqual({ page: 1, pageSize: 1, total: 2 });
+        expect(body.data.data.map((record: { id: string }) => record.id)).toEqual([
+          records[0].body.data.id,
+        ]);
+      });
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${tableId}/records`)
+      .query({ viewId: view.body.data.id, query: '乙' })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.meta.total).toBe(1);
+        expect(body.data.data[0].id).toBe(records[1].body.data.id);
+      });
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${otherTable.body.data.id}/records`)
+      .query({ viewId: view.body.data.id, recordIds: records[0].body.data.id })
+      .expect(400);
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${tableId}/records`)
+      .query({ viewId: 'missing-view-id' })
+      .expect(404);
+
+    const formula = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/fields`)
+      .send({
+        key: 'scoreCopy',
+        name: '评分副本',
+        type: DataFieldType.FORMULA,
+        config: { expression: '{score}' },
+      })
+      .expect(201);
+    const computedView = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/views`)
+      .send({
+        name: '非法计算筛选',
+        type: 'GRID',
+        config: { filters: [{ fieldKey: 'scoreCopy', operator: 'EQ', value: 90 }] },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${tableId}/records`)
+      .query({ viewId: computedView.body.data.id })
+      .expect(400);
+
+    const legacyField = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/fields`)
+      .send({ key: 'legacy', name: '已归档字段', type: DataFieldType.TEXT })
+      .expect(201);
+    const archivedView = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/views`)
+      .send({
+        name: '归档字段兼容',
+        type: 'GRID',
+        config: {
+          filterField: 'legacy',
+          filterValue: 'old',
+          sortField: 'legacy',
+          sortOrder: 'asc',
+        },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .delete(`/api/base/fields/${legacyField.body.data.id}`)
+      .expect(204);
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${tableId}/records`)
+      .query({ viewId: archivedView.body.data.id })
+      .expect(200)
+      .expect(({ body }) => expect(body.data.meta.total).toBe(3));
+
+    const project = await prisma.project.create({
+      data: { code: `${prefix}-VIEW-SYSTEM`, name: `${prefix} 系统保存视图` },
+    });
+    const projectTable = await prisma.dataTable.findFirstOrThrow({
+      where: { source: DataTableSource.PROJECTS, archivedAt: null },
+    });
+    const systemView = await request(app.getHttpServer())
+      .post(`/api/base/tables/${projectTable.id}/views`)
+      .send({
+        name: `${prefix} 系统筛选`,
+        type: 'GRID',
+        config: {
+          filters: [{ fieldKey: 'code', operator: 'CONTAINS', value: 'VIEW-SYSTEM' }],
+        },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${projectTable.id}/records`)
+      .query({ viewId: systemView.body.data.id })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.meta.total).toBe(1);
+        expect(body.data.data[0].id).toBe(project.id);
+      });
+    await request(app.getHttpServer())
+      .delete(`/api/base/views/${systemView.body.data.id}`)
+      .expect(204);
+
+    expect(score.body.data.key).toBe('score');
+    expect(formula.body.data.config.dependencies).toEqual([score.body.data.id]);
+  });
+
   it('reads exact selected custom and composite system records by stable ids', async () => {
     const workspace = await request(app.getHttpServer())
       .post('/api/base/workspaces')

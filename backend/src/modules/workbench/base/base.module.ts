@@ -9,6 +9,7 @@ import { BaseService } from './base.service';
 import { ComputedFieldResolver } from './computed-field-resolver.service';
 import { FieldConfigService } from './field-config.service';
 import { RelationSyncService } from './relation-sync.service';
+import { ViewQueryService } from './view-query.service';
 
 @Module({
   imports: [ProjectsModule, TasksModule, ManagementModule, ContentModule],
@@ -19,6 +20,7 @@ import { RelationSyncService } from './relation-sync.service';
     FieldConfigService,
     RelationSyncService,
     SystemRecordsAdapter,
+    ViewQueryService,
   ],
   exports: [BaseService],
 })
