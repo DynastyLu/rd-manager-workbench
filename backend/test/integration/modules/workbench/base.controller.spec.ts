@@ -1434,7 +1434,6 @@ describe('Multi-dimensional base API', () => {
         config: { relationFieldId: relation.body.data.id, aggregation: 'COUNT' },
       })
       .expect(201);
-
     await request(app.getHttpServer())
       .patch(`/api/base/fields/${relation.body.data.id}`)
       .send({ config: { multiple: true } })
@@ -1879,6 +1878,37 @@ describe('Multi-dimensional base API', () => {
         config: { expression: 'IF({averageScore} >= 90, "通过", "继续评估")' },
       })
       .expect(201);
+    const createdAtField = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({ key: 'createdAt', name: '创建时间', type: DataFieldType.CREATED_AT })
+      .expect(201);
+    const updatedAtField = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({ key: 'updatedAt', name: '更新时间', type: DataFieldType.UPDATED_AT })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'createdCopy',
+        name: '创建时间公式',
+        type: DataFieldType.FORMULA,
+        config: { expression: '{createdAt}' },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'updatedCopy',
+        name: '更新时间公式',
+        type: DataFieldType.FORMULA,
+        config: { expression: '{updatedAt}' },
+      })
+      .expect(201);
+
+    await prisma.dataField.update({
+      where: { id: average.body.data.id },
+      data: { isRequired: true },
+    });
 
     await request(app.getHttpServer())
       .post(`/api/base/tables/${sourceTableId}/records`)
@@ -1898,7 +1928,14 @@ describe('Multi-dimensional base API', () => {
       positionNames: ['岗位乙', '岗位甲'],
       averageScore: 90,
       result: '通过',
+      createdAt: created.body.data.createdAt,
+      updatedAt: created.body.data.updatedAt,
+      createdCopy: created.body.data.createdAt,
+      updatedCopy: created.body.data.updatedAt,
     });
+    const originalCreatedAt = created.body.data.createdAt as string;
+    expect(createdAtField.body.data.id).toBeTruthy();
+    expect(updatedAtField.body.data.id).toBeTruthy();
 
     await request(app.getHttpServer())
       .patch(`/api/base/tables/${sourceTableId}/records/${created.body.data.id}`)
@@ -1914,12 +1951,18 @@ describe('Multi-dimensional base API', () => {
           positionNames: ['岗位乙', '岗位甲'],
           averageScore: 90,
           result: '通过',
+          createdAt: originalCreatedAt,
+          createdCopy: originalCreatedAt,
+          updatedAt: body.data.updatedAt,
+          updatedCopy: body.data.updatedAt,
         });
       });
     await request(app.getHttpServer())
       .get(`/api/base/tables/${sourceTableId}/records`)
       .expect(200)
       .expect(({ body }) => {
+        const listed = body.data.data[0];
+        expect(listed.values.updatedCopy).toBe(listed.values.updatedAt);
         expect(body.data.data).toEqual([
           expect.objectContaining({
             id: created.body.data.id,
@@ -1927,12 +1970,16 @@ describe('Multi-dimensional base API', () => {
               positionNames: ['岗位乙', '岗位甲'],
               averageScore: 90,
               result: '通过',
+              createdAt: originalCreatedAt,
+              createdCopy: originalCreatedAt,
             }),
           }),
         ]);
       });
 
-    expect(average.body.data.isRequired).toBe(false);
+    await expect(
+      prisma.dataField.findUniqueOrThrow({ where: { id: average.body.data.id } }),
+    ).resolves.toMatchObject({ isRequired: true });
   });
 
   it('resolves lookups whose target is a system preset table through its adapter', async () => {

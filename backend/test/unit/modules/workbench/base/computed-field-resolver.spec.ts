@@ -333,6 +333,48 @@ describe('ComputedFieldResolver', () => {
     ]);
     expect(prisma.dataRecord.findMany).not.toHaveBeenCalled();
   });
+
+  it('does not expose stored lookup values from computed targets or aggregate non-number fields', async () => {
+    fields.push(
+      field('target-stale', targetTableId, 'staleComputed', DataFieldType.LOOKUP, {
+        relationFieldId: 'untrusted-relation',
+        targetFieldId: 'untrusted-target',
+      }),
+      field('target-text-number', targetTableId, 'numericText', DataFieldType.TEXT),
+      field('lookup-stale', sourceTableId, 'staleLookup', DataFieldType.LOOKUP, {
+        relationFieldId: 'relation',
+        targetFieldId: 'target-stale',
+      }),
+      field('rollup-text', sourceTableId, 'textSum', DataFieldType.ROLLUP, {
+        relationFieldId: 'relation',
+        targetFieldId: 'target-text-number',
+        aggregation: 'SUM',
+      }),
+      field('rollup-count-target', sourceTableId, 'invalidCount', DataFieldType.ROLLUP, {
+        relationFieldId: 'relation',
+        targetFieldId: 'target-text-number',
+        aggregation: 'COUNT',
+      }),
+    );
+    targetRecords[0].values.staleComputed = 'must-not-leak';
+    targetRecords[0].values.numericText = 40;
+    targetRecords[1].values.numericText = 2;
+
+    const [resolved] = await resolver.resolve(sourceTableId, [
+      record('source', sourceTableId, { projects: ['target-a', 'target-b'] }),
+    ]);
+
+    expect(resolved.values).toMatchObject({
+      staleLookup: null,
+      textSum: null,
+      invalidCount: null,
+    });
+    expect(resolved.computedErrors).toMatchObject({
+      staleLookup: { code: 'TYPE_ERROR' },
+      textSum: { code: 'TYPE_ERROR' },
+      invalidCount: { code: 'TYPE_ERROR' },
+    });
+  });
 });
 
 function field(

@@ -287,6 +287,11 @@ export class ComputedFieldResolver {
       if (!targetField || targetField.tableId !== relationConfig.targetTableId) {
         return this.relatedConfigError(field);
       }
+      if (COMPUTED_TYPES.has(targetField.type)) {
+        return this.relatedTypeError(
+          `Lookup field ${field.name} cannot read another computed field`,
+        );
+      }
       const lookedUp = related.map((target) => target?.values[targetField.key] ?? null);
       return {
         value: relationConfig.multiple ? lookedUp : (lookedUp[0] ?? null),
@@ -297,6 +302,9 @@ export class ComputedFieldResolver {
     const rollup = config as RollupConfig;
     const validRecords = related.filter((target): target is UnifiedDataRecord => !!target);
     if (rollup.aggregation === 'COUNT') {
+      if (rollup.targetFieldId) {
+        return this.relatedTypeError(`COUNT field ${field.name} must not select a target field`);
+      }
       return { value: validRecords.length, ...(missingError ? { error: missingError } : {}) };
     }
     const targetField = rollup.targetFieldId
@@ -304,6 +312,11 @@ export class ComputedFieldResolver {
       : undefined;
     if (!targetField || targetField.tableId !== relationConfig.targetTableId) {
       return this.relatedConfigError(field);
+    }
+    if (targetField.type !== DataFieldType.NUMBER) {
+      return this.relatedTypeError(
+        `${rollup.aggregation} field ${field.name} requires a NUMBER target field`,
+      );
     }
     const present = validRecords
       .map((target) => target.values[targetField.key])
@@ -341,6 +354,10 @@ export class ComputedFieldResolver {
         message: `Stored relation configuration for ${field.name} has a missing target`,
       },
     };
+  }
+
+  private relatedTypeError(message: string): { value: null; error: ComputedFieldError } {
+    return { value: null, error: { code: 'TYPE_ERROR', message } };
   }
 
   private relationConfig(config: Prisma.JsonValue): RelationConfig | undefined {
