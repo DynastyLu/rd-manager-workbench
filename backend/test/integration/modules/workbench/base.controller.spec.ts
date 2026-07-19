@@ -389,6 +389,55 @@ describe('Multi-dimensional base API', () => {
     await expect(
       prisma.dataRecord.findUniqueOrThrow({ where: { id: source.body.data.id } }),
     ).resolves.toMatchObject({ values: { targets: [target.body.data.id] } });
+
+    const [secondSource, secondTarget] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/api/base/tables/${sourceTable.body.data.id}/records`)
+        .send({ values: { title: '来源记录二' } })
+        .expect(201),
+      request(app.getHttpServer())
+        .post(`/api/base/tables/${targetTable.body.data.id}/records`)
+        .send({ values: { title: '目标记录二' } })
+        .expect(201),
+    ]);
+    const bothSources = [source.body.data.id, secondSource.body.data.id];
+    for (const sourceIds of [bothSources, bothSources]) {
+      await request(app.getHttpServer())
+        .patch(`/api/base/tables/${targetTable.body.data.id}/records/${target.body.data.id}`)
+        .send({ values: { [inverse.key]: sourceIds } })
+        .expect(200);
+    }
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: source.body.data.id } }),
+    ).resolves.toMatchObject({ values: { targets: [target.body.data.id] } });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: secondSource.body.data.id } }),
+    ).resolves.toMatchObject({ values: { targets: [target.body.data.id] } });
+    await request(app.getHttpServer())
+      .patch(`/api/base/tables/${targetTable.body.data.id}/records/${target.body.data.id}`)
+      .send({ values: { [inverse.key]: [secondSource.body.data.id] } })
+      .expect(200);
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: source.body.data.id } }),
+    ).resolves.toMatchObject({ values: { targets: [] } });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: secondSource.body.data.id } }),
+    ).resolves.toMatchObject({ values: { targets: [target.body.data.id] } });
+
+    await request(app.getHttpServer())
+      .patch(`/api/base/tables/${targetTable.body.data.id}/records/${secondTarget.body.data.id}`)
+      .send({ values: { [inverse.key]: [source.body.data.id, secondSource.body.data.id] } })
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/api/base/tables/${targetTable.body.data.id}/records/${secondTarget.body.data.id}`)
+      .send({ values: { [inverse.key]: [source.body.data.id] } })
+      .expect(200);
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: source.body.data.id } }),
+    ).resolves.toMatchObject({ values: { targets: [secondTarget.body.data.id] } });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: secondSource.body.data.id } }),
+    ).resolves.toMatchObject({ values: { targets: [target.body.data.id] } });
   });
 
   it('rejects inverse options outside two-way relation creation', async () => {
@@ -420,6 +469,69 @@ describe('Multi-dimensional base API', () => {
         inverseMultiple: true,
       })
       .expect(400);
+  });
+
+  it('rejects changing a one-way relation to two-way without creating a pair', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 单向升级工作区` })
+      .expect(201);
+    const [sourceTable, targetTable] = await Promise.all(
+      ['单向升级来源表', '单向升级目标表'].map((name) =>
+        request(app.getHttpServer())
+          .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+          .send({ name: `${prefix} ${name}` })
+          .expect(201),
+      ),
+    );
+    const relation = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/fields`)
+      .send({
+        key: 'target',
+        name: '单向目标',
+        type: DataFieldType.RELATION,
+        config: {
+          targetTableId: targetTable.body.data.id,
+          multiple: false,
+          relationMode: 'ONE_WAY',
+        },
+      })
+      .expect(201);
+    const targetFieldCount = await prisma.dataField.count({
+      where: { tableId: targetTable.body.data.id },
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/base/fields/${relation.body.data.id}`)
+      .send({ config: { relationMode: 'TWO_WAY' } })
+      .expect(400)
+      .expect(({ body }) => {
+        expect(JSON.stringify(body)).toContain('recreate');
+      });
+    await expect(
+      prisma.dataField.findUniqueOrThrow({ where: { id: relation.body.data.id } }),
+    ).resolves.toMatchObject({
+      config: {
+        targetTableId: targetTable.body.data.id,
+        multiple: false,
+        relationMode: 'ONE_WAY',
+      },
+    });
+    await expect(
+      prisma.dataField.count({ where: { tableId: targetTable.body.data.id } }),
+    ).resolves.toBe(targetFieldCount);
+
+    const target = await request(app.getHttpServer())
+      .post(`/api/base/tables/${targetTable.body.data.id}/records`)
+      .send({ values: { title: '单向目标记录' } })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/records`)
+      .send({ values: { title: '单向来源记录', target: target.body.data.id } })
+      .expect(201);
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: target.body.data.id } }),
+    ).resolves.toMatchObject({ values: { title: '单向目标记录' } });
   });
 
   it('enforces relation cardinality and serializes concurrent one-to-one claims', async () => {
@@ -507,6 +619,24 @@ describe('Multi-dimensional base API', () => {
       .patch(`/api/base/tables/${sourceTableId}/records/${winner.body.data.id}`)
       .send({ values: { exclusiveTarget: target.body.data.id } })
       .expect(200);
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: target.body.data.id } }),
+    ).resolves.toMatchObject({ values: { [inverse.key]: winner.body.data.id } });
+
+    const competingTarget = await request(app.getHttpServer())
+      .post(`/api/base/tables/${targetTableId}/records`)
+      .send({ values: { title: '竞争目标' } })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/api/base/tables/${targetTableId}/records/${competingTarget.body.data.id}`)
+      .send({ values: { [inverse.key]: winner.body.data.id } })
+      .expect(409);
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: winner.body.data.id } }),
+    ).resolves.toMatchObject({ values: { exclusiveTarget: target.body.data.id } });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: competingTarget.body.data.id } }),
+    ).resolves.toMatchObject({ values: { title: '竞争目标' } });
     await expect(
       prisma.dataRecord.findUniqueOrThrow({ where: { id: target.body.data.id } }),
     ).resolves.toMatchObject({ values: { [inverse.key]: winner.body.data.id } });
@@ -626,6 +756,19 @@ describe('Multi-dimensional base API', () => {
       })
       .expect(201);
     expect(relation.body.data.config.inverseFieldId).toEqual(expect.any(String));
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/fields`)
+      .send({
+        key: 'singleTarget',
+        name: '单个目标',
+        type: DataFieldType.RELATION,
+        config: {
+          targetTableId: targetTable.body.data.id,
+          multiple: false,
+          relationMode: 'ONE_WAY',
+        },
+      })
+      .expect(201);
     const target = await request(app.getHttpServer())
       .post(`/api/base/tables/${targetTable.body.data.id}/records`)
       .send({ values: { title: '正确目标' } })
@@ -647,6 +790,28 @@ describe('Multi-dimensional base API', () => {
         .send({ values: { title: '非法来源', targets } })
         .expect(400);
     }
+    for (const values of [{ targets: '' }, { singleTarget: '' }]) {
+      await request(app.getHttpServer())
+        .post(`/api/base/tables/${sourceTable.body.data.id}/records`)
+        .send({ values: { title: '空串来源', ...values } })
+        .expect(400);
+    }
+
+    const retained = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/records`)
+      .send({ values: { title: '保留记录', targets: [target.body.data.id] } })
+      .expect(201);
+    for (const values of [{ targets: '' }, { singleTarget: '' }]) {
+      await request(app.getHttpServer())
+        .patch(`/api/base/tables/${sourceTable.body.data.id}/records/${retained.body.data.id}`)
+        .send({ values })
+        .expect(400);
+    }
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: retained.body.data.id } }),
+    ).resolves.toMatchObject({
+      values: { title: '保留记录', targets: [target.body.data.id] },
+    });
   });
 
   it('cleans inverse values on record deletion and safely decouples relation fields', async () => {

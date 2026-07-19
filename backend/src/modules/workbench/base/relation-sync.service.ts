@@ -26,10 +26,14 @@ type RelationField = {
 
 type RelationDataClient = Pick<Prisma.TransactionClient, 'dataTable' | 'dataField' | 'dataRecord'>;
 
+export function stableSortedUniqueIds(ids: readonly string[]): string[] {
+  return [...new Set(ids)].sort();
+}
+
 @Injectable()
 export class RelationSyncService {
   async lockTableConfigs(tx: Prisma.TransactionClient, tableIds: readonly string[]): Promise<void> {
-    for (const tableId of [...new Set(tableIds)].sort()) {
+    for (const tableId of stableSortedUniqueIds(tableIds)) {
       await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`rd-manager-workbench:data-field-config:${tableId}`}))`,
       );
@@ -248,7 +252,7 @@ export class RelationSyncService {
   }
 
   private valueIds(value: unknown, multiple: boolean, fieldName: string): string[] {
-    if (value === undefined || value === null || value === '') return [];
+    if (value === undefined || value === null) return [];
     if (multiple) {
       if (!Array.isArray(value)) throw new BadRequestException(`${fieldName} must be an id array`);
       if (value.some((item) => typeof item !== 'string' || item.trim().length === 0)) {
@@ -266,7 +270,7 @@ export class RelationSyncService {
   }
 
   private async lockRecords(tx: Prisma.TransactionClient, ids: readonly string[]): Promise<void> {
-    const sorted = [...new Set(ids)].sort();
+    const sorted = stableSortedUniqueIds(ids);
     if (!sorted.length) return;
     await tx.$queryRaw(
       Prisma.sql`SELECT id FROM app.data_records WHERE id IN (${Prisma.join(

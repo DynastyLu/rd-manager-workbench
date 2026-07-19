@@ -572,7 +572,7 @@ export class BaseService {
       if (
         values[field.key] === undefined ||
         values[field.key] === null ||
-        (values[field.key] === '' && !field.isRequired)
+        (values[field.key] === '' && !field.isRequired && field.type !== DataFieldType.RELATION)
       )
         continue;
       const value = values[field.key];
@@ -599,6 +599,12 @@ export class BaseService {
         !Array.isArray(value)
       )
         throw new BadRequestException(`${field.name} must be a relation id or id array`);
+      if (
+        field.type === DataFieldType.RELATION &&
+        typeof value === 'string' &&
+        value.trim().length === 0
+      )
+        throw new BadRequestException(`${field.name} must be a non-empty relation id`);
       if (
         field.type === DataFieldType.RELATION &&
         Array.isArray(value) &&

@@ -214,6 +214,11 @@ export class FieldConfigService {
     });
     if (!target) throw new NotFoundException('Relation target table not found');
     const trusted = trustedConfig ? this.jsonRecord(trustedConfig) : undefined;
+    if (!isCreate && relationMode === 'TWO_WAY' && trusted?.relationMode !== 'TWO_WAY') {
+      throw new BadRequestException(
+        'One-way relations cannot be upgraded in place; recreate the field as a two-way relation',
+      );
+    }
     if (!isCreate && relationMode === 'TWO_WAY' && trusted?.targetTableId !== targetTableId) {
       relationMode = 'ONE_WAY';
     }
