@@ -84,6 +84,31 @@
 - 当前 `DataFieldType` 只有基础字段，尚无 `LOOKUP`、`FORMULA`、`ROLLUP`；`DataViewType` 只有 `GRID/KANBAN/CALENDAR/FORM`，尚无 `GANTT/GALLERY`。
 - 字段和视图的可扩展配置已经存入 JSON，可在不增加专用关系表的前提下保存公式、引用、甘特和画册配置；双向关联仍需要稳定的反向关系定义和删除约束。
 - 当前前端没有 CSV/Excel 解析依赖，后端也没有导入预检、字段映射、错误行结果和导出端点。
+
+## P1-02～P2-02 连续交付范围（2026-07-20）
+
+- 用户明确将全局搜索、数据安全治理、合作方/非项目研发、行业情报/研发运营、短信/AI/外部集成纳入后续连续交付，并授权规格与计划完成后无需再次询问直接实现。
+- 仓库已存在 P1-01C 导入导出与 P1-01D 业务模板的规格/计划；P1-02～P2-02 尚需按独立子系统分别形成规格和计划，避免数据库恢复、外部凭据、AI/短信网络调用与本地搜索共享一个不可控实施批次。
+- 第一版仍坚持本地单人优先：外部能力必须采用可配置适配器、默认关闭、密钥不落审计正文；没有真实服务商凭据时实现完整配置、验证、队列、失败状态和测试适配器，不伪造真实发送成功。
+- 旧计划可复用但不能原样照搬：`data-governance-p0` 已定义安全备份/恢复与搜索边界，`intelligence-p0` 已定义人工采集闭环，`non-project-rd-p1` 已定义资源/周报，`p2-local-extensions` 已定义外部适配器安全模型；新规格需对齐当前飞书式七入口导航与已经落地的内容/通知/Base 模块。
+- 当前生产代码已存在 Partner/Contact/Agreement/Communication 的 Prisma 模型、Nest service/controller 和 `PartnersPage.tsx`，因此 P1-04 的合作方部分应做完整交互与对象关联补齐，不重复建表；非项目研发与资源档案尚未落地。
+- 当前未发现 governance/search/backup/audit、intelligence/operations/report、extension/sms/AI/external adapter 的生产模块或页面。P1-02、P1-03、P2-01、P2-02 仍是实质性新子系统。
+- `WorkbenchModule` 当前只组合 dashboard/projects/tasks/applications/management/calendar/notifications/content/base；新增能力应分别以 `search`、`governance`、`operations`、`intelligence`、`extensions` 垂直模块导入，而不是继续膨胀 ManagementModule。
+- 前端已经具备 Semi UI、TanStack Query/Table、FullCalendar、Tiptap 和 Socket.IO，不需要为这些批次更换 UI/状态框架；后端尚无 HTTP provider SDK、AI SDK 或加密凭据依赖，P2-02 应从框架无关的 provider interface 与本地受保护凭据桥接开始。
+- P1-02 的 UI 必须占用已有 `/search` 顶级入口；P1-04/P2-01 继续作为项目关联对象和业务库/多维表格上下文，不能重新添加后台式顶级菜单。
+- `/search` 当前错误复用 `AutomationDataPage` 规划页，路由已标记 AVAILABLE 但没有任何真实请求；P1-02 可直接替换该组件，不需要改七入口导航。旧 `/automation-data` 已重定向 `/search`，可在搜索页内增加“数据安全/扩展设置”次级入口。
+- `PartnersPage.tsx` 只支持名称创建和卡片列表，没有详情抽屉、联系人/协议/沟通 CRUD、跟进过滤或对象深链；而后端已有相应端点，因此 P1-04 应先把现有 API 全部产品化，再新增非项目研发对象。
+- 当前前端混有旧 shadcn 管理页和新 Semi 工作区；本批新增页面统一用 Semi Design 与现有 `app-page`/工作区 token，不再复制 PartnersPage 的单行 shadcn 写法。
+- Desktop 目前只通过 preload 暴露通知点击订阅，尚无 `safeStorage`、凭据存取 IPC 或外部集成授权桥；P2-02 必须新增严格命名的凭据 CRUD 白名单，浏览器模式明确返回不可用，不能让 renderer 或 Nest 获得任意 IPC/文件访问。
+- Electron 启动后端时会传递完整 `process.env`，这是后续凭据隔离的风险点；外部服务密钥不应进入该环境。方案采用 Electron safeStorage 持有密文并由显式 IPC 调用执行 provider 请求或签发短期凭据句柄，审计只记录 provider/profile/哈希/状态。
+- Partner 后端生命周期已覆盖联系人、协议、沟通和沟通转任务，但服务存在紧凑单行与 `any` delegate 的可维护性问题，前端 API 还缺 child 更新/归档函数。P1-04 计划应在功能范围内拆分 service/DTO 并补齐类型安全，而不是重建现有表。
+- 工程已有名为 `20260718050000_operations_p1` 的迁移但当前 `workbench.module.ts` 没有 operations 模块；必须检查 schema 与 migration 是否为“数据模型已落地、服务/UI 未接入”的半成品，避免 P1-04/P2-01 再建重复模型。
+- `LocalStorageAdapter` 只有 Buffer 读写/删除和路径越界保护，缺少流、列目录、原子 rename/copy、lstat/symlink 检查；P1-03 备份恢复需要扩展独立 `BackupStorage`/受控文件工具，不能强行用现有附件端口承担目录快照。
+- 环境配置目前只有数据库与 storage root；备份可执行文件、备份目录、自动备份时间与保留策略应进入受控配置/数据库设置，不允许请求参数传入 executable、数据库 URL 或任意路径。
+- `20260718050000_operations_p1` 已真实应用并在生产库创建非项目研发、成果、资源档案/技能/负荷和周报表，但当前 `schema.prisma` 完全缺少对应 enums/models，Prisma Client 无 delegates，属于迁移历史与声明 schema 漂移。P1-04/P2-01 第一任务必须先以“恢复声明模型、绝不重建/删除既有表”的契约测试修复。
+- 旧 non-project 计划的数据模型和 API 边界与本次 P1-04/P2-01 基本匹配，可复用迁移表结构；当前 Calendar 已由 P0-B 独立实现，新的 operations 模块不再创建第二套 calendar endpoint，只把非项目事项投影到现有 CalendarService。
+- 仓库保留三个未合入 main 的历史实现分支：`feature/non-project-rd-p1`（2 个实现提交）、`feature/intelligence-p0-v2`（情报前后端）、`feature/data-governance-p0`（搜索/附件/通知/备份恢复等多提交）。这些不是当前生产代码，但可作为已写测试和领域实现的来源；必须逐提交审查并移植到当前 main，不能整分支合并，因为它们基于 7 月 18 日旧路由/旧内容模型。
+- 历史 operations 分支包含完整 Nest services/controllers、React Operations/Reports 页面和测试，可显著降低 P1-04/P2-01 风险；当前计划应先恢复 schema 并选择性移植服务，再对齐现有 Calendar、Base、Semi UI 与新增规格。
 - P1-01 实际包含四个独立子系统：关联与计算、进阶视图、导入导出、模板；应分四个规格/实施批次，避免一次迁移同时改变表达式执行、文件处理和 UI 视图。
 - P1-01A 双向关系以配对字段和稳定锁顺序保证一致性；计算链限制在当前表内，LOOKUP/ROLLUP 只读取目标表基础字段，从模型上阻断跨表递归和循环。
 - P0-D 已完成并通过最终门禁：前端 50 files / 187 tests，后端 unit 75、integration 80、E2E 3，主库 14 条迁移最新。
@@ -94,6 +119,15 @@
 - 用户确认模板只创建表结构、字段和视图，不生成示例记录；确认 P1-01A～D 采用现有底座分层扩展方案，不创建 Base V2 或第二套数据模型。
 - 导入导出复用受控本地存储 key 并新增可过期的导入会话；进阶视图以 `viewId` 在服务端执行保存筛选，保证分页总数和完整数据集过滤正确。
 - 实施文件映射确认：后端 Base 目前只有控制器集成测试，没有公式/查询/模板专用单元测试；计划需为新服务分别建立 focused unit tests，并扩展 `base.controller.spec.ts` 做真实 PostgreSQL 契约验收。
+
+## P1-02～P2-02 并行审计补充（2026-07-20）
+
+- `/search` 虽已注册为 AVAILABLE，实际仍指向 `AutomationDataPage` 规划页；顶栏搜索输入也被明确禁用。现有 Project/Task/Document/Meeting/Risk/Decision 深链和各领域查询服务可以作为首版 adapter registry 的真源。
+- P1-02 首版按已确认规格采用“服务端 adapter registry + 聚合查询”，最近搜索保存在 renderer localStorage；不先引入需要全领域写入同步的 SearchDocument 索引，后续数据量证明有必要时再用 rebuild/outbox 演进。
+- P1-03 恢复不能在仍提供 API 的 Nest 进程内直接执行；Electron main 持有维护令牌，停 API 后运行固定 maintenance CLI，并使用 staging、外部 journal、PRE_RESTORE 快照和数据库/文件共同补偿回滚。
+- Audit 不保存搜索词、正文、手机号、URL query、数据库 URL 或凭据；PostgreSQL、备份和 renderer 都不得出现外部 provider 密钥。
+- Partner 后端已有四个基础模型和 API，但缺 PartnerProject、沟通转任务幂等、真正 partial DTO、更新引用校验、聚合筛选和完整前端详情。
+- 情报历史分支只复用算法与测试意图，不整体 cherry-pick；旧路由、旧 Calendar 和旧 UI 与当前七入口结构冲突。
 - `LocalStorageAdapter` 已阻止 storage key 越界，但读写采用 Buffer；20 MiB 导入上限可安全复用，导出则必须直接通过响应流/生成 Buffer 后发送，不能复用页面 100 条分页结果。
 - `StorageModule` 虽在 AppModule 和 ContentModule 中导入，但 ContentModule 未重新导出它；Base 导入服务必须在 BaseModule 直接导入 StorageModule。CSV/XLSX 导出采用可写流，避免完整导出常驻内存。
 - 公式 evaluator 必须只捕获自身 `FormulaEvaluationFailure`；未知编程异常应继续抛出。日期函数仅接受严格带时区 ISO 日期时间或有效 Date，且必须在 `toISOString` 前检查溢出。
