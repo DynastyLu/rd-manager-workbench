@@ -102,7 +102,12 @@ export function FormulaEditor({
   const runPreview = async () => {
     const expression = draft.trim()
     if (!expression) return
-    const key = JSON.stringify({ tableId, identity: identity ?? null, expression, recordId: recordId ?? null })
+    const key = JSON.stringify({
+      tableId,
+      identity: identity ?? null,
+      expression,
+      recordId: recordId ?? null,
+    })
     if (pending.current?.key === key) return undefined
     const token = generation.current + 1
     generation.current = token
