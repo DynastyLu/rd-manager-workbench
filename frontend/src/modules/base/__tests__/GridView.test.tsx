@@ -7,29 +7,104 @@ import { GridView } from '../components/GridView'
 import type { BaseRecord, DataField, DataView } from '../types'
 
 const fields: DataField[] = [
-  { id: 'field-name', tableId: 'table-1', key: 'name', name: '项目名称', type: 'TEXT', config: {}, isPrimary: true, isRequired: true, sequence: 0, createdAt: '', updatedAt: '' },
-  { id: 'field-budget', tableId: 'table-1', key: 'budget', name: '预算', type: 'NUMBER', config: {}, isPrimary: false, isRequired: false, sequence: 1, createdAt: '', updatedAt: '' },
-  { id: 'field-active', tableId: 'table-1', key: 'active', name: '启用', type: 'CHECKBOX', config: {}, isPrimary: false, isRequired: false, sequence: 2, createdAt: '', updatedAt: '' },
-  { id: 'field-files', tableId: 'table-1', key: 'files', name: '附件', type: 'ATTACHMENT', config: {}, isPrimary: false, isRequired: false, sequence: 3, createdAt: '', updatedAt: '' },
+  {
+    id: 'field-name',
+    tableId: 'table-1',
+    key: 'name',
+    name: '项目名称',
+    type: 'TEXT',
+    config: {},
+    isPrimary: true,
+    isRequired: true,
+    sequence: 0,
+    createdAt: '',
+    updatedAt: '',
+  },
+  {
+    id: 'field-budget',
+    tableId: 'table-1',
+    key: 'budget',
+    name: '预算',
+    type: 'NUMBER',
+    config: {},
+    isPrimary: false,
+    isRequired: false,
+    sequence: 1,
+    createdAt: '',
+    updatedAt: '',
+  },
+  {
+    id: 'field-active',
+    tableId: 'table-1',
+    key: 'active',
+    name: '启用',
+    type: 'CHECKBOX',
+    config: {},
+    isPrimary: false,
+    isRequired: false,
+    sequence: 2,
+    createdAt: '',
+    updatedAt: '',
+  },
+  {
+    id: 'field-files',
+    tableId: 'table-1',
+    key: 'files',
+    name: '附件',
+    type: 'ATTACHMENT',
+    config: {},
+    isPrimary: false,
+    isRequired: false,
+    sequence: 3,
+    createdAt: '',
+    updatedAt: '',
+  },
 ]
 
-const view: DataView = { id: 'view-1', tableId: 'table-1', name: '表格', type: 'GRID', config: {}, isDefault: true, sequence: 0, createdAt: '', updatedAt: '' }
+const view: DataView = {
+  id: 'view-1',
+  tableId: 'table-1',
+  name: '表格',
+  type: 'GRID',
+  config: {},
+  isDefault: true,
+  sequence: 0,
+  createdAt: '',
+  updatedAt: '',
+}
 const records: BaseRecord[] = [
-  { id: 'record-1', values: { name: '北斗项目', budget: 120, active: true, files: ['file-1'] }, sourceType: 'PROJECT', sourceId: 'project-1', sourcePath: '/spaces/projects/project-1', createdAt: '', updatedAt: '' },
+  {
+    id: 'record-1',
+    values: { name: '北斗项目', budget: 120, active: true, files: ['file-1'] },
+    sourceType: 'PROJECT',
+    sourceId: 'project-1',
+    sourcePath: '/spaces/projects/project-1',
+    createdAt: '',
+    updatedAt: '',
+  },
 ]
 
 describe('GridView', () => {
   it('renders dynamic fields and opens the original business object', () => {
     render(
       <MemoryRouter>
-        <GridView fields={fields} records={records} view={view} onRecordChange={vi.fn()} onViewChange={vi.fn()} />
-      </MemoryRouter>,
+        <GridView
+          fields={fields}
+          records={records}
+          view={view}
+          onRecordChange={vi.fn()}
+          onViewChange={vi.fn()}
+        />
+      </MemoryRouter>
     )
 
     expect(screen.getByRole('columnheader', { name: '项目名称' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: '预算' })).toBeInTheDocument()
     expect(screen.getByText('120')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '打开：北斗项目' })).toHaveAttribute('href', '/spaces/projects/project-1')
+    expect(screen.getByRole('link', { name: '打开：北斗项目' })).toHaveAttribute(
+      'href',
+      '/spaces/projects/project-1'
+    )
   })
 
   it('edits a text cell inline and returns only the changed field', async () => {
@@ -37,8 +112,14 @@ describe('GridView', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
-        <GridView fields={fields} records={records} view={view} onRecordChange={onRecordChange} onViewChange={vi.fn()} />
-      </MemoryRouter>,
+        <GridView
+          fields={fields}
+          records={records}
+          view={view}
+          onRecordChange={onRecordChange}
+          onViewChange={vi.fn()}
+        />
+      </MemoryRouter>
     )
 
     await user.dblClick(screen.getByText('北斗项目'))
@@ -47,7 +128,9 @@ describe('GridView', () => {
     await user.type(editor, '北斗二期')
     fireEvent.blur(editor)
 
-    await waitFor(() => expect(onRecordChange).toHaveBeenCalledWith('record-1', { name: '北斗二期' }))
+    await waitFor(() =>
+      expect(onRecordChange).toHaveBeenCalledWith('record-1', { name: '北斗二期' })
+    )
   })
 
   it('persists search, sorting, filtering and grouping in the active view config', async () => {
@@ -55,21 +138,140 @@ describe('GridView', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
-        <GridView fields={fields} records={records} view={view} onRecordChange={vi.fn()} onViewChange={onViewChange} />
-      </MemoryRouter>,
+        <GridView
+          fields={fields}
+          records={records}
+          view={view}
+          onRecordChange={vi.fn()}
+          onViewChange={onViewChange}
+        />
+      </MemoryRouter>
     )
 
     await user.type(screen.getByLabelText('搜索当前表'), '北斗')
     await user.selectOptions(screen.getByLabelText('排序字段'), 'budget')
     await user.selectOptions(screen.getByLabelText('筛选字段'), 'active')
+    await user.type(screen.getByLabelText('筛选值'), 'true')
     await user.selectOptions(screen.getByLabelText('分组字段'), 'active')
 
-    await waitFor(() => expect(onViewChange).toHaveBeenLastCalledWith(expect.objectContaining({
-      query: '北斗',
-      sortField: 'budget',
-      filterField: 'active',
-      groupField: 'active',
-    })))
+    await waitFor(() =>
+      expect(onViewChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          query: '北斗',
+          sortField: 'budget',
+          filterField: 'active',
+          groupField: 'active',
+        })
+      )
+    )
+  })
+
+  it('updates only the quick sort while preserving additional sort conditions', async () => {
+    const onViewChange = vi.fn()
+    const user = userEvent.setup()
+    const multiSortView: DataView = {
+      ...view,
+      config: {
+        sorts: [
+          { fieldKey: 'name', direction: 'asc' },
+          { fieldKey: 'active', direction: 'desc' },
+        ],
+      },
+    }
+    render(
+      <MemoryRouter>
+        <GridView
+          fields={fields}
+          records={records}
+          view={multiSortView}
+          onRecordChange={vi.fn()}
+          onViewChange={onViewChange}
+        />
+      </MemoryRouter>
+    )
+
+    await user.selectOptions(screen.getByLabelText('排序字段'), 'budget')
+
+    expect(onViewChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sorts: [
+          { fieldKey: 'budget', direction: 'asc' },
+          { fieldKey: 'active', direction: 'desc' },
+        ],
+      })
+    )
+  })
+
+  it('waits for a valid quick-filter value and preserves additional conditions', async () => {
+    const onViewChange = vi.fn()
+    const user = userEvent.setup()
+    const multiFilterView: DataView = {
+      ...view,
+      config: {
+        filters: [
+          { fieldKey: 'name', operator: 'CONTAINS', value: '北斗' },
+          { fieldKey: 'active', operator: 'EQ', value: true },
+        ],
+      },
+    }
+    render(
+      <MemoryRouter>
+        <GridView
+          fields={fields}
+          records={records}
+          view={multiFilterView}
+          onRecordChange={vi.fn()}
+          onViewChange={onViewChange}
+        />
+      </MemoryRouter>
+    )
+
+    await user.selectOptions(screen.getByLabelText('筛选字段'), 'budget')
+    expect(onViewChange).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('筛选值')).toHaveValue('')
+
+    await user.type(screen.getByLabelText('筛选值'), '80')
+    expect(onViewChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        filters: [
+          { fieldKey: 'budget', operator: 'EQ', value: 80 },
+          { fieldKey: 'active', operator: 'EQ', value: true },
+        ],
+      })
+    )
+  })
+
+  it('clears only the quick filter and keeps the remaining conditions', async () => {
+    const onViewChange = vi.fn()
+    const user = userEvent.setup()
+    const multiFilterView: DataView = {
+      ...view,
+      config: {
+        filters: [
+          { fieldKey: 'name', operator: 'CONTAINS', value: '北斗' },
+          { fieldKey: 'active', operator: 'EQ', value: true },
+        ],
+      },
+    }
+    render(
+      <MemoryRouter>
+        <GridView
+          fields={fields}
+          records={records}
+          view={multiFilterView}
+          onRecordChange={vi.fn()}
+          onViewChange={onViewChange}
+        />
+      </MemoryRouter>
+    )
+
+    await user.selectOptions(screen.getByLabelText('筛选字段'), '')
+
+    expect(onViewChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        filters: [{ fieldKey: 'active', operator: 'EQ', value: true }],
+      })
+    )
   })
 
   it('normalizes attachment input to an array before saving', async () => {
@@ -77,8 +279,14 @@ describe('GridView', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
-        <GridView fields={fields} records={records} view={view} onRecordChange={onRecordChange} onViewChange={vi.fn()} />
-      </MemoryRouter>,
+        <GridView
+          fields={fields}
+          records={records}
+          view={view}
+          onRecordChange={onRecordChange}
+          onViewChange={vi.fn()}
+        />
+      </MemoryRouter>
     )
 
     await user.dblClick(screen.getByText('file-1'))
@@ -87,9 +295,11 @@ describe('GridView', () => {
     await user.type(editor, 'file-2, file-3\nfile-4')
     fireEvent.blur(editor)
 
-    await waitFor(() => expect(onRecordChange).toHaveBeenCalledWith('record-1', {
-      files: ['file-2', 'file-3', 'file-4'],
-    }))
+    await waitFor(() =>
+      expect(onRecordChange).toHaveBeenCalledWith('record-1', {
+        files: ['file-2', 'file-3', 'file-4'],
+      })
+    )
   })
 
   it('keeps attachment editing multiline until blur instead of submitting a string on Enter', async () => {
@@ -97,8 +307,14 @@ describe('GridView', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
-        <GridView fields={fields} records={records} view={view} onRecordChange={onRecordChange} onViewChange={vi.fn()} />
-      </MemoryRouter>,
+        <GridView
+          fields={fields}
+          records={records}
+          view={view}
+          onRecordChange={onRecordChange}
+          onViewChange={vi.fn()}
+        />
+      </MemoryRouter>
     )
 
     await user.dblClick(screen.getByText('file-1'))
@@ -109,9 +325,11 @@ describe('GridView', () => {
 
     expect(onRecordChange).not.toHaveBeenCalled()
     fireEvent.blur(editor)
-    await waitFor(() => expect(onRecordChange).toHaveBeenCalledWith('record-1', {
-      files: ['file-2'],
-    }))
+    await waitFor(() =>
+      expect(onRecordChange).toHaveBeenCalledWith('record-1', {
+        files: ['file-2'],
+      })
+    )
   })
 
   it('does not open the record drawer when the user is editing a cell', async () => {
@@ -119,8 +337,15 @@ describe('GridView', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
-        <GridView fields={fields} records={records} view={view} onRecordChange={vi.fn()} onViewChange={vi.fn()} onRecordSelect={onRecordSelect} />
-      </MemoryRouter>,
+        <GridView
+          fields={fields}
+          records={records}
+          view={view}
+          onRecordChange={vi.fn()}
+          onViewChange={vi.fn()}
+          onRecordSelect={onRecordSelect}
+        />
+      </MemoryRouter>
     )
 
     await user.dblClick(screen.getByText('北斗项目'))
@@ -137,7 +362,12 @@ describe('GridView', () => {
       key: 'status',
       name: '状态',
       type: 'SINGLE_SELECT',
-      config: { options: [{ label: '待处理', value: 'TODO' }, { label: '进行中', value: 'IN_PROGRESS' }] },
+      config: {
+        options: [
+          { label: '待处理', value: 'TODO' },
+          { label: '进行中', value: 'IN_PROGRESS' },
+        ],
+      },
     }
     const user = userEvent.setup()
     render(
@@ -150,7 +380,7 @@ describe('GridView', () => {
           onViewChange={vi.fn()}
           onRecordSelect={onRecordSelect}
         />
-      </MemoryRouter>,
+      </MemoryRouter>
     )
 
     await user.click(screen.getByText('TODO'))
@@ -164,16 +394,24 @@ describe('GridView', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
-        <GridView fields={fields} records={records} view={view} onRecordChange={vi.fn()} onViewChange={onViewChange} />
-      </MemoryRouter>,
+        <GridView
+          fields={fields}
+          records={records}
+          view={view}
+          onRecordChange={vi.fn()}
+          onViewChange={onViewChange}
+        />
+      </MemoryRouter>
     )
 
     await user.click(screen.getByText('显示字段'))
     await user.click(screen.getByRole('button', { name: '前移：启用' }))
 
-    expect(onViewChange).toHaveBeenLastCalledWith(expect.objectContaining({
-      fieldOrder: ['field-name', 'field-active', 'field-budget', 'field-files'],
-    }))
+    expect(onViewChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        fieldOrder: ['field-name', 'field-active', 'field-budget', 'field-files'],
+      })
+    )
   })
 
   it('renders grouped child records instead of replacing them with group headers', async () => {
@@ -184,8 +422,14 @@ describe('GridView', () => {
     ]
     render(
       <MemoryRouter>
-        <GridView fields={fields} records={groupedRecords} view={groupedView} onRecordChange={vi.fn()} onViewChange={vi.fn()} />
-      </MemoryRouter>,
+        <GridView
+          fields={fields}
+          records={groupedRecords}
+          view={groupedView}
+          onRecordChange={vi.fn()}
+          onViewChange={vi.fn()}
+        />
+      </MemoryRouter>
     )
 
     expect(screen.getByText('北斗项目')).toBeInTheDocument()
@@ -202,8 +446,14 @@ describe('GridView', () => {
     const user = userEvent.setup()
     render(
       <MemoryRouter>
-        <GridView fields={readOnlyFields} records={[{ ...records[0]!, values: { ...records[0]!.values, recordType: 'PROJECT' } }]} view={view} onRecordChange={onRecordChange} onViewChange={vi.fn()} />
-      </MemoryRouter>,
+        <GridView
+          fields={readOnlyFields}
+          records={[{ ...records[0]!, values: { ...records[0]!.values, recordType: 'PROJECT' } }]}
+          view={view}
+          onRecordChange={onRecordChange}
+          onViewChange={vi.fn()}
+        />
+      </MemoryRouter>
     )
 
     await user.dblClick(screen.getByText('120'))
@@ -213,12 +463,25 @@ describe('GridView', () => {
 
   it('submits a single relation as a string unless the field enables multiple values', async () => {
     const onRecordChange = vi.fn().mockResolvedValue(undefined)
-    const relationField: DataField = { ...fields[3]!, id: 'field-relation', key: 'relation', name: '关联项目', type: 'RELATION', config: {} }
+    const relationField: DataField = {
+      ...fields[3]!,
+      id: 'field-relation',
+      key: 'relation',
+      name: '关联项目',
+      type: 'RELATION',
+      config: {},
+    }
     const user = userEvent.setup()
     render(
       <MemoryRouter>
-        <GridView fields={[fields[0]!, relationField]} records={[{ ...records[0]!, values: { name: '北斗项目', relation: 'project-1' } }]} view={view} onRecordChange={onRecordChange} onViewChange={vi.fn()} />
-      </MemoryRouter>,
+        <GridView
+          fields={[fields[0]!, relationField]}
+          records={[{ ...records[0]!, values: { name: '北斗项目', relation: 'project-1' } }]}
+          view={view}
+          onRecordChange={onRecordChange}
+          onViewChange={vi.fn()}
+        />
+      </MemoryRouter>
     )
 
     await user.dblClick(screen.getByText('project-1'))
@@ -227,6 +490,8 @@ describe('GridView', () => {
     await user.type(editor, 'project-2')
     fireEvent.blur(editor)
 
-    await waitFor(() => expect(onRecordChange).toHaveBeenCalledWith('record-1', { relation: 'project-2' }))
+    await waitFor(() =>
+      expect(onRecordChange).toHaveBeenCalledWith('record-1', { relation: 'project-2' })
+    )
   })
 })

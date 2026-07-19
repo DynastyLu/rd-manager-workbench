@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
@@ -126,8 +126,18 @@ function fieldOfType(type: DataField['type']): DataField {
   return { ...fields[0], id: `field-${type}`, key: type.toLowerCase(), type }
 }
 
-describe('saved view filter contracts', () => {
-  it('matches every backend operator set exactly', () => {
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+describe('saved view filter support', () => {
+  it('exposes the supported operators for each field category', () => {
     const textOperators = ['EQ', 'NE', 'CONTAINS', 'NOT_CONTAINS', 'EMPTY', 'NOT_EMPTY', 'IN']
     const numberOperators = ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE', 'EMPTY', 'NOT_EMPTY', 'IN']
     const dateOperators = ['EQ', 'NE', 'BEFORE', 'AFTER', 'EMPTY', 'NOT_EMPTY', 'IN']
@@ -487,6 +497,132 @@ describe('LibraryHomePage saved views', () => {
     await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(2), { timeout: 1000 })
     await waitFor(() => expect(screen.getByLabelText('排序方向 2')).toHaveValue('desc'))
     expect(screen.getByLabelText('排序字段 2')).toHaveValue('score')
+  })
+
+  it('refetches current records after a saved filter or sort becomes effective', async () => {
+    api.updateBaseView.mockImplementation(
+      async (_id: string, input: { config: DataView['config'] }) => ({
+        ...views[0],
+        config: input.config,
+      })
+    )
+    renderPage()
+
+    await screen.findByRole('heading', { name: '研发工作台' })
+    await waitFor(() => expect(api.listBaseRecords).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
+    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
+    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1), { timeout: 1000 })
+    await waitFor(() => expect(api.listBaseRecords).toHaveBeenCalledTimes(2))
+    expect(api.listBaseRecords).toHaveBeenLastCalledWith('table-1', {
+      viewId: 'view-a',
+      page: 1,
+      pageSize: 100,
+    })
+  })
+
+  it('serializes saves and never lets an older response replace a newer draft', async () => {
+    const first = deferred<DataView>()
+    const second = deferred<DataView>()
+    api.updateBaseView
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+    renderPage()
+
+    await screen.findByRole('heading', { name: '研发工作台' })
+    fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
+    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
+    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1), { timeout: 1000 })
+
+    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'asc' } })
+    await new Promise((resolve) => window.setTimeout(resolve, 450))
+    expect(api.updateBaseView).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: '保存名称' })).toBeDisabled()
+
+    await act(async () => {
+      first.resolve({
+        ...views[0],
+        config: {
+          ...views[0].config,
+          sorts: [...(views[0].config.sorts ?? []), { fieldKey: 'score', direction: 'desc' }],
+        },
+      })
+      await first.promise
+    })
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(2))
+    expect(screen.getByLabelText('排序方向 2')).toHaveValue('asc')
+    expect(screen.getByRole('button', { name: '保存名称' })).toBeDisabled()
+
+    await act(async () => {
+      second.resolve({
+        ...views[0],
+        config: {
+          ...views[0].config,
+          sorts: [...(views[0].config.sorts ?? []), { fieldKey: 'score', direction: 'asc' }],
+        },
+      })
+      await second.promise
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存名称' })).toBeEnabled())
+    expect(screen.getByLabelText('排序方向 2')).toHaveValue('asc')
+  })
+
+  it('does not roll a newer draft back when an older save fails', async () => {
+    const first = deferred<DataView>()
+    const second = deferred<DataView>()
+    api.updateBaseView
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+    renderPage()
+
+    await screen.findByRole('heading', { name: '研发工作台' })
+    fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
+    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
+    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1), { timeout: 1000 })
+    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'asc' } })
+    await new Promise((resolve) => window.setTimeout(resolve, 450))
+
+    await act(async () => {
+      first.reject(new Error('old request failed'))
+      await first.promise.catch(() => undefined)
+    })
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(2))
+    expect(screen.getByLabelText('排序方向 2')).toHaveValue('asc')
+
+    await act(async () => {
+      second.resolve({
+        ...views[0],
+        config: {
+          ...views[0].config,
+          sorts: [...(views[0].config.sorts ?? []), { fieldKey: 'score', direction: 'asc' }],
+        },
+      })
+      await second.promise
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存名称' })).toBeEnabled())
+    expect(screen.getByLabelText('排序方向 2')).toHaveValue('asc')
+  })
+
+  it('cancels a pending debounced PATCH before deleting the view', async () => {
+    api.deleteBaseView.mockResolvedValue(undefined)
+    renderPage()
+
+    await screen.findByRole('heading', { name: '研发工作台' })
+    fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
+    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
+    fireEvent.click(screen.getByRole('button', { name: '删除当前视图' }))
+
+    await waitFor(() => expect(api.deleteBaseView).toHaveBeenCalledWith('view-a'))
+    await new Promise((resolve) => window.setTimeout(resolve, 450))
+    expect(api.updateBaseView).not.toHaveBeenCalled()
   })
 
   it('refreshes the default marker after setting another view as default', async () => {

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import { Toast } from '@douyinfe/semi-ui'
 import {
   createBaseField,
@@ -13,13 +19,24 @@ import {
   updateBaseRecord,
   updateBaseView,
 } from './api'
-import type { BaseRecord, BaseRecordQuery, CreateDataFieldInput, DataField, DataViewConfig, FormulaPreviewInput, RelationRecordLookup } from './types'
+import type {
+  BaseRecord,
+  BaseRecordQuery,
+  CreateDataFieldInput,
+  DataField,
+  DataViewConfig,
+  FormulaPreviewInput,
+  RelationRecordLookup,
+} from './types'
 
 export const baseKeys = {
   workspaces: ['base', 'workspaces'] as const,
-  records: (tableId: string, query: BaseRecordQuery) => ['base', 'records', tableId, query] as const,
-  infiniteRecords: (tableId: string, query: BaseRecordQuery) => ['base', 'records', 'infinite', tableId, query] as const,
-  selectedRecords: (tableId: string, recordIds: string[]) => ['base', 'records', 'selected', tableId, recordIds] as const,
+  records: (tableId: string, query: BaseRecordQuery) =>
+    ['base', 'records', tableId, query] as const,
+  infiniteRecords: (tableId: string, query: BaseRecordQuery) =>
+    ['base', 'records', 'infinite', tableId, query] as const,
+  selectedRecords: (tableId: string, recordIds: string[]) =>
+    ['base', 'records', 'selected', tableId, recordIds] as const,
 }
 
 function invalidateBase(client: ReturnType<typeof useQueryClient>) {
@@ -42,7 +59,8 @@ export function useBaseRecords(tableId: string | null, query: BaseRecordQuery) {
 export function useInfiniteBaseRecords(tableId: string | null, query: BaseRecordQuery) {
   return useInfiniteQuery({
     queryKey: baseKeys.infiniteRecords(tableId ?? '', query),
-    queryFn: ({ pageParam }) => listBaseRecords(tableId!, { ...query, page: pageParam, pageSize: 100 }),
+    queryFn: ({ pageParam }) =>
+      listBaseRecords(tableId!, { ...query, page: pageParam, pageSize: 100 }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) =>
       lastPage.meta.page * lastPage.meta.pageSize < lastPage.meta.total
@@ -54,9 +72,8 @@ export function useInfiniteBaseRecords(tableId: string | null, query: BaseRecord
 
 export function useSelectedBaseRecords(tableId: string | null, recordIds: string[]) {
   const uniqueIds = [...new Set(recordIds)]
-  const batches = Array.from(
-    { length: Math.ceil(uniqueIds.length / 100) },
-    (_, index) => uniqueIds.slice(index * 100, (index + 1) * 100)
+  const batches = Array.from({ length: Math.ceil(uniqueIds.length / 100) }, (_, index) =>
+    uniqueIds.slice(index * 100, (index + 1) * 100)
   )
   const results = useQueries({
     queries: batches.map((batch) => ({
@@ -115,7 +132,7 @@ export function useGridRelationRecords(fields: DataField[], records: BaseRecord[
   })
   const lookups = new Map<string, RelationRecordLookup>()
   for (const [tableId] of idsByTable) {
-    const indexes = batches.flatMap((batch, index) => batch.tableId === tableId ? [index] : [])
+    const indexes = batches.flatMap((batch, index) => (batch.tableId === tableId ? [index] : []))
     const tableResults = indexes.map((index) => results[index]!)
     const byId = new Map(
       tableResults.flatMap((result) => result.data?.data ?? []).map((record) => [record.id, record])
@@ -158,7 +175,8 @@ export function useCreateBaseField() {
 export function useUpdateBaseField() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Partial<CreateDataFieldInput> }) => updateBaseField(id, input),
+    mutationFn: ({ id, input }: { id: string; input: Partial<CreateDataFieldInput> }) =>
+      updateBaseField(id, input),
     onSuccess: () => invalidateBase(client),
     onError: () => Toast.error('更新字段失败。'),
   })
@@ -186,34 +204,41 @@ export function useCreateBaseRecord() {
 export function useUpdateBaseRecord() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ tableId, recordId, values }: { tableId: string; recordId: string; values: Record<string, unknown> }) =>
-      updateBaseRecord(tableId, recordId, values),
-    onSuccess: (_, input) => Promise.all([
-      invalidateBase(client),
-      client.invalidateQueries({ queryKey: ['base', 'records', input.tableId] }),
-      client.invalidateQueries({ queryKey: ['my-work'] }),
-      client.invalidateQueries({ queryKey: ['tasks'] }),
-      client.invalidateQueries({ queryKey: ['calendar'] }),
-      client.invalidateQueries({ queryKey: ['projects'] }),
-      client.invalidateQueries({ queryKey: ['project'] }),
-      client.invalidateQueries({ queryKey: ['task'] }),
-      client.invalidateQueries({ queryKey: ['dashboard'] }),
-      client.invalidateQueries({ queryKey: ['reminders'] }),
-      client.invalidateQueries({ queryKey: ['documents'] }),
-      client.invalidateQueries({ queryKey: ['document'] }),
-      client.invalidateQueries({ queryKey: ['document-versions'] }),
-      client.invalidateQueries({ queryKey: ['files'] }),
-      client.invalidateQueries({ queryKey: ['meetings'] }),
-      client.invalidateQueries({ queryKey: ['meeting'] }),
-      client.invalidateQueries({ queryKey: ['risks'] }),
-      client.invalidateQueries({ queryKey: ['risk'] }),
-      client.invalidateQueries({ queryKey: ['decisions'] }),
-      client.invalidateQueries({ queryKey: ['decision'] }),
-    ]),
+    mutationFn: ({
+      tableId,
+      recordId,
+      values,
+    }: {
+      tableId: string
+      recordId: string
+      values: Record<string, unknown>
+    }) => updateBaseRecord(tableId, recordId, values),
+    onSuccess: (_, input) =>
+      Promise.all([
+        invalidateBase(client),
+        client.invalidateQueries({ queryKey: ['base', 'records', input.tableId] }),
+        client.invalidateQueries({ queryKey: ['my-work'] }),
+        client.invalidateQueries({ queryKey: ['tasks'] }),
+        client.invalidateQueries({ queryKey: ['calendar'] }),
+        client.invalidateQueries({ queryKey: ['projects'] }),
+        client.invalidateQueries({ queryKey: ['project'] }),
+        client.invalidateQueries({ queryKey: ['task'] }),
+        client.invalidateQueries({ queryKey: ['dashboard'] }),
+        client.invalidateQueries({ queryKey: ['reminders'] }),
+        client.invalidateQueries({ queryKey: ['documents'] }),
+        client.invalidateQueries({ queryKey: ['document'] }),
+        client.invalidateQueries({ queryKey: ['document-versions'] }),
+        client.invalidateQueries({ queryKey: ['files'] }),
+        client.invalidateQueries({ queryKey: ['meetings'] }),
+        client.invalidateQueries({ queryKey: ['meeting'] }),
+        client.invalidateQueries({ queryKey: ['risks'] }),
+        client.invalidateQueries({ queryKey: ['risk'] }),
+        client.invalidateQueries({ queryKey: ['decisions'] }),
+        client.invalidateQueries({ queryKey: ['decision'] }),
+      ]),
     onError: () => Toast.error('更新记录失败。'),
   })
 }
-
 
 export function usePreviewBaseFormula(tableId: string) {
   return useMutation({
@@ -224,41 +249,72 @@ export function usePreviewBaseFormula(tableId: string) {
 export function useUpdateBaseView() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, config }: { id: string; config: DataViewConfig }) => updateBaseView(id, { config }),
+    mutationFn: ({ id, config }: { id: string; config: DataViewConfig }) =>
+      updateBaseView(id, { config }),
     onSuccess: () => client.invalidateQueries({ queryKey: baseKeys.workspaces }),
     onError: () => Toast.error('视图配置保存失败。'),
   })
 }
 
 export function useDebouncedViewConfigSave(
-  save: (viewId: string, config: DataViewConfig) => void,
-  delayMs = 350,
+  save: (viewId: string, config: DataViewConfig) => unknown,
+  delayMs = 350
 ) {
   const timers = useRef(new Map<string, number>())
   const pending = useRef(new Map<string, DataViewConfig>())
+  const queues = useRef(new Map<string, Promise<void>>())
   const saveRef = useRef(save)
 
   useEffect(() => {
     saveRef.current = save
   }, [save])
 
-  useEffect(() => () => {
-    for (const timer of timers.current.values()) window.clearTimeout(timer)
-    for (const [viewId, config] of pending.current) saveRef.current(viewId, config)
-    timers.current.clear()
-    pending.current.clear()
+  const enqueue = useCallback((viewId: string, config: DataViewConfig) => {
+    const previous = queues.current.get(viewId) ?? Promise.resolve()
+    const operation = previous
+      .catch(() => undefined)
+      .then(() => saveRef.current(viewId, config))
+      .then(() => undefined)
+    const tracked = operation
+      .catch(() => undefined)
+      .finally(() => {
+        if (queues.current.get(viewId) === tracked) queues.current.delete(viewId)
+      })
+    queues.current.set(viewId, tracked)
   }, [])
 
-  return useCallback((viewId: string, config: DataViewConfig) => {
-    pending.current.set(viewId, config)
-    const previousTimer = timers.current.get(viewId)
-    if (previousTimer !== undefined) window.clearTimeout(previousTimer)
-    const timer = window.setTimeout(() => {
-      const latest = pending.current.get(viewId)
-      timers.current.delete(viewId)
-      pending.current.delete(viewId)
-      if (latest) saveRef.current(viewId, latest)
-    }, delayMs)
-    timers.current.set(viewId, timer)
-  }, [delayMs])
+  const cancel = useCallback((viewId: string) => {
+    const timer = timers.current.get(viewId)
+    if (timer !== undefined) window.clearTimeout(timer)
+    timers.current.delete(viewId)
+    pending.current.delete(viewId)
+  }, [])
+
+  useEffect(
+    () => () => {
+      for (const timer of timers.current.values()) window.clearTimeout(timer)
+      for (const [viewId, config] of pending.current) enqueue(viewId, config)
+      timers.current.clear()
+      pending.current.clear()
+    },
+    [enqueue]
+  )
+
+  const schedule = useCallback(
+    (viewId: string, config: DataViewConfig) => {
+      pending.current.set(viewId, config)
+      const previousTimer = timers.current.get(viewId)
+      if (previousTimer !== undefined) window.clearTimeout(previousTimer)
+      const timer = window.setTimeout(() => {
+        const latest = pending.current.get(viewId)
+        timers.current.delete(viewId)
+        pending.current.delete(viewId)
+        if (latest) enqueue(viewId, latest)
+      }, delayMs)
+      timers.current.set(viewId, timer)
+    },
+    [delayMs, enqueue]
+  )
+
+  return { schedule, cancel }
 }
