@@ -385,6 +385,7 @@
 - 完成 P1-01A/B/C/D 四份实施计划，覆盖迁移、独立后端服务、前端组件、TDD、真实浏览器验收和分批提交；当前仍未修改生产代码。
 - 用户选择子代理驱动执行；主线程负责共享迁移、集成和双阶段复核，实施代理按任务顺序直接修改当前主工程，不创建 worktree。
 - P1-01A Task 1 完成：新增 LOOKUP/ROLLUP/FORMULA 枚举、独立迁移和前端受控类型；RED 三项断言失败，GREEN schema/migration 测试 17/17、Prisma generate、前端 typecheck 通过。规格复核通过；质量复核发现并补强迁移测试后批准。提交 `d59b178`、`3a9aea1`。
+- P1-01A Task 2 完成：安全 parser/evaluator 支持全部 DSL、2,000 字符/256 节点/32 深度限制、短路、数组、严格 ISO 日期和结构化错误。经规格与质量复核补齐日期溢出、未知异常传播、arity 预检、readonly AST 和对抗测试；最终 2 suites / 76 tests、lint、build、Prettier、diff-check 通过。提交 `1e8d276`、`fe0d826`、`d87e40a`。
 
 ## 2026-07-18：P0-A 飞书式工作台与项目空间完成
 

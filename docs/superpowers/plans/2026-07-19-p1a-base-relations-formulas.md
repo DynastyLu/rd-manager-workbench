@@ -70,7 +70,7 @@ git commit -m "feat: add computed data field types"
 - Create: `backend/test/unit/modules/workbench/base/formula-parser.spec.ts`
 - Create: `backend/test/unit/modules/workbench/base/formula-evaluator.spec.ts`
 
-- [ ] **Step 1: Write failing parser tests**
+- [x] **Step 1: Write failing parser tests**
 
 ```ts
 expect(parser.parse('IF({score} >= 80, "通过", "继续评估")', fields).dependencies)
@@ -79,12 +79,12 @@ expect(() => parser.parse('process.env.SECRET', fields)).toThrow('Unexpected tok
 expect(() => parser.parse('CONCAT(' + '"x",'.repeat(300) + '"x")', fields)).toThrow('Formula is too complex')
 ```
 
-- [ ] **Step 2: Run focused tests and confirm missing modules fail**
+- [x] **Step 2: Run focused tests and confirm missing modules fail**
 
 Run: `cd backend && pnpm test:unit -- --runInBand formula-parser formula-evaluator`  
 Expected: FAIL with unresolved imports.
 
-- [ ] **Step 3: Implement immutable AST types and parser limits**
+- [x] **Step 3: Implement immutable AST types and parser limits**
 
 ```ts
 export type FormulaAst =
@@ -97,11 +97,11 @@ export type FormulaAst =
 
 The parser must enforce 2,000 characters, 256 AST nodes, depth 32, exact field-key resolution, function allow-list, and token positions in errors.
 
-- [ ] **Step 4: Implement evaluator semantics**
+- [x] **Step 4: Implement evaluator semantics**
 
 Implement `IF`, `COALESCE`, `ROUND`, `ABS`, `SUM`, `COUNT`, `CONCAT`, `LOWER`, `UPPER`, `LEN`, `DATE_ADD`, and `DATE_DIFF`; return typed `FormulaEvaluationError` codes instead of throwing page-level errors.
 
-- [ ] **Step 5: Run focused tests and commit**
+- [x] **Step 5: Run focused tests and commit**
 
 Run: `cd backend && pnpm test:unit -- --runInBand formula-parser formula-evaluator`  
 Expected: PASS.

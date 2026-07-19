@@ -96,6 +96,7 @@
 - 实施文件映射确认：后端 Base 目前只有控制器集成测试，没有公式/查询/模板专用单元测试；计划需为新服务分别建立 focused unit tests，并扩展 `base.controller.spec.ts` 做真实 PostgreSQL 契约验收。
 - `LocalStorageAdapter` 已阻止 storage key 越界，但读写采用 Buffer；20 MiB 导入上限可安全复用，导出则必须直接通过响应流/生成 Buffer 后发送，不能复用页面 100 条分页结果。
 - `StorageModule` 虽在 AppModule 和 ContentModule 中导入，但 ContentModule 未重新导出它；Base 导入服务必须在 BaseModule 直接导入 StorageModule。CSV/XLSX 导出采用可写流，避免完整导出常驻内存。
+- 公式 evaluator 必须只捕获自身 `FormulaEvaluationFailure`；未知编程异常应继续抛出。日期函数仅接受严格带时区 ISO 日期时间或有效 Date，且必须在 `toISOString` 前检查溢出。
 
 ## 视觉/浏览器发现
 - 需求文档共 6 页，包含 13 个表格、完整 P0/P1/P2 优先级和 MVP 验收标准。
