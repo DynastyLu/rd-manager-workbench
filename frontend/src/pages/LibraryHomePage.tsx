@@ -99,7 +99,10 @@ export default function LibraryHomePage() {
   const debounceViewSave = useDebouncedViewConfigSave((id, config) => {
     setIsConfigSaving(true)
     void updateBaseView(id, { config })
-      .then((updated) => setViewOverrides((current) => ({ ...current, [id]: updated.config })))
+      .then((updated) => {
+        serverViewConfigs.current.set(id, updated.config)
+        setViewOverrides((current) => ({ ...current, [id]: updated.config }))
+      })
       .catch(() => {
         setViewOverrides((current) => {
           const serverConfig = serverViewConfigs.current.get(id)

@@ -9,6 +9,7 @@ import LibraryHomePage from '@/pages/LibraryHomePage'
 import { ViewManager } from '../components/ViewManager'
 import { ViewSettingsDrawer } from '../components/ViewSettingsDrawer'
 import type { DataField, DataView } from '../types'
+import { operatorsForField } from '../viewSettings'
 
 const api = vi.hoisted(() => ({
   createBaseField: vi.fn(),
@@ -121,6 +122,35 @@ const views: DataView[] = [
   },
 ]
 
+function fieldOfType(type: DataField['type']): DataField {
+  return { ...fields[0], id: `field-${type}`, key: type.toLowerCase(), type }
+}
+
+describe('saved view filter contracts', () => {
+  it('matches every backend operator set exactly', () => {
+    const textOperators = ['EQ', 'NE', 'CONTAINS', 'NOT_CONTAINS', 'EMPTY', 'NOT_EMPTY', 'IN']
+    const numberOperators = ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE', 'EMPTY', 'NOT_EMPTY', 'IN']
+    const dateOperators = ['EQ', 'NE', 'BEFORE', 'AFTER', 'EMPTY', 'NOT_EMPTY', 'IN']
+    const collectionOperators = ['CONTAINS', 'NOT_CONTAINS', 'EMPTY', 'NOT_EMPTY', 'IN']
+    const booleanOperators = ['EQ', 'NE', 'EMPTY', 'NOT_EMPTY']
+
+    for (const type of ['TEXT', 'LONG_TEXT', 'SINGLE_SELECT', 'LINK'] as const) {
+      expect(operatorsForField(fieldOfType(type))).toEqual(textOperators)
+    }
+    expect(operatorsForField(fieldOfType('NUMBER'))).toEqual(numberOperators)
+    for (const type of ['DATETIME', 'CREATED_AT', 'UPDATED_AT'] as const) {
+      expect(operatorsForField(fieldOfType(type))).toEqual(dateOperators)
+    }
+    for (const type of ['MULTI_SELECT', 'ATTACHMENT', 'RELATION'] as const) {
+      expect(operatorsForField(fieldOfType(type))).toEqual(collectionOperators)
+    }
+    expect(operatorsForField(fieldOfType('CHECKBOX'))).toEqual(booleanOperators)
+    for (const type of ['LOOKUP', 'ROLLUP', 'FORMULA'] as const) {
+      expect(operatorsForField(fieldOfType(type))).toEqual([])
+    }
+  })
+})
+
 describe('ViewSettingsDrawer', () => {
   it('adds and saves two filters and two sorts with field-aware editors', async () => {
     const onConfigChange = vi.fn()
@@ -217,6 +247,65 @@ describe('ViewSettingsDrawer', () => {
 
     expect(screen.getByRole('button', { name: '添加筛选条件' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '添加排序条件' })).toBeDisabled()
+  })
+
+  it('edits ISO dates as local datetime values and restores them when switching views', async () => {
+    const onConfigChange = vi.fn()
+    const firstIso = '2026-07-20T01:30:00.000Z'
+    const secondIso = '2026-07-23T04:15:00.000Z'
+    const dateView = (id: string, value: string): DataView => ({
+      ...views[0],
+      id,
+      config: { filters: [{ fieldKey: 'dueAt', operator: 'AFTER', value }] },
+    })
+    const localValue = (value: string) => {
+      const date = new Date(value)
+      const part = (number: number) => String(number).padStart(2, '0')
+      return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}T${part(date.getHours())}:${part(date.getMinutes())}`
+    }
+    const { rerender } = render(
+      <ViewSettingsDrawer
+        visible
+        view={dateView('date-a', firstIso)}
+        fields={fields}
+        onClose={vi.fn()}
+        onConfigChange={onConfigChange}
+        onRename={vi.fn()}
+        onDelete={vi.fn()}
+        onSetDefault={vi.fn()}
+      />
+    )
+
+    expect(screen.getByLabelText('筛选值 1')).toHaveValue(localValue(firstIso))
+    fireEvent.change(screen.getByLabelText('筛选值 1'), {
+      target: { value: '2026-07-21T10:45' },
+    })
+    expect(onConfigChange).toHaveBeenLastCalledWith({
+      filters: [
+        {
+          fieldKey: 'dueAt',
+          operator: 'AFTER',
+          value: new Date('2026-07-21T10:45').toISOString(),
+        },
+      ],
+      sorts: [],
+    })
+
+    rerender(
+      <ViewSettingsDrawer
+        visible
+        view={dateView('date-b', secondIso)}
+        fields={fields}
+        onClose={vi.fn()}
+        onConfigChange={onConfigChange}
+        onRename={vi.fn()}
+        onDelete={vi.fn()}
+        onSetDefault={vi.fn()}
+      />
+    )
+    await waitFor(() =>
+      expect(screen.getByLabelText('筛选值 1')).toHaveValue(localValue(secondIso))
+    )
   })
 })
 
@@ -375,6 +464,29 @@ describe('LibraryHomePage saved views', () => {
       { timeout: 1000 }
     )
     await waitFor(() => expect(screen.queryByLabelText('排序字段 2')).not.toBeInTheDocument())
+  })
+
+  it('rolls back to the most recently saved config rather than the initial config', async () => {
+    api.updateBaseView
+      .mockImplementationOnce(async (_id: string, input: { config: DataView['config'] }) => ({
+        ...views[0],
+        config: input.config,
+      }))
+      .mockRejectedValueOnce(new Error('offline'))
+    renderPage()
+
+    await screen.findByRole('heading', { name: '研发工作台' })
+    fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
+    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
+    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1), { timeout: 1000 })
+    expect(screen.getByLabelText('排序方向 2')).toHaveValue('desc')
+
+    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'asc' } })
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(2), { timeout: 1000 })
+    await waitFor(() => expect(screen.getByLabelText('排序方向 2')).toHaveValue('desc'))
+    expect(screen.getByLabelText('排序字段 2')).toHaveValue('score')
   })
 
   it('refreshes the default marker after setting another view as default', async () => {

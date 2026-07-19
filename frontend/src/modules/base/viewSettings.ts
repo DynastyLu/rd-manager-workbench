@@ -9,7 +9,43 @@ import type {
 
 const VALUELESS_OPERATORS = new Set<ViewFilterOperator>(['EMPTY', 'NOT_EMPTY'])
 const COMPUTED_FIELD_TYPES = new Set<DataFieldType>(['LOOKUP', 'ROLLUP', 'FORMULA'])
-const COMMON_OPERATORS: ViewFilterOperator[] = ['EQ', 'NE', 'EMPTY', 'NOT_EMPTY']
+const TEXT_OPERATORS: ViewFilterOperator[] = [
+  'EQ',
+  'NE',
+  'CONTAINS',
+  'NOT_CONTAINS',
+  'EMPTY',
+  'NOT_EMPTY',
+  'IN',
+]
+const NUMBER_OPERATORS: ViewFilterOperator[] = [
+  'EQ',
+  'NE',
+  'GT',
+  'GTE',
+  'LT',
+  'LTE',
+  'EMPTY',
+  'NOT_EMPTY',
+  'IN',
+]
+const DATE_OPERATORS: ViewFilterOperator[] = [
+  'EQ',
+  'NE',
+  'BEFORE',
+  'AFTER',
+  'EMPTY',
+  'NOT_EMPTY',
+  'IN',
+]
+const COLLECTION_OPERATORS: ViewFilterOperator[] = [
+  'CONTAINS',
+  'NOT_CONTAINS',
+  'EMPTY',
+  'NOT_EMPTY',
+  'IN',
+]
+const BOOLEAN_OPERATORS: ViewFilterOperator[] = ['EQ', 'NE', 'EMPTY', 'NOT_EMPTY']
 
 export function isComputedFieldType(type: DataFieldType) {
   return COMPUTED_FIELD_TYPES.has(type)
@@ -21,16 +57,13 @@ export function isValuelessOperator(operator: ViewFilterOperator) {
 
 export function operatorsForField(field?: DataField): ViewFilterOperator[] {
   if (!field || isComputedFieldType(field.type)) return []
-  if (['TEXT', 'LONG_TEXT', 'LINK', 'ATTACHMENT', 'RELATION'].includes(field.type)) {
-    return ['EQ', 'NE', 'CONTAINS', 'NOT_CONTAINS', 'EMPTY', 'NOT_EMPTY', 'IN']
+  if (field.type === 'NUMBER') return NUMBER_OPERATORS
+  if (['DATETIME', 'CREATED_AT', 'UPDATED_AT'].includes(field.type)) return DATE_OPERATORS
+  if (field.type === 'CHECKBOX') return BOOLEAN_OPERATORS
+  if (['MULTI_SELECT', 'ATTACHMENT', 'RELATION'].includes(field.type)) {
+    return COLLECTION_OPERATORS
   }
-  if (field.type === 'NUMBER')
-    return ['EQ', 'NE', 'GT', 'GTE', 'LT', 'LTE', 'EMPTY', 'NOT_EMPTY', 'IN']
-  if (['DATETIME', 'CREATED_AT', 'UPDATED_AT'].includes(field.type)) {
-    return ['EQ', 'NE', 'BEFORE', 'AFTER', 'EMPTY', 'NOT_EMPTY']
-  }
-  if (['SINGLE_SELECT', 'MULTI_SELECT'].includes(field.type)) return [...COMMON_OPERATORS, 'IN']
-  return COMMON_OPERATORS
+  return TEXT_OPERATORS
 }
 
 export function isFilterValid(filter: ViewFilter, fields: DataField[]): boolean {
@@ -43,9 +76,7 @@ export function isFilterValid(filter: ViewFilter, fields: DataField[]): boolean 
 }
 
 function legacyFilterOperator(field?: DataField): ViewFilterOperator {
-  if (!field || ['TEXT', 'LONG_TEXT', 'LINK', 'ATTACHMENT', 'RELATION'].includes(field.type))
-    return 'CONTAINS'
-  return 'EQ'
+  return operatorsForField(field)[0] ?? 'EQ'
 }
 
 export function normalizeClientViewConfig(
@@ -99,4 +130,18 @@ export function editableValueText(value: unknown): string {
       )
       .join(', ')
   return ''
+}
+
+export function localDateTimeText(value: unknown): string {
+  if (typeof value !== 'string' || !value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const part = (number: number) => String(number).padStart(2, '0')
+  return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}T${part(date.getHours())}:${part(date.getMinutes())}`
+}
+
+export function isoDateTimeValue(localValue: string): string | undefined {
+  if (!localValue) return undefined
+  const date = new Date(localValue)
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
 }

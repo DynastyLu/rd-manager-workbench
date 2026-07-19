@@ -1,8 +1,10 @@
 import type { DataField, ViewFilter, ViewFilterOperator } from '../types'
 import {
   editableValueText,
+  isoDateTimeValue,
   isComputedFieldType,
   isValuelessOperator,
+  localDateTimeText,
   operatorsForField,
 } from '../viewSettings'
 
@@ -35,6 +37,9 @@ function normalizeInputValue(
       .filter(Boolean)
       .slice(0, 100)
   if (field.type === 'NUMBER') return rawValue === '' ? undefined : Number(rawValue)
+  if (['DATETIME', 'CREATED_AT', 'UPDATED_AT'].includes(field.type)) {
+    return isoDateTimeValue(rawValue)
+  }
   if (field.type === 'CHECKBOX') return rawValue === 'true'
   return rawValue
 }
@@ -101,7 +106,10 @@ function FilterValueEditor({
       </select>
     )
   }
-  const renderedValue = editableValueText(filter.value)
+  const renderedValue =
+    ['DATETIME', 'CREATED_AT', 'UPDATED_AT'].includes(field.type) && filter.operator !== 'IN'
+      ? localDateTimeText(filter.value)
+      : editableValueText(filter.value)
   return (
     <input
       aria-label={ariaLabel}
