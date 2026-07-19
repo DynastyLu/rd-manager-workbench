@@ -17,10 +17,74 @@ export type DataFieldType =
   | 'LINK'
   | 'ATTACHMENT'
   | 'RELATION'
+  | 'LOOKUP'
+  | 'ROLLUP'
+  | 'FORMULA'
   | 'CREATED_AT'
   | 'UPDATED_AT'
 
 export type DataViewType = 'GRID' | 'KANBAN' | 'CALENDAR' | 'FORM'
+
+export interface RelationFieldConfig {
+  targetTableId: string
+  multiple: boolean
+  relationMode: 'ONE_WAY' | 'TWO_WAY'
+  inverseFieldId?: string
+}
+
+export interface CreateRelationOptions {
+  inverseFieldName?: string
+  inverseMultiple?: boolean
+}
+
+export interface LookupFieldConfig {
+  relationFieldId: string
+  targetFieldId: string
+}
+
+export interface RollupFieldConfig {
+  relationFieldId: string
+  targetFieldId?: string
+  aggregation: 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX'
+}
+
+export type FormulaFunctionName =
+  | 'IF'
+  | 'COALESCE'
+  | 'ROUND'
+  | 'ABS'
+  | 'SUM'
+  | 'COUNT'
+  | 'CONCAT'
+  | 'LOWER'
+  | 'UPPER'
+  | 'LEN'
+  | 'DATE_ADD'
+  | 'DATE_DIFF'
+
+export type FormulaAst =
+  | { kind: 'literal'; value: string | number | boolean | null }
+  | { kind: 'field'; fieldId: string }
+  | { kind: 'unary'; operator: '+' | '-'; operand: FormulaAst }
+  | {
+      kind: 'binary'
+      operator: '+' | '-' | '*' | '/' | '%' | '=' | '!=' | '>' | '>=' | '<' | '<='
+      left: FormulaAst
+      right: FormulaAst
+    }
+  | { kind: 'call'; name: FormulaFunctionName; args: FormulaAst[] }
+
+export interface FormulaFieldConfig {
+  expression: string
+  astVersion: 1
+  dependencies: string[]
+  ast: FormulaAst
+}
+
+export interface ComputedFieldError {
+  code: 'INVALID_FORMULA' | 'TYPE_ERROR' | 'DIV_ZERO' | 'CYCLE' | 'MISSING_TARGET'
+  message: string
+}
 
 export interface DataWorkspace {
   id: string
@@ -87,6 +151,7 @@ export interface DataView {
 export interface BaseRecord {
   id: string
   values: Record<string, unknown>
+  computedErrors?: Record<string, ComputedFieldError>
   sourceType: string | null
   sourceId: string | null
   sourcePath: string | null

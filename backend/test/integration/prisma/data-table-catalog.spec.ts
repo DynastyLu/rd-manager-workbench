@@ -21,6 +21,11 @@ describe('multi-dimensional data table catalog', () => {
     (type) => expect(schema).toContain(`enum ${type}`),
   );
 
+  it.each(['LOOKUP', 'ROLLUP', 'FORMULA'])(
+    'declares the %s computed field type',
+    (fieldType) => expect(schema).toContain(fieldType),
+  );
+
   it('keeps custom records and saved views attached to their table', () => {
     expect(schema).toContain('records     DataRecord[]');
     expect(schema).toContain('views       DataView[]');
