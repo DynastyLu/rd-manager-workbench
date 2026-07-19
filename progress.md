@@ -388,6 +388,7 @@
 - P1-01A Task 2 完成：安全 parser/evaluator 支持全部 DSL、2,000 字符/256 节点/32 深度限制、短路、数组、严格 ISO 日期和结构化错误。经规格与质量复核补齐日期溢出、未知异常传播、arity 预检、readonly AST 和对抗测试；最终 2 suites / 76 tests、lint、build、Prettier、diff-check 通过。提交 `1e8d276`、`fe0d826`、`d87e40a`。
 - P1-01A Task 3 完成：关系/LOOKUP/ROLLUP/FORMULA 配置规范化、服务器 AST、循环检测、key/type 不可变、局部 config PATCH 和 preview API 已接入。经复核补齐 server-owned inverse、COUNT 目标、prospective 依赖验证、生成时间预览、computed preview 明确拒绝和同事务 advisory lock；最终 unit 16/16、integration 8/8、lint/build/Prettier/diff-check 通过，并发相反公式 PATCH 为 `[200,400]` 且无循环。提交 `54b9777`、`42dac79`、`c4caf5b`。
 - P1-01A Task 4 完成：双向关系配对字段、1:1/1:N/N:N 增删差集、双入口同步、删除/解耦、基数冲突回滚和稳定锁顺序已接入。复核补齐空 ID、ONE_WAY 升级保护、系统文档项目清空兼容、表归档/关系配置生命周期保护，以及表归档与记录写入的受控 advisory-lock 并发回归；最终 relation unit 3/3、base integration 23/23（连续两轮）、backend unit 170/170、lint/build/Prettier/diff-check 全部通过，独立质量复审 APPROVED。提交 `06c9381`、`78c537e`、`b04db97`、`56d4fc7`、`5609c05`。
+- P1-01A Task 5 完成：自定义/系统目标请求内批量加载、有序 LOOKUP、五种 ROLLUP、公式依赖拓扑、生成时间字段、五类字段级错误和 list/create/update 即时解析已接入；计算字段写入统一 400，历史 required 损坏不阻塞记录写入。复核补齐损坏目标类型、损坏 AST/依赖/循环、归档目标、真实生成时间 API 链路，以及系统项目/任务/文档和复合会议/治理对象的精确 ID 查询下推；最终 adapter 8/8、resolver 6/6、base integration 25/25（连续两轮）、backend unit 29 suites / 184 tests、lint/build/diff-check 全部通过，独立质量复审 APPROVED。提交 `5c8c4c0`、`436e7e7`、`b073ad6`。
 
 ## 2026-07-18：P0-A 飞书式工作台与项目空间完成
 

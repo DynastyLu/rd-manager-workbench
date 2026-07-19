@@ -208,11 +208,11 @@ git commit -m "feat: sync bidirectional table relations"
 - Create: `backend/test/unit/modules/workbench/base/computed-field-resolver.spec.ts`
 - Modify: `backend/test/integration/modules/workbench/base.controller.spec.ts`
 
-- [ ] **Step 1: Write failing resolver tests**
+- [x] **Step 1: Write failing resolver tests**
 
 Assert ordered multi-LOOKUP values, COUNT/SUM/AVG/MIN/MAX, same-table formula dependency order, `MISSING_TARGET`, `DIV_ZERO`, and defensive `CYCLE` output.
 
-- [ ] **Step 2: Implement request-scoped batch loading and memoization**
+- [x] **Step 2: Implement request-scoped batch loading and memoization**
 
 ```ts
 export interface ComputedFieldError {
@@ -223,11 +223,11 @@ export interface ComputedFieldError {
 
 Group relation IDs by target table, load each target set once, compute LOOKUP/ROLLUP before FORMULA, and attach errors under `computedErrors[field.key]`.
 
-- [ ] **Step 3: Reject writes to computed keys**
+- [x] **Step 3: Reject writes to computed keys**
 
 Update `validateRecordValues` so any supplied LOOKUP/ROLLUP/FORMULA key returns 400 while omitted computed required checks never run.
 
-- [ ] **Step 4: Run tests and commit**
+- [x] **Step 4: Run tests and commit**
 
 Run: `cd backend && pnpm test:unit -- --runInBand computed-field-resolver && pnpm test:integration -- --runInBand base.controller`  
 Expected: PASS.
