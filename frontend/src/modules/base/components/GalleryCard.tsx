@@ -12,29 +12,46 @@ function safeHttpUrl(value: unknown) {
   }
 }
 
-function attachmentUrl(value: unknown) {
+function safeImageSource(value: unknown, allowWithoutExtension = false) {
+  if (typeof value !== 'string') return null
+  const source = value.trim()
+  if (!source) return null
+  const hasImageExtension = /\.(?:avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i.test(source)
+  if (!allowWithoutExtension && !hasImageExtension) return null
+  if (/^(?:\/|\.\.?\/)/.test(source)) return source
+  try {
+    const url = new URL(source)
+    return ['http:', 'https:', 'file:'].includes(url.protocol) ? url.toString() : null
+  } catch {
+    return !source.includes(':') ? source : null
+  }
+}
+
+function attachmentUrls(value: unknown) {
   const items = Array.isArray(value) ? value : value ? [value] : []
+  const urls: string[] = []
   for (const item of items) {
     const rawUrl = typeof item === 'string'
       ? item
       : item && typeof item === 'object' && 'url' in item
         ? (item as { url?: unknown }).url
         : undefined
-    const url = safeHttpUrl(rawUrl)
-    if (!url) continue
     const mimeType = item && typeof item === 'object' && 'mimeType' in item
       ? (item as { mimeType?: unknown }).mimeType
       : undefined
-    if (typeof mimeType === 'string' && mimeType.startsWith('image/')) return url
-    if (/\.(?:avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i.test(url)) return url
+    const url = safeImageSource(rawUrl, typeof mimeType === 'string' && mimeType.startsWith('image/'))
+    if (url && !urls.includes(url)) urls.push(url)
   }
-  return null
+  return urls
 }
 
-function galleryCoverUrl(field: DataField | undefined, value: unknown) {
-  if (field?.type === 'ATTACHMENT') return attachmentUrl(value)
-  if (field?.type === 'LINK') return safeHttpUrl(value)
-  return null
+function galleryCoverUrls(field: DataField | undefined, value: unknown) {
+  if (field?.type === 'ATTACHMENT') return attachmentUrls(value)
+  if (field?.type === 'LINK') {
+    const url = safeHttpUrl(value)
+    return url ? [url] : []
+  }
+  return []
 }
 
 function titleHue(title: string) {
@@ -82,6 +99,42 @@ function PlainValue({ field, value }: { field: DataField; value: unknown }) {
   return <span>{valueText(value)}</span>
 }
 
+function GalleryCover({
+  candidates,
+  title,
+  coverFit,
+  recordId,
+}: {
+  candidates: string[]
+  title: string
+  coverFit: GalleryViewConfig['coverFit']
+  recordId: string
+}) {
+  const [candidateIndex, setCandidateIndex] = useState(0)
+  const coverUrl = candidates[candidateIndex]
+  if (coverUrl) {
+    return (
+      <img
+        src={coverUrl}
+        alt={`${title}封面`}
+        loading="lazy"
+        style={{ objectFit: (coverFit ?? 'COVER').toLowerCase() as CSSProperties['objectFit'] }}
+        onError={() => setCandidateIndex((index) => index + 1)}
+      />
+    )
+  }
+  return (
+    <div
+      className="gallery-card__placeholder"
+      data-testid={`gallery-placeholder-${recordId}`}
+      style={{ '--gallery-hue': titleHue(title) } as CSSProperties}
+      aria-hidden="true"
+    >
+      <span>{title.slice(0, 1) || '记'}</span>
+    </div>
+  )
+}
+
 export function GalleryCard({
   record,
   title,
@@ -97,8 +150,9 @@ export function GalleryCard({
   config: GalleryViewConfig
   onOpen: () => void
 }) {
-  const [coverFailed, setCoverFailed] = useState(false)
-  const coverUrl = coverFailed ? null : galleryCoverUrl(coverField, coverField ? record.values[coverField.key] : undefined)
+  const coverValue = coverField ? record.values[coverField.key] : undefined
+  const coverCandidates = galleryCoverUrls(coverField, coverValue)
+  const coverIdentity = `${coverField?.id ?? 'none'}:${valueText(coverValue)}`
   const size = config.cardSize ?? 'STANDARD'
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
@@ -118,24 +172,13 @@ export function GalleryCard({
       onKeyDown={handleKeyDown}
     >
       <div className="gallery-card__cover">
-        {coverUrl ? (
-          <img
-            src={coverUrl}
-            alt={`${title}封面`}
-            loading="lazy"
-            style={{ objectFit: (config.coverFit ?? 'COVER').toLowerCase() as CSSProperties['objectFit'] }}
-            onError={() => setCoverFailed(true)}
-          />
-        ) : (
-          <div
-            className="gallery-card__placeholder"
-            data-testid={`gallery-placeholder-${record.id}`}
-            style={{ '--gallery-hue': titleHue(title) } as CSSProperties}
-            aria-hidden="true"
-          >
-            <span>{title.slice(0, 1) || '记'}</span>
-          </div>
-        )}
+        <GalleryCover
+          key={coverIdentity}
+          candidates={coverCandidates}
+          title={title}
+          coverFit={config.coverFit}
+          recordId={record.id}
+        />
       </div>
       <div className="gallery-card__body">
         <h3>{title}</h3>

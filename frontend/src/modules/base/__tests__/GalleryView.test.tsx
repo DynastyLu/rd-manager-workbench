@@ -80,6 +80,19 @@ describe('GalleryView', () => {
     )
   })
 
+  it('supports local attachment paths and tries the next image after a load failure', () => {
+    renderGallery({
+      records: [{
+        ...records[0]!,
+        values: { ...records[0]!.values, cover: ['/docs/broken.png', '/docs/design.jpg'] },
+      }],
+    })
+
+    expect(screen.getByRole('img')).toHaveAttribute('src', '/docs/broken.png')
+    fireEvent.error(screen.getByRole('img'))
+    expect(screen.getByRole('img')).toHaveAttribute('src', '/docs/design.jpg')
+  })
+
   it('accepts an http link cover and rejects unsafe protocols', () => {
     const { rerender } = renderGallery({ config: { ...config, coverFieldKey: 'imageLink' } })
     expect(screen.getByRole('img')).toHaveAttribute('src', 'https://img.example.com/link.png')
@@ -103,6 +116,25 @@ describe('GalleryView', () => {
     const placeholder = screen.getByTestId('gallery-placeholder-record-1')
     expect(placeholder).toBeInTheDocument()
     expect(placeholder.getAttribute('style')).toContain('--gallery-hue:')
+  })
+
+  it('resets a failed cover when the selected cover field changes', () => {
+    const { rerender } = renderGallery({
+      records: [{ ...records[0]!, values: { ...records[0]!.values, cover: ['/docs/broken.png'] } }],
+    })
+    fireEvent.error(screen.getByRole('img'))
+    expect(screen.getByTestId('gallery-placeholder-record-1')).toBeInTheDocument()
+
+    rerender(
+      <GalleryView
+        fields={fields}
+        records={records}
+        config={{ ...config, coverFieldKey: 'imageLink' }}
+        onOpenRecord={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('img')).toHaveAttribute('src', 'https://img.example.com/link.png')
   })
 
   it('limits additional fields to eight and renders typed values and computed errors', () => {
