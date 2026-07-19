@@ -5,6 +5,7 @@ import { BaseSidebar } from '@/modules/base/components/BaseSidebar'
 import { BaseToolbar } from '@/modules/base/components/BaseToolbar'
 import { FieldManager } from '@/modules/base/components/FieldManager'
 import { GridView } from '@/modules/base/components/GridView'
+import { GanttView } from '@/modules/base/components/GanttView'
 import { CalendarView } from '@/modules/base/components/CalendarView'
 import { FormView } from '@/modules/base/components/FormView'
 import { KanbanView } from '@/modules/base/components/KanbanView'
@@ -251,6 +252,8 @@ export default function LibraryHomePage() {
                   <KanbanView fields={fields} records={records} groupFieldKey={String(resolvedView.config.groupField ?? '') || undefined} isUpdating={updateRecordMutation.isPending} onGroupFieldChange={(groupField) => saveViewConfig({ ...resolvedView.config, groupField })} onRecordUpdate={(recordId, input) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values: input.values })} onOpenRecord={setSelectedRecord} />
                 ) : resolvedView.type === 'CALENDAR' ? (
                   <CalendarView fields={fields} records={records} dateFieldKey={String(resolvedView.config.dateField ?? '') || undefined} onDateFieldChange={(dateField) => saveViewConfig({ ...resolvedView.config, dateField })} onOpenRecord={setSelectedRecord} />
+                ) : resolvedView.type === 'GANTT' ? (
+                  <GanttView fields={fields} records={records} config={resolvedView.config} onConfigChange={saveViewConfig} onRecordChange={(recordId, values) => updateRecordMutation.mutateAsync({ tableId: selectedTable.id, recordId, values })} onOpenRecord={setSelectedRecord} />
                 ) : (
                   <FormView tableSource={selectedTable.source} fields={fields} tables={tables} isSubmitting={createRecordMutation.isPending} onCreateRecord={(input) => createRecordMutation.mutateAsync({ tableId: selectedTable.id, values: input.values })} />
                 )
