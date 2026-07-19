@@ -243,6 +243,13 @@ describe('Multi-dimensional base API', () => {
         }),
       );
     await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/fields`)
+      .send({ key: 'estimate', name: '恢复工时', type: 'NUMBER', isRequired: true, sequence: 1 })
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({ id: numberField.body.data.id, archivedAt: null });
+      });
+    await request(app.getHttpServer())
       .delete(`/api/base/fields/${stageField.body.data.id}`)
       .expect(204);
     await request(app.getHttpServer()).delete(`/api/base/views/${view.body.data.id}`).expect(204);
@@ -279,7 +286,7 @@ describe('Multi-dimensional base API', () => {
     const targetTitle = targetTable.body.data.fields.find(
       (field: { key: string }) => field.key === 'title',
     );
-    await request(app.getHttpServer())
+    const lookup = await request(app.getHttpServer())
       .post(`/api/base/tables/${sourceTableId}/fields`)
       .send({
         key: 'projectTitle',
@@ -296,6 +303,40 @@ describe('Multi-dimensional base API', () => {
         type: DataFieldType.ROLLUP,
         config: { relationFieldId: relation.body.data.id, aggregation: 'COUNT' },
       })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/api/base/fields/${relation.body.data.id}`)
+      .send({ config: { multiple: true } })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.config).toEqual({
+          targetTableId,
+          multiple: true,
+          relationMode: 'ONE_WAY',
+        });
+      });
+    await request(app.getHttpServer())
+      .patch(`/api/base/fields/${relation.body.data.id}`)
+      .send({ config: { targetTableId: sourceTableId } })
+      .expect(404);
+    await expect(
+      prisma.dataField.findUniqueOrThrow({ where: { id: relation.body.data.id } }),
+    ).resolves.toMatchObject({
+      config: { targetTableId, multiple: true, relationMode: 'ONE_WAY' },
+    });
+    await request(app.getHttpServer())
+      .patch(`/api/base/fields/${amount.body.data.id}`)
+      .send({ type: DataFieldType.TEXT })
+      .expect(400);
+
+    const createdAtField = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({ key: 'createdAt', name: '创建时间', type: DataFieldType.CREATED_AT })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({ key: 'updatedAt', name: '更新时间', type: DataFieldType.UPDATED_AT })
       .expect(201);
 
     const formula = await request(app.getHttpServer())
@@ -346,7 +387,7 @@ describe('Multi-dimensional base API', () => {
     await request(app.getHttpServer())
       .post(`/api/base/tables/${sourceTableId}/formula-preview`)
       .send({ expression: '{amount} + 2', recordId: record.body.data.id })
-      .expect(201)
+      .expect(200)
       .expect(({ body }) => {
         expect(body.data).toMatchObject({
           astVersion: 1,
@@ -354,6 +395,20 @@ describe('Multi-dimensional base API', () => {
           value: 5,
         });
       });
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/formula-preview`)
+      .send({ expression: '{createdAt}', recordId: record.body.data.id })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({
+          dependencies: [createdAtField.body.data.id],
+          value: record.body.data.createdAt,
+        });
+      });
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/formula-preview`)
+      .send({ expression: '{projectTitle}', recordId: record.body.data.id })
+      .expect(400);
     await request(app.getHttpServer())
       .post(`/api/base/tables/${sourceTableId}/formula-preview`)
       .send({ expression: '{missing}' })
@@ -370,6 +425,49 @@ describe('Multi-dimensional base API', () => {
     await expect(
       prisma.dataField.findUniqueOrThrow({ where: { id: amount.body.data.id } }),
     ).resolves.toMatchObject({ key: 'amount', name: '金额' });
+    expect(lookup.body.data.config).toEqual({
+      relationFieldId: relation.body.data.id,
+      targetFieldId: targetTitle.id,
+    });
+  });
+
+  it('serializes concurrent formula dependency updates so the stored graph stays acyclic', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 并发公式工作区` })
+      .expect(201);
+    const table = await request(app.getHttpServer())
+      .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+      .send({ name: `${prefix} 并发公式表` })
+      .expect(201);
+    const tableId = table.body.data.id as string;
+    const [formulaA, formulaB] = await Promise.all(
+      ['formulaA', 'formulaB'].map((key) =>
+        request(app.getHttpServer())
+          .post(`/api/base/tables/${tableId}/fields`)
+          .send({ key, name: key, type: DataFieldType.FORMULA, config: { expression: '1' } })
+          .expect(201),
+      ),
+    );
+
+    const updates = await Promise.all([
+      request(app.getHttpServer())
+        .patch(`/api/base/fields/${formulaA.body.data.id}`)
+        .send({ config: { expression: '{formulaB}' } }),
+      request(app.getHttpServer())
+        .patch(`/api/base/fields/${formulaB.body.data.id}`)
+        .send({ config: { expression: '{formulaA}' } }),
+    ]);
+    expect(updates.map((response) => response.status).sort()).toEqual([200, 400]);
+
+    const stored = await prisma.dataField.findMany({
+      where: { id: { in: [formulaA.body.data.id, formulaB.body.data.id] } },
+    });
+    const dependencyCounts = stored.map((field) => {
+      const config = field.config as { dependencies?: unknown[] };
+      return config.dependencies?.length ?? 0;
+    });
+    expect(dependencyCounts.sort()).toEqual([0, 1]);
   });
 
   it('updates a preset task through TasksService so completion clears reminders', async () => {

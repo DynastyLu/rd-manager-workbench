@@ -217,36 +217,42 @@ export class BaseService {
   }
 
   async createField(tableId: string, dto: CreateFieldDto) {
-    const table = await this.assertCustomTable(tableId);
-    const normalized = await this.fieldConfig.normalizeCreate(tableId, dto);
-    if (
-      normalized.isPrimary &&
-      (await this.prisma.dataField.count({
-        where: { tableId: table.id, isPrimary: true, archivedAt: null },
-      }))
-    )
-      throw new ConflictException('The table already has a primary field');
     try {
-      const archived = await this.prisma.dataField.findUnique({
-        where: { tableId_key: { tableId, key: dto.key } },
-      });
-      const { config } = normalized;
-      const fields = {
-        key: normalized.key,
-        name: normalized.name,
-        type: normalized.type,
-        isPrimary: normalized.isPrimary,
-        isRequired: normalized.isRequired,
-        sequence: normalized.sequence,
-      };
-      if (archived?.archivedAt) {
-        return await this.prisma.dataField.update({
-          where: { id: archived.id },
-          data: { ...fields, archivedAt: null, config: (config ?? {}) as Prisma.InputJsonValue },
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockFieldConfig(tx, tableId);
+        const table = await tx.dataTable.findFirst({ where: { id: tableId, archivedAt: null } });
+        if (!table) throw new NotFoundException('Data table not found');
+        if (table.source !== DataTableSource.CUSTOM)
+          throw new BadRequestException('This operation is only available for custom tables');
+        const normalized = await this.fieldConfig.normalizeCreate(tableId, dto, tx);
+        if (
+          normalized.isPrimary &&
+          (await tx.dataField.count({
+            where: { tableId: table.id, isPrimary: true, archivedAt: null },
+          }))
+        )
+          throw new ConflictException('The table already has a primary field');
+        const archived = await tx.dataField.findUnique({
+          where: { tableId_key: { tableId, key: dto.key } },
         });
-      }
-      return await this.prisma.dataField.create({
-        data: { ...fields, tableId, config: (config ?? {}) as Prisma.InputJsonValue },
+        const { config } = normalized;
+        const fields = {
+          key: normalized.key,
+          name: normalized.name,
+          type: normalized.type,
+          isPrimary: normalized.isPrimary,
+          isRequired: normalized.isRequired,
+          sequence: normalized.sequence,
+        };
+        if (archived?.archivedAt) {
+          return tx.dataField.update({
+            where: { id: archived.id },
+            data: { ...fields, archivedAt: null, config: (config ?? {}) as Prisma.InputJsonValue },
+          });
+        }
+        return tx.dataField.create({
+          data: { ...fields, tableId, config: (config ?? {}) as Prisma.InputJsonValue },
+        });
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
@@ -258,29 +264,37 @@ export class BaseService {
   }
 
   async updateField(id: string, dto: UpdateFieldDto) {
-    const field = await this.prisma.dataField.findFirst({
+    const located = await this.prisma.dataField.findFirst({
       where: { id, archivedAt: null },
-      include: { table: true },
+      select: { tableId: true },
     });
-    if (!field) throw new NotFoundException('Data field not found');
-    if (field.table.source !== DataTableSource.CUSTOM)
-      throw new BadRequestException('Preset fields cannot be changed');
-    const normalized = await this.fieldConfig.normalizeUpdate(field, dto);
-    if (field.isPrimary && normalized.isPrimary === false)
-      throw new BadRequestException('The primary field cannot be downgraded');
-    if (
-      normalized.isPrimary &&
-      !field.isPrimary &&
-      (await this.prisma.dataField.count({
-        where: { tableId: field.tableId, isPrimary: true, archivedAt: null },
-      }))
-    )
-      throw new ConflictException('The table already has a primary field');
-    const { config, ...fields } = normalized;
+    if (!located) throw new NotFoundException('Data field not found');
     try {
-      return await this.prisma.dataField.update({
-        where: { id },
-        data: { ...fields, ...(config ? { config: config as Prisma.InputJsonValue } : {}) },
+      return await this.prisma.$transaction(async (tx) => {
+        await this.lockFieldConfig(tx, located.tableId);
+        const field = await tx.dataField.findFirst({
+          where: { id, archivedAt: null },
+          include: { table: true },
+        });
+        if (!field) throw new NotFoundException('Data field not found');
+        if (field.table.source !== DataTableSource.CUSTOM)
+          throw new BadRequestException('Preset fields cannot be changed');
+        const normalized = await this.fieldConfig.normalizeUpdate(field, dto, tx);
+        if (field.isPrimary && normalized.isPrimary === false)
+          throw new BadRequestException('The primary field cannot be downgraded');
+        if (
+          normalized.isPrimary &&
+          !field.isPrimary &&
+          (await tx.dataField.count({
+            where: { tableId: field.tableId, isPrimary: true, archivedAt: null },
+          }))
+        )
+          throw new ConflictException('The table already has a primary field');
+        const { config, ...fields } = normalized;
+        return tx.dataField.update({
+          where: { id },
+          data: { ...fields, ...(config ? { config: config as Prisma.InputJsonValue } : {}) },
+        });
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
@@ -601,6 +615,12 @@ export class BaseService {
     } catch {
       return false;
     }
+  }
+
+  private lockFieldConfig(tx: Prisma.TransactionClient, tableId: string) {
+    return tx.$executeRaw(
+      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`rd-manager-workbench:data-field-config:${tableId}`}))`,
+    );
   }
 
   private async assertWorkspace(id: string) {

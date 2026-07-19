@@ -13,6 +13,7 @@ const COMPUTED_TYPES = new Set<DataFieldType>([
 const FORBIDDEN_LOOKUP_TYPES = COMPUTED_TYPES;
 const ROLLUP_AGGREGATIONS = new Set(['COUNT', 'SUM', 'AVG', 'MIN', 'MAX']);
 const NEW_FIELD_ID = '__new_field__';
+type FieldConfigClient = Pick<Prisma.TransactionClient, 'dataTable' | 'dataField' | 'dataRecord'>;
 
 type StoredField = {
   id: string;
@@ -29,8 +30,12 @@ type StoredField = {
 export class FieldConfigService {
   constructor(private readonly prisma: PlatformPrismaService) {}
 
-  async normalizeCreate(tableId: string, dto: CreateFieldDto): Promise<CreateFieldDto> {
-    const existing = await this.prisma.dataField.findFirst({
+  async normalizeCreate(
+    tableId: string,
+    dto: CreateFieldDto,
+    client: FieldConfigClient = this.prisma,
+  ): Promise<CreateFieldDto> {
+    const existing = await client.dataField.findFirst({
       where: { tableId, key: dto.key },
     });
     this.assertComputedFlags(dto.type, dto.isPrimary, dto.isRequired);
@@ -41,30 +46,35 @@ export class FieldConfigService {
       { id: existing?.id ?? NEW_FIELD_ID, key: dto.key },
       true,
       dto,
+      client,
     );
     return {
       ...dto,
       config,
       ...(COMPUTED_TYPES.has(dto.type) ? { isPrimary: false, isRequired: false } : {}),
-      ...(dto.type === DataFieldType.RELATION && dto.config?.relationMode === 'TWO_WAY'
+      ...(dto.type === DataFieldType.RELATION && config.relationMode === 'TWO_WAY'
         ? {
-            inverseFieldName:
-              dto.inverseFieldName ?? this.optionalString(dto.config.inverseFieldName),
-            inverseMultiple:
-              dto.inverseMultiple ??
-              (typeof dto.config.inverseMultiple === 'boolean' ? dto.config.inverseMultiple : true),
+            inverseFieldName: dto.inverseFieldName,
+            inverseMultiple: dto.inverseMultiple ?? true,
           }
         : {}),
     };
   }
 
-  async normalizeUpdate(field: StoredField, dto: UpdateFieldDto): Promise<UpdateFieldDto> {
+  async normalizeUpdate(
+    field: StoredField,
+    dto: UpdateFieldDto,
+    client: FieldConfigClient = this.prisma,
+  ): Promise<UpdateFieldDto> {
     if ('key' in dto) throw new BadRequestException('Field key cannot be changed');
-    const type = dto.type ?? field.type;
+    if (dto.type !== undefined && dto.type !== field.type) {
+      throw new BadRequestException('Field type cannot be changed');
+    }
+    const type = field.type;
     const isPrimary = dto.isPrimary ?? field.isPrimary;
     const isRequired = dto.isRequired ?? field.isRequired;
     this.assertComputedFlags(type, isPrimary, isRequired);
-    const configInput = dto.config ?? (dto.type && dto.type !== field.type ? {} : field.config);
+    const configInput = this.updateConfigInput(type, field.config, dto.config);
     const config = await this.normalizeConfig(
       field.tableId,
       type,
@@ -72,8 +82,12 @@ export class FieldConfigService {
       { id: field.id, key: field.key },
       false,
       dto,
+      client,
       field.type === DataFieldType.RELATION ? field.config : undefined,
     );
+    if (type === DataFieldType.RELATION) {
+      await this.validateRelationDependents(field, config, client);
+    }
     return {
       ...dto,
       type,
@@ -82,23 +96,47 @@ export class FieldConfigService {
     };
   }
 
-  async previewFormula(tableId: string, dto: FormulaPreviewDto) {
-    const table = await this.prisma.dataTable.findFirst({
+  async previewFormula(
+    tableId: string,
+    dto: FormulaPreviewDto,
+    client: FieldConfigClient = this.prisma,
+  ) {
+    const table = await client.dataTable.findFirst({
       where: { id: tableId, archivedAt: null },
     });
     if (!table) throw new NotFoundException('Data table not found');
-    const fields = await this.activeFields(tableId);
+    const fields = await this.activeFields(tableId, client);
     const parsed = this.parse(dto.expression, fields);
+    const fieldsById = new Map(fields.map((field) => [field.id, field]));
+    const computedDependency = parsed.dependencies
+      .map((id) => fieldsById.get(id))
+      .find((field) => field && COMPUTED_TYPES.has(field.type));
+    if (computedDependency) {
+      throw new BadRequestException(
+        'Formula preview does not support computed field dependencies yet',
+      );
+    }
     let rawValues: Record<string, unknown> = {};
+    let recordTimestamps: { createdAt: Date; updatedAt: Date } | undefined;
     if (dto.recordId) {
-      const record = await this.prisma.dataRecord.findFirst({
+      const record = await client.dataRecord.findFirst({
         where: { id: dto.recordId, tableId },
       });
       if (!record) throw new NotFoundException('Data record not found');
       rawValues = this.jsonRecord(record.values);
+      recordTimestamps = record;
     }
     const values = Object.fromEntries(
-      fields.map((field) => [field.id, rawValues[field.key] ?? null]),
+      fields.map((field) => {
+        if (!recordTimestamps) return [field.id, null];
+        if (field.type === DataFieldType.CREATED_AT) {
+          return [field.id, recordTimestamps.createdAt];
+        }
+        if (field.type === DataFieldType.UPDATED_AT) {
+          return [field.id, recordTimestamps.updatedAt];
+        }
+        return [field.id, rawValues[field.key] ?? null];
+      }),
     );
     const result = evaluateFormula(parsed.ast, values);
     return {
@@ -120,16 +158,24 @@ export class FieldConfigService {
     proposedField: { id: string; key: string },
     isCreate: boolean,
     request: CreateFieldDto | UpdateFieldDto,
+    client: FieldConfigClient,
     trustedRelationConfig?: Prisma.JsonValue,
   ): Promise<Record<string, Prisma.JsonValue>> {
     const config = this.jsonRecord(input ?? {});
     if (type === DataFieldType.RELATION) {
-      return this.normalizeRelation(config, tableId, isCreate, request, trustedRelationConfig);
+      return this.normalizeRelation(
+        config,
+        tableId,
+        isCreate,
+        request,
+        client,
+        trustedRelationConfig,
+      );
     }
-    if (type === DataFieldType.LOOKUP) return this.normalizeLookup(config, tableId);
-    if (type === DataFieldType.ROLLUP) return this.normalizeRollup(config, tableId);
+    if (type === DataFieldType.LOOKUP) return this.normalizeLookup(config, tableId, client);
+    if (type === DataFieldType.ROLLUP) return this.normalizeRollup(config, tableId, client);
     if (type === DataFieldType.FORMULA) {
-      return this.normalizeFormula(config, tableId, proposedField);
+      return this.normalizeFormula(config, tableId, proposedField, client);
     }
     return config as Record<string, Prisma.JsonValue>;
   }
@@ -139,6 +185,7 @@ export class FieldConfigService {
     sourceTableId: string,
     isCreate: boolean,
     request: CreateFieldDto | UpdateFieldDto,
+    client: FieldConfigClient,
     trustedConfig?: Prisma.JsonValue,
   ): Promise<Record<string, Prisma.JsonValue>> {
     const targetTableId = this.requiredString(config.targetTableId, 'targetTableId');
@@ -148,12 +195,12 @@ export class FieldConfigService {
     if (config.relationMode !== 'ONE_WAY' && config.relationMode !== 'TWO_WAY') {
       throw new BadRequestException('relationMode must be ONE_WAY or TWO_WAY');
     }
-    const target = await this.prisma.dataTable.findFirst({
+    const target = await client.dataTable.findFirst({
       where: { id: targetTableId, archivedAt: null },
     });
     if (!target) throw new NotFoundException('Relation target table not found');
     if (config.relationMode === 'TWO_WAY') {
-      const source = await this.prisma.dataTable.findFirst({
+      const source = await client.dataTable.findFirst({
         where: { id: sourceTableId, archivedAt: null },
       });
       if (
@@ -164,14 +211,11 @@ export class FieldConfigService {
         throw new BadRequestException('Two-way relations require custom tables');
       }
       if (isCreate) {
-        const inverseFieldName = this.optionalString(
-          (request as CreateFieldDto).inverseFieldName ?? config.inverseFieldName,
-        );
+        const inverseFieldName = this.optionalString((request as CreateFieldDto).inverseFieldName);
         if (!inverseFieldName) {
           throw new BadRequestException('inverseFieldName is required for two-way relations');
         }
-        const inverseMultiple =
-          (request as CreateFieldDto).inverseMultiple ?? config.inverseMultiple;
+        const inverseMultiple = (request as CreateFieldDto).inverseMultiple;
         if (inverseMultiple !== undefined && typeof inverseMultiple !== 'boolean') {
           throw new BadRequestException('inverseMultiple must be a boolean');
         }
@@ -196,12 +240,19 @@ export class FieldConfigService {
   private async normalizeLookup(
     config: Record<string, unknown>,
     tableId: string,
+    client: FieldConfigClient,
+    relationOverride?: StoredField,
   ): Promise<Record<string, Prisma.JsonValue>> {
     const relationFieldId = this.requiredString(config.relationFieldId, 'relationFieldId');
     const targetFieldId = this.requiredString(config.targetFieldId, 'targetFieldId');
-    const relation = await this.requireRelationField(tableId, relationFieldId);
-    const targetTableId = await this.requireRelationTargetTableId(relation.config);
-    const target = await this.prisma.dataField.findFirst({
+    const relation = await this.requireRelationField(
+      tableId,
+      relationFieldId,
+      client,
+      relationOverride,
+    );
+    const targetTableId = await this.requireRelationTargetTableId(relation.config, client);
+    const target = await client.dataField.findFirst({
       where: { id: targetFieldId, tableId: targetTableId, archivedAt: null },
     });
     if (!target) throw new NotFoundException('Lookup target field not found');
@@ -214,17 +265,24 @@ export class FieldConfigService {
   private async normalizeRollup(
     config: Record<string, unknown>,
     tableId: string,
+    client: FieldConfigClient,
+    relationOverride?: StoredField,
   ): Promise<Record<string, Prisma.JsonValue>> {
     const relationFieldId = this.requiredString(config.relationFieldId, 'relationFieldId');
     const aggregation = this.requiredString(config.aggregation, 'aggregation');
     if (!ROLLUP_AGGREGATIONS.has(aggregation)) {
       throw new BadRequestException('Unsupported rollup aggregation');
     }
-    const relation = await this.requireRelationField(tableId, relationFieldId);
-    const targetTableId = await this.requireRelationTargetTableId(relation.config);
+    const relation = await this.requireRelationField(
+      tableId,
+      relationFieldId,
+      client,
+      relationOverride,
+    );
+    const targetTableId = await this.requireRelationTargetTableId(relation.config, client);
     if (aggregation === 'COUNT') return { relationFieldId, aggregation };
     const targetFieldId = this.requiredString(config.targetFieldId, 'targetFieldId');
-    const target = await this.prisma.dataField.findFirst({
+    const target = await client.dataField.findFirst({
       where: { id: targetFieldId, tableId: targetTableId, archivedAt: null },
     });
     if (!target) throw new NotFoundException('Rollup target field not found');
@@ -238,9 +296,10 @@ export class FieldConfigService {
     config: Record<string, unknown>,
     tableId: string,
     proposedField: { id: string; key: string },
+    client: FieldConfigClient,
   ): Promise<Record<string, Prisma.JsonValue>> {
     const expression = this.requiredString(config.expression, 'expression');
-    const fields = await this.activeFields(tableId);
+    const fields = await this.activeFields(tableId, client);
     const parserFields = fields
       .filter((field) => field.id !== proposedField.id)
       .concat({
@@ -316,8 +375,50 @@ export class FieldConfigService {
       : [];
   }
 
-  private async requireRelationField(tableId: string, fieldId: string): Promise<StoredField> {
-    const field = await this.prisma.dataField.findFirst({
+  private updateConfigInput(
+    type: DataFieldType,
+    existingConfig: Prisma.JsonValue,
+    submittedConfig: Record<string, unknown> | undefined,
+  ): Prisma.JsonValue | Record<string, unknown> {
+    if (submittedConfig === undefined) return existingConfig;
+    const submitted = this.jsonRecord(submittedConfig);
+    if (
+      type === DataFieldType.RELATION ||
+      type === DataFieldType.LOOKUP ||
+      type === DataFieldType.ROLLUP
+    ) {
+      return { ...this.jsonRecord(existingConfig), ...submitted };
+    }
+    return submitted;
+  }
+
+  private async validateRelationDependents(
+    field: StoredField,
+    prospectiveConfig: Record<string, Prisma.JsonValue>,
+    client: FieldConfigClient,
+  ): Promise<void> {
+    const prospectiveRelation: StoredField = { ...field, config: prospectiveConfig };
+    const fields = await this.activeFields(field.tableId, client);
+    for (const dependent of fields) {
+      if (dependent.id === field.id) continue;
+      const config = this.jsonRecord(dependent.config);
+      if (config.relationFieldId !== field.id) continue;
+      if (dependent.type === DataFieldType.LOOKUP) {
+        await this.normalizeLookup(config, field.tableId, client, prospectiveRelation);
+      } else if (dependent.type === DataFieldType.ROLLUP) {
+        await this.normalizeRollup(config, field.tableId, client, prospectiveRelation);
+      }
+    }
+  }
+
+  private async requireRelationField(
+    tableId: string,
+    fieldId: string,
+    client: FieldConfigClient,
+    override?: StoredField,
+  ): Promise<StoredField> {
+    if (override?.id === fieldId && override.tableId === tableId) return override;
+    const field = await client.dataField.findFirst({
       where: { id: fieldId, tableId, archivedAt: null },
     });
     if (!field) throw new NotFoundException('Relation field not found');
@@ -327,18 +428,21 @@ export class FieldConfigService {
     return field;
   }
 
-  private async requireRelationTargetTableId(config: Prisma.JsonValue): Promise<string> {
+  private async requireRelationTargetTableId(
+    config: Prisma.JsonValue,
+    client: FieldConfigClient,
+  ): Promise<string> {
     const targetTableId = this.jsonRecord(config).targetTableId;
     const id = this.requiredString(targetTableId, 'Relation targetTableId');
-    const table = await this.prisma.dataTable.findFirst({
+    const table = await client.dataTable.findFirst({
       where: { id, archivedAt: null },
     });
     if (!table) throw new NotFoundException('Relation target table not found');
     return id;
   }
 
-  private async activeFields(tableId: string): Promise<StoredField[]> {
-    return this.prisma.dataField.findMany({
+  private async activeFields(tableId: string, client: FieldConfigClient): Promise<StoredField[]> {
+    return client.dataField.findMany({
       where: { tableId, archivedAt: null },
       orderBy: [{ sequence: 'asc' }, { id: 'asc' }],
     });

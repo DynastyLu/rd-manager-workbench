@@ -84,7 +84,7 @@ export class BaseController {
   @Delete('fields/:id') @HttpCode(HttpStatus.NO_CONTENT) deleteField(@Param('id') id: string) {
     return this.service.deleteField(id);
   }
-  @Post('tables/:tableId/formula-preview') previewFormula(
+  @Post('tables/:tableId/formula-preview') @HttpCode(HttpStatus.OK) previewFormula(
     @Param('tableId') id: string,
     @Body() dto: FormulaPreviewDto,
   ) {

@@ -27,6 +27,13 @@ describe('FieldConfigService', () => {
     { id: archivedTableId, source: DataTableSource.CUSTOM, archivedAt: new Date() },
   ];
   let fields: Field[];
+  let records: Array<{
+    id: string;
+    tableId: string;
+    values: Prisma.JsonValue;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
   let service: FieldConfigService;
 
   beforeEach(() => {
@@ -67,6 +74,26 @@ describe('FieldConfigService', () => {
         relationMode: 'TWO_WAY',
         inverseFieldId: 'trusted-inverse',
       }),
+      field('lookup', currentTableId, 'projectName', DataFieldType.LOOKUP, {
+        relationFieldId: 'relation',
+        targetFieldId: 'target-name',
+      }),
+      field('rollup', currentTableId, 'projectBudget', DataFieldType.ROLLUP, {
+        relationFieldId: 'relation',
+        targetFieldId: 'target-number',
+        aggregation: 'SUM',
+      }),
+      field('created-at', currentTableId, 'createdAt', DataFieldType.CREATED_AT),
+      field('updated-at', currentTableId, 'updatedAt', DataFieldType.UPDATED_AT),
+    ];
+    records = [
+      {
+        id: 'record-1',
+        tableId: currentTableId,
+        values: { amount: 5 },
+        createdAt: new Date('2026-07-20T00:00:00.000Z'),
+        updatedAt: new Date('2026-07-21T00:00:00.000Z'),
+      },
     ];
     const prisma = {
       dataTable: {
@@ -86,7 +113,14 @@ describe('FieldConfigService', () => {
           ),
         ),
       },
-      dataRecord: { findFirst: jest.fn() },
+      dataRecord: {
+        findFirst: jest.fn(({ where }: { where: { id: string; tableId: string } }) =>
+          Promise.resolve(
+            records.find((record) => record.id === where.id && record.tableId === where.tableId) ??
+              null,
+          ),
+        ),
+      },
     } as unknown as PlatformPrismaService;
     service = new FieldConfigService(prisma);
   });
@@ -100,10 +134,12 @@ describe('FieldConfigService', () => {
         targetTableId,
         multiple: false,
         relationMode: 'TWO_WAY',
-        inverseFieldName: '需求',
+        inverseFieldName: 'nested value must be ignored',
+        inverseMultiple: 'nested value must be ignored',
         inverseFieldId: 'forged-inverse',
         ast: { client: true },
       },
+      inverseFieldName: '需求',
     });
     expect(twoWay).toMatchObject({
       config: { targetTableId, multiple: false, relationMode: 'TWO_WAY' },
@@ -111,6 +147,8 @@ describe('FieldConfigService', () => {
       inverseMultiple: true,
     });
     expect(twoWay.config).not.toHaveProperty('inverseFieldId');
+    expect(twoWay.config).not.toHaveProperty('inverseFieldName');
+    expect(twoWay.config).not.toHaveProperty('inverseMultiple');
     await expect(
       service.normalizeCreate(currentTableId, {
         key: 'oneWayOwner',
@@ -124,6 +162,84 @@ describe('FieldConfigService', () => {
         },
       }),
     ).resolves.not.toHaveProperty('config.inverseFieldId');
+
+    await expect(
+      service.normalizeCreate(currentTableId, {
+        key: 'nestedOnly',
+        name: '嵌套旁路',
+        type: DataFieldType.RELATION,
+        config: {
+          targetTableId,
+          multiple: true,
+          relationMode: 'TWO_WAY',
+          inverseFieldName: 'nested is not a create option',
+        },
+      }),
+    ).rejects.toThrow('inverseFieldName is required');
+  });
+
+  it('merges partial client-owned configs and strips forged server-owned keys', async () => {
+    const relation = await service.normalizeUpdate(fields.find((item) => item.id === 'relation')!, {
+      config: { multiple: false, inverseFieldId: 'forged' },
+    });
+    expect(relation.config).toEqual({
+      targetTableId,
+      multiple: false,
+      relationMode: 'ONE_WAY',
+    });
+    const lookup = await service.normalizeUpdate(fields.find((item) => item.id === 'lookup')!, {
+      config: { targetFieldId: 'target-name', ast: { forged: true } },
+    });
+    expect(lookup.config).toEqual({
+      relationFieldId: 'relation',
+      targetFieldId: 'target-name',
+    });
+    const rollup = await service.normalizeUpdate(fields.find((item) => item.id === 'rollup')!, {
+      config: { aggregation: 'COUNT', dependencies: ['forged'] },
+    });
+    expect(rollup.config).toEqual({
+      relationFieldId: 'relation',
+      aggregation: 'COUNT',
+    });
+    const formula = field(
+      'formula-update',
+      currentTableId,
+      'formulaUpdate',
+      DataFieldType.FORMULA,
+      {
+        expression: '1',
+        astVersion: 1,
+        dependencies: [],
+        ast: { kind: 'literal', value: 1 },
+      },
+    );
+    const normalizedFormula = await service.normalizeUpdate(formula, {
+      config: {
+        expression: '{amount}',
+        astVersion: 999,
+        dependencies: ['forged'],
+        ast: { kind: 'literal', value: 999 },
+      },
+    });
+    expect(normalizedFormula.config).toEqual({
+      expression: '{amount}',
+      astVersion: 1,
+      dependencies: ['amount'],
+      ast: { kind: 'field', fieldId: 'amount' },
+    });
+  });
+
+  it('rejects immutable type changes and relation changes that invalidate dependents', async () => {
+    await expect(
+      service.normalizeUpdate(fields.find((item) => item.id === 'amount')!, {
+        type: DataFieldType.TEXT,
+      }),
+    ).rejects.toThrow('Field type cannot be changed');
+    await expect(
+      service.normalizeUpdate(fields.find((item) => item.id === 'relation')!, {
+        config: { targetTableId: currentTableId },
+      }),
+    ).rejects.toThrow();
   });
 
   it('preserves only the trusted inverse field id while the two-way target is unchanged', async () => {
@@ -370,6 +486,21 @@ describe('FieldConfigService', () => {
         config: { expression: '{formulaA}' },
       }),
     ).rejects.toThrow('Circular computed field dependency');
+  });
+
+  it('previews generated timestamps from a custom record and rejects computed dependencies', async () => {
+    await expect(
+      service.previewFormula(currentTableId, {
+        expression: 'DATE_DIFF({updatedAt}, {createdAt}, "day")',
+        recordId: 'record-1',
+      }),
+    ).resolves.toMatchObject({ value: 1 });
+    await expect(
+      service.previewFormula(currentTableId, {
+        expression: '{projectName}',
+        recordId: 'record-1',
+      }),
+    ).rejects.toThrow('Formula preview does not support computed field dependencies yet');
   });
 
   it('keeps field keys immutable in the update API', async () => {
