@@ -23,7 +23,58 @@ export type DataFieldType =
   | 'CREATED_AT'
   | 'UPDATED_AT'
 
-export type DataViewType = 'GRID' | 'KANBAN' | 'CALENDAR' | 'FORM'
+export type DataViewType = 'GRID' | 'KANBAN' | 'CALENDAR' | 'FORM' | 'GANTT' | 'GALLERY'
+
+export type ViewFilterOperator =
+  | 'EQ'
+  | 'NE'
+  | 'CONTAINS'
+  | 'NOT_CONTAINS'
+  | 'EMPTY'
+  | 'NOT_EMPTY'
+  | 'GT'
+  | 'GTE'
+  | 'LT'
+  | 'LTE'
+  | 'BEFORE'
+  | 'AFTER'
+  | 'IN'
+
+export interface ViewFilter {
+  fieldKey: string
+  operator: ViewFilterOperator
+  value?: unknown
+}
+
+export interface ViewSort {
+  fieldKey: string
+  direction: 'asc' | 'desc'
+}
+
+export interface SharedViewConfig extends Record<string, unknown> {
+  query?: string
+  filters?: ViewFilter[]
+  sorts?: ViewSort[]
+  groupField?: string
+  hiddenFieldIds?: string[]
+  fieldOrder?: string[]
+}
+
+export interface GanttViewConfig extends SharedViewConfig {
+  titleFieldKey?: string
+  startFieldKey?: string
+  endFieldKey?: string
+  scale?: 'DAY' | 'WEEK' | 'MONTH'
+  rowHeight?: 'COMPACT' | 'STANDARD'
+}
+
+export interface GalleryViewConfig extends SharedViewConfig {
+  titleFieldKey?: string
+  coverFieldKey?: string
+  visibleFieldIds?: string[]
+  cardSize?: 'COMPACT' | 'STANDARD' | 'WIDE'
+  coverFit?: 'COVER' | 'CONTAIN'
+}
 
 export interface RelationFieldConfig {
   targetTableId: string
@@ -145,16 +196,21 @@ export interface DataField {
   updatedAt: string
 }
 
-export interface DataViewConfig extends Record<string, unknown> {
-  query?: string
+export interface DataViewConfig extends SharedViewConfig {
   filterField?: string
   filterValue?: string
   sortField?: string
   sortOrder?: 'asc' | 'desc'
-  groupField?: string
   dateField?: string
-  hiddenFieldIds?: string[]
-  fieldOrder?: string[]
+  titleFieldKey?: string
+  startFieldKey?: string
+  endFieldKey?: string
+  scale?: GanttViewConfig['scale']
+  rowHeight?: GanttViewConfig['rowHeight']
+  coverFieldKey?: string
+  visibleFieldIds?: string[]
+  cardSize?: GalleryViewConfig['cardSize']
+  coverFit?: GalleryViewConfig['coverFit']
 }
 
 export interface DataView {

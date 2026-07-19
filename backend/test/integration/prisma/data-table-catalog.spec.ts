@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 describe('multi-dimensional data table catalog', () => {
@@ -17,13 +17,29 @@ describe('multi-dimensional data table catalog', () => {
     ),
     'utf8',
   );
+  const advancedViewsMigrationPath = join(
+    __dirname,
+    '../../../prisma/migrations/20260719050000_add_advanced_data_views/migration.sql',
+  );
+  const advancedViewsMigration = existsSync(advancedViewsMigrationPath)
+    ? readFileSync(advancedViewsMigrationPath, 'utf8')
+    : '';
   const dataFieldTypeEnumMatch = schema.match(/enum DataFieldType\s*\{([\s\S]*?)\n\}/);
+  const dataViewTypeEnumMatch = schema.match(/enum DataViewType\s*\{([\s\S]*?)\n\}/);
 
   if (!dataFieldTypeEnumMatch) {
     throw new Error('Could not extract the DataFieldType enum from the Prisma schema');
   }
 
+  if (!dataViewTypeEnumMatch) {
+    throw new Error('Could not extract the DataViewType enum from the Prisma schema');
+  }
+
   const dataFieldTypeMembers = dataFieldTypeEnumMatch[1]
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('@@'));
+  const dataViewTypeMembers = dataViewTypeEnumMatch[1]
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith('@@'));
@@ -35,6 +51,15 @@ describe('multi-dimensional data table catalog', () => {
   const expectedComputedFieldMigrationStatements = ['LOOKUP', 'ROLLUP', 'FORMULA'].map(
     (fieldType) =>
       `ALTER TYPE "app"."DataFieldType" ADD VALUE IF NOT EXISTS '${fieldType}';`,
+  );
+  const advancedViewMigrationStatements = advancedViewsMigration
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter(Boolean)
+    .map((statement) => `${statement};`);
+  const expectedAdvancedViewMigrationStatements = ['GANTT', 'GALLERY'].map(
+    (viewType) =>
+      `ALTER TYPE "app"."DataViewType" ADD VALUE IF NOT EXISTS '${viewType}';`,
   );
 
   it.each(['DataWorkspace', 'DataTable', 'DataField', 'DataRecord', 'DataView'])(
@@ -52,6 +77,10 @@ describe('multi-dimensional data table catalog', () => {
     (fieldType) => expect(dataFieldTypeMembers).toContain(fieldType),
   );
 
+  it.each(['GANTT', 'GALLERY'])('declares the %s advanced view type', (viewType) =>
+    expect(dataViewTypeMembers).toContain(viewType),
+  );
+
   it.each(expectedComputedFieldMigrationStatements)(
     'applies the computed field migration statement %s',
     (statement) => expect(computedFieldMigrationStatements).toContain(statement),
@@ -59,6 +88,15 @@ describe('multi-dimensional data table catalog', () => {
 
   it('contains no additional computed field migration statements', () => {
     expect(computedFieldMigrationStatements).toEqual(expectedComputedFieldMigrationStatements);
+  });
+
+  it.each(expectedAdvancedViewMigrationStatements)(
+    'applies the advanced view migration statement %s',
+    (statement) => expect(advancedViewMigrationStatements).toContain(statement),
+  );
+
+  it('contains no additional advanced view migration statements', () => {
+    expect(advancedViewMigrationStatements).toEqual(expectedAdvancedViewMigrationStatements);
   });
 
   it('keeps custom records and saved views attached to their table', () => {

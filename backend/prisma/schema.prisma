@@ -282,6 +282,8 @@ enum DataViewType {
   KANBAN
   CALENDAR
   FORM
+  GANTT
+  GALLERY
 
   @@schema("app")
 }
