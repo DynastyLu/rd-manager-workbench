@@ -199,14 +199,21 @@ export class BaseService {
   }
 
   async updateTable(id: string, dto: UpdateTableDto) {
-    await this.assertTable(id);
-    return this.prisma.dataTable.update({ where: { id }, data: dto, include: this.tableInclude() });
+    return this.prisma.$transaction(async (tx) => {
+      await this.relationSync.lockTableConfigs(tx, [id]);
+      await this.assertActiveTable(tx, id);
+      return tx.dataTable.update({ where: { id }, data: dto, include: this.tableInclude() });
+    });
   }
 
   async deleteTable(id: string) {
     await this.prisma.$transaction(async (tx) => {
       const candidates = await tx.dataField.findMany({
-        where: { type: DataFieldType.RELATION, archivedAt: null },
+        where: {
+          type: DataFieldType.RELATION,
+          archivedAt: null,
+          table: { archivedAt: null },
+        },
         select: { tableId: true, config: true },
       });
       const relatedTableIds = candidates.flatMap((field) => {
@@ -220,7 +227,11 @@ export class BaseService {
       if (table.source !== DataTableSource.CUSTOM)
         throw new BadRequestException('Preset tables cannot be deleted');
       const activeRelations = await tx.dataField.findMany({
-        where: { type: DataFieldType.RELATION, archivedAt: null },
+        where: {
+          type: DataFieldType.RELATION,
+          archivedAt: null,
+          table: { archivedAt: null },
+        },
         select: { tableId: true, config: true },
       });
       const relationExists = activeRelations.some((field) => {
@@ -372,13 +383,12 @@ export class BaseService {
           ...(oldRelation ? [oldRelation.targetTableId] : []),
           ...(requestedTarget ? [requestedTarget] : []),
         ]);
+        await this.assertActiveCustomTable(tx, located.tableId);
         const field = await tx.dataField.findFirst({
           where: { id, archivedAt: null },
           include: { table: true },
         });
         if (!field) throw new NotFoundException('Data field not found');
-        if (field.table.source !== DataTableSource.CUSTOM)
-          throw new BadRequestException('Preset fields cannot be changed');
         const normalized = await this.fieldConfig.normalizeUpdate(field, dto, tx);
         const prospectiveRelation = this.relationSync.relationConfig(
           (normalized.config ?? field.config) as Prisma.JsonValue,
@@ -453,6 +463,7 @@ export class BaseService {
         located.tableId,
         ...(relation ? [relation.targetTableId] : []),
       ]);
+      await this.assertActiveCustomTable(tx, located.tableId);
       const field = await tx.dataField.findFirst({ where: { id, archivedAt: null } });
       if (!field) throw new NotFoundException('Data field not found');
       await this.relationSync.decouplePair(tx, field);
@@ -488,14 +499,11 @@ export class BaseService {
 
   async createRecord(tableId: string, dto: RecordValuesDto) {
     const record = await this.prisma.$transaction(async (tx) => {
-      const table = await tx.dataTable.findFirst({ where: { id: tableId, archivedAt: null } });
-      if (!table) throw new NotFoundException('Data table not found');
-      if (table.source !== DataTableSource.CUSTOM)
-        throw new BadRequestException('This operation is only available for custom tables');
       await this.relationSync.lockTableConfigs(
         tx,
         await this.relationSync.relationTableIds(tx, tableId),
       );
+      await this.assertActiveCustomTable(tx, tableId);
       await this.validateRecordValues(tableId, dto.values, true, tx);
       const created = await tx.dataRecord.create({
         data: { tableId, values: dto.values as Prisma.InputJsonValue },
@@ -517,6 +525,7 @@ export class BaseService {
         tx,
         await this.relationSync.relationTableIds(tx, tableId),
       );
+      await this.assertActiveCustomTable(tx, tableId);
       const record = await tx.dataRecord.findFirst({ where: { id, tableId } });
       if (!record) throw new NotFoundException('Data record not found');
       const oldValues = record.values as Values;
@@ -539,6 +548,7 @@ export class BaseService {
         tx,
         await this.relationSync.relationTableIds(tx, tableId),
       );
+      await this.assertActiveCustomTable(tx, tableId);
       const record = await tx.dataRecord.findFirst({ where: { id, tableId } });
       if (!record) throw new NotFoundException('Data record not found');
       await this.relationSync.syncRecord(tx, tableId, id, record.values as Values, {});
@@ -555,8 +565,9 @@ export class BaseService {
   }
 
   async createView(tableId: string, dto: CreateViewDto) {
-    await this.assertTable(tableId);
     return this.prisma.$transaction(async (tx) => {
+      await this.relationSync.lockTableConfigs(tx, [tableId]);
+      await this.assertActiveTable(tx, tableId);
       if (dto.isDefault)
         await tx.dataView.updateMany({ where: { tableId }, data: { isDefault: false } });
       return tx.dataView.create({
@@ -569,6 +580,10 @@ export class BaseService {
     const view = await this.prisma.dataView.findUnique({ where: { id } });
     if (!view) throw new NotFoundException('Data view not found');
     return this.prisma.$transaction(async (tx) => {
+      await this.relationSync.lockTableConfigs(tx, [view.tableId]);
+      await this.assertActiveTable(tx, view.tableId);
+      const current = await tx.dataView.findUnique({ where: { id } });
+      if (!current) throw new NotFoundException('Data view not found');
       if (dto.isDefault)
         await tx.dataView.updateMany({
           where: { tableId: view.tableId },
@@ -583,19 +598,24 @@ export class BaseService {
   }
 
   async deleteView(id: string) {
-    const view = await this.prisma.dataView.findUnique({ where: { id } });
-    if (!view) throw new NotFoundException('Data view not found');
-    const count = await this.prisma.dataView.count({ where: { tableId: view.tableId } });
-    if (count <= 1) throw new BadRequestException('A table must retain at least one view');
-    await this.prisma.dataView.delete({ where: { id } });
-    if (view.isDefault) {
-      const next = await this.prisma.dataView.findFirst({
-        where: { tableId: view.tableId },
-        orderBy: [{ sequence: 'asc' }, { id: 'asc' }],
-      });
-      if (next)
-        await this.prisma.dataView.update({ where: { id: next.id }, data: { isDefault: true } });
-    }
+    const located = await this.prisma.dataView.findUnique({ where: { id } });
+    if (!located) throw new NotFoundException('Data view not found');
+    await this.prisma.$transaction(async (tx) => {
+      await this.relationSync.lockTableConfigs(tx, [located.tableId]);
+      await this.assertActiveTable(tx, located.tableId);
+      const view = await tx.dataView.findUnique({ where: { id } });
+      if (!view) throw new NotFoundException('Data view not found');
+      const count = await tx.dataView.count({ where: { tableId: view.tableId } });
+      if (count <= 1) throw new BadRequestException('A table must retain at least one view');
+      await tx.dataView.delete({ where: { id } });
+      if (view.isDefault) {
+        const next = await tx.dataView.findFirst({
+          where: { tableId: view.tableId },
+          orderBy: [{ sequence: 'asc' }, { id: 'asc' }],
+        });
+        if (next) await tx.dataView.update({ where: { id: next.id }, data: { isDefault: true } });
+      }
+    });
   }
 
   private async validateRecordValues(
@@ -827,6 +847,17 @@ export class BaseService {
   }
   private async assertCustomTable(id: string) {
     const table = await this.assertTable(id);
+    if (table.source !== DataTableSource.CUSTOM)
+      throw new BadRequestException('This operation is only available for custom tables');
+    return table;
+  }
+  private async assertActiveTable(client: BaseDataClient, id: string) {
+    const table = await client.dataTable.findFirst({ where: { id, archivedAt: null } });
+    if (!table) throw new NotFoundException('Data table not found');
+    return table;
+  }
+  private async assertActiveCustomTable(client: BaseDataClient, id: string) {
+    const table = await this.assertActiveTable(client, id);
     if (table.source !== DataTableSource.CUSTOM)
       throw new BadRequestException('This operation is only available for custom tables');
     return table;

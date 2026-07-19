@@ -1,6 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { DataFieldType, DataTableSource, PrismaClient } from '@prisma/client';
+import { DataFieldType, DataTableSource, Prisma, PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
@@ -1119,6 +1119,45 @@ describe('Multi-dimensional base API', () => {
     ).resolves.toMatchObject({ values: { title: '归档目标记录' } });
   });
 
+  it('ignores active relation fields owned by historically archived tables', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 历史关系归档工作区` })
+      .expect(201);
+    const [sourceTable, targetTable] = await Promise.all(
+      ['历史归档来源表', '历史归档目标表'].map((name) =>
+        request(app.getHttpServer())
+          .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+          .send({ name: `${prefix} ${name}` })
+          .expect(201),
+      ),
+    );
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/fields`)
+      .send({
+        key: 'historicalTarget',
+        name: '历史目标',
+        type: DataFieldType.RELATION,
+        config: {
+          targetTableId: targetTable.body.data.id,
+          multiple: false,
+          relationMode: 'ONE_WAY',
+        },
+      })
+      .expect(201);
+    await prisma.dataTable.update({
+      where: { id: sourceTable.body.data.id },
+      data: { archivedAt: new Date() },
+    });
+
+    await request(app.getHttpServer())
+      .delete(`/api/base/tables/${targetTable.body.data.id}`)
+      .expect(204);
+    await expect(
+      prisma.dataTable.findUniqueOrThrow({ where: { id: targetTable.body.data.id } }),
+    ).resolves.toMatchObject({ archivedAt: expect.any(Date) });
+  });
+
   it('rejects relation target or cardinality changes while non-empty values exist', async () => {
     const workspace = await request(app.getHttpServer())
       .post('/api/base/workspaces')
@@ -1270,6 +1309,80 @@ describe('Multi-dimensional base API', () => {
       .patch(`/api/base/fields/${emptyMany.body.data.id}`)
       .send({ config: { multiple: false, targetTableId: otherTableId } })
       .expect(200);
+  });
+
+  it('rechecks archived custom tables after record mutations acquire their advisory locks', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 记录归档竞态工作区` })
+      .expect(201);
+    const tables = await Promise.all(
+      ['创建竞态表', '更新竞态表', '删除竞态表'].map((name) =>
+        request(app.getHttpServer())
+          .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+          .send({ name: `${prefix} ${name}` })
+          .expect(201),
+      ),
+    );
+    const updateRecord = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tables[1].body.data.id}/records`)
+      .send({ values: { title: '更新前' } })
+      .expect(201);
+    const deleteRecord = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tables[2].body.data.id}/records`)
+      .send({ values: { title: '不可删除' } })
+      .expect(201);
+
+    const archiveWhileBlocked = async (
+      tableId: string,
+      mutationFactory: () => PromiseLike<{ status: number }>,
+    ) => {
+      let mutation!: Promise<{ status: number }>;
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`rd-manager-workbench:data-field-config:${tableId}`}))`,
+        );
+        mutation = Promise.resolve(mutationFactory());
+        const state = await Promise.race([
+          mutation.then(() => 'settled'),
+          new Promise<'blocked'>((resolve) => setTimeout(() => resolve('blocked'), 100)),
+        ]);
+        expect(state).toBe('blocked');
+        await tx.dataTable.update({ where: { id: tableId }, data: { archivedAt: new Date() } });
+      });
+      return mutation;
+    };
+
+    const createResponse = await archiveWhileBlocked(tables[0].body.data.id, () =>
+      request(app.getHttpServer())
+        .post(`/api/base/tables/${tables[0].body.data.id}/records`)
+        .send({ values: { title: '不可创建' } }),
+    );
+    const updateResponse = await archiveWhileBlocked(tables[1].body.data.id, () =>
+      request(app.getHttpServer())
+        .patch(`/api/base/tables/${tables[1].body.data.id}/records/${updateRecord.body.data.id}`)
+        .send({ values: { title: '更新后' } }),
+    );
+    const deleteResponse = await archiveWhileBlocked(tables[2].body.data.id, () =>
+      request(app.getHttpServer()).delete(
+        `/api/base/tables/${tables[2].body.data.id}/records/${deleteRecord.body.data.id}`,
+      ),
+    );
+
+    expect([createResponse.status, updateResponse.status, deleteResponse.status]).toEqual([
+      404, 404, 404,
+    ]);
+    await expect(
+      prisma.dataRecord.count({
+        where: { tableId: tables[0].body.data.id, values: { path: ['title'], equals: '不可创建' } },
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: updateRecord.body.data.id } }),
+    ).resolves.toMatchObject({ values: { title: '更新前' } });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: deleteRecord.body.data.id } }),
+    ).resolves.toMatchObject({ values: { title: '不可删除' } });
   });
 
   it('validates computed field configs and previews formulas without persisting preview data', async () => {
