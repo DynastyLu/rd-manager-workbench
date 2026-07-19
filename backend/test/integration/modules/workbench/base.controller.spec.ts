@@ -46,6 +46,7 @@ describe('Multi-dimensional base API', () => {
     await prisma.meetingAction.deleteMany({ where: { title: { startsWith: prefix } } });
     await prisma.meeting.deleteMany({ where: { title: { startsWith: prefix } } });
     await prisma.workTask.deleteMany({ where: { title: { startsWith: prefix } } });
+    await prisma.contentDocument.deleteMany({ where: { title: { startsWith: prefix } } });
     await prisma.project.deleteMany({ where: { code: { startsWith: prefix } } });
     await prisma.$disconnect();
     await app?.close();
@@ -1243,6 +1244,37 @@ describe('Multi-dimensional base API', () => {
       return config.dependencies?.length ?? 0;
     });
     expect(dependencyCounts.sort()).toEqual([0, 1]);
+  });
+
+  it('preserves empty-string project clears for preset document relations', async () => {
+    const project = await prisma.project.create({
+      data: { code: `${prefix}-DOC`, name: `${prefix} 文档项目` },
+    });
+    const document = await prisma.contentDocument.create({
+      data: {
+        type: 'DOCUMENT',
+        title: `${prefix} 待清空项目文档`,
+        projectId: project.id,
+      },
+    });
+    const table = await prisma.dataTable.findFirstOrThrow({
+      where: { source: DataTableSource.DOCUMENTS, archivedAt: null },
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/base/tables/${table.id}/records/${document.id}`)
+      .send({ values: { projectId: '' } })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({
+          id: document.id,
+          sourceType: 'DOCUMENT',
+          values: { projectId: null },
+        });
+      });
+    await expect(
+      prisma.contentDocument.findUniqueOrThrow({ where: { id: document.id } }),
+    ).resolves.toMatchObject({ projectId: null });
   });
 
   it('updates a preset task through TasksService so completion clears reminders', async () => {

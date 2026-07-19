@@ -602,15 +602,16 @@ export class BaseService {
       if (
         field.type === DataFieldType.RELATION &&
         typeof value === 'string' &&
-        value.trim().length === 0
+        value.trim().length === 0 &&
+        this.hasNormalizedRelationTarget(field.config)
       )
         throw new BadRequestException(`${field.name} must be a non-empty relation id`);
       if (
         field.type === DataFieldType.RELATION &&
         Array.isArray(value) &&
-        value.some((item) => typeof item !== 'string')
+        value.some((item) => typeof item !== 'string' || item.trim().length === 0)
       )
-        throw new BadRequestException(`${field.name} must contain only string ids`);
+        throw new BadRequestException(`${field.name} must contain only non-empty string ids`);
       if (
         field.type === DataFieldType.DATETIME &&
         (typeof value !== 'string' || Number.isNaN(new Date(value).getTime()))
@@ -743,6 +744,15 @@ export class BaseService {
         return [option.value];
       return [];
     });
+  }
+
+  private hasNormalizedRelationTarget(config: Prisma.JsonValue): boolean {
+    return (
+      !!config &&
+      typeof config === 'object' &&
+      !Array.isArray(config) &&
+      typeof (config as Prisma.JsonObject).targetTableId === 'string'
+    );
   }
 
   private isHttpUrl(value: string) {
