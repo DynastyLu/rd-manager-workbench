@@ -9,6 +9,7 @@ describe('evaluateFormula', () => {
   const fields: FormulaField[] = [
     { id: 'revenue-id', key: 'revenue', type: 'NUMBER' },
     { id: 'lookup-id', key: 'lookup', type: 'LOOKUP' },
+    { id: 'date-id', key: 'date', type: 'DATE' },
   ];
 
   const evaluate = (expression: string, values: Record<string, unknown> = {}) =>
@@ -23,6 +24,10 @@ describe('evaluateFormula', () => {
     expect(evaluate('"alpha" < "beta"')).toEqual({ value: true });
     expect(evaluate('TRUE != FALSE')).toEqual({ value: true });
     expect(evaluate('NULL = NULL')).toEqual({ value: true });
+  });
+
+  it('returns null when a referenced field has no supplied value', () => {
+    expect(evaluate('{revenue}')).toEqual({ value: null });
   });
 
   it('evaluates IF and only evaluates its selected branch', () => {
@@ -47,6 +52,22 @@ describe('evaluateFormula', () => {
     expect(evaluate(expression)).toEqual({ value: expected });
   });
 
+  it('accepts ROUND digits at both supported boundaries', () => {
+    expect(evaluate('ROUND(1, -15)')).toEqual({ value: 0 });
+    expect(evaluate('ROUND(1, 15)')).toEqual({ value: 1 });
+  });
+
+  it('rejects ROUND digits outside both supported boundaries', () => {
+    expect(evaluate('ROUND(1, -16)')).toEqual({
+      value: null,
+      error: { code: 'TYPE_ERROR', message: expect.any(String) },
+    });
+    expect(evaluate('ROUND(1, 16)')).toEqual({
+      value: null,
+      error: { code: 'TYPE_ERROR', message: expect.any(String) },
+    });
+  });
+
   it('expands arrays supplied by LOOKUP fields for SUM and COUNT', () => {
     expect(evaluate('SUM({lookup}, 4)', { 'lookup-id': [1, 2, 3] })).toEqual({ value: 10 });
     expect(evaluate('COUNT({lookup})', { 'lookup-id': [1, null, 'x', undefined] })).toEqual({
@@ -63,6 +84,36 @@ describe('evaluateFormula', () => {
     });
     expect(evaluate('DATE_ADD("2026-07-19T00:00:00.000Z", 5, "minute")')).toEqual({
       value: '2026-07-19T00:05:00.000Z',
+    });
+    expect(evaluate('DATE_ADD("2026-07-19T08:00:00+08:00", 0, "day")')).toEqual({
+      value: '2026-07-19T00:00:00.000Z',
+    });
+  });
+
+  it('accepts a valid Date field value', () => {
+    expect(
+      evaluate('DATE_ADD({date}, 1, "day")', {
+        'date-id': new Date('2026-07-19T00:00:00.000Z'),
+      }),
+    ).toEqual({ value: '2026-07-20T00:00:00.000Z' });
+  });
+
+  it.each([
+    ['DATE_ADD("07/19/2026", 1, "day")'],
+    ['DATE_ADD("2026-02-30T00:00:00.000Z", 1, "day")'],
+    ['DATE_ADD("2026-07-19T00:00:00", 1, "day")'],
+    ['DATE_ADD("2026-07-19T00:00:00+14:01", 1, "day")'],
+  ])('rejects a non-strict ISO date in %s', (expression) => {
+    expect(evaluate(expression)).toEqual({
+      value: null,
+      error: { code: 'TYPE_ERROR', message: expect.any(String) },
+    });
+  });
+
+  it('rejects an invalid Date field value', () => {
+    expect(evaluate('DATE_ADD({date}, 1, "day")', { 'date-id': new Date(Number.NaN) })).toEqual({
+      value: null,
+      error: { code: 'TYPE_ERROR', message: expect.any(String) },
     });
   });
 

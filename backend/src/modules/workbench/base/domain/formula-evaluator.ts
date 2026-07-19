@@ -45,6 +45,11 @@ const DATE_UNIT_MILLISECONDS = {
   minute: 60_000,
 } as const;
 
+const ISO_DATE_TIME_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+const DAYS_PER_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
+
 type DateUnit = keyof typeof DATE_UNIT_MILLISECONDS;
 
 class FormulaEvaluationFailure extends Error {
@@ -322,12 +327,50 @@ function requireString(value: unknown, label: string): string {
 }
 
 function requireDate(value: unknown, label: string): number {
-  if (typeof value !== 'string' && !(value instanceof Date)) {
-    fail('TYPE_ERROR', `${label} must be a date`);
+  if (value instanceof Date) {
+    const timestamp = value.getTime();
+    if (!Number.isFinite(timestamp)) fail('TYPE_ERROR', `${label} must be a valid date`);
+    return timestamp;
   }
-  const timestamp = value instanceof Date ? value.getTime() : Date.parse(value);
+  if (typeof value !== 'string') fail('TYPE_ERROR', `${label} must be a date`);
+
+  const match = ISO_DATE_TIME_PATTERN.exec(value);
+  if (!match) {
+    fail('TYPE_ERROR', `${label} must be an ISO-8601 date-time with a timezone`);
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[9] === undefined ? 0 : Number(match[9]);
+  const offsetMinute = match[10] === undefined ? 0 : Number(match[10]);
+  const daysInMonth = month === 2 && isLeapYear(year) ? 29 : (DAYS_PER_MONTH[month - 1] ?? 0);
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 14 ||
+    offsetMinute > 59 ||
+    (offsetHour === 14 && offsetMinute !== 0)
+  ) {
+    fail('TYPE_ERROR', `${label} must be a valid ISO-8601 date-time`);
+  }
+
+  const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) fail('TYPE_ERROR', `${label} must be a valid date`);
   return timestamp;
+}
+
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 }
 
 function requireDateUnit(value: unknown): DateUnit {
