@@ -13,6 +13,7 @@ import { ViewManager } from '@/modules/base/components/ViewManager'
 import { RelationValue } from '@/modules/base/components/RelationPicker'
 import { ComputedFieldExplanation } from '@/modules/base/components/ComputedFieldExplanation'
 import {
+  useAllBaseRecords,
   useBaseRecords,
   useBaseWorkspaces,
   useCreateBaseField,
@@ -146,10 +147,14 @@ export default function LibraryHomePage() {
     () => views.map((view) => (view.id === resolvedView?.id ? resolvedView : view)),
     [resolvedView, views]
   )
-  const recordsQuery = useBaseRecords(
-    selectedTable?.id ?? null,
-    viewQuery(resolvedView?.id, temporaryQuery)
+  const recordQuery = useMemo(
+    () => viewQuery(resolvedView?.id, temporaryQuery),
+    [resolvedView?.id, temporaryQuery]
   )
+  const isAdvancedView = resolvedView?.type === 'GANTT' || resolvedView?.type === 'GALLERY'
+  const pagedRecordsQuery = useBaseRecords(selectedTable?.id ?? null, recordQuery, !isAdvancedView)
+  const allRecordsQuery = useAllBaseRecords(selectedTable?.id ?? null, recordQuery, isAdvancedView)
+  const recordsQuery = isAdvancedView ? allRecordsQuery : pagedRecordsQuery
   const activeViewIdRef = useRef<string | null>(resolvedView?.id ?? null)
   activeViewIdRef.current = resolvedView?.id ?? null
   const viewConfigSave = useDebouncedViewConfigSave(async (id, config) => {
@@ -404,8 +409,10 @@ export default function LibraryHomePage() {
                   />
                 ) : resolvedView.type === 'GANTT' ? (
                   <GanttView
+                    key={resolvedView.id}
                     fields={fields}
                     records={records}
+                    totalRecords={recordsQuery.data.meta.total}
                     config={resolvedView.config}
                     onConfigChange={saveViewConfig}
                     onRecordChange={(recordId, values) =>

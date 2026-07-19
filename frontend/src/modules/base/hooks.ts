@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   useInfiniteQuery,
   useMutation,
@@ -47,16 +47,20 @@ export function useBaseWorkspaces() {
   return useQuery({ queryKey: baseKeys.workspaces, queryFn: listBaseWorkspaces })
 }
 
-export function useBaseRecords(tableId: string | null, query: BaseRecordQuery) {
+export function useBaseRecords(tableId: string | null, query: BaseRecordQuery, enabled = true) {
   return useQuery({
     queryKey: baseKeys.records(tableId ?? '', query),
     queryFn: () => listBaseRecords(tableId!, query),
     placeholderData: (previousData) => previousData,
-    enabled: Boolean(tableId),
+    enabled: Boolean(tableId) && enabled,
   })
 }
 
-export function useInfiniteBaseRecords(tableId: string | null, query: BaseRecordQuery) {
+export function useInfiniteBaseRecords(
+  tableId: string | null,
+  query: BaseRecordQuery,
+  enabled = true
+) {
   return useInfiniteQuery({
     queryKey: baseKeys.infiniteRecords(tableId ?? '', query),
     queryFn: ({ pageParam }) =>
@@ -66,8 +70,42 @@ export function useInfiniteBaseRecords(tableId: string | null, query: BaseRecord
       lastPage.meta.page * lastPage.meta.pageSize < lastPage.meta.total
         ? lastPage.meta.page + 1
         : undefined,
-    enabled: Boolean(tableId),
+    enabled: Boolean(tableId) && enabled,
   })
+}
+
+export function useAllBaseRecords(tableId: string | null, query: BaseRecordQuery, enabled = true) {
+  const result = useInfiniteBaseRecords(tableId, query, enabled)
+  const { fetchNextPage, hasNextPage } = result
+  const isLoadingAllPages = useRef(false)
+
+  useEffect(() => {
+    if (!enabled || !hasNextPage || isLoadingAllPages.current) return
+    isLoadingAllPages.current = true
+    void (async () => {
+      try {
+        let nextPage = await fetchNextPage()
+        while (nextPage.hasNextPage) nextPage = await fetchNextPage()
+      } finally {
+        isLoadingAllPages.current = false
+      }
+    })()
+  }, [enabled, fetchNextPage, hasNextPage])
+
+  const data = useMemo(() => {
+    const pages = result.data?.pages
+    if (!pages?.length) return undefined
+    return {
+      data: pages.flatMap((page) => page.data),
+      meta: {
+        page: pages.length,
+        pageSize: 100,
+        total: pages[0]!.meta.total,
+      },
+    }
+  }, [result.data?.pages])
+
+  return { ...result, data }
 }
 
 export function useSelectedBaseRecords(tableId: string | null, recordIds: string[]) {

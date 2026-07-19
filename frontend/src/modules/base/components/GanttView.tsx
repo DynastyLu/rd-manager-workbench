@@ -48,10 +48,16 @@ function DateFieldSetup({
         <select
           aria-label="甘特开始字段"
           value={config.startFieldKey ?? ''}
-          onChange={(event) => onConfigChange({ ...config, startFieldKey: event.target.value || undefined })}
+          onChange={(event) =>
+            onConfigChange({ ...config, startFieldKey: event.target.value || undefined })
+          }
         >
           <option value="">请选择</option>
-          {dateFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
+          {dateFields.map((field) => (
+            <option key={field.id} value={field.key}>
+              {field.name}
+            </option>
+          ))}
         </select>
       </label>
       <label>
@@ -59,10 +65,16 @@ function DateFieldSetup({
         <select
           aria-label="甘特结束字段"
           value={config.endFieldKey ?? ''}
-          onChange={(event) => onConfigChange({ ...config, endFieldKey: event.target.value || undefined })}
+          onChange={(event) =>
+            onConfigChange({ ...config, endFieldKey: event.target.value || undefined })
+          }
         >
           <option value="">请选择</option>
-          {dateFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
+          {dateFields.map((field) => (
+            <option key={field.id} value={field.key}>
+              {field.name}
+            </option>
+          ))}
         </select>
       </label>
     </div>
@@ -72,6 +84,7 @@ function DateFieldSetup({
 export function GanttView({
   fields,
   records,
+  totalRecords,
   config,
   onConfigChange,
   onRecordChange,
@@ -79,15 +92,21 @@ export function GanttView({
 }: {
   fields: DataField[]
   records: BaseRecord[]
+  totalRecords?: number
   config: GanttViewConfig
   onConfigChange: (config: GanttViewConfig) => void
   onRecordChange: (recordId: string, values: Record<string, unknown>) => Promise<unknown> | void
   onOpenRecord: (record: BaseRecord) => void
 }) {
-  const titleField = fields.find((field) => field.key === config.titleFieldKey)
-    ?? fields.find((field) => field.isPrimary)
-  const startField = fields.find((field) => field.key === config.startFieldKey && field.type === 'DATETIME')
-  const endField = fields.find((field) => field.key === config.endFieldKey && field.type === 'DATETIME')
+  const titleField =
+    fields.find((field) => field.key === config.titleFieldKey) ??
+    fields.find((field) => field.isPrimary)
+  const startField = fields.find(
+    (field) => field.key === config.startFieldKey && field.type === 'DATETIME'
+  )
+  const endField = fields.find(
+    (field) => field.key === config.endFieldKey && field.type === 'DATETIME'
+  )
   const scale: GanttScale = config.scale ?? 'WEEK'
   const rowHeight = config.rowHeight ?? 'STANDARD'
 
@@ -127,10 +146,16 @@ export function GanttView({
       <header className="gantt-view__toolbar">
         <div>
           <strong>甘特视图</strong>
-          <span>{records.length} 条记录</span>
+          <span>{totalRecords ?? records.length} 条记录</span>
         </div>
         <div className="gantt-view__scale" role="group" aria-label="甘特缩放">
-          {([['DAY', '日'], ['WEEK', '周'], ['MONTH', '月']] as const).map(([value, label]) => (
+          {(
+            [
+              ['DAY', '日'],
+              ['WEEK', '周'],
+              ['MONTH', '月'],
+            ] as const
+          ).map(([value, label]) => (
             <button
               type="button"
               key={value}
@@ -155,7 +180,9 @@ export function GanttView({
 
       {unplannedRows.length ? (
         <section className="gantt-view__unplanned" data-testid="gantt-unplanned">
-          <h3>未排期 <span>{unplannedRows.length}</span></h3>
+          <h3>
+            未排期 <span>{unplannedRows.length}</span>
+          </h3>
           <div>
             {unplannedRows.map(({ record, title }) => (
               <button type="button" key={record.id} onClick={() => onOpenRecord(record)}>

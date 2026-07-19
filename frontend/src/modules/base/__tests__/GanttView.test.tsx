@@ -3,7 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { GanttView } from '../components/GanttView'
-import { resizeRange, shiftRange } from '../components/GanttTimeline'
+import {
+  resizeRange,
+  resizeRangeForScale,
+  shiftRange,
+  shiftRangeForScale,
+} from '../components/GanttTimeline'
 import type { BaseRecord, DataField, GanttViewConfig } from '../types'
 
 const fields: DataField[] = [
@@ -93,9 +98,7 @@ const records: BaseRecord[] = [
   },
 ]
 
-function renderGantt(
-  overrides: Partial<React.ComponentProps<typeof GanttView>> = {}
-) {
+function renderGantt(overrides: Partial<React.ComponentProps<typeof GanttView>> = {}) {
   return render(
     <GanttView
       fields={fields}
@@ -117,31 +120,68 @@ function drag(element: HTMLElement, startX: number, endX: number) {
 
 describe('Gantt date helpers', () => {
   it('shifts both dates and resizes one edge without mutating the other', () => {
-    expect(
-      shiftRange('2026-07-20T09:00:00.000Z', '2026-07-22T09:00:00.000Z', 2)
-    ).toEqual({
+    expect(shiftRange('2026-07-20T09:00:00.000Z', '2026-07-22T09:00:00.000Z', 2)).toEqual({
       start: '2026-07-22T09:00:00.000Z',
       end: '2026-07-24T09:00:00.000Z',
     })
+    expect(resizeRange('2026-07-20T09:00:00.000Z', '2026-07-22T09:00:00.000Z', 'start', 1)).toEqual(
+      {
+        start: '2026-07-21T09:00:00.000Z',
+        end: '2026-07-22T09:00:00.000Z',
+      }
+    )
     expect(
-      resizeRange(
-        '2026-07-20T09:00:00.000Z',
-        '2026-07-22T09:00:00.000Z',
-        'start',
-        1
-      )
+      resizeRange('2026-07-20T09:00:00.000Z', '2026-07-22T09:00:00.000Z', 'end', -3)
+    ).toBeNull()
+  })
+
+  it('moves month-scale ranges by natural calendar months at month end and leap year', () => {
+    expect(
+      shiftRangeForScale('2024-01-31T01:00:00.000Z', '2024-02-29T01:00:00.000Z', 1, 'MONTH')
     ).toEqual({
-      start: '2026-07-21T09:00:00.000Z',
-      end: '2026-07-22T09:00:00.000Z',
+      start: '2024-02-29T01:00:00.000Z',
+      end: '2024-03-29T01:00:00.000Z',
     })
     expect(
-      resizeRange(
-        '2026-07-20T09:00:00.000Z',
-        '2026-07-22T09:00:00.000Z',
-        'end',
-        -3
+      resizeRangeForScale(
+        '2025-01-31T01:00:00.000Z',
+        '2025-03-31T01:00:00.000Z',
+        'start',
+        1,
+        'MONTH'
       )
-    ).toBeNull()
+    ).toEqual({
+      start: '2025-02-28T01:00:00.000Z',
+      end: '2025-03-31T01:00:00.000Z',
+    })
+  })
+
+  it('preserves local wall-clock time across a daylight-saving calendar day', () => {
+    const originalTimeZone = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    try {
+      expect(shiftRange('2026-03-07T17:00:00.000Z', '2026-03-08T16:00:00.000Z', 1)).toEqual({
+        start: '2026-03-08T16:00:00.000Z',
+        end: '2026-03-09T16:00:00.000Z',
+      })
+    } finally {
+      if (originalTimeZone === undefined) delete process.env.TZ
+      else process.env.TZ = originalTimeZone
+    }
+  })
+
+  it('uses the Asia/Shanghai local calendar when moving a date across midnight UTC', () => {
+    const originalTimeZone = process.env.TZ
+    process.env.TZ = 'Asia/Shanghai'
+    try {
+      expect(shiftRange('2026-01-31T16:30:00.000Z', '2026-02-01T16:30:00.000Z', 1)).toEqual({
+        start: '2026-02-01T16:30:00.000Z',
+        end: '2026-02-02T16:30:00.000Z',
+      })
+    } finally {
+      if (originalTimeZone === undefined) delete process.env.TZ
+      else process.env.TZ = originalTimeZone
+    }
   })
 })
 
@@ -193,7 +233,46 @@ describe('GanttView', () => {
     const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(240)
     const { container } = renderGantt({ records: [records[0]!] })
 
-    expect(container.querySelector<HTMLElement>('.gantt-timeline__scroller')?.scrollLeft).toBeGreaterThan(0)
+    expect(
+      container.querySelector<HTMLElement>('.gantt-timeline__scroller')?.scrollLeft
+    ).toBeGreaterThan(0)
+    width.mockRestore()
+  })
+
+  it('does not recenter after a same-scale record refetch but recenters after scale changes', () => {
+    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(240)
+    const { container, rerender } = renderGantt({ records: [records[0]!] })
+    const scroller = container.querySelector<HTMLElement>('.gantt-timeline__scroller')!
+    scroller.scrollLeft = 999
+
+    rerender(
+      <GanttView
+        fields={fields}
+        records={[
+          {
+            ...records[0]!,
+            values: { ...records[0]!.values, startAt: '2025-01-01T09:00:00.000Z' },
+          },
+        ]}
+        config={config}
+        onConfigChange={vi.fn()}
+        onRecordChange={vi.fn()}
+        onOpenRecord={vi.fn()}
+      />
+    )
+    expect(scroller.scrollLeft).toBe(999)
+
+    rerender(
+      <GanttView
+        fields={fields}
+        records={[records[0]!]}
+        config={{ ...config, scale: 'MONTH' }}
+        onConfigChange={vi.fn()}
+        onRecordChange={vi.fn()}
+        onOpenRecord={vi.fn()}
+      />
+    )
+    expect(scroller.scrollLeft).not.toBe(999)
     width.mockRestore()
   })
 
@@ -212,9 +291,81 @@ describe('GanttView', () => {
     expect(screen.queryByLabelText('调整“单日发布”的开始时间')).not.toBeInTheDocument()
     drag(screen.getByTestId('gantt-bar-scheduled'), 100, 140)
 
-    await waitFor(() => expect(onRecordChange).toHaveBeenCalledWith('scheduled', {
-      startAt: '2026-07-21T09:00:00.000Z',
-    }))
+    await waitFor(() =>
+      expect(onRecordChange).toHaveBeenCalledWith('scheduled', {
+        startAt: '2026-07-21T09:00:00.000Z',
+      })
+    )
+  })
+
+  it('cancels a pointer gesture without saving and clears its preview', () => {
+    const onRecordChange = vi.fn()
+    renderGantt({ records: [records[0]!], onRecordChange })
+    const bar = screen.getByTestId('gantt-bar-scheduled')
+
+    fireEvent.pointerDown(bar, { pointerId: 7, clientX: 100, button: 0 })
+    fireEvent.pointerMove(bar, { pointerId: 7, clientX: 140 })
+    expect(bar).toHaveAttribute('data-start', '2026-07-21T09:00:00.000Z')
+    fireEvent.pointerCancel(bar, { pointerId: 7, clientX: 140 })
+
+    expect(screen.getByTestId('gantt-bar-scheduled')).toHaveAttribute(
+      'data-start',
+      '2026-07-20T09:00:00.000Z'
+    )
+    expect(onRecordChange).not.toHaveBeenCalled()
+  })
+
+  it('supports keyboard move and edge resize and exposes the scale grid width', async () => {
+    const onRecordChange = vi.fn().mockResolvedValue(undefined)
+    renderGantt({ records: [records[0]!], onRecordChange })
+    const timeline = screen.getByTestId('gantt-timeline')
+    expect(timeline.style.getPropertyValue('--gantt-grid-size')).toBe('40px')
+
+    fireEvent.keyDown(screen.getByTestId('gantt-bar-scheduled'), { key: 'ArrowRight' })
+    await waitFor(() =>
+      expect(onRecordChange).toHaveBeenNthCalledWith(1, 'scheduled', {
+        startAt: '2026-07-21T09:00:00.000Z',
+        endAt: '2026-07-23T09:00:00.000Z',
+      })
+    )
+    fireEvent.keyDown(screen.getByLabelText('调整“完成评审”的结束时间'), { key: 'ArrowRight' })
+    await waitFor(() =>
+      expect(onRecordChange).toHaveBeenNthCalledWith(2, 'scheduled', {
+        startAt: '2026-07-21T09:00:00.000Z',
+        endAt: '2026-07-24T09:00:00.000Z',
+      })
+    )
+  })
+
+  it.each([
+    ['DAY', '2027-07-20T09:00:00.000Z', '2027-08-20T09:00:00.000Z'],
+    ['MONTH', '2031-07-20T09:00:00.000Z', '2032-07-20T09:00:00.000Z'],
+  ] as const)(
+    'keeps distant %s tasks at distinct timeline positions',
+    (scale, firstDate, secondDate) => {
+      const distantRecords: BaseRecord[] = [
+        {
+          ...records[0]!,
+          id: 'far-1',
+          values: { title: '远期一', startAt: firstDate, endAt: firstDate },
+        },
+        {
+          ...records[0]!,
+          id: 'far-2',
+          values: { title: '远期二', startAt: secondDate, endAt: secondDate },
+        },
+      ]
+      renderGantt({ records: distantRecords, config: { ...config, scale } })
+
+      const firstLeft = Number.parseFloat(screen.getByTestId('gantt-bar-far-1').style.left)
+      const secondLeft = Number.parseFloat(screen.getByTestId('gantt-bar-far-2').style.left)
+      expect(secondLeft).toBeGreaterThan(firstLeft)
+    }
+  )
+
+  it('shows the server total while all advanced-view pages are loading', () => {
+    renderGantt({ records: [records[0]!], totalRecords: 240 })
+    expect(screen.getByText('240 条记录')).toBeInTheDocument()
   })
 
   it('keeps preset rows read-only when either date field disallows its record type', () => {
@@ -241,18 +392,33 @@ describe('GanttView', () => {
   })
 
   it.each([
-    ['move', 'gantt-bar-scheduled', 40, {
-      startAt: '2026-07-21T09:00:00.000Z',
-      endAt: '2026-07-23T09:00:00.000Z',
-    }],
-    ['start resize', '调整“完成评审”的开始时间', 40, {
-      startAt: '2026-07-21T09:00:00.000Z',
-      endAt: '2026-07-22T09:00:00.000Z',
-    }],
-    ['end resize', '调整“完成评审”的结束时间', 40, {
-      startAt: '2026-07-20T09:00:00.000Z',
-      endAt: '2026-07-23T09:00:00.000Z',
-    }],
+    [
+      'move',
+      'gantt-bar-scheduled',
+      40,
+      {
+        startAt: '2026-07-21T09:00:00.000Z',
+        endAt: '2026-07-23T09:00:00.000Z',
+      },
+    ],
+    [
+      'start resize',
+      '调整“完成评审”的开始时间',
+      40,
+      {
+        startAt: '2026-07-21T09:00:00.000Z',
+        endAt: '2026-07-22T09:00:00.000Z',
+      },
+    ],
+    [
+      'end resize',
+      '调整“完成评审”的结束时间',
+      40,
+      {
+        startAt: '2026-07-20T09:00:00.000Z',
+        endAt: '2026-07-23T09:00:00.000Z',
+      },
+    ],
   ])('writes ISO values after %s', async (_, target, distance, expected) => {
     const onRecordChange = vi.fn().mockResolvedValue(undefined)
     renderGantt({ records: [records[0]!], onRecordChange })
@@ -262,9 +428,7 @@ describe('GanttView', () => {
       : screen.getByLabelText(target)
     drag(element, 100, 100 + distance)
 
-    await waitFor(() =>
-      expect(onRecordChange).toHaveBeenCalledWith('scheduled', expected)
-    )
+    await waitFor(() => expect(onRecordChange).toHaveBeenCalledWith('scheduled', expected))
   })
 
   it('rolls back the optimistic range and reports a failed update', async () => {

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  useAllBaseRecords,
   useDebouncedViewConfigSave,
   useInfiniteBaseRecords,
   useSelectedBaseRecords,
@@ -54,6 +55,41 @@ describe('base hooks', () => {
       page: 2,
       pageSize: 100,
     })
+  })
+
+  it('automatically aggregates every advanced-view page without truncating meta.total', async () => {
+    api.listBaseRecords.mockImplementation((_tableId: string, query: { page: number }) =>
+      Promise.resolve({
+        data: Array.from({ length: query.page === 3 ? 5 : 100 }, (_, index) => ({
+          id: `record-${(query.page - 1) * 100 + index + 1}`,
+          values: {},
+        })),
+        meta: { page: query.page, pageSize: 100, total: 205 },
+      })
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(
+      () => useAllBaseRecords('table-1', { viewId: 'gantt-view' }, true),
+      { wrapper }
+    )
+
+    await waitFor(() => expect(result.current.data?.data).toHaveLength(205))
+    expect(api.listBaseRecords).toHaveBeenCalledTimes(3)
+    expect(api.listBaseRecords.mock.calls.map((call) => call[1].page)).toEqual([1, 2, 3])
+    expect(result.current.data?.meta.total).toBe(205)
+  })
+
+  it('does not request advanced pages while the advanced-view hook is disabled', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    renderHook(() => useAllBaseRecords('table-1', { viewId: 'grid-view' }, false), { wrapper })
+
+    expect(api.listBaseRecords).not.toHaveBeenCalled()
   })
 
   it('fetches selected relation ids in exact batches of 100', async () => {
