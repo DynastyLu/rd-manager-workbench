@@ -82,6 +82,51 @@ describe('base hooks', () => {
     expect(result.current.data?.meta.total).toBe(205)
   })
 
+  it('stops after a failed advanced page and resumes aggregation after a manual refetch', async () => {
+    const pageError = new Error('page 2 failed')
+    let pageTwoAttempts = 0
+    let canRecover = false
+    api.listBaseRecords.mockImplementation((_tableId: string, query: { page: number }) => {
+      if (query.page === 1) {
+        return Promise.resolve({
+          data: Array.from({ length: 100 }, (_, index) => ({
+            id: `record-${index + 1}`,
+            values: {},
+          })),
+          meta: { page: 1, pageSize: 100, total: 101 },
+        })
+      }
+      pageTwoAttempts += 1
+      if (canRecover) {
+        return Promise.resolve({
+          data: [{ id: 'record-101', values: {} }],
+          meta: { page: 2, pageSize: 100, total: 101 },
+        })
+      }
+      if (pageTwoAttempts === 1) return Promise.reject(pageError)
+      return new Promise(() => undefined)
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(
+      () => useAllBaseRecords('table-1', { viewId: 'gantt-view' }, true),
+      { wrapper }
+    )
+
+    await waitFor(() => expect(result.current.isFetchNextPageError).toBe(true))
+    expect(pageTwoAttempts).toBe(1)
+    expect(result.current.error).toBe(pageError)
+
+    canRecover = true
+    await act(() => result.current.refetch())
+
+    await waitFor(() => expect(result.current.data?.data).toHaveLength(101))
+    expect(pageTwoAttempts).toBe(2)
+    expect(result.current.isError).toBe(false)
+  })
+
   it('does not request advanced pages while the advanced-view hook is disabled', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => (

@@ -76,21 +76,25 @@ export function useInfiniteBaseRecords(
 
 export function useAllBaseRecords(tableId: string | null, query: BaseRecordQuery, enabled = true) {
   const result = useInfiniteBaseRecords(tableId, query, enabled)
-  const { fetchNextPage, hasNextPage } = result
+  const { fetchNextPage, hasNextPage, isFetchNextPageError } = result
   const isLoadingAllPages = useRef(false)
 
   useEffect(() => {
-    if (!enabled || !hasNextPage || isLoadingAllPages.current) return
+    if (!enabled || !hasNextPage || isFetchNextPageError || isLoadingAllPages.current) return
     isLoadingAllPages.current = true
     void (async () => {
       try {
-        let nextPage = await fetchNextPage()
-        while (nextPage.hasNextPage) nextPage = await fetchNextPage()
+        let nextPage = await fetchNextPage({ throwOnError: true })
+        while (nextPage.hasNextPage) {
+          nextPage = await fetchNextPage({ throwOnError: true })
+        }
+      } catch {
+        // React Query retains the page error for the view and a manual refetch can resume loading.
       } finally {
         isLoadingAllPages.current = false
       }
     })()
-  }, [enabled, fetchNextPage, hasNextPage])
+  }, [enabled, fetchNextPage, hasNextPage, isFetchNextPageError])
 
   const data = useMemo(() => {
     const pages = result.data?.pages

@@ -368,7 +368,7 @@ describe('GanttView', () => {
     expect(screen.getByText('240 条记录')).toBeInTheDocument()
   })
 
-  it('keeps preset rows read-only when either date field disallows its record type', () => {
+  it('keeps preset rows read-only while retaining keyboard access to the record', () => {
     const readOnlyFields: DataField[] = [
       fields[0]!,
       {
@@ -384,11 +384,16 @@ describe('GanttView', () => {
       sourceId: 'meeting-1',
       sourcePath: '/meetings/meeting-1',
     }
-    renderGantt({ fields: readOnlyFields, records: [meeting] })
+    const onOpenRecord = vi.fn()
+    renderGantt({ fields: readOnlyFields, records: [meeting], onOpenRecord })
 
-    expect(screen.getByTestId('gantt-bar-scheduled')).toHaveAttribute('aria-disabled', 'true')
+    const bar = screen.getByTestId('gantt-bar-scheduled')
+    expect(bar).not.toHaveAttribute('aria-disabled')
+    expect(bar).toHaveAccessibleName(/只读/)
     expect(screen.queryByLabelText('调整“研发周会”的开始时间')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('调整“研发周会”的结束时间')).not.toBeInTheDocument()
+    fireEvent.keyDown(bar, { key: 'Enter' })
+    expect(onOpenRecord).toHaveBeenCalledWith(meeting)
   })
 
   it.each([

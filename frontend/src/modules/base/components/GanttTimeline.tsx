@@ -477,8 +477,8 @@ export function GanttTimeline({
                       data-testid={`gantt-bar-${row.record.id}`}
                       data-start={range.start}
                       data-end={range.end}
-                      aria-disabled={row.readOnly || pendingIds.has(row.record.id)}
-                      aria-label={`${row.title}，${formatRange(range)}`}
+                      aria-busy={pendingIds.has(row.record.id)}
+                      aria-label={`${row.title}，${formatRange(range)}${row.readOnly ? '，只读' : ''}`}
                       style={{ left, width }}
                       onClick={() => {
                         if (suppressClickRef.current) {
