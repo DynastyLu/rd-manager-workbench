@@ -68,7 +68,7 @@ export const deleteBaseRecord = (tableId: string, recordId: string) =>
 
 export const createBaseView = (tableId: string, input: { name: string; type: DataViewType; config?: DataViewConfig }) =>
   request<DataView>(`${resource('/base/tables', tableId)}/views`, { method: 'POST', body: JSON.stringify(input) })
-export const updateBaseView = (id: string, input: Partial<Pick<DataView, 'name' | 'type' | 'config' | 'sequence'>>) =>
+export const updateBaseView = (id: string, input: Partial<Pick<DataView, 'name' | 'type' | 'config' | 'isDefault' | 'sequence'>>) =>
   request<DataView>(resource('/base/views', id), { method: 'PATCH', body: JSON.stringify(input) })
 export const deleteBaseView = (id: string) =>
   request<void>(resource('/base/views', id), { method: 'DELETE' })

@@ -1,0 +1,281 @@
+import { useEffect, useRef, useState } from 'react'
+import { Button, Checkbox, Input, SideSheet } from '@douyinfe/semi-ui'
+
+import type { DataField, DataView, DataViewConfig, ViewSort } from '../types'
+import { isComputedFieldType, isFilterValid, normalizeClientViewConfig } from '../viewSettings'
+import { ViewFilterBuilder } from './ViewFilterBuilder'
+
+const SORT_LIMIT = 5
+function isConfigValid(config: DataViewConfig, fields: DataField[]) {
+  const filters = config.filters ?? []
+  const sorts = config.sorts ?? []
+  if (filters.length > 20 || sorts.length > SORT_LIMIT) return false
+  if (!filters.every((filter) => isFilterValid(filter, fields))) return false
+  return sorts.every((sort) =>
+    fields.some((field) => field.key === sort.fieldKey && !isComputedFieldType(field.type))
+  )
+}
+
+function SortBuilder({
+  fields,
+  sorts,
+  onChange,
+}: {
+  fields: DataField[]
+  sorts: ViewSort[]
+  onChange: (sorts: ViewSort[]) => void
+}) {
+  const sortableFields = fields.filter((field) => !isComputedFieldType(field.type))
+  return (
+    <section className="view-settings__section" aria-labelledby="view-sort-heading">
+      <div className="view-settings__section-heading">
+        <div>
+          <h3 id="view-sort-heading">排序</h3>
+          <p>按优先级依次比较字段</p>
+        </div>
+        <span>
+          {sorts.length}/{SORT_LIMIT}
+        </span>
+      </div>
+      <div className="view-sort-list">
+        {sorts.map((sort, index) => {
+          const field = fields.find((item) => item.key === sort.fieldKey)
+          return (
+            <div className="view-sort-row" key={`${index}:${sort.fieldKey}`}>
+              <span>{index + 1}</span>
+              <select
+                aria-label={`排序字段 ${index + 1}`}
+                value={sort.fieldKey}
+                onChange={(event) =>
+                  onChange(
+                    sorts.map((item, currentIndex) =>
+                      currentIndex === index ? { ...item, fieldKey: event.target.value } : item
+                    )
+                  )
+                }
+              >
+                {!field ? <option value={sort.fieldKey}>失效字段</option> : null}
+                {sortableFields.map((option) => (
+                  <option key={option.id} value={option.key}>
+                    {option.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label={`排序方向 ${index + 1}`}
+                value={sort.direction}
+                onChange={(event) =>
+                  onChange(
+                    sorts.map((item, currentIndex) =>
+                      currentIndex === index
+                        ? { ...item, direction: event.target.value as ViewSort['direction'] }
+                        : item
+                    )
+                  )
+                }
+              >
+                <option value="asc">升序</option>
+                <option value="desc">降序</option>
+              </select>
+              {!field ? (
+                <span className="view-filter-row__invalid">字段已失效：{sort.fieldKey}</span>
+              ) : null}
+              <button
+                type="button"
+                aria-label={`删除排序条件 ${index + 1}`}
+                className="view-settings__icon-button"
+                onClick={() => onChange(sorts.filter((_, currentIndex) => currentIndex !== index))}
+              >
+                ×
+              </button>
+            </div>
+          )
+        })}
+      </div>
+      <button
+        type="button"
+        aria-label="添加排序条件"
+        className="view-settings__add-button"
+        disabled={sorts.length >= SORT_LIMIT || sortableFields.length === 0}
+        onClick={() => {
+          const firstField = sortableFields[0]
+          if (firstField) onChange([...sorts, { fieldKey: firstField.key, direction: 'asc' }])
+        }}
+      >
+        ＋ 添加排序条件
+      </button>
+    </section>
+  )
+}
+
+interface ViewSettingsDrawerProps {
+  visible: boolean
+  view: DataView
+  fields: DataField[]
+  onClose: () => void
+  onConfigChange: (config: DataViewConfig) => unknown
+  onRename: (viewId: string, name: string) => unknown
+  onDelete: (viewId: string) => unknown
+  onSetDefault: (viewId: string) => unknown
+  onSave?: (viewId: string) => unknown
+  isSaving?: boolean
+}
+
+export function ViewSettingsDrawer({
+  visible,
+  view,
+  fields,
+  onClose,
+  onConfigChange,
+  onRename,
+  onDelete,
+  onSetDefault,
+  onSave,
+  isSaving = false,
+}: ViewSettingsDrawerProps) {
+  const [draft, setDraft] = useState<DataViewConfig>(() =>
+    normalizeClientViewConfig(view.config, fields)
+  )
+  const [name, setName] = useState(view.name)
+  const viewIdRef = useRef(view.id)
+
+  useEffect(() => {
+    viewIdRef.current = view.id
+    // A rejected optimistic save or a view switch must replace the local invalid draft.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDraft(normalizeClientViewConfig(view.config, fields))
+    setName(view.name)
+  }, [fields, view.id, view.config, view.name])
+
+  function updateDraft(next: DataViewConfig) {
+    setDraft(next)
+    if (isConfigValid(next, fields)) onConfigChange(next)
+  }
+
+  const hasInvalidConditions = !isConfigValid(draft, fields)
+  const configurableFields = fields.filter((field) => !isComputedFieldType(field.type))
+
+  return (
+    <SideSheet
+      title={
+        <div className="view-settings__title">
+          <span>视图设置</span>
+          <small>{view.name}</small>
+        </div>
+      }
+      visible={visible}
+      onCancel={onClose}
+      width={480}
+      bodyStyle={{ padding: 0 }}
+    >
+      <div className="view-settings">
+        <section className="view-settings__section view-settings__identity">
+          <label htmlFor="view-settings-name">视图名称</label>
+          <div>
+            <Input
+              id="view-settings-name"
+              aria-label="重命名视图"
+              value={name}
+              onChange={setName}
+            />
+            <Button
+              disabled={!name.trim() || isSaving}
+              onClick={() => void onRename(view.id, name.trim())}
+            >
+              保存名称
+            </Button>
+          </div>
+          <label htmlFor="view-settings-query">视图内保存的搜索</label>
+          <Input
+            id="view-settings-query"
+            aria-label="视图内保存的搜索"
+            value={String(draft.query ?? '')}
+            placeholder="刷新后仍会应用；表格顶部搜索不会保存"
+            onChange={(query) => updateDraft({ ...draft, query: query || undefined })}
+          />
+        </section>
+
+        <ViewFilterBuilder
+          fields={fields}
+          filters={draft.filters ?? []}
+          onChange={(filters) => updateDraft({ ...draft, filters })}
+        />
+        <SortBuilder
+          fields={fields}
+          sorts={draft.sorts ?? []}
+          onChange={(sorts) => updateDraft({ ...draft, sorts })}
+        />
+
+        <section className="view-settings__section">
+          <div className="view-settings__section-heading">
+            <div>
+              <h3>布局</h3>
+              <p>分组与字段显示只影响当前视图</p>
+            </div>
+          </div>
+          <label className="view-settings__stacked-field">
+            <span>分组字段</span>
+            <select
+              aria-label="视图分组字段"
+              value={String(draft.groupField ?? '')}
+              onChange={(event) =>
+                updateDraft({ ...draft, groupField: event.target.value || undefined })
+              }
+            >
+              <option value="">不分组</option>
+              {configurableFields.map((field) => (
+                <option key={field.id} value={field.key}>
+                  {field.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="view-settings__fields" aria-label="显示字段">
+            {fields.map((field) => (
+              <Checkbox
+                key={field.id}
+                checked={field.isPrimary || !(draft.hiddenFieldIds ?? []).includes(field.id)}
+                disabled={field.isPrimary}
+                onChange={(event) => {
+                  const hidden = new Set(draft.hiddenFieldIds ?? [])
+                  if (event.target.checked) hidden.delete(field.id)
+                  else hidden.add(field.id)
+                  updateDraft({ ...draft, hiddenFieldIds: [...hidden] })
+                }}
+              >
+                {field.name}
+              </Checkbox>
+            ))}
+          </div>
+        </section>
+
+        {hasInvalidConditions ? (
+          <p className="view-settings__validation" role="alert">
+            请补全筛选条件后再保存
+          </p>
+        ) : null}
+
+        <section className="view-settings__section view-settings__actions">
+          {!view.isDefault ? (
+            <Button disabled={isSaving} onClick={() => void onSetDefault(view.id)}>
+              设为默认视图
+            </Button>
+          ) : (
+            <span className="view-settings__default-badge">当前默认视图</span>
+          )}
+          {onSave ? (
+            <Button
+              disabled={isSaving || hasInvalidConditions}
+              onClick={() => void onSave(viewIdRef.current)}
+            >
+              保存当前配置
+            </Button>
+          ) : null}
+          <Button type="danger" disabled={isSaving} onClick={() => void onDelete(view.id)}>
+            删除当前视图
+          </Button>
+        </section>
+      </div>
+    </SideSheet>
+  )
+}

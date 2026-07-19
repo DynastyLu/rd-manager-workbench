@@ -1,84 +1,84 @@
 import { useState, type FormEvent } from 'react'
+import { Button, Input, Modal } from '@douyinfe/semi-ui'
 
-import type { DataView, DataViewType } from '../types'
+import type { DataField, DataView, DataViewConfig, DataViewType } from '../types'
+import { sharedViewConfig } from '../viewSettings'
+import { ViewSettingsDrawer } from './ViewSettingsDrawer'
 
 interface CreateViewInput {
   name: string
   type: DataViewType
-  config: Record<string, unknown>
+  config: DataViewConfig
 }
 
 interface ViewManagerProps {
   views: DataView[]
+  fields?: DataField[]
   activeViewId?: string
   onSelect: (viewId: string) => void
   onCreate: (input: CreateViewInput) => unknown
   onRename: (viewId: string, name: string) => unknown
-  onSave: (viewId: string) => unknown
+  onConfigChange?: (config: DataViewConfig) => unknown
+  onSave?: (viewId: string) => unknown
   onDelete: (viewId: string) => unknown
+  onSetDefault?: (viewId: string) => unknown
   isSaving?: boolean
 }
 
-const VIEW_TYPES: Array<{ value: DataViewType; label: string }> = [
-  { value: 'GRID', label: '表格' },
-  { value: 'KANBAN', label: '看板' },
-  { value: 'CALENDAR', label: '日历' },
-  { value: 'FORM', label: '表单' },
-]
+const VIEW_TYPES: Array<{ value: DataViewType; label: string; icon: string; description: string }> =
+  [
+    { value: 'GRID', label: '表格', icon: '▦', description: '像表格一样快速录入与编辑' },
+    { value: 'KANBAN', label: '看板', icon: '▥', description: '按状态分组推进工作' },
+    { value: 'CALENDAR', label: '日历', icon: '◫', description: '按日期查看安排与节点' },
+    { value: 'FORM', label: '表单', icon: '✎', description: '通过结构化表单收集记录' },
+    { value: 'GANTT', label: '甘特', icon: '▰', description: '沿时间轴查看计划与进度' },
+    { value: 'GALLERY', label: '画册', icon: '▧', description: '以卡片浏览封面与关键信息' },
+  ]
 
-const TYPE_LABELS = Object.fromEntries(VIEW_TYPES.map((item) => [item.value, item.label]))
+const TYPE_META = Object.fromEntries(VIEW_TYPES.map((item) => [item.value, item])) as Record<
+  DataViewType,
+  (typeof VIEW_TYPES)[number]
+>
 
 export function ViewManager({
   views,
+  fields = [],
   activeViewId,
   onSelect,
   onCreate,
   onRename,
+  onConfigChange = () => undefined,
   onSave,
   onDelete,
+  onSetDefault = () => undefined,
   isSaving = false,
 }: ViewManagerProps) {
   const [isCreating, setIsCreating] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [name, setName] = useState('')
   const [type, setType] = useState<DataViewType>('GRID')
   const activeView = views.find((view) => view.id === activeViewId)
-  const [renameValue, setRenameValue] = useState(activeView?.name ?? '')
 
-  const create = async (event: FormEvent<HTMLFormElement>) => {
+  async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (isSaving) return
-    const trimmedName = name.trim()
-    if (!trimmedName) return
-    await onCreate({ name: trimmedName, type, config: {} })
+    if (isSaving || !name.trim()) return
+    await onCreate({
+      name: name.trim(),
+      type,
+      config: activeView ? sharedViewConfig(activeView.config, fields) : {},
+    })
     setName('')
     setType('GRID')
     setIsCreating(false)
   }
 
-  const openSettings = () => {
-    setRenameValue(activeView?.name ?? '')
-    setIsEditing((value) => !value)
-  }
-
   return (
-    <div style={{ display: 'grid', gap: 10 }}>
-      <div
-        style={{
-          display: 'flex',
-          minHeight: 36,
-          alignItems: 'center',
-          gap: 3,
-          borderBottom: '1px solid #e5e6eb',
-        }}
-      >
-        <div
-          role="tablist"
-          aria-label="数据表视图"
-          style={{ display: 'flex', gap: 2, overflowX: 'auto' }}
-        >
+    <div className="view-manager">
+      <div className="view-manager__bar">
+        <div role="tablist" aria-label="数据表视图" className="view-manager__tabs">
           {views.map((view) => {
             const active = view.id === activeViewId
+            const meta = TYPE_META[view.type]
             return (
               <button
                 key={view.id}
@@ -86,23 +86,11 @@ export function ViewManager({
                 role="tab"
                 aria-selected={active}
                 onClick={() => onSelect(view.id)}
-                style={{
-                  height: 35,
-                  padding: '0 12px',
-                  border: 0,
-                  borderBottom: active ? '2px solid #3370ff' : '2px solid transparent',
-                  background: 'transparent',
-                  color: active ? '#1f2329' : '#646a73',
-                  fontSize: 13,
-                  fontWeight: active ? 600 : 400,
-                  whiteSpace: 'nowrap',
-                  cursor: 'pointer',
-                }}
+                className={`view-manager__tab${active ? ' view-manager__tab--active' : ''}`}
               >
-                {view.name}
-                <span style={{ marginLeft: 6, color: '#bbbfc4', fontSize: 11 }}>
-                  {TYPE_LABELS[view.type]}
-                </span>
+                <span aria-hidden="true">{meta.icon}</span>
+                <span>{view.name}</span>
+                {view.isDefault ? <small>默认</small> : null}
               </button>
             )
           })}
@@ -110,156 +98,88 @@ export function ViewManager({
         <button
           type="button"
           aria-label="新增视图"
-          onClick={() => setIsCreating((value) => !value)}
-          style={ghostButtonStyle}
+          onClick={() => setIsCreating(true)}
+          className="view-manager__ghost-button"
         >
           ＋ 新增视图
         </button>
-        <div style={{ flex: 1 }} />
+        <div className="view-manager__spacer" />
         <button
           type="button"
-          onClick={openSettings}
+          aria-label="视图设置"
+          onClick={() => setIsSettingsOpen(true)}
           disabled={!activeView}
-          style={ghostButtonStyle}
+          className="view-manager__ghost-button"
         >
-          视图设置
+          ⚙ 视图设置
         </button>
       </div>
 
-      {isCreating ? (
-        <form
-          onSubmit={(event) => void create(event)}
-          style={{
-            display: 'flex',
-            alignItems: 'end',
-            gap: 10,
-            padding: 12,
-            borderRadius: 8,
-            background: '#f7f8fa',
-          }}
-        >
-          <label style={labelStyle}>
-            视图名称
-            <input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              style={inputStyle}
-            />
-          </label>
-          <label style={labelStyle}>
-            视图类型
-            <select
-              value={type}
-              onChange={(event) => setType(event.target.value as DataViewType)}
-              style={inputStyle}
-            >
-              {VIEW_TYPES.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="submit" disabled={isSaving} style={primaryButtonStyle}>
+      <Modal
+        title="新建视图"
+        visible={isCreating}
+        footer={null}
+        width={520}
+        onCancel={() => setIsCreating(false)}
+      >
+        <form className="view-create" onSubmit={(event) => void create(event)}>
+          <label htmlFor="view-create-name">视图名称</label>
+          <Input
+            id="view-create-name"
+            aria-label="视图名称"
+            value={name}
+            onChange={setName}
+            placeholder="例如：本周重点"
+          />
+          <label htmlFor="view-create-type">视图类型</label>
+          <select
+            id="view-create-type"
+            aria-label="视图类型"
+            value={type}
+            onChange={(event) => setType(event.target.value as DataViewType)}
+          >
+            {VIEW_TYPES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <div className="view-create__preview">
+            <span aria-hidden="true">{TYPE_META[type].icon}</span>
+            <div>
+              <strong>{TYPE_META[type].label}</strong>
+              <p>{TYPE_META[type].description}</p>
+            </div>
+          </div>
+          <p className="view-create__inheritance">
+            将继承当前视图的筛选、排序、分组和字段显示设置。
+          </p>
+          <Button
+            htmlType="submit"
+            theme="solid"
+            type="primary"
+            loading={isSaving}
+            disabled={!name.trim() || isSaving}
+          >
             确认新增
-          </button>
+          </Button>
         </form>
-      ) : null}
+      </Modal>
 
-      {isEditing && activeView ? (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'end',
-            gap: 10,
-            padding: 12,
-            borderRadius: 8,
-            background: '#f7f8fa',
-          }}
-        >
-          <label style={labelStyle}>
-            重命名视图
-            <input
-              value={renameValue}
-              onChange={(event) => setRenameValue(event.target.value)}
-              style={inputStyle}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => void onRename(activeView.id, renameValue.trim())}
-            disabled={!renameValue.trim() || isSaving}
-            style={secondaryButtonStyle}
-          >
-            保存名称
-          </button>
-          <button
-            type="button"
-            onClick={() => void onSave(activeView.id)}
-            disabled={isSaving}
-            style={secondaryButtonStyle}
-          >
-            保存当前配置
-          </button>
-          <button
-            type="button"
-            onClick={() => void onDelete(activeView.id)}
-            disabled={isSaving}
-            style={{ ...secondaryButtonStyle, color: '#f54a45' }}
-          >
-            删除当前视图
-          </button>
-        </div>
+      {activeView ? (
+        <ViewSettingsDrawer
+          visible={isSettingsOpen}
+          view={activeView}
+          fields={fields}
+          onClose={() => setIsSettingsOpen(false)}
+          onConfigChange={onConfigChange}
+          onRename={onRename}
+          onSave={onSave}
+          onDelete={onDelete}
+          onSetDefault={onSetDefault}
+          isSaving={isSaving}
+        />
       ) : null}
     </div>
   )
-}
-
-const ghostButtonStyle: React.CSSProperties = {
-  height: 30,
-  padding: '0 9px',
-  border: 0,
-  borderRadius: 6,
-  background: 'transparent',
-  color: '#646a73',
-  fontSize: 12,
-  cursor: 'pointer',
-}
-
-const labelStyle: React.CSSProperties = {
-  display: 'grid',
-  gap: 5,
-  color: '#646a73',
-  fontSize: 12,
-}
-
-const inputStyle: React.CSSProperties = {
-  minWidth: 160,
-  height: 32,
-  padding: '0 9px',
-  border: '1px solid #dee0e3',
-  borderRadius: 6,
-  background: '#fff',
-  color: '#1f2329',
-}
-
-const primaryButtonStyle: React.CSSProperties = {
-  height: 32,
-  padding: '0 13px',
-  border: 0,
-  borderRadius: 6,
-  background: '#3370ff',
-  color: '#fff',
-  cursor: 'pointer',
-}
-
-const secondaryButtonStyle: React.CSSProperties = {
-  height: 32,
-  padding: '0 12px',
-  border: '1px solid #dee0e3',
-  borderRadius: 6,
-  background: '#fff',
-  color: '#1f2329',
-  cursor: 'pointer',
 }

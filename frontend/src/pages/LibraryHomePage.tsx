@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Banner, Button, Empty, Input, Modal, SideSheet, Skeleton, Toast } from '@douyinfe/semi-ui'
 import { Link } from 'react-router-dom'
 import { BaseSidebar } from '@/modules/base/components/BaseSidebar'
@@ -22,7 +22,6 @@ import {
   useGridRelationRecords,
   useUpdateBaseRecord,
   useUpdateBaseField,
-  useUpdateBaseView,
 } from '@/modules/base/hooks'
 import { createBaseView, deleteBaseView, updateBaseView } from '@/modules/base/api'
 import type { BaseRecord, BaseRecordQuery, DataField, DataTable, DataView, DataViewConfig, DataViewType } from '@/modules/base/types'
@@ -30,13 +29,10 @@ import './LibraryHomePage.less'
 
 const VIEW_SAVE_DELAY_MS = 350
 
-function viewQuery(config: DataViewConfig): BaseRecordQuery {
+function viewQuery(viewId: string | undefined, temporaryQuery: string): BaseRecordQuery {
   return {
-    ...(config.query ? { query: config.query } : {}),
-    ...(config.filterField ? { filterField: config.filterField } : {}),
-    ...(config.filterValue ? { filterValue: config.filterValue } : {}),
-    ...(config.sortField ? { sortField: config.sortField } : {}),
-    ...(config.sortOrder ? { sortOrder: config.sortOrder } : {}),
+    ...(viewId ? { viewId } : {}),
+    ...(temporaryQuery.trim() ? { query: temporaryQuery.trim() } : {}),
     page: 1,
     pageSize: 100,
   }
@@ -86,32 +82,59 @@ export default function LibraryHomePage() {
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null)
   const [viewOverrides, setViewOverrides] = useState<Record<string, DataViewConfig>>({})
+  const [temporaryQuery, setTemporaryQuery] = useState('')
   const [isCreateTableOpen, setIsCreateTableOpen] = useState(false)
   const [tableName, setTableName] = useState('')
   const [isFieldManagerOpen, setIsFieldManagerOpen] = useState(false)
   const [isViewSaving, setIsViewSaving] = useState(false)
+  const [isConfigSaving, setIsConfigSaving] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState<BaseRecord | null>(null)
+  const serverViewConfigs = useRef(new Map<string, DataViewConfig>())
   const createTableMutation = useCreateBaseTable()
   const createFieldMutation = useCreateBaseField()
   const updateFieldMutation = useUpdateBaseField()
   const deleteFieldMutation = useDeleteBaseField()
   const createRecordMutation = useCreateBaseRecord()
   const updateRecordMutation = useUpdateBaseRecord()
-  const updateViewMutation = useUpdateBaseView()
   const debounceViewSave = useDebouncedViewConfigSave((id, config) => {
-    updateViewMutation.mutate({ id, config })
+    setIsConfigSaving(true)
+    void updateBaseView(id, { config })
+      .then((updated) => setViewOverrides((current) => ({ ...current, [id]: updated.config })))
+      .catch(() => {
+        setViewOverrides((current) => {
+          const serverConfig = serverViewConfigs.current.get(id)
+          if (!serverConfig) {
+            const next = { ...current }
+            delete next[id]
+            return next
+          }
+          return { ...current, [id]: { ...serverConfig } }
+        })
+        Toast.error('视图配置保存失败。已恢复服务端配置。')
+      })
+      .finally(() => setIsConfigSaving(false))
   }, VIEW_SAVE_DELAY_MS)
 
   const workspace = workspacesQuery.data?.[0]
   const tables = useMemo(() => workspace?.tables ?? [], [workspace?.tables])
   const selectedTable = tables.find((table) => table.id === selectedTableId) ?? tables[0] ?? null
   const views = useMemo(() => selectedTable?.views ?? [], [selectedTable?.views])
+  useEffect(() => {
+    serverViewConfigs.current = new Map(views.map((view) => [view.id, view.config]))
+  }, [views])
   const selectedView = views.find((view) => view.id === selectedViewId) ?? views.find((view) => view.isDefault) ?? views[0] ?? null
   const resolvedView = useMemo<DataView | null>(() => selectedView ? {
     ...selectedView,
     config: viewOverrides[selectedView.id] ?? selectedView.config,
   } : null, [selectedView, viewOverrides])
-  const recordsQuery = useBaseRecords(selectedTable?.id ?? null, viewQuery(resolvedView?.config ?? {}))
+  const resolvedViews = useMemo(
+    () => views.map((view) => view.id === resolvedView?.id ? resolvedView : view),
+    [resolvedView, views],
+  )
+  const recordsQuery = useBaseRecords(
+    selectedTable?.id ?? null,
+    viewQuery(resolvedView?.id, temporaryQuery),
+  )
   const fields = selectedTable?.fields ?? []
   const records = recordsQuery.data?.data ?? []
   const relationLookups = useGridRelationRecords(
@@ -123,6 +146,7 @@ export default function LibraryHomePage() {
     setSelectedTableId(table.id)
     setSelectedViewId(table.views?.find((view) => view.isDefault)?.id ?? table.views?.[0]?.id ?? null)
     setSelectedRecord(null)
+    setTemporaryQuery('')
   }
 
   function saveViewConfig(config: DataViewConfig) {
@@ -192,11 +216,15 @@ export default function LibraryHomePage() {
               onCreateRecord={() => void openCreateRecordForm()}
             />
             <ViewManager
-              views={views}
+              views={resolvedViews}
+              fields={fields}
               activeViewId={resolvedView?.id}
-              isSaving={isViewSaving || updateViewMutation.isPending}
-              onSelect={(id) => setSelectedViewId(id)}
-              onCreate={async ({ name, type, config }: { name: string; type: DataViewType; config: Record<string, unknown> }) => {
+              isSaving={isViewSaving || isConfigSaving}
+              onSelect={(id) => {
+                setSelectedViewId(id)
+                setTemporaryQuery('')
+              }}
+              onCreate={async ({ name, type, config }: { name: string; type: DataViewType; config: DataViewConfig }) => {
                 const created = await runViewOperation(async () => {
                   const next = await createBaseView(selectedTable.id, { name, type, config })
                   await refreshViews()
@@ -205,15 +233,17 @@ export default function LibraryHomePage() {
                 if (created) setSelectedViewId(created.id)
               }}
               onRename={(id, name) => runViewOperation(async () => { await updateBaseView(id, { name }); await refreshViews() }, '重命名视图失败。')}
+              onConfigChange={saveViewConfig}
               onSave={(id) => runViewOperation(async () => { await updateBaseView(id, { config: resolvedView?.config ?? {} }); await refreshViews() }, '保存视图失败。')}
               onDelete={(id) => runViewOperation(async () => { await deleteBaseView(id); await refreshViews() }, '删除视图失败。')}
+              onSetDefault={(id) => runViewOperation(async () => { await updateBaseView(id, { isDefault: true }); await refreshViews() }, '设置默认视图失败。')}
             />
             <div className="base-page__content">
               {recordsQuery.isPending ? <Skeleton loading placeholder={<Skeleton.Paragraph rows={10} />} /> : null}
               {recordsQuery.isError ? <Banner type="danger" fullMode={false} title="无法读取数据记录" description="数据表结构已加载，但记录服务暂时不可用。" closeIcon={null}><Button onClick={() => void recordsQuery.refetch()}>重试</Button></Banner> : null}
               {recordsQuery.data && resolvedView ? (
                 resolvedView.type === 'GRID' ? (
-                  <GridView fields={fields} tables={tables} records={records} relationLookups={relationLookups} view={resolvedView} isSaving={updateRecordMutation.isPending} onRecordSelect={setSelectedRecord} onRecordChange={(recordId, values) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values })} onViewChange={saveViewConfig} />
+                  <GridView fields={fields} tables={tables} records={records} relationLookups={relationLookups} view={resolvedView} temporaryQuery={temporaryQuery} onTemporaryQueryChange={setTemporaryQuery} isSaving={updateRecordMutation.isPending} onRecordSelect={setSelectedRecord} onRecordChange={(recordId, values) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values })} onViewChange={saveViewConfig} />
                 ) : resolvedView.type === 'KANBAN' ? (
                   <KanbanView fields={fields} records={records} groupFieldKey={String(resolvedView.config.groupField ?? '') || undefined} isUpdating={updateRecordMutation.isPending} onGroupFieldChange={(groupField) => saveViewConfig({ ...resolvedView.config, groupField })} onRecordUpdate={(recordId, input) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values: input.values })} onOpenRecord={setSelectedRecord} />
                 ) : resolvedView.type === 'CALENDAR' ? (

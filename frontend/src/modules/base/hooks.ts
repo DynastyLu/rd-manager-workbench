@@ -34,6 +34,7 @@ export function useBaseRecords(tableId: string | null, query: BaseRecordQuery) {
   return useQuery({
     queryKey: baseKeys.records(tableId ?? '', query),
     queryFn: () => listBaseRecords(tableId!, query),
+    placeholderData: (previousData) => previousData,
     enabled: Boolean(tableId),
   })
 }

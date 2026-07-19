@@ -13,6 +13,7 @@ import {
 import { Empty, Tag } from '@douyinfe/semi-ui'
 import { Link } from 'react-router-dom'
 import type { BaseRecord, ComputedFieldError, DataField, DataTable, DataView, DataViewConfig, RelationRecordLookup } from '../types'
+import { editableValueText, isComputedFieldType, operatorsForField } from '../viewSettings'
 import { FieldEditor } from './FieldEditor'
 
 function renderCompact(value: unknown) {
@@ -63,6 +64,8 @@ export function GridView({
   isSaving = false,
   tables = EMPTY_TABLES,
   relationLookups = EMPTY_RELATION_LOOKUPS,
+  temporaryQuery,
+  onTemporaryQueryChange,
 }: {
   fields: DataField[]
   records: BaseRecord[]
@@ -73,18 +76,28 @@ export function GridView({
   isSaving?: boolean
   tables?: DataTable[]
   relationLookups?: Map<string, RelationRecordLookup>
+  temporaryQuery?: string
+  onTemporaryQueryChange?: (query: string) => void
 }) {
   const [config, setConfig] = useState<DataViewConfig>(view.config)
   const [editing, setEditing] = useState<{ recordId: string; fieldKey: string } | null>(null)
   useEffect(() => setConfig(view.config), [view.id, view.config])
 
   const visibleFields = useMemo(() => orderedFields(fields, config), [fields, config])
+  const configurableFields = useMemo(
+    () => fields.filter((field) => !isComputedFieldType(field.type)),
+    [fields],
+  )
   const visibility = useMemo<VisibilityState>(() => Object.fromEntries(
     fields.map((field) => [field.key, !(config.hiddenFieldIds ?? []).includes(field.id)]),
   ), [fields, config.hiddenFieldIds])
   const sorting = useMemo<SortingState>(
-    () => config.sortField ? [{ id: config.sortField, desc: config.sortOrder === 'desc' }] : [],
-    [config.sortField, config.sortOrder],
+    () => {
+      const firstSort = config.sorts?.[0]
+      if (firstSort) return [{ id: firstSort.fieldKey, desc: firstSort.direction === 'desc' }]
+      return config.sortField ? [{ id: config.sortField, desc: config.sortOrder === 'desc' }] : []
+    },
+    [config.sortField, config.sortOrder, config.sorts],
   )
   const grouping = useMemo<GroupingState>(() => config.groupField ? [config.groupField] : [], [config.groupField])
 
@@ -175,21 +188,48 @@ export function GridView({
           aria-label="搜索当前表"
           type="search"
           placeholder="搜索记录"
-          value={config.query ?? ''}
-          onChange={(event) => updateConfig({ query: event.target.value })}
+          value={temporaryQuery ?? config.query ?? ''}
+          onChange={(event) => {
+            if (onTemporaryQueryChange) onTemporaryQueryChange(event.target.value)
+            else updateConfig({ query: event.target.value })
+          }}
         />
-        <label><span>排序</span><select aria-label="排序字段" value={config.sortField ?? ''} onChange={(event) => updateConfig({ sortField: event.target.value || undefined })}>
-          <option value="">默认顺序</option>{fields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
+        <label><span>排序</span><select aria-label="排序字段" value={config.sorts?.[0]?.fieldKey ?? config.sortField ?? ''} onChange={(event) => {
+          const fieldKey = event.target.value || undefined
+          updateConfig({
+            sortField: fieldKey,
+            sorts: fieldKey ? [{ fieldKey, direction: config.sorts?.[0]?.direction ?? config.sortOrder ?? 'asc' }] : [],
+          })
+        }}>
+          <option value="">默认顺序</option>{configurableFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
         </select></label>
-        <button type="button" className="base-grid__order" onClick={() => updateConfig({ sortOrder: config.sortOrder === 'desc' ? 'asc' : 'desc' })}>
-          {config.sortOrder === 'desc' ? '降序' : '升序'}
+        <button type="button" className="base-grid__order" onClick={() => {
+          const direction = (config.sorts?.[0]?.direction ?? config.sortOrder) === 'desc' ? 'asc' : 'desc'
+          const fieldKey = config.sorts?.[0]?.fieldKey ?? config.sortField
+          updateConfig({ sortOrder: direction, sorts: fieldKey ? [{ fieldKey, direction }] : [] })
+        }}>
+          {(config.sorts?.[0]?.direction ?? config.sortOrder) === 'desc' ? '降序' : '升序'}
         </button>
-        <label><span>筛选</span><select aria-label="筛选字段" value={config.filterField ?? ''} onChange={(event) => updateConfig({ filterField: event.target.value || undefined })}>
-          <option value="">无筛选</option>{fields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
+        <label><span>筛选</span><select aria-label="筛选字段" value={config.filters?.[0]?.fieldKey ?? config.filterField ?? ''} onChange={(event) => {
+          const fieldKey = event.target.value || undefined
+          const field = configurableFields.find((item) => item.key === fieldKey)
+          const operator = operatorsForField(field).includes('CONTAINS') ? 'CONTAINS' : 'EQ'
+          updateConfig({
+            filterField: fieldKey,
+            filters: fieldKey ? [{ fieldKey, operator, value: config.filters?.[0]?.value ?? config.filterValue }] : [],
+          })
+        }}>
+          <option value="">无筛选</option>{configurableFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
         </select></label>
-        {config.filterField ? <input aria-label="筛选值" value={config.filterValue ?? ''} onChange={(event) => updateConfig({ filterValue: event.target.value })} placeholder="筛选值" /> : null}
+        {(config.filters?.[0]?.fieldKey ?? config.filterField) ? <input aria-label="筛选值" value={editableValueText(config.filters?.[0]?.value ?? config.filterValue)} onChange={(event) => {
+          const fieldKey = config.filters?.[0]?.fieldKey ?? config.filterField
+          updateConfig({
+            filterValue: event.target.value,
+            filters: fieldKey ? [{ fieldKey, operator: config.filters?.[0]?.operator ?? 'CONTAINS', value: event.target.value }] : [],
+          })
+        }} placeholder="筛选值" /> : null}
         <label><span>分组</span><select aria-label="分组字段" value={config.groupField ?? ''} onChange={(event) => updateConfig({ groupField: event.target.value || undefined })}>
-          <option value="">不分组</option>{fields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
+          <option value="">不分组</option>{configurableFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
         </select></label>
         <details className="base-grid__field-visibility">
           <summary>显示字段</summary>

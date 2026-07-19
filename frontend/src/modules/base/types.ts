@@ -253,6 +253,7 @@ export interface PageResult<T> {
 
 export interface BaseRecordQuery {
   recordIds?: string[]
+  viewId?: string
   query?: string
   filterField?: string
   filterValue?: string
