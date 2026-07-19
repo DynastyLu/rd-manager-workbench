@@ -2125,6 +2125,18 @@ describe('Multi-dimensional base API', () => {
         config: { filters: [{ fieldKey: 'scoreCopy', operator: 'EQ', value: 90 }] },
       })
       .expect(400);
+    await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/views`)
+      .send({
+        name: '非法画册字段',
+        type: 'GALLERY',
+        config: {
+          titleFieldKey: 'foreignField',
+          coverFieldKey: 'score',
+          visibleFieldIds: ['foreign-field-id'],
+        },
+      })
+      .expect(400);
     const disguisedGantt = await request(app.getHttpServer())
       .post(`/api/base/tables/${tableId}/views`)
       .send({

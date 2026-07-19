@@ -7,7 +7,7 @@ import {
   ViewFilterOperator,
 } from './domain/base.types';
 
-type QueryField = { key: string; type: DataFieldType; archivedAt?: Date | null };
+type QueryField = { id?: string; key: string; type: DataFieldType; archivedAt?: Date | null };
 type ConfigObject = Record<string, unknown>;
 
 const COMPUTED_TYPES = new Set<DataFieldType>([
@@ -118,14 +118,33 @@ export class ViewQueryService {
       throw new BadRequestException('A view can contain at most 20 filters');
     if (rawSorts.length > 5) throw new BadRequestException('A view can contain at most 5 sorts');
     const fieldByKey = new Map(fields.map((field) => [field.key, field]));
+    const fieldById = new Map(
+      fields.flatMap((field) => (field.id ? [[field.id, field] as const] : [])),
+    );
     const filters = rawFilters.map((raw) => this.normalizeFilter(fieldByKey, raw));
     const sorts = rawSorts.map((raw) => this.normalizeSort(fieldByKey, raw));
     this.validateFieldReference(fieldByKey, config.groupField, 'groupField');
+    const hiddenFieldIds = this.normalizeFieldIds(fieldById, config.hiddenFieldIds);
+    const fieldOrder = this.normalizeFieldIds(fieldById, config.fieldOrder);
+    let visibleFieldIds: string[] | undefined;
+    if (viewType === DataViewType.GANTT || viewType === DataViewType.GALLERY)
+      this.validateDisplayFieldReference(fieldByKey, config.titleFieldKey, 'titleFieldKey');
     if (viewType === DataViewType.GANTT) {
       this.validateFieldReference(fieldByKey, config.startFieldKey, 'startFieldKey', true);
       this.validateFieldReference(fieldByKey, config.endFieldKey, 'endFieldKey', true);
     }
-    const normalized: ConfigObject = { ...config, filters, sorts };
+    if (viewType === DataViewType.GALLERY) {
+      this.validateGalleryCover(fieldByKey, config.coverFieldKey);
+      visibleFieldIds = this.normalizeFieldIds(fieldById, config.visibleFieldIds, 8);
+    }
+    const normalized: ConfigObject = {
+      ...config,
+      filters,
+      sorts,
+      ...(hiddenFieldIds ? { hiddenFieldIds } : {}),
+      ...(fieldOrder ? { fieldOrder } : {}),
+      ...(visibleFieldIds ? { visibleFieldIds } : {}),
+    };
     delete normalized.filterField;
     delete normalized.filterValue;
     delete normalized.sortField;
@@ -243,6 +262,43 @@ export class ViewQueryService {
       throw new BadRequestException('Gantt axes must use date fields');
   }
 
+  private validateDisplayFieldReference(
+    fieldByKey: Map<string, QueryField>,
+    key: unknown,
+    property: string,
+  ) {
+    if (key === undefined || key === null || key === '') return;
+    if (typeof key !== 'string') throw new BadRequestException(`${property} must be a field key`);
+    this.field(fieldByKey, key);
+  }
+
+  private validateGalleryCover(fieldByKey: Map<string, QueryField>, key: unknown) {
+    if (key === undefined || key === null || key === '') return;
+    if (typeof key !== 'string')
+      throw new BadRequestException('coverFieldKey must be a field key');
+    const field = this.field(fieldByKey, key);
+    if (field.archivedAt) return;
+    if (field.type !== DataFieldType.ATTACHMENT && field.type !== DataFieldType.LINK)
+      throw new BadRequestException('Gallery covers must use attachment or link fields');
+  }
+
+  private normalizeFieldIds(
+    fieldById: Map<string, QueryField>,
+    value: unknown,
+    maximum?: number,
+  ): string[] | undefined {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string'))
+      throw new BadRequestException('View field ids must be a string array');
+    const ids = [...new Set(value as string[])];
+    if (maximum !== undefined && ids.length > maximum)
+      throw new BadRequestException(`Gallery cards can display at most ${maximum} fields`);
+    for (const id of ids) {
+      if (!fieldById.has(id)) throw new BadRequestException(`Unknown view field id: ${id}`);
+    }
+    return ids;
+  }
+
   private field(fieldByKey: Map<string, QueryField>, key: string) {
     const field = fieldByKey.get(key);
     if (!field) throw new BadRequestException(`Unknown view field: ${key}`);
@@ -305,6 +361,13 @@ export class ViewQueryService {
 
   private normalizeScalar(type: DataFieldType, value: unknown) {
     if (type === DataFieldType.NUMBER) {
+      if (
+        value === null ||
+        value === '' ||
+        (typeof value === 'string' && value.trim() === '') ||
+        typeof value === 'boolean'
+      )
+        throw new BadRequestException('Number filter value is invalid');
       const number = typeof value === 'number' ? value : Number(value);
       if (!Number.isFinite(number)) throw new BadRequestException('Number filter value is invalid');
       return number;

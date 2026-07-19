@@ -13,6 +13,9 @@ describe('ViewQueryService', () => {
     field('done', DataFieldType.CHECKBOX),
     field('computed', DataFieldType.FORMULA),
     field('createdAt', DataFieldType.CREATED_AT),
+    field('cover', DataFieldType.ATTACHMENT),
+    field('website', DataFieldType.LINK),
+    field('note', DataFieldType.LONG_TEXT),
     field('archived_field', DataFieldType.TEXT, new Date('2026-07-01T00:00:00.000Z')),
   ];
 
@@ -78,6 +81,16 @@ describe('ViewQueryService', () => {
         ],
       }),
     ).toThrow('IN filters can contain at most 100 values');
+    expect(() =>
+      service.normalize(fields, {
+        filters: [{ fieldKey: 'score', operator: 'EQ', value: null }],
+      }),
+    ).toThrow('Number filter value is invalid');
+    expect(() =>
+      service.normalize(fields, {
+        filters: [{ fieldKey: 'score', operator: 'EQ', value: '' }],
+      }),
+    ).toThrow('Number filter value is invalid');
   });
 
   it('applies search and filters with AND semantics before stable multi-sort and pagination', () => {
@@ -193,10 +206,61 @@ describe('ViewQueryService', () => {
       ),
     ).toThrow('Gantt axes must use date fields');
   });
+
+  it('validates shared and Gallery field references before saving', () => {
+    expect(() =>
+      service.normalizeConfig(fields, { hiddenFieldIds: ['missing'] }),
+    ).toThrow('Unknown view field id: missing');
+    expect(() =>
+      service.normalizeConfig(fields, { fieldOrder: ['missing'] }),
+    ).toThrow('Unknown view field id: missing');
+    expect(() =>
+      service.normalizeConfig(fields, { titleFieldKey: 'missing' }, 'GALLERY'),
+    ).toThrow('Unknown view field: missing');
+    expect(() =>
+      service.normalizeConfig(fields, { coverFieldKey: 'score' }, 'GALLERY'),
+    ).toThrow('Gallery covers must use attachment or link fields');
+    expect(() =>
+      service.normalizeConfig(
+        fields,
+        {
+          visibleFieldIds: [
+            'title',
+            'score',
+            'dueAt',
+            'labels',
+            'done',
+            'computed',
+            'createdAt',
+            'cover',
+            'website',
+          ],
+        },
+        'GALLERY',
+      ),
+    ).toThrow('Gallery cards can display at most 8 fields');
+    expect(
+      service.normalizeConfig(
+        fields,
+        {
+          titleFieldKey: 'computed',
+          coverFieldKey: 'cover',
+          visibleFieldIds: ['score', 'score', 'note'],
+          hiddenFieldIds: ['archived_field'],
+          fieldOrder: ['title', 'score'],
+        },
+        'GALLERY',
+      ),
+    ).toMatchObject({
+      titleFieldKey: 'computed',
+      coverFieldKey: 'cover',
+      visibleFieldIds: ['score', 'note'],
+    });
+  });
 });
 
 function field(key: string, type: DataFieldType, archivedAt: Date | null = null) {
-  return { key, type, archivedAt };
+  return { id: key, key, type, archivedAt };
 }
 
 function record(id: string, values: Record<string, unknown>): UnifiedDataRecord {

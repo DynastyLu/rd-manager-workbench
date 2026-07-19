@@ -510,7 +510,7 @@ export class BaseService {
     }
     const fields = await this.prisma.dataField.findMany({
       where: { tableId },
-      select: { key: true, type: true, archivedAt: true },
+      select: { id: true, key: true, type: true, archivedAt: true },
     });
     const normalizedQuery = this.viewQuery.normalize(
       fields,
@@ -618,7 +618,7 @@ export class BaseService {
       await this.assertActiveTable(tx, tableId);
       const fields = await tx.dataField.findMany({
         where: { tableId },
-        select: { key: true, type: true, archivedAt: true },
+        select: { id: true, key: true, type: true, archivedAt: true },
       });
       const config = this.viewQuery.normalizeConfig(fields, dto.config ?? {}, dto.type);
       if (dto.isDefault)
@@ -649,7 +649,7 @@ export class BaseService {
         ? this.viewQuery.normalizeConfig(
             await tx.dataField.findMany({
               where: { tableId: view.tableId },
-              select: { key: true, type: true, archivedAt: true },
+              select: { id: true, key: true, type: true, archivedAt: true },
             }),
             configToNormalize,
             dto.type ?? current.type,
