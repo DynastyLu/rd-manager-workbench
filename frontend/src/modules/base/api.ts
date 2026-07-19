@@ -21,7 +21,9 @@ function resource(path: string, id: string) {
 function queryString(params: BaseRecordQuery) {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== '') query.set(key, String(value))
+    if (Array.isArray(value)) {
+      if (value.length) query.set(key, value.join(','))
+    } else if (value !== undefined && value !== '') query.set(key, String(value))
   }
   const rendered = query.toString()
   return rendered ? `?${rendered}` : ''

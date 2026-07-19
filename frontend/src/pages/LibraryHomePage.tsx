@@ -10,6 +10,7 @@ import { FormView } from '@/modules/base/components/FormView'
 import { KanbanView } from '@/modules/base/components/KanbanView'
 import { ViewManager } from '@/modules/base/components/ViewManager'
 import { RelationValue } from '@/modules/base/components/RelationPicker'
+import { ComputedFieldExplanation } from '@/modules/base/components/ComputedFieldExplanation'
 import {
   useBaseRecords,
   useBaseWorkspaces,
@@ -53,10 +54,12 @@ function valueText(value: unknown) {
 function RecordDetailValue({
   field,
   record,
+  fields,
   tables,
 }: {
   field: DataField
   record: BaseRecord
+  fields: DataField[]
   tables: DataTable[]
 }) {
   const error = record.computedErrors?.[field.key]
@@ -72,7 +75,7 @@ function RecordDetailValue({
       {targetTable
         ? <RelationValue field={field} targetTable={targetTable} value={record.values[field.key]} />
         : valueText(record.values[field.key])}
-      {['LOOKUP', 'ROLLUP', 'FORMULA'].includes(field.type) ? <small>只读计算字段</small> : null}
+      {['LOOKUP', 'ROLLUP', 'FORMULA'].includes(field.type) ? <small><ComputedFieldExplanation field={field} fields={fields} tables={tables} /></small> : null}
     </strong>
   )
 }
@@ -239,7 +242,7 @@ export default function LibraryHomePage() {
       /> : null}
 
       <SideSheet title="记录详情" visible={Boolean(selectedRecord)} onCancel={() => setSelectedRecord(null)} width={460}>
-        {selectedRecord && selectedTable ? <div className="base-record-detail">{fields.map((field) => <div key={field.id}><span>{field.name}</span><RecordDetailValue field={field} record={selectedRecord} tables={tables} /></div>)}{selectedRecord.sourcePath ? <Link to={selectedRecord.sourcePath}>打开原业务对象 →</Link> : null}</div> : null}
+        {selectedRecord && selectedTable ? <div className="base-record-detail">{fields.map((field) => <div key={field.id}><span>{field.name}</span><RecordDetailValue field={field} record={selectedRecord} fields={fields} tables={tables} /></div>)}{selectedRecord.sourcePath ? <Link to={selectedRecord.sourcePath}>打开原业务对象 →</Link> : null}</div> : null}
       </SideSheet>
     </div>
   )

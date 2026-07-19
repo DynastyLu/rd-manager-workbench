@@ -626,12 +626,21 @@ export function FieldManager({
               formulaIdentity={editingField.id}
             />
           ) : null}
+          {editingField && !validComputedConfig(editingField.type, editConfig) ? (
+            <p className="field-manager__hint" role="status">
+              请补全字段配置后保存。
+            </p>
+          ) : null}
           <Button
             htmlType="submit"
             theme="solid"
             type="primary"
             loading={isSaving}
-            disabled={!editName.trim()}
+            disabled={
+              !editName.trim() ||
+              !editingField ||
+              !validComputedConfig(editingField.type, editConfig)
+            }
           >
             保存字段修改
           </Button>

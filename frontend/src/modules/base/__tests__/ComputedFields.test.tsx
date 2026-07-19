@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '@/lib/http'
 import { FieldManager } from '../components/FieldManager'
 import { FormView } from '../components/FormView'
 import { FormulaEditor } from '../components/FormulaEditor'
@@ -190,6 +191,31 @@ describe('computed and relational fields', () => {
     expect(within(targetField).queryByRole('option', { name: '计算结果' })).not.toBeInTheDocument()
   })
 
+  it('only asks for numeric rollup targets when the aggregation needs one', async () => {
+    const user = userEvent.setup()
+    render(
+      <FieldManager
+        table={candidateTable}
+        tables={[candidateTable, positionTable]}
+        visible
+        onClose={vi.fn()}
+        onCreateField={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: '新增字段' }))
+    await user.selectOptions(screen.getByLabelText('字段类型'), 'ROLLUP')
+    await user.selectOptions(screen.getByLabelText('关联字段'), relationField.id)
+    expect(screen.getByLabelText('汇总方式')).toHaveValue('COUNT')
+    expect(screen.queryByLabelText('目标字段')).not.toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('汇总方式'), 'SUM')
+    const targetField = screen.getByLabelText('目标字段')
+    expect(within(targetField).getByRole('option', { name: '评分' })).toBeInTheDocument()
+    expect(within(targetField).queryByRole('option', { name: '岗位名称' })).not.toBeInTheDocument()
+    expect(within(targetField).queryByRole('option', { name: '计算结果' })).not.toBeInTheDocument()
+  })
+
   it('configures bidirectional relation cardinality without exposing an inverse id', async () => {
     const onCreateField = vi.fn()
     const user = userEvent.setup()
@@ -298,6 +324,33 @@ describe('computed and relational fields', () => {
     )
   })
 
+  it('prevents saving an edited computed field with an incomplete configuration', async () => {
+    const brokenLookup = field({
+      id: 'field-broken-lookup',
+      key: 'broken_lookup',
+      name: '岗位名称引用',
+      type: 'LOOKUP',
+      config: { relationFieldId: relationField.id },
+    })
+    const user = userEvent.setup()
+    render(
+      <FieldManager
+        table={{ ...candidateTable, fields: [...candidateTable.fields!, brokenLookup] }}
+        tables={[candidateTable, positionTable]}
+        visible
+        onClose={vi.fn()}
+        onCreateField={vi.fn()}
+        onUpdateField={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: '编辑字段：岗位名称引用' }))
+    expect(screen.getByRole('button', { name: '保存字段修改' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent('请补全字段配置后保存')
+    await user.selectOptions(screen.getByLabelText('目标字段'), 'field-position-title')
+    expect(screen.getByRole('button', { name: '保存字段修改' })).toBeEnabled()
+  })
+
   it('searches relation labels and saves stable record ids', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
@@ -390,10 +443,42 @@ describe('computed and relational fields', () => {
     await user.click(screen.getByRole('button', { name: '正在预览' }))
     expect(api.previewBaseFormula).toHaveBeenCalledTimes(1)
 
-    rejectPreview?.(new Error('Unexpected token at position 3'))
+    rejectPreview?.(
+      new ApiError('Unexpected token', 400, 'INVALID_FORMULA', {
+        code: 'INVALID_FORMULA',
+        position: 3,
+      })
+    )
     expect(await screen.findByRole('alert')).toHaveTextContent('位置 3')
     expect(editor).toHaveValue('IF({name}')
     expect(onChange).toHaveBeenLastCalledWith('IF({name}')
+  })
+
+  it('previews a formula against the selected record and renders a successful value', async () => {
+    api.previewBaseFormula.mockResolvedValue({
+      astVersion: 1,
+      ast: { kind: 'field', fieldId: 'field-position-score' },
+      dependencies: ['field-position-score'],
+      dependencyFields: [{ id: 'field-position-score', name: '评分', type: 'NUMBER' }],
+      value: 95,
+    })
+    const user = userEvent.setup()
+    render(
+      <FormulaEditor
+        tableId={positionTable.id}
+        recordId="position-2"
+        fields={positionTable.fields ?? []}
+        value="{score}"
+        onChange={vi.fn()}
+      />
+    )
+
+    await user.click(screen.getByRole('button', { name: '预览公式' }))
+    expect(api.previewBaseFormula).toHaveBeenCalledWith(positionTable.id, {
+      expression: '{score}',
+      recordId: 'position-2',
+    })
+    expect(await screen.findByText('结果：95')).toBeInTheDocument()
   })
 
   it('resets the formula draft when the edited field changes', async () => {

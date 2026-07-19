@@ -188,6 +188,7 @@ export interface PageResult<T> {
 }
 
 export interface BaseRecordQuery {
+  recordIds?: string[]
   query?: string
   filterField?: string
   filterValue?: string

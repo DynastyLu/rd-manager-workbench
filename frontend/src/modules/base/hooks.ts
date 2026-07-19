@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Toast } from '@douyinfe/semi-ui'
 import {
   createBaseField,
@@ -18,6 +18,8 @@ import type { BaseRecordQuery, CreateDataFieldInput, DataViewConfig, FormulaPrev
 export const baseKeys = {
   workspaces: ['base', 'workspaces'] as const,
   records: (tableId: string, query: BaseRecordQuery) => ['base', 'records', tableId, query] as const,
+  infiniteRecords: (tableId: string, query: BaseRecordQuery) => ['base', 'records', 'infinite', tableId, query] as const,
+  selectedRecords: (tableId: string, recordIds: string[]) => ['base', 'records', 'selected', tableId, recordIds] as const,
 }
 
 function invalidateBase(client: ReturnType<typeof useQueryClient>) {
@@ -33,6 +35,28 @@ export function useBaseRecords(tableId: string | null, query: BaseRecordQuery) {
     queryKey: baseKeys.records(tableId ?? '', query),
     queryFn: () => listBaseRecords(tableId!, query),
     enabled: Boolean(tableId),
+  })
+}
+
+export function useInfiniteBaseRecords(tableId: string | null, query: BaseRecordQuery) {
+  return useInfiniteQuery({
+    queryKey: baseKeys.infiniteRecords(tableId ?? '', query),
+    queryFn: ({ pageParam }) => listBaseRecords(tableId!, { ...query, page: pageParam, pageSize: 100 }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.meta.page * lastPage.meta.pageSize < lastPage.meta.total
+        ? lastPage.meta.page + 1
+        : undefined,
+    enabled: Boolean(tableId),
+  })
+}
+
+export function useSelectedBaseRecords(tableId: string | null, recordIds: string[]) {
+  const uniqueIds = [...new Set(recordIds)].slice(0, 100)
+  return useQuery({
+    queryKey: baseKeys.selectedRecords(tableId ?? '', uniqueIds),
+    queryFn: () => listBaseRecords(tableId!, { recordIds: uniqueIds, page: 1, pageSize: 100 }),
+    enabled: Boolean(tableId) && uniqueIds.length > 0,
   })
 }
 

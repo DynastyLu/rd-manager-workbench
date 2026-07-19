@@ -1,6 +1,8 @@
 import { DataFieldType, DataTableSource, DataViewType } from '@prisma/client';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -16,6 +18,8 @@ import {
 } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+const csv = ({ value }: { value: unknown }) =>
+  typeof value === 'string' ? value.split(',').map((item) => item.trim()) : value;
 
 export class CreateWorkspaceDto {
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(200) name!: string;
@@ -84,6 +88,14 @@ export class FormulaPreviewDto {
 }
 
 export class ListRecordsQueryDto {
+  @Transform(csv)
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  @MaxLength(300, { each: true })
+  recordIds?: string[];
   @Transform(trim) @IsOptional() @IsString() @MaxLength(500) query?: string;
   @Transform(trim) @IsOptional() @IsString() @MaxLength(100) filterField?: string;
   @Transform(trim) @IsOptional() @IsString() @MaxLength(500) filterValue?: string;

@@ -17,6 +17,7 @@ export interface UnifiedDataRecord {
 }
 
 export interface RecordQuery {
+  recordIds?: string[];
   query?: string;
   filterField?: string;
   filterValue?: string;

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Empty, Spin } from '@douyinfe/semi-ui'
 
-import { useBaseRecords } from '../hooks'
+import { useInfiniteBaseRecords, useSelectedBaseRecords } from '../hooks'
 import type { BaseRecord, DataField, DataTable, RelationFieldConfig } from '../types'
 
 function readRelationConfig(field: DataField): RelationFieldConfig | null {
@@ -44,8 +44,8 @@ export function RelationValue({
   value: unknown
 }) {
   const config = readRelationConfig(field)
-  const recordsQuery = useBaseRecords(config?.targetTableId ?? null, { page: 1, pageSize: 500 })
   const ids = selectedIds(value, config?.multiple === true)
+  const recordsQuery = useSelectedBaseRecords(config?.targetTableId ?? null, ids)
   if (!ids.length) return <>—</>
   if (recordsQuery.isPending) return <>正在读取…</>
   if (recordsQuery.isError) return <span title="目标记录读取失败">⚠ 无法读取关联记录</span>
@@ -78,11 +78,14 @@ export function RelationPicker({
 }) {
   const config = readRelationConfig(field)
   const [query, setQuery] = useState('')
-  const recordsQuery = useBaseRecords(config?.targetTableId ?? null, { page: 1, pageSize: 500 })
   const selected = useMemo(
     () => selectedIds(value, config?.multiple === true),
     [config?.multiple, value]
   )
+  const recordsQuery = useInfiniteBaseRecords(config?.targetTableId ?? null, {
+    ...(query.trim() ? { query: query.trim() } : {}),
+  })
+  const selectedQuery = useSelectedBaseRecords(config?.targetTableId ?? null, selected)
 
   if (!config) {
     return <span className="relation-picker__legacy">请先在字段管理中补全目标数据表</span>
@@ -98,14 +101,17 @@ export function RelationPicker({
     }
     onChange(selected[0] === recordId ? '' : recordId)
   }
-  const knownRecords = new Map((recordsQuery.data?.data ?? []).map((record) => [record.id, record]))
-  const normalizedQuery = query.trim().toLocaleLowerCase()
-  const resultRecords = (recordsQuery.data?.data ?? []).filter(
-    (record) =>
-      !selected.includes(record.id) &&
-      (!normalizedQuery ||
-        recordLabel(record, targetTable).toLocaleLowerCase().includes(normalizedQuery))
-  )
+  const resultRecords = [
+    ...new Map(
+      (recordsQuery.data?.pages ?? [])
+        .flatMap((page) => page.data)
+        .map((record) => [record.id, record] as const)
+    ).values(),
+  ].filter((record) => !selected.includes(record.id))
+  const knownRecords = new Map([
+    ...(selectedQuery.data?.data ?? []),
+    ...resultRecords,
+  ].map((record) => [record.id, record] as const))
 
   return (
     <div className="relation-picker" aria-label={`${field.name}关联选择器`}>
@@ -115,7 +121,11 @@ export function RelationPicker({
             <span key={recordId}>
               {knownRecords.has(recordId)
                 ? recordLabel(knownRecords.get(recordId)!, targetTable)
-                : '目标记录不可用'}
+                : selectedQuery.isPending
+                  ? '正在读取关联记录…'
+                  : selectedQuery.isError
+                    ? '关联记录读取失败'
+                    : '目标记录不可用'}
               <button
                 type="button"
                 aria-label={`移除${knownRecords.has(recordId) ? recordLabel(knownRecords.get(recordId)!, targetTable) : recordId}`}
@@ -139,7 +149,7 @@ export function RelationPicker({
       <div className="relation-picker__results" role="group" aria-label={`${targetTable.name}记录`}>
         {recordsQuery.isPending ? <Spin size="small" tip="加载记录" /> : null}
         {recordsQuery.isError ? (
-          <button type="button" onClick={() => void recordsQuery.refetch()}>
+          <button type="button" className="relation-picker__retry" onClick={() => void recordsQuery.refetch()}>
             加载失败，点击重试
           </button>
         ) : null}
@@ -161,6 +171,16 @@ export function RelationPicker({
             </label>
           )
         })}
+        {recordsQuery.hasNextPage ? (
+          <button
+            type="button"
+            className="relation-picker__more"
+            disabled={recordsQuery.isFetchingNextPage}
+            onClick={() => void recordsQuery.fetchNextPage()}
+          >
+            {recordsQuery.isFetchingNextPage ? '正在加载…' : '加载更多'}
+          </button>
+        ) : null}
       </div>
       {config.multiple && onComplete ? (
         <button type="button" className="relation-picker__complete" onClick={onComplete}>

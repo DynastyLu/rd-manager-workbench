@@ -484,6 +484,22 @@ export class BaseService {
 
   async listRecords(tableId: string, query: RecordQuery) {
     const table = await this.assertTable(tableId);
+    if (query.recordIds?.length) {
+      const ids = [...new Set(query.recordIds)];
+      const records =
+        table.source === DataTableSource.CUSTOM
+          ? await this.listCustomRecordsByIds(tableId, ids)
+          : await this.systemRecords.findByIds(table.source, ids);
+      const byId = new Map(records.map((record) => [record.id, record]));
+      const ordered = ids.flatMap((id) => {
+        const record = byId.get(id);
+        return record ? [record] : [];
+      });
+      return {
+        data: ordered,
+        meta: { page: 1, pageSize: query.pageSize ?? 100, total: ordered.length },
+      };
+    }
     if (table.source !== DataTableSource.CUSTOM)
       return this.systemRecords.list(table.source, query);
     const [records, generatedFields] = await Promise.all([
@@ -498,6 +514,15 @@ export class BaseService {
       query,
     );
     return { ...page, data: await this.computedFields.resolve(tableId, page.data) };
+  }
+
+  private async listCustomRecordsByIds(tableId: string, ids: string[]) {
+    const [records, generatedFields] = await Promise.all([
+      this.prisma.dataRecord.findMany({ where: { tableId, id: { in: ids } } }),
+      this.generatedFields(tableId),
+    ]);
+    const raw = records.map((record) => this.toCustomRecord(record, generatedFields));
+    return this.computedFields.resolve(tableId, raw);
   }
 
   async createRecord(tableId: string, dto: RecordValuesDto) {

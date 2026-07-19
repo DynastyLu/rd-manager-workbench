@@ -2030,4 +2030,66 @@ describe('Multi-dimensional base API', () => {
         expect(body.data.values.projectName).toBe(`${prefix} 系统项目`);
       });
   });
+
+  it('reads exact selected custom and composite system records by stable ids', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 精确回读工作区` })
+      .expect(201);
+    const table = await request(app.getHttpServer())
+      .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+      .send({ name: `${prefix} 精确回读表` })
+      .expect(201);
+    const records = await Promise.all(
+      ['第一页', '页外已选', '第三条'].map((title) =>
+        request(app.getHttpServer())
+          .post(`/api/base/tables/${table.body.data.id}/records`)
+          .send({ values: { title } })
+          .expect(201),
+      ),
+    );
+
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${table.body.data.id}/records`)
+      .query({
+        recordIds: `${records[1].body.data.id},${records[0].body.data.id},${records[1].body.data.id}`,
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.data.map((record: { id: string }) => record.id)).toEqual([
+          records[1].body.data.id,
+          records[0].body.data.id,
+        ]);
+        expect(body.data.meta).toMatchObject({ page: 1, pageSize: 100, total: 2 });
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${table.body.data.id}/records`)
+      .query({ recordIds: `${records[0].body.data.id},,${records[1].body.data.id}` })
+      .expect(400);
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${table.body.data.id}/records`)
+      .query({ recordIds: Array.from({ length: 101 }, (_, index) => `record-${index}`).join(',') })
+      .expect(400);
+
+    const meeting = await prisma.meeting.create({
+      data: { title: `${prefix} 精确会议`, scheduledAt: new Date('2026-07-30T02:00:00.000Z') },
+    });
+    const action = await prisma.meetingAction.create({
+      data: { meetingId: meeting.id, title: `${prefix} 精确行动` },
+    });
+    const meetingTable = await prisma.dataTable.findFirstOrThrow({
+      where: { source: DataTableSource.MEETING_ACTIONS, archivedAt: null },
+    });
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${meetingTable.id}/records`)
+      .query({ recordIds: `ACTION:${action.id},MEETING:${meeting.id}` })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.data.map((record: { id: string }) => record.id)).toEqual([
+          `ACTION:${action.id}`,
+          `MEETING:${meeting.id}`,
+        ]);
+      });
+  });
 });

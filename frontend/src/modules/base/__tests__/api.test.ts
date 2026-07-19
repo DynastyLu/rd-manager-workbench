@@ -22,11 +22,13 @@ describe('multidimensional base API', () => {
     await listBaseWorkspaces()
     await listBaseRecords('table / 1', { query: '北斗 项目', sortField: 'dueAt', sortOrder: 'desc', page: 1, pageSize: 100 })
     await updateBaseRecord('table / 1', 'record / 1', { status: 'DONE' })
+    await listBaseRecords('table / 1', { recordIds: ['ACTION:action-1', 'MEETING:meeting-1'], page: 1, pageSize: 100 })
 
     expect(request.mock.calls).toEqual([
       ['/base/workspaces'],
       ['/base/tables/table%20%2F%201/records?query=%E5%8C%97%E6%96%97+%E9%A1%B9%E7%9B%AE&sortField=dueAt&sortOrder=desc&page=1&pageSize=100'],
       ['/base/tables/table%20%2F%201/records/record%20%2F%201', { method: 'PATCH', body: JSON.stringify({ values: { status: 'DONE' } }) }],
+      ['/base/tables/table%20%2F%201/records?recordIds=ACTION%3Aaction-1%2CMEETING%3Ameeting-1&page=1&pageSize=100'],
     ])
   })
 
