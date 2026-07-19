@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataFieldType, DataTableSource, DataViewType, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../infrastructure/prisma/platform-prisma.service';
 import { SystemRecordsAdapter } from './adapters/system-records.adapter';
@@ -6,6 +11,7 @@ import { DATA_TABLE_PRESETS } from './domain/base-presets';
 import { RecordQuery, UnifiedDataRecord } from './domain/base.types';
 import {
   CreateFieldDto,
+  FormulaPreviewDto,
   CreateTableDto,
   CreateViewDto,
   CreateWorkspaceDto,
@@ -15,6 +21,7 @@ import {
   UpdateViewDto,
   UpdateWorkspaceDto,
 } from './dto/base.dto';
+import { FieldConfigService } from './field-config.service';
 
 const DEFAULT_WORKSPACE_ID = 'rd-workbench-default-data-workspace';
 
@@ -23,50 +30,108 @@ export class BaseService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly systemRecords: SystemRecordsAdapter,
+    private readonly fieldConfig: FieldConfigService,
   ) {}
 
   async ensureDefaultWorkspace() {
     return this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('rd-manager-workbench:data-table-presets'))`);
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('rd-manager-workbench:data-table-presets'))`,
+      );
       const workspace = await tx.dataWorkspace.upsert({
         where: { id: DEFAULT_WORKSPACE_ID },
-        create: { id: DEFAULT_WORKSPACE_ID, name: '研发工作台', description: '项目、任务、会议、文档与治理数据的统一视图', sequence: 0 },
+        create: {
+          id: DEFAULT_WORKSPACE_ID,
+          name: '研发工作台',
+          description: '项目、任务、会议、文档与治理数据的统一视图',
+          sequence: 0,
+        },
         update: { archivedAt: null },
       });
       for (const preset of DATA_TABLE_PRESETS) {
         const existing = await tx.dataTable.findUnique({ where: { presetKey: preset.key } });
         const table = existing
-          ? await tx.dataTable.update({ where: { id: existing.id }, data: { workspaceId: workspace.id, source: preset.source, archivedAt: null } })
-          : await tx.dataTable.create({ data: { workspaceId: workspace.id, name: preset.name, description: preset.description, icon: preset.icon, source: preset.source, presetKey: preset.key, sequence: DATA_TABLE_PRESETS.indexOf(preset) } });
+          ? await tx.dataTable.update({
+              where: { id: existing.id },
+              data: { workspaceId: workspace.id, source: preset.source, archivedAt: null },
+            })
+          : await tx.dataTable.create({
+              data: {
+                workspaceId: workspace.id,
+                name: preset.name,
+                description: preset.description,
+                icon: preset.icon,
+                source: preset.source,
+                presetKey: preset.key,
+                sequence: DATA_TABLE_PRESETS.indexOf(preset),
+              },
+            });
         for (const field of preset.fields) {
           await tx.dataField.upsert({
             where: { tableId_key: { tableId: table.id, key: field.key } },
-            create: { tableId: table.id, key: field.key, name: field.name, type: field.type, config: (field.config ?? {}) as Prisma.InputJsonValue, isPrimary: field.isPrimary ?? false, sequence: field.sequence },
-            update: { type: field.type, config: (field.config ?? {}) as Prisma.InputJsonValue, isPrimary: field.isPrimary ?? false, archivedAt: null },
+            create: {
+              tableId: table.id,
+              key: field.key,
+              name: field.name,
+              type: field.type,
+              config: (field.config ?? {}) as Prisma.InputJsonValue,
+              isPrimary: field.isPrimary ?? false,
+              sequence: field.sequence,
+            },
+            update: {
+              type: field.type,
+              config: (field.config ?? {}) as Prisma.InputJsonValue,
+              isPrimary: field.isPrimary ?? false,
+              archivedAt: null,
+            },
           });
         }
         for (const view of preset.views) {
-          const exists = await tx.dataView.findFirst({ where: { tableId: table.id, name: view.name, type: view.type } });
-          if (!exists) await tx.dataView.create({ data: { tableId: table.id, name: view.name, type: view.type, config: (view.config ?? {}) as Prisma.InputJsonValue, isDefault: view.isDefault ?? false, sequence: view.sequence } });
+          const exists = await tx.dataView.findFirst({
+            where: { tableId: table.id, name: view.name, type: view.type },
+          });
+          if (!exists)
+            await tx.dataView.create({
+              data: {
+                tableId: table.id,
+                name: view.name,
+                type: view.type,
+                config: (view.config ?? {}) as Prisma.InputJsonValue,
+                isDefault: view.isDefault ?? false,
+                sequence: view.sequence,
+              },
+            });
         }
       }
-      return tx.dataWorkspace.findUniqueOrThrow({ where: { id: workspace.id }, include: this.workspaceInclude() });
+      return tx.dataWorkspace.findUniqueOrThrow({
+        where: { id: workspace.id },
+        include: this.workspaceInclude(),
+      });
     });
   }
 
   async listWorkspaces() {
     await this.ensureDefaultWorkspace();
-    return this.prisma.dataWorkspace.findMany({ where: { archivedAt: null }, include: this.workspaceInclude(), orderBy: [{ sequence: 'asc' }, { name: 'asc' }] });
+    return this.prisma.dataWorkspace.findMany({
+      where: { archivedAt: null },
+      include: this.workspaceInclude(),
+      orderBy: [{ sequence: 'asc' }, { name: 'asc' }],
+    });
   }
 
   async getWorkspace(id: string) {
     await this.ensureDefaultWorkspace();
-    const workspace = await this.prisma.dataWorkspace.findFirst({ where: { id, archivedAt: null }, include: this.workspaceInclude() });
+    const workspace = await this.prisma.dataWorkspace.findFirst({
+      where: { id, archivedAt: null },
+      include: this.workspaceInclude(),
+    });
     if (!workspace) throw new NotFoundException('Data workspace not found');
     return workspace;
   }
 
-  createWorkspace(dto: CreateWorkspaceDto) { return this.prisma.dataWorkspace.create({ data: dto }); }
+  createWorkspace(dto: CreateWorkspaceDto) {
+    return this.prisma.dataWorkspace.create({ data: dto });
+  }
 
   async updateWorkspace(id: string, dto: UpdateWorkspaceDto) {
     await this.assertWorkspace(id);
@@ -74,20 +139,31 @@ export class BaseService {
   }
 
   async deleteWorkspace(id: string) {
-    if (id === DEFAULT_WORKSPACE_ID) throw new BadRequestException('The default workspace cannot be deleted');
+    if (id === DEFAULT_WORKSPACE_ID)
+      throw new BadRequestException('The default workspace cannot be deleted');
     await this.assertWorkspace(id);
-    const presetCount = await this.prisma.dataTable.count({ where: { workspaceId: id, archivedAt: null, source: { not: DataTableSource.CUSTOM } } });
-    if (presetCount) throw new ConflictException('A workspace containing preset tables cannot be deleted');
+    const presetCount = await this.prisma.dataTable.count({
+      where: { workspaceId: id, archivedAt: null, source: { not: DataTableSource.CUSTOM } },
+    });
+    if (presetCount)
+      throw new ConflictException('A workspace containing preset tables cannot be deleted');
     await this.prisma.dataWorkspace.update({ where: { id }, data: { archivedAt: new Date() } });
   }
 
   async listTables(workspaceId: string) {
     await this.assertWorkspace(workspaceId);
-    return this.prisma.dataTable.findMany({ where: { workspaceId, archivedAt: null }, include: this.tableInclude(), orderBy: [{ sequence: 'asc' }, { name: 'asc' }] });
+    return this.prisma.dataTable.findMany({
+      where: { workspaceId, archivedAt: null },
+      include: this.tableInclude(),
+      orderBy: [{ sequence: 'asc' }, { name: 'asc' }],
+    });
   }
 
   async getTable(id: string) {
-    const table = await this.prisma.dataTable.findFirst({ where: { id, archivedAt: null }, include: this.tableInclude() });
+    const table = await this.prisma.dataTable.findFirst({
+      where: { id, archivedAt: null },
+      include: this.tableInclude(),
+    });
     if (!table) throw new NotFoundException('Data table not found');
     return table;
   }
@@ -96,9 +172,25 @@ export class BaseService {
     await this.assertWorkspace(workspaceId);
     return this.prisma.dataTable.create({
       data: {
-        workspaceId, ...dto, source: DataTableSource.CUSTOM,
-        fields: { create: { key: 'title', name: '标题', type: 'TEXT', isPrimary: true, isRequired: true, sequence: 0 } },
-        views: { create: [{ name: '表格', type: DataViewType.GRID, isDefault: true, sequence: 0 }, { name: '表单', type: DataViewType.FORM, sequence: 1 }] },
+        workspaceId,
+        ...dto,
+        source: DataTableSource.CUSTOM,
+        fields: {
+          create: {
+            key: 'title',
+            name: '标题',
+            type: 'TEXT',
+            isPrimary: true,
+            isRequired: true,
+            sequence: 0,
+          },
+        },
+        views: {
+          create: [
+            { name: '表格', type: DataViewType.GRID, isDefault: true, sequence: 0 },
+            { name: '表单', type: DataViewType.FORM, sequence: 1 },
+          ],
+        },
       },
       include: this.tableInclude(),
     });
@@ -111,54 +203,114 @@ export class BaseService {
 
   async deleteTable(id: string) {
     const table = await this.assertTable(id);
-    if (table.source !== DataTableSource.CUSTOM) throw new BadRequestException('Preset tables cannot be deleted');
+    if (table.source !== DataTableSource.CUSTOM)
+      throw new BadRequestException('Preset tables cannot be deleted');
     await this.prisma.dataTable.update({ where: { id }, data: { archivedAt: new Date() } });
   }
 
-  async listFields(tableId: string) { await this.assertTable(tableId); return this.prisma.dataField.findMany({ where: { tableId, archivedAt: null }, orderBy: [{ sequence: 'asc' }, { id: 'asc' }] }); }
+  async listFields(tableId: string) {
+    await this.assertTable(tableId);
+    return this.prisma.dataField.findMany({
+      where: { tableId, archivedAt: null },
+      orderBy: [{ sequence: 'asc' }, { id: 'asc' }],
+    });
+  }
 
   async createField(tableId: string, dto: CreateFieldDto) {
     const table = await this.assertCustomTable(tableId);
-    if (dto.isPrimary && await this.prisma.dataField.count({ where: { tableId: table.id, isPrimary: true, archivedAt: null } })) throw new ConflictException('The table already has a primary field');
+    const normalized = await this.fieldConfig.normalizeCreate(tableId, dto);
+    if (
+      normalized.isPrimary &&
+      (await this.prisma.dataField.count({
+        where: { tableId: table.id, isPrimary: true, archivedAt: null },
+      }))
+    )
+      throw new ConflictException('The table already has a primary field');
     try {
-      const archived = await this.prisma.dataField.findUnique({ where: { tableId_key: { tableId, key: dto.key } } });
+      const archived = await this.prisma.dataField.findUnique({
+        where: { tableId_key: { tableId, key: dto.key } },
+      });
+      const { config } = normalized;
+      const fields = {
+        key: normalized.key,
+        name: normalized.name,
+        type: normalized.type,
+        isPrimary: normalized.isPrimary,
+        isRequired: normalized.isRequired,
+        sequence: normalized.sequence,
+      };
       if (archived?.archivedAt) {
-        const { config, ...fields } = dto;
-        return await this.prisma.dataField.update({ where: { id: archived.id }, data: { ...fields, archivedAt: null, config: (config ?? {}) as Prisma.InputJsonValue } });
+        return await this.prisma.dataField.update({
+          where: { id: archived.id },
+          data: { ...fields, archivedAt: null, config: (config ?? {}) as Prisma.InputJsonValue },
+        });
       }
-      return await this.prisma.dataField.create({ data: { ...dto, tableId, config: (dto.config ?? {}) as Prisma.InputJsonValue } });
+      return await this.prisma.dataField.create({
+        data: { ...fields, tableId, config: (config ?? {}) as Prisma.InputJsonValue },
+      });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException(dto.isPrimary ? 'The table already has a primary field' : 'Field key already exists');
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
+        throw new ConflictException(
+          dto.isPrimary ? 'The table already has a primary field' : 'Field key already exists',
+        );
       throw error;
     }
   }
 
   async updateField(id: string, dto: UpdateFieldDto) {
-    const field = await this.prisma.dataField.findFirst({ where: { id, archivedAt: null }, include: { table: true } });
+    const field = await this.prisma.dataField.findFirst({
+      where: { id, archivedAt: null },
+      include: { table: true },
+    });
     if (!field) throw new NotFoundException('Data field not found');
-    if (field.table.source !== DataTableSource.CUSTOM) throw new BadRequestException('Preset fields cannot be changed');
-    if (field.isPrimary && dto.isPrimary === false) throw new BadRequestException('The primary field cannot be downgraded');
-    if (dto.isPrimary && !field.isPrimary && await this.prisma.dataField.count({ where: { tableId: field.tableId, isPrimary: true, archivedAt: null } })) throw new ConflictException('The table already has a primary field');
-    const { config, ...fields } = dto;
+    if (field.table.source !== DataTableSource.CUSTOM)
+      throw new BadRequestException('Preset fields cannot be changed');
+    const normalized = await this.fieldConfig.normalizeUpdate(field, dto);
+    if (field.isPrimary && normalized.isPrimary === false)
+      throw new BadRequestException('The primary field cannot be downgraded');
+    if (
+      normalized.isPrimary &&
+      !field.isPrimary &&
+      (await this.prisma.dataField.count({
+        where: { tableId: field.tableId, isPrimary: true, archivedAt: null },
+      }))
+    )
+      throw new ConflictException('The table already has a primary field');
+    const { config, ...fields } = normalized;
     try {
-      return await this.prisma.dataField.update({ where: { id }, data: { ...fields, ...(config ? { config: config as Prisma.InputJsonValue } : {}) } });
+      return await this.prisma.dataField.update({
+        where: { id },
+        data: { ...fields, ...(config ? { config: config as Prisma.InputJsonValue } : {}) },
+      });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') throw new ConflictException('The table already has a primary field');
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')
+        throw new ConflictException('The table already has a primary field');
       throw error;
     }
   }
 
+  previewFormula(tableId: string, dto: FormulaPreviewDto) {
+    return this.fieldConfig.previewFormula(tableId, dto);
+  }
+
   async deleteField(id: string) {
-    const field = await this.prisma.dataField.findFirst({ where: { id, archivedAt: null }, include: { table: true } });
+    const field = await this.prisma.dataField.findFirst({
+      where: { id, archivedAt: null },
+      include: { table: true },
+    });
     if (!field) throw new NotFoundException('Data field not found');
-    if (field.table.source !== DataTableSource.CUSTOM) throw new BadRequestException('Preset fields cannot be deleted');
+    if (field.table.source !== DataTableSource.CUSTOM)
+      throw new BadRequestException('Preset fields cannot be deleted');
     if (field.isPrimary) throw new BadRequestException('The primary field cannot be deleted');
     await this.prisma.$transaction(async (tx) => {
       const records = await tx.dataRecord.findMany({ where: { tableId: field.tableId } });
       for (const record of records) {
         const values = { ...(record.values as Values) };
         delete values[field.key];
-        await tx.dataRecord.update({ where: { id: record.id }, data: { values: values as Prisma.InputJsonValue } });
+        await tx.dataRecord.update({
+          where: { id: record.id },
+          data: { values: values as Prisma.InputJsonValue },
+        });
       }
       await tx.dataField.update({ where: { id }, data: { archivedAt: new Date() } });
     });
@@ -166,18 +318,27 @@ export class BaseService {
 
   async listRecords(tableId: string, query: RecordQuery) {
     const table = await this.assertTable(tableId);
-    if (table.source !== DataTableSource.CUSTOM) return this.systemRecords.list(table.source, query);
+    if (table.source !== DataTableSource.CUSTOM)
+      return this.systemRecords.list(table.source, query);
     const [records, generatedFields] = await Promise.all([
-      this.prisma.dataRecord.findMany({ where: { tableId }, orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }] }),
+      this.prisma.dataRecord.findMany({
+        where: { tableId },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      }),
       this.generatedFields(tableId),
     ]);
-    return this.applyCustomQuery(records.map((record) => this.toCustomRecord(record, generatedFields)), query);
+    return this.applyCustomQuery(
+      records.map((record) => this.toCustomRecord(record, generatedFields)),
+      query,
+    );
   }
 
   async createRecord(tableId: string, dto: RecordValuesDto) {
     await this.assertCustomTable(tableId);
     await this.validateRecordValues(tableId, dto.values, true);
-    const record = await this.prisma.dataRecord.create({ data: { tableId, values: dto.values as Prisma.InputJsonValue } });
+    const record = await this.prisma.dataRecord.create({
+      data: { tableId, values: dto.values as Prisma.InputJsonValue },
+    });
     return this.toCustomRecord(record, await this.generatedFields(tableId));
   }
 
@@ -191,7 +352,13 @@ export class BaseService {
     if (!record) throw new NotFoundException('Data record not found');
     const values = { ...(record.values as Values), ...dto.values };
     await this.validateRecordValues(tableId, values, true);
-    return this.toCustomRecord(await this.prisma.dataRecord.update({ where: { id }, data: { values: values as Prisma.InputJsonValue } }), await this.generatedFields(tableId));
+    return this.toCustomRecord(
+      await this.prisma.dataRecord.update({
+        where: { id },
+        data: { values: values as Prisma.InputJsonValue },
+      }),
+      await this.generatedFields(tableId),
+    );
   }
 
   async deleteRecord(tableId: string, id: string) {
@@ -200,13 +367,22 @@ export class BaseService {
     if (!result.count) throw new NotFoundException('Data record not found');
   }
 
-  async listViews(tableId: string) { await this.assertTable(tableId); return this.prisma.dataView.findMany({ where: { tableId }, orderBy: [{ sequence: 'asc' }, { id: 'asc' }] }); }
+  async listViews(tableId: string) {
+    await this.assertTable(tableId);
+    return this.prisma.dataView.findMany({
+      where: { tableId },
+      orderBy: [{ sequence: 'asc' }, { id: 'asc' }],
+    });
+  }
 
   async createView(tableId: string, dto: CreateViewDto) {
     await this.assertTable(tableId);
     return this.prisma.$transaction(async (tx) => {
-      if (dto.isDefault) await tx.dataView.updateMany({ where: { tableId }, data: { isDefault: false } });
-      return tx.dataView.create({ data: { ...dto, tableId, config: (dto.config ?? {}) as Prisma.InputJsonValue } });
+      if (dto.isDefault)
+        await tx.dataView.updateMany({ where: { tableId }, data: { isDefault: false } });
+      return tx.dataView.create({
+        data: { ...dto, tableId, config: (dto.config ?? {}) as Prisma.InputJsonValue },
+      });
     });
   }
 
@@ -214,9 +390,16 @@ export class BaseService {
     const view = await this.prisma.dataView.findUnique({ where: { id } });
     if (!view) throw new NotFoundException('Data view not found');
     return this.prisma.$transaction(async (tx) => {
-      if (dto.isDefault) await tx.dataView.updateMany({ where: { tableId: view.tableId }, data: { isDefault: false } });
+      if (dto.isDefault)
+        await tx.dataView.updateMany({
+          where: { tableId: view.tableId },
+          data: { isDefault: false },
+        });
       const { config, ...fields } = dto;
-      return tx.dataView.update({ where: { id }, data: { ...fields, ...(config ? { config: config as Prisma.InputJsonValue } : {}) } });
+      return tx.dataView.update({
+        where: { id },
+        data: { ...fields, ...(config ? { config: config as Prisma.InputJsonValue } : {}) },
+      });
     });
   }
 
@@ -227,8 +410,12 @@ export class BaseService {
     if (count <= 1) throw new BadRequestException('A table must retain at least one view');
     await this.prisma.dataView.delete({ where: { id } });
     if (view.isDefault) {
-      const next = await this.prisma.dataView.findFirst({ where: { tableId: view.tableId }, orderBy: [{ sequence: 'asc' }, { id: 'asc' }] });
-      if (next) await this.prisma.dataView.update({ where: { id: next.id }, data: { isDefault: true } });
+      const next = await this.prisma.dataView.findFirst({
+        where: { tableId: view.tableId },
+        orderBy: [{ sequence: 'asc' }, { id: 'asc' }],
+      });
+      if (next)
+        await this.prisma.dataView.update({ where: { id: next.id }, data: { isDefault: true } });
     }
   }
 
@@ -238,45 +425,157 @@ export class BaseService {
     const unknown = Object.keys(values).filter((key) => !fieldKeys.has(key));
     if (unknown.length) throw new BadRequestException(`Unknown fields: ${unknown.join(', ')}`);
     for (const field of fields) {
-      if (values[field.key] === undefined || values[field.key] === null || (values[field.key] === '' && !field.isRequired)) continue;
+      if (
+        values[field.key] === undefined ||
+        values[field.key] === null ||
+        (values[field.key] === '' && !field.isRequired)
+      )
+        continue;
       const value = values[field.key];
-      if (field.type === DataFieldType.CREATED_AT || field.type === DataFieldType.UPDATED_AT) throw new BadRequestException(`${field.name} is generated and cannot be written`);
-      if (field.type === DataFieldType.NUMBER && typeof value !== 'number') throw new BadRequestException(`${field.name} must be a number`);
-      if (field.type === DataFieldType.CHECKBOX && typeof value !== 'boolean') throw new BadRequestException(`${field.name} must be a boolean`);
-      if ((field.type === DataFieldType.MULTI_SELECT || field.type === DataFieldType.ATTACHMENT) && !Array.isArray(value)) throw new BadRequestException(`${field.name} must be an array`);
-      if ((field.type === DataFieldType.MULTI_SELECT || field.type === DataFieldType.ATTACHMENT) && Array.isArray(value) && value.some((item) => typeof item !== 'string')) throw new BadRequestException(`${field.name} must contain only strings`);
-      if (field.type === DataFieldType.RELATION && typeof value !== 'string' && !Array.isArray(value)) throw new BadRequestException(`${field.name} must be a relation id or id array`);
-      if (field.type === DataFieldType.RELATION && Array.isArray(value) && value.some((item) => typeof item !== 'string')) throw new BadRequestException(`${field.name} must contain only string ids`);
-      if (field.type === DataFieldType.DATETIME && (typeof value !== 'string' || Number.isNaN(new Date(value).getTime()))) throw new BadRequestException(`${field.name} must be an ISO date`);
-      if ((field.type === DataFieldType.TEXT || field.type === DataFieldType.LONG_TEXT || field.type === DataFieldType.LINK || field.type === DataFieldType.SINGLE_SELECT) && typeof value !== 'string') throw new BadRequestException(`${field.name} must be text`);
-      if (field.type === DataFieldType.LINK && typeof value === 'string' && !this.isHttpUrl(value)) throw new BadRequestException(`${field.name} must be a valid URL`);
+      if (field.type === DataFieldType.CREATED_AT || field.type === DataFieldType.UPDATED_AT)
+        throw new BadRequestException(`${field.name} is generated and cannot be written`);
+      if (field.type === DataFieldType.NUMBER && typeof value !== 'number')
+        throw new BadRequestException(`${field.name} must be a number`);
+      if (field.type === DataFieldType.CHECKBOX && typeof value !== 'boolean')
+        throw new BadRequestException(`${field.name} must be a boolean`);
+      if (
+        (field.type === DataFieldType.MULTI_SELECT || field.type === DataFieldType.ATTACHMENT) &&
+        !Array.isArray(value)
+      )
+        throw new BadRequestException(`${field.name} must be an array`);
+      if (
+        (field.type === DataFieldType.MULTI_SELECT || field.type === DataFieldType.ATTACHMENT) &&
+        Array.isArray(value) &&
+        value.some((item) => typeof item !== 'string')
+      )
+        throw new BadRequestException(`${field.name} must contain only strings`);
+      if (
+        field.type === DataFieldType.RELATION &&
+        typeof value !== 'string' &&
+        !Array.isArray(value)
+      )
+        throw new BadRequestException(`${field.name} must be a relation id or id array`);
+      if (
+        field.type === DataFieldType.RELATION &&
+        Array.isArray(value) &&
+        value.some((item) => typeof item !== 'string')
+      )
+        throw new BadRequestException(`${field.name} must contain only string ids`);
+      if (
+        field.type === DataFieldType.DATETIME &&
+        (typeof value !== 'string' || Number.isNaN(new Date(value).getTime()))
+      )
+        throw new BadRequestException(`${field.name} must be an ISO date`);
+      if (
+        (field.type === DataFieldType.TEXT ||
+          field.type === DataFieldType.LONG_TEXT ||
+          field.type === DataFieldType.LINK ||
+          field.type === DataFieldType.SINGLE_SELECT) &&
+        typeof value !== 'string'
+      )
+        throw new BadRequestException(`${field.name} must be text`);
+      if (field.type === DataFieldType.LINK && typeof value === 'string' && !this.isHttpUrl(value))
+        throw new BadRequestException(`${field.name} must be a valid URL`);
       const optionValues = this.optionValues(field.config);
-      if (field.type === DataFieldType.SINGLE_SELECT && optionValues.length && !optionValues.includes(String(value))) throw new BadRequestException(`${field.name} is not an allowed option`);
-      if (field.type === DataFieldType.MULTI_SELECT && Array.isArray(value) && optionValues.length && value.some((item) => !optionValues.includes(String(item)))) throw new BadRequestException(`${field.name} contains an unsupported option`);
+      if (
+        field.type === DataFieldType.SINGLE_SELECT &&
+        optionValues.length &&
+        !optionValues.includes(String(value))
+      )
+        throw new BadRequestException(`${field.name} is not an allowed option`);
+      if (
+        field.type === DataFieldType.MULTI_SELECT &&
+        Array.isArray(value) &&
+        optionValues.length &&
+        value.some((item) => !optionValues.includes(String(item)))
+      )
+        throw new BadRequestException(`${field.name} contains an unsupported option`);
     }
     if (requireFields) {
-      const missing = fields.filter((field) => {
-        const value = values[field.key];
-        return field.isRequired && (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0));
-      }).map((field) => field.name);
-      if (missing.length) throw new BadRequestException(`Required fields missing: ${missing.join(', ')}`);
+      const missing = fields
+        .filter((field) => {
+          const value = values[field.key];
+          return (
+            field.isRequired &&
+            (value === undefined ||
+              value === null ||
+              value === '' ||
+              (Array.isArray(value) && value.length === 0))
+          );
+        })
+        .map((field) => field.name);
+      if (missing.length)
+        throw new BadRequestException(`Required fields missing: ${missing.join(', ')}`);
     }
   }
 
   private applyCustomQuery(records: UnifiedDataRecord[], query: RecordQuery) {
-    let result = query.query ? records.filter((record) => JSON.stringify(record.values).toLocaleLowerCase().includes(query.query!.toLocaleLowerCase())) : records;
-    if (query.filterField) result = result.filter((record) => String(record.values[query.filterField!] ?? '') === String(query.filterValue ?? ''));
-    if (query.sortField) result = [...result].sort((left, right) => String(left.values[query.sortField!] ?? '').localeCompare(String(right.values[query.sortField!] ?? ''), 'zh-CN', { numeric: true }) * (query.sortOrder === 'desc' ? -1 : 1));
-    const page = query.page ?? 1; const pageSize = query.pageSize ?? 100;
-    return { data: result.slice((page - 1) * pageSize, page * pageSize), meta: { page, pageSize, total: result.length } };
+    let result = query.query
+      ? records.filter((record) =>
+          JSON.stringify(record.values)
+            .toLocaleLowerCase()
+            .includes(query.query!.toLocaleLowerCase()),
+        )
+      : records;
+    if (query.filterField)
+      result = result.filter(
+        (record) =>
+          String(record.values[query.filterField!] ?? '') === String(query.filterValue ?? ''),
+      );
+    if (query.sortField)
+      result = [...result].sort(
+        (left, right) =>
+          String(left.values[query.sortField!] ?? '').localeCompare(
+            String(right.values[query.sortField!] ?? ''),
+            'zh-CN',
+            { numeric: true },
+          ) * (query.sortOrder === 'desc' ? -1 : 1),
+      );
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 100;
+    return {
+      data: result.slice((page - 1) * pageSize, page * pageSize),
+      meta: { page, pageSize, total: result.length },
+    };
   }
 
-  private toCustomRecord(record: { id: string; tableId: string; values: Prisma.JsonValue; createdAt: Date; updatedAt: Date }, generatedFields: Array<{ key: string; type: DataFieldType }> = []): UnifiedDataRecord {
-    const generatedValues = Object.fromEntries(generatedFields.map((field) => [field.key, field.type === DataFieldType.CREATED_AT ? record.createdAt : record.updatedAt]));
-    return { id: record.id, values: { ...(record.values as Values), ...generatedValues }, sourceType: 'CUSTOM', sourceId: record.id, sourcePath: `/base?tableId=${record.tableId}&recordId=${record.id}`, createdAt: record.createdAt, updatedAt: record.updatedAt };
+  private toCustomRecord(
+    record: {
+      id: string;
+      tableId: string;
+      values: Prisma.JsonValue;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    generatedFields: Array<{ key: string; type: DataFieldType }> = [],
+  ): UnifiedDataRecord {
+    const generatedValues = Object.fromEntries(
+      generatedFields.map((field) => [
+        field.key,
+        field.type === DataFieldType.CREATED_AT ? record.createdAt : record.updatedAt,
+      ]),
+    );
+    return {
+      id: record.id,
+      values: { ...(record.values as Values), ...generatedValues },
+      sourceType: 'CUSTOM',
+      sourceId: record.id,
+      sourcePath: `/base?tableId=${record.tableId}&recordId=${record.id}`,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    };
   }
 
-  private generatedFields(tableId: string) { return this.prisma.dataField.findMany({ where: { tableId, archivedAt: null, type: { in: [DataFieldType.CREATED_AT, DataFieldType.UPDATED_AT] } }, select: { key: true, type: true } }); }
+  private generatedFields(tableId: string) {
+    return this.prisma.dataField.findMany({
+      where: {
+        tableId,
+        archivedAt: null,
+        type: { in: [DataFieldType.CREATED_AT, DataFieldType.UPDATED_AT] },
+      },
+      select: { key: true, type: true },
+    });
+  }
 
   private optionValues(config: Prisma.JsonValue): string[] {
     if (!config || typeof config !== 'object' || Array.isArray(config)) return [];
@@ -284,20 +583,62 @@ export class BaseService {
     if (!Array.isArray(options)) return [];
     return options.flatMap((option) => {
       if (typeof option === 'string') return [option];
-      if (option && typeof option === 'object' && !Array.isArray(option) && typeof option.value === 'string') return [option.value];
+      if (
+        option &&
+        typeof option === 'object' &&
+        !Array.isArray(option) &&
+        typeof option.value === 'string'
+      )
+        return [option.value];
       return [];
     });
   }
 
   private isHttpUrl(value: string) {
-    try { const url = new URL(value); return url.protocol === 'http:' || url.protocol === 'https:'; } catch { return false; }
+    try {
+      const url = new URL(value);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
   }
 
-  private async assertWorkspace(id: string) { const workspace = await this.prisma.dataWorkspace.findFirst({ where: { id, archivedAt: null } }); if (!workspace) throw new NotFoundException('Data workspace not found'); return workspace; }
-  private async assertTable(id: string) { const table = await this.prisma.dataTable.findFirst({ where: { id, archivedAt: null } }); if (!table) throw new NotFoundException('Data table not found'); return table; }
-  private async assertCustomTable(id: string) { const table = await this.assertTable(id); if (table.source !== DataTableSource.CUSTOM) throw new BadRequestException('This operation is only available for custom tables'); return table; }
-  private tableInclude() { return { fields: { where: { archivedAt: null }, orderBy: [{ sequence: 'asc' as const }, { id: 'asc' as const }] }, views: { orderBy: [{ sequence: 'asc' as const }, { id: 'asc' as const }] } }; }
-  private workspaceInclude() { return { tables: { where: { archivedAt: null }, include: this.tableInclude(), orderBy: [{ sequence: 'asc' as const }, { name: 'asc' as const }] } }; }
+  private async assertWorkspace(id: string) {
+    const workspace = await this.prisma.dataWorkspace.findFirst({
+      where: { id, archivedAt: null },
+    });
+    if (!workspace) throw new NotFoundException('Data workspace not found');
+    return workspace;
+  }
+  private async assertTable(id: string) {
+    const table = await this.prisma.dataTable.findFirst({ where: { id, archivedAt: null } });
+    if (!table) throw new NotFoundException('Data table not found');
+    return table;
+  }
+  private async assertCustomTable(id: string) {
+    const table = await this.assertTable(id);
+    if (table.source !== DataTableSource.CUSTOM)
+      throw new BadRequestException('This operation is only available for custom tables');
+    return table;
+  }
+  private tableInclude() {
+    return {
+      fields: {
+        where: { archivedAt: null },
+        orderBy: [{ sequence: 'asc' as const }, { id: 'asc' as const }],
+      },
+      views: { orderBy: [{ sequence: 'asc' as const }, { id: 'asc' as const }] },
+    };
+  }
+  private workspaceInclude() {
+    return {
+      tables: {
+        where: { archivedAt: null },
+        include: this.tableInclude(),
+        orderBy: [{ sequence: 'asc' as const }, { name: 'asc' as const }],
+      },
+    };
+  }
 }
 
 type Values = Record<string, unknown>;

@@ -6,11 +6,12 @@ import { TasksModule } from '../tasks/tasks.module';
 import { SystemRecordsAdapter } from './adapters/system-records.adapter';
 import { BaseController } from './base.controller';
 import { BaseService } from './base.service';
+import { FieldConfigService } from './field-config.service';
 
 @Module({
   imports: [ProjectsModule, TasksModule, ManagementModule, ContentModule],
   controllers: [BaseController],
-  providers: [BaseService, SystemRecordsAdapter],
+  providers: [BaseService, FieldConfigService, SystemRecordsAdapter],
   exports: [BaseService],
 })
 export class BaseModule {}

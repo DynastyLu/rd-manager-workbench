@@ -56,6 +56,13 @@ export class CreateFieldDto {
   @IsOptional() @IsBoolean() isPrimary?: boolean;
   @IsOptional() @IsBoolean() isRequired?: boolean;
   @IsOptional() @IsInt() @Min(0) @Max(100_000) sequence?: number;
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  inverseFieldName?: string;
+  @IsOptional() @IsBoolean() inverseMultiple?: boolean;
 }
 
 export class UpdateFieldDto {
@@ -71,6 +78,11 @@ export class RecordValuesDto {
   @IsObject() values!: Record<string, unknown>;
 }
 
+export class FormulaPreviewDto {
+  @IsString() @IsNotEmpty() @MaxLength(2000) expression!: string;
+  @Transform(trim) @IsOptional() @IsString() @IsNotEmpty() recordId?: string;
+}
+
 export class ListRecordsQueryDto {
   @Transform(trim) @IsOptional() @IsString() @MaxLength(500) query?: string;
   @Transform(trim) @IsOptional() @IsString() @MaxLength(100) filterField?: string;
@@ -78,7 +90,12 @@ export class ListRecordsQueryDto {
   @Transform(trim) @IsOptional() @IsString() @MaxLength(100) sortField?: string;
   @IsOptional() @IsIn(['asc', 'desc']) sortOrder?: 'asc' | 'desc';
   @Transform(({ value }) => Number(value)) @IsOptional() @IsInt() @Min(1) page?: number;
-  @Transform(({ value }) => Number(value)) @IsOptional() @IsInt() @Min(1) @Max(500) pageSize?: number;
+  @Transform(({ value }) => Number(value))
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  pageSize?: number;
 }
 
 export class CreateViewDto {
