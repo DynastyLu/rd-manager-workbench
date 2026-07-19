@@ -239,12 +239,7 @@ export class ViewQueryService {
     const field = this.field(fieldByKey, key);
     if (field.archivedAt) return;
     this.assertBaseField(field);
-    if (
-      requireDate &&
-      field.type !== DataFieldType.DATETIME &&
-      field.type !== DataFieldType.CREATED_AT &&
-      field.type !== DataFieldType.UPDATED_AT
-    )
+    if (requireDate && field.type !== DataFieldType.DATETIME)
       throw new BadRequestException('Gantt axes must use date fields');
   }
 

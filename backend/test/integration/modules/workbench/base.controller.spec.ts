@@ -2125,6 +2125,18 @@ describe('Multi-dimensional base API', () => {
         config: { filters: [{ fieldKey: 'scoreCopy', operator: 'EQ', value: 90 }] },
       })
       .expect(400);
+    const disguisedGantt = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/views`)
+      .send({
+        name: '待转换视图',
+        type: 'GRID',
+        config: { startFieldKey: 'scoreCopy', endFieldKey: 'score' },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/api/base/views/${disguisedGantt.body.data.id}`)
+      .send({ type: 'GANTT' })
+      .expect(400);
     await request(app.getHttpServer())
       .post(`/api/base/tables/${tableId}/views`)
       .send({

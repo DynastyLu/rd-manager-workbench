@@ -643,13 +643,15 @@ export class BaseService {
           data: { isDefault: false },
         });
       const { config, ...viewFields } = dto;
-      const normalizedConfig = config
+      const configToNormalize =
+        config ?? (dto.type && dto.type !== current.type ? current.config : undefined);
+      const normalizedConfig = configToNormalize
         ? this.viewQuery.normalizeConfig(
             await tx.dataField.findMany({
               where: { tableId: view.tableId },
               select: { key: true, type: true, archivedAt: true },
             }),
-            config,
+            configToNormalize,
             dto.type ?? current.type,
           )
         : undefined;

@@ -12,6 +12,7 @@ describe('ViewQueryService', () => {
     field('labels', DataFieldType.MULTI_SELECT),
     field('done', DataFieldType.CHECKBOX),
     field('computed', DataFieldType.FORMULA),
+    field('createdAt', DataFieldType.CREATED_AT),
     field('archived_field', DataFieldType.TEXT, new Date('2026-07-01T00:00:00.000Z')),
   ];
 
@@ -181,6 +182,13 @@ describe('ViewQueryService', () => {
       service.normalizeConfig(
         fields,
         { startFieldKey: 'score', endFieldKey: 'dueAt' },
+        'GANTT',
+      ),
+    ).toThrow('Gantt axes must use date fields');
+    expect(() =>
+      service.normalizeConfig(
+        fields,
+        { startFieldKey: 'createdAt', endFieldKey: 'dueAt' },
         'GANTT',
       ),
     ).toThrow('Gantt axes must use date fields');
