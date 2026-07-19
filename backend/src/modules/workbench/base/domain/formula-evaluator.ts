@@ -25,6 +25,23 @@ const FUNCTION_NAMES = new Set<FormulaFunctionName>([
   'DATE_DIFF',
 ]);
 
+const FUNCTION_SIGNATURES: Readonly<
+  Record<FormulaFunctionName, { minimum: number; maximum: number }>
+> = {
+  IF: { minimum: 3, maximum: 3 },
+  COALESCE: { minimum: 1, maximum: Number.POSITIVE_INFINITY },
+  ROUND: { minimum: 1, maximum: 2 },
+  ABS: { minimum: 1, maximum: 1 },
+  SUM: { minimum: 0, maximum: Number.POSITIVE_INFINITY },
+  COUNT: { minimum: 0, maximum: Number.POSITIVE_INFINITY },
+  CONCAT: { minimum: 0, maximum: Number.POSITIVE_INFINITY },
+  LOWER: { minimum: 1, maximum: 1 },
+  UPPER: { minimum: 1, maximum: 1 },
+  LEN: { minimum: 1, maximum: 1 },
+  DATE_ADD: { minimum: 3, maximum: 3 },
+  DATE_DIFF: { minimum: 3, maximum: 3 },
+};
+
 const BINARY_OPERATORS = new Set<FormulaBinaryOperator>([
   '+',
   '-',
@@ -73,10 +90,7 @@ export function evaluateFormula(
     if (error instanceof FormulaEvaluationFailure) {
       return { value: null, error: { code: error.code, message: error.message } };
     }
-    return {
-      value: null,
-      error: { code: 'INVALID_FORMULA', message: 'Formula evaluation failed' },
-    };
+    throw error;
   }
 }
 
@@ -188,14 +202,13 @@ function evaluateCall(
   args: readonly FormulaAst[],
   values: Readonly<Record<string, unknown>>,
 ): unknown {
+  requireArity(name, args);
   if (name === 'IF') {
-    requireArity(name, args, 3, 3);
     const condition = evaluateNode(args[0], values);
     if (typeof condition !== 'boolean') fail('TYPE_ERROR', 'IF condition must be boolean');
     return evaluateNode(condition ? args[1] : args[2], values);
   }
   if (name === 'COALESCE') {
-    requireArity(name, args, 1);
     for (const arg of args) {
       const value = evaluateNode(arg, values);
       if (value !== null && value !== undefined) return value;
@@ -206,7 +219,6 @@ function evaluateCall(
   const evaluated = args.map((arg) => evaluateNode(arg, values));
   switch (name) {
     case 'ROUND': {
-      requireArity(name, args, 1, 2);
       const value = requireNumber(evaluated[0], 'ROUND value');
       const digits = evaluated.length === 1 ? 0 : requireNumber(evaluated[1], 'ROUND digits');
       if (!Number.isInteger(digits) || Math.abs(digits) > MAX_ROUND_DIGITS) {
@@ -219,7 +231,6 @@ function evaluateCall(
       return requireFiniteResult(Math.round(value * factor) / factor);
     }
     case 'ABS':
-      requireArity(name, args, 1, 1);
       return Math.abs(requireNumber(evaluated[0], 'ABS value'));
     case 'SUM':
       return sumValues(evaluated);
@@ -229,26 +240,21 @@ function evaluateCall(
     case 'CONCAT':
       return flattenValues(evaluated).map(stringifyConcatValue).join('');
     case 'LOWER':
-      requireArity(name, args, 1, 1);
       return requireString(evaluated[0], 'LOWER value').toLowerCase();
     case 'UPPER':
-      requireArity(name, args, 1, 1);
       return requireString(evaluated[0], 'UPPER value').toUpperCase();
     case 'LEN': {
-      requireArity(name, args, 1, 1);
       const value = evaluated[0];
       if (typeof value === 'string' || Array.isArray(value)) return value.length;
       fail('TYPE_ERROR', 'LEN value must be text or an array');
     }
     case 'DATE_ADD': {
-      requireArity(name, args, 3, 3);
       const timestamp = requireDate(evaluated[0], 'DATE_ADD date');
       const amount = requireNumber(evaluated[1], 'DATE_ADD amount');
       const unit = requireDateUnit(evaluated[2]);
-      return new Date(timestamp + amount * DATE_UNIT_MILLISECONDS[unit]).toISOString();
+      return requireIsoDate(timestamp + amount * DATE_UNIT_MILLISECONDS[unit], 'DATE_ADD result');
     }
     case 'DATE_DIFF': {
-      requireArity(name, args, 3, 3);
       const later = requireDate(evaluated[0], 'DATE_DIFF later date');
       const earlier = requireDate(evaluated[1], 'DATE_DIFF earlier date');
       const unit = requireDateUnit(evaluated[2]);
@@ -302,14 +308,15 @@ function stringifyConcatValue(value: unknown): string {
   fail('TYPE_ERROR', 'CONCAT values must be text, numbers, booleans, or null');
 }
 
-function requireArity(
-  name: FormulaFunctionName,
-  args: readonly FormulaAst[],
-  minimum: number,
-  maximum = Number.POSITIVE_INFINITY,
-): void {
+function requireArity(name: FormulaFunctionName, args: readonly FormulaAst[]): void {
+  const { minimum, maximum } = FUNCTION_SIGNATURES[name];
   if (args.length < minimum || args.length > maximum) {
-    const expected = minimum === maximum ? `${minimum}` : `${minimum} to ${maximum}`;
+    const expected =
+      minimum === maximum
+        ? `${minimum}`
+        : Number.isFinite(maximum)
+          ? `${minimum} to ${maximum}`
+          : `at least ${minimum}`;
     fail('TYPE_ERROR', `${name} expects ${expected} arguments`);
   }
 }
@@ -367,6 +374,15 @@ function requireDate(value: unknown, label: string): number {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) fail('TYPE_ERROR', `${label} must be a valid date`);
   return timestamp;
+}
+
+function requireIsoDate(timestamp: number, label: string): string {
+  if (!Number.isFinite(timestamp)) fail('TYPE_ERROR', `${label} is outside the valid date range`);
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) {
+    fail('TYPE_ERROR', `${label} is outside the valid date range`);
+  }
+  return date.toISOString();
 }
 
 function isLeapYear(year: number): boolean {

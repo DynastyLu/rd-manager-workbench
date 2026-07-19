@@ -30,27 +30,35 @@ export type FormulaBinaryOperator =
   | '<=';
 
 export type FormulaAst =
-  | { kind: 'literal'; value: FormulaLiteralValue }
-  | { kind: 'field'; fieldId: string }
-  | { kind: 'unary'; operator: FormulaUnaryOperator; operand: FormulaAst }
+  | { readonly kind: 'literal'; readonly value: FormulaLiteralValue }
+  | { readonly kind: 'field'; readonly fieldId: string }
   | {
-      kind: 'binary';
-      operator: FormulaBinaryOperator;
-      left: FormulaAst;
-      right: FormulaAst;
+      readonly kind: 'unary';
+      readonly operator: FormulaUnaryOperator;
+      readonly operand: FormulaAst;
     }
-  | { kind: 'call'; name: FormulaFunctionName; args: FormulaAst[] };
+  | {
+      readonly kind: 'binary';
+      readonly operator: FormulaBinaryOperator;
+      readonly left: FormulaAst;
+      readonly right: FormulaAst;
+    }
+  | {
+      readonly kind: 'call';
+      readonly name: FormulaFunctionName;
+      readonly args: ReadonlyArray<FormulaAst>;
+    };
 
 export interface FormulaField {
-  id: string;
-  key: string;
-  type: string;
+  readonly id: string;
+  readonly key: string;
+  readonly type: string;
 }
 
 export interface ParsedFormula {
-  astVersion: 1;
-  ast: FormulaAst;
-  dependencies: string[];
+  readonly astVersion: 1;
+  readonly ast: FormulaAst;
+  readonly dependencies: ReadonlyArray<string>;
 }
 
 export type FormulaParseErrorCode = 'INVALID_FORMULA' | 'UNKNOWN_FIELD' | 'UNKNOWN_FUNCTION';
@@ -58,11 +66,11 @@ export type FormulaParseErrorCode = 'INVALID_FORMULA' | 'UNKNOWN_FIELD' | 'UNKNO
 export type FormulaEvaluationErrorCode = 'DIV_ZERO' | 'TYPE_ERROR' | 'INVALID_FORMULA';
 
 export interface FormulaEvaluationError {
-  code: FormulaEvaluationErrorCode;
-  message: string;
+  readonly code: FormulaEvaluationErrorCode;
+  readonly message: string;
 }
 
 export interface FormulaEvaluationResult {
-  value: unknown;
-  error?: FormulaEvaluationError;
+  readonly value: unknown;
+  readonly error?: FormulaEvaluationError;
 }

@@ -2,7 +2,13 @@ import {
   FormulaParseError,
   parseFormula,
 } from '../../../../../src/modules/workbench/base/domain/formula-parser';
-import { FormulaField } from '../../../../../src/modules/workbench/base/domain/formula.types';
+import {
+  FormulaAst,
+  FormulaEvaluationError,
+  FormulaEvaluationResult,
+  FormulaField,
+  ParsedFormula,
+} from '../../../../../src/modules/workbench/base/domain/formula.types';
 
 describe('parseFormula', () => {
   const fields: FormulaField[] = [
@@ -150,5 +156,69 @@ describe('parseFormula', () => {
     expect(() => parseFormula(`${'-'.repeat(1999)}1`, fields)).toThrow(
       expect.objectContaining({ code: 'INVALID_FORMULA', position: 32 }),
     );
+  });
+
+  it('publishes immutable formula contracts', () => {
+    const literal: FormulaAst = { kind: 'literal', value: 1 };
+    const field: FormulaAst = { kind: 'field', fieldId: 'field-revenue' };
+    const unary: FormulaAst = { kind: 'unary', operator: '-', operand: literal };
+    const binary: FormulaAst = {
+      kind: 'binary',
+      operator: '+',
+      left: literal,
+      right: field,
+    };
+    const call: FormulaAst = { kind: 'call', name: 'SUM', args: [literal] };
+    const parsed: ParsedFormula = {
+      astVersion: 1,
+      ast: call,
+      dependencies: ['field-revenue'],
+    };
+    const evaluationError: FormulaEvaluationError = {
+      code: 'TYPE_ERROR',
+      message: 'Invalid value',
+    };
+    const result: FormulaEvaluationResult = { value: null, error: evaluationError };
+    const formulaField: FormulaField = { id: 'id', key: 'key', type: 'NUMBER' };
+
+    if (false) {
+      // @ts-expect-error Formula AST discriminants are immutable.
+      literal.kind = 'literal';
+      // @ts-expect-error Literal values are immutable.
+      literal.value = 2;
+      // @ts-expect-error Field ids are immutable.
+      field.fieldId = 'other';
+      // @ts-expect-error Unary operators are immutable.
+      unary.operator = '+';
+      // @ts-expect-error Unary operands are immutable.
+      unary.operand = field;
+      // @ts-expect-error Binary operators are immutable.
+      binary.operator = '-';
+      // @ts-expect-error Binary operands are immutable.
+      binary.left = field;
+      // @ts-expect-error Function names are immutable.
+      call.name = 'COUNT';
+      // @ts-expect-error Function argument arrays are immutable.
+      call.args.push(field);
+      // @ts-expect-error Parsed AST versions are immutable.
+      parsed.astVersion = 1;
+      // @ts-expect-error Parsed ASTs are immutable.
+      parsed.ast = literal;
+      // @ts-expect-error Dependency arrays are immutable.
+      parsed.dependencies.push('other');
+      // @ts-expect-error Evaluation error codes are immutable.
+      evaluationError.code = 'DIV_ZERO';
+      // @ts-expect-error Evaluation error messages are immutable.
+      evaluationError.message = 'Other';
+      // @ts-expect-error Evaluation values are immutable.
+      result.value = 1;
+      // @ts-expect-error Evaluation errors are immutable.
+      result.error = undefined;
+      // @ts-expect-error Formula field metadata is immutable.
+      formulaField.id = 'other';
+    }
+
+    expect(parsed.dependencies).toEqual(['field-revenue']);
+    expect(result.error).toBe(evaluationError);
   });
 });

@@ -15,6 +15,8 @@ describe('evaluateFormula', () => {
   const evaluate = (expression: string, values: Record<string, unknown> = {}) =>
     evaluateFormula(parseFormula(expression, fields).ast, values);
 
+  const evaluateRuntimeAst = (ast: unknown) => evaluateFormula(ast as FormulaAst, {});
+
   it('evaluates arithmetic, remainder, unary operators, and parentheses', () => {
     expect(evaluate('-(2 + 3) * +4 % 7')).toEqual({ value: -6 });
   });
@@ -37,6 +39,37 @@ describe('evaluateFormula', () => {
 
   it('evaluates COALESCE in order and stops after the first non-null value', () => {
     expect(evaluate('COALESCE(NULL, "ready", 1 / 0)')).toEqual({ value: 'ready' });
+  });
+
+  it('checks eager function arity before evaluating arguments', () => {
+    expect(evaluate('ABS(1, 1 / 0)')).toEqual({
+      value: null,
+      error: { code: 'TYPE_ERROR', message: expect.stringContaining('ABS') },
+    });
+  });
+
+  it.each([
+    ['IF(TRUE, 1)'],
+    ['COALESCE()'],
+    ['ROUND()'],
+    ['ROUND(1, 0, 0)'],
+    ['ABS()'],
+    ['LOWER()'],
+    ['UPPER("x", "y")'],
+    ['LEN()'],
+    ['DATE_ADD("2026-07-19T00:00:00.000Z", 1)'],
+    ['DATE_DIFF("2026-07-20T00:00:00.000Z", "2026-07-19T00:00:00.000Z")'],
+  ])('enforces the function signature for %s', (expression) => {
+    expect(evaluate(expression)).toEqual({
+      value: null,
+      error: { code: 'TYPE_ERROR', message: expect.any(String) },
+    });
+  });
+
+  it('defines zero-argument signatures for variadic aggregate and text functions', () => {
+    expect(evaluate('SUM()')).toEqual({ value: 0 });
+    expect(evaluate('COUNT()')).toEqual({ value: 0 });
+    expect(evaluate('CONCAT()')).toEqual({ value: '' });
   });
 
   it.each([
@@ -98,11 +131,25 @@ describe('evaluateFormula', () => {
     ).toEqual({ value: '2026-07-20T00:00:00.000Z' });
   });
 
+  it('returns TYPE_ERROR when DATE_ADD overflows the supported date range', () => {
+    expect(evaluate('DATE_ADD("2026-07-19T00:00:00.000Z", 1e308, "day")')).toEqual({
+      value: null,
+      error: { code: 'TYPE_ERROR', message: expect.any(String) },
+    });
+  });
+
+  it('accepts a leap day and the maximum timezone offset', () => {
+    expect(evaluate('DATE_ADD("2024-02-29T14:00:00+14:00", 0, "day")')).toEqual({
+      value: '2024-02-29T00:00:00.000Z',
+    });
+  });
+
   it.each([
     ['DATE_ADD("07/19/2026", 1, "day")'],
     ['DATE_ADD("2026-02-30T00:00:00.000Z", 1, "day")'],
     ['DATE_ADD("2026-07-19T00:00:00", 1, "day")'],
     ['DATE_ADD("2026-07-19T00:00:00+14:01", 1, "day")'],
+    ['DATE_ADD("2026-07-19T24:00:00Z", 1, "day")'],
   ])('rejects a non-strict ISO date in %s', (expression) => {
     expect(evaluate(expression)).toEqual({
       value: null,
@@ -191,5 +238,63 @@ describe('evaluateFormula', () => {
       value: null,
       error: { code: 'INVALID_FORMULA', message: expect.any(String) },
     });
+  });
+
+  it.each([
+    ['kind', { kind: 'property', object: {} }],
+    ['unary operator', { kind: 'unary', operator: '!', operand: { kind: 'literal', value: 1 } }],
+    [
+      'binary operator',
+      {
+        kind: 'binary',
+        operator: '**',
+        left: { kind: 'literal', value: 1 },
+        right: { kind: 'literal', value: 2 },
+      },
+    ],
+    ['function', { kind: 'call', name: 'EVAL', args: [] }],
+    ['literal', { kind: 'literal', value: { unsafe: true } }],
+    ['field', { kind: 'field', fieldId: '' }],
+  ])('rejects a runtime AST with an invalid %s', (_label, ast) => {
+    expect(evaluateRuntimeAst(ast)).toEqual({
+      value: null,
+      error: { code: 'INVALID_FORMULA', message: expect.any(String) },
+    });
+  });
+
+  it('rejects a cyclic runtime AST', () => {
+    const ast: Record<string, unknown> = { kind: 'unary', operator: '-' };
+    ast.operand = ast;
+
+    expect(evaluateRuntimeAst(ast)).toEqual({
+      value: null,
+      error: { code: 'INVALID_FORMULA', message: expect.any(String) },
+    });
+  });
+
+  it('accepts runtime ASTs at exactly the depth and node limits', () => {
+    let depthLimitAst: FormulaAst = { kind: 'literal', value: 1 };
+    for (let index = 0; index < 31; index += 1) {
+      depthLimitAst = { kind: 'unary', operator: '-', operand: depthLimitAst };
+    }
+    const nodeLimitAst: FormulaAst = {
+      kind: 'call',
+      name: 'SUM',
+      args: Array.from({ length: 255 }, () => ({ kind: 'literal' as const, value: 1 })),
+    };
+
+    expect(evaluateFormula(depthLimitAst, {})).toEqual({ value: -1 });
+    expect(evaluateFormula(nodeLimitAst, {})).toEqual({ value: 255 });
+  });
+
+  it('propagates unexpected runtime AST access errors unchanged', () => {
+    const unexpectedError = new Error('host getter failed');
+    const ast = new Proxy({ kind: 'literal', value: 1 } as FormulaAst, {
+      get() {
+        throw unexpectedError;
+      },
+    });
+
+    expect(() => evaluateFormula(ast, {})).toThrow(unexpectedError);
   });
 });
