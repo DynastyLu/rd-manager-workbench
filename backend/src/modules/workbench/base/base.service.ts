@@ -204,10 +204,34 @@ export class BaseService {
   }
 
   async deleteTable(id: string) {
-    const table = await this.assertTable(id);
-    if (table.source !== DataTableSource.CUSTOM)
-      throw new BadRequestException('Preset tables cannot be deleted');
-    await this.prisma.dataTable.update({ where: { id }, data: { archivedAt: new Date() } });
+    await this.prisma.$transaction(async (tx) => {
+      const candidates = await tx.dataField.findMany({
+        where: { type: DataFieldType.RELATION, archivedAt: null },
+        select: { tableId: true, config: true },
+      });
+      const relatedTableIds = candidates.flatMap((field) => {
+        const config = this.relationSync.relationConfig(field.config);
+        if (!config || (field.tableId !== id && config.targetTableId !== id)) return [];
+        return [field.tableId, config.targetTableId];
+      });
+      await this.relationSync.lockTableConfigs(tx, [id, ...relatedTableIds]);
+      const table = await tx.dataTable.findFirst({ where: { id, archivedAt: null } });
+      if (!table) throw new NotFoundException('Data table not found');
+      if (table.source !== DataTableSource.CUSTOM)
+        throw new BadRequestException('Preset tables cannot be deleted');
+      const activeRelations = await tx.dataField.findMany({
+        where: { type: DataFieldType.RELATION, archivedAt: null },
+        select: { tableId: true, config: true },
+      });
+      const relationExists = activeRelations.some((field) => {
+        const config = this.relationSync.relationConfig(field.config);
+        return !!config && (field.tableId === id || config.targetTableId === id);
+      });
+      if (relationExists) {
+        throw new ConflictException('A table with active relations cannot be deleted');
+      }
+      await tx.dataTable.update({ where: { id }, data: { archivedAt: new Date() } });
+    });
   }
 
   async listFields(tableId: string) {
@@ -360,6 +384,22 @@ export class BaseService {
           (normalized.config ?? field.config) as Prisma.JsonValue,
         );
         const existingRelation = this.relationSync.relationConfig(field.config);
+        if (
+          existingRelation &&
+          prospectiveRelation &&
+          (prospectiveRelation.targetTableId !== existingRelation.targetTableId ||
+            prospectiveRelation.multiple !== existingRelation.multiple)
+        ) {
+          const records = await tx.dataRecord.findMany({
+            where: { tableId: field.tableId },
+            select: { values: true },
+          });
+          if (records.some((record) => this.hasNonEmptyRelationValue(record.values, field.key))) {
+            throw new ConflictException(
+              'Relation target or cardinality cannot change while values exist',
+            );
+          }
+        }
         if (
           existingRelation?.relationMode === 'TWO_WAY' &&
           (prospectiveRelation?.relationMode !== 'TWO_WAY' ||
@@ -753,6 +793,15 @@ export class BaseService {
       !Array.isArray(config) &&
       typeof (config as Prisma.JsonObject).targetTableId === 'string'
     );
+  }
+
+  private hasNonEmptyRelationValue(values: Prisma.JsonValue, key: string): boolean {
+    if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
+    const value = (values as Prisma.JsonObject)[key];
+    if (value === undefined || value === null) return false;
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'string') return value.trim().length > 0;
+    return true;
   }
 
   private isHttpUrl(value: string) {

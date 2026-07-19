@@ -964,7 +964,7 @@ describe('Multi-dimensional base API', () => {
     ).resolves.toMatchObject({ values: { title: '目标' } });
   });
 
-  it('decouples and clears stale values before changing a two-way relation target', async () => {
+  it('rejects populated target changes and decouples an empty two-way pair', async () => {
     const workspace = await request(app.getHttpServer())
       .post('/api/base/workspaces')
       .send({ name: `${prefix} 关系目标变更工作区` })
@@ -1006,6 +1006,36 @@ describe('Multi-dimensional base API', () => {
     await request(app.getHttpServer())
       .patch(`/api/base/fields/${relation.body.data.id}`)
       .send({ config: { targetTableId: newTargetTable.body.data.id } })
+      .expect(409);
+    await expect(
+      prisma.dataField.findUniqueOrThrow({ where: { id: relation.body.data.id } }),
+    ).resolves.toMatchObject({
+      config: {
+        targetTableId: oldTargetTable.body.data.id,
+        multiple: false,
+        relationMode: 'TWO_WAY',
+        inverseFieldId: inverse.id,
+      },
+    });
+    await expect(
+      prisma.dataField.findUniqueOrThrow({ where: { id: inverse.id } }),
+    ).resolves.toMatchObject({
+      config: expect.objectContaining({ relationMode: 'TWO_WAY' }),
+    });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: source.body.data.id } }),
+    ).resolves.toMatchObject({ values: { target: target.body.data.id } });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: target.body.data.id } }),
+    ).resolves.toMatchObject({ values: { [inverse.key]: [source.body.data.id] } });
+
+    await request(app.getHttpServer())
+      .patch(`/api/base/tables/${sourceTable.body.data.id}/records/${source.body.data.id}`)
+      .send({ values: { target: null } })
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/api/base/fields/${relation.body.data.id}`)
+      .send({ config: { targetTableId: newTargetTable.body.data.id } })
       .expect(200)
       .expect(({ body }) => {
         expect(body.data.config).toEqual({
@@ -1029,6 +1059,217 @@ describe('Multi-dimensional base API', () => {
         relationMode: 'ONE_WAY',
       },
     });
+  });
+
+  it('rejects archiving custom tables with outgoing or incoming normalized relations', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 表关系归档工作区` })
+      .expect(201);
+    const [sourceTable, targetTable] = await Promise.all(
+      ['归档来源表', '归档目标表'].map((name) =>
+        request(app.getHttpServer())
+          .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+          .send({ name: `${prefix} ${name}` })
+          .expect(201),
+      ),
+    );
+    const relation = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/fields`)
+      .send({
+        key: 'target',
+        name: '归档目标',
+        type: DataFieldType.RELATION,
+        config: {
+          targetTableId: targetTable.body.data.id,
+          multiple: false,
+          relationMode: 'ONE_WAY',
+        },
+      })
+      .expect(201);
+    const target = await request(app.getHttpServer())
+      .post(`/api/base/tables/${targetTable.body.data.id}/records`)
+      .send({ values: { title: '归档目标记录' } })
+      .expect(201);
+    const source = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTable.body.data.id}/records`)
+      .send({ values: { title: '归档来源记录', target: target.body.data.id } })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .delete(`/api/base/tables/${sourceTable.body.data.id}`)
+      .expect(409);
+    await request(app.getHttpServer())
+      .delete(`/api/base/tables/${targetTable.body.data.id}`)
+      .expect(409);
+    await expect(
+      prisma.dataTable.findUniqueOrThrow({ where: { id: sourceTable.body.data.id } }),
+    ).resolves.toMatchObject({ archivedAt: null });
+    await expect(
+      prisma.dataTable.findUniqueOrThrow({ where: { id: targetTable.body.data.id } }),
+    ).resolves.toMatchObject({ archivedAt: null });
+    await expect(
+      prisma.dataField.findUniqueOrThrow({ where: { id: relation.body.data.id } }),
+    ).resolves.toMatchObject({ archivedAt: null });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: source.body.data.id } }),
+    ).resolves.toMatchObject({ values: { target: target.body.data.id } });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: target.body.data.id } }),
+    ).resolves.toMatchObject({ values: { title: '归档目标记录' } });
+  });
+
+  it('rejects relation target or cardinality changes while non-empty values exist', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 关系配置存量工作区` })
+      .expect(201);
+    const [sourceTable, targetTable, otherTable] = await Promise.all(
+      ['配置来源表', '配置目标表', '配置其他表'].map((name) =>
+        request(app.getHttpServer())
+          .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+          .send({ name: `${prefix} ${name}` })
+          .expect(201),
+      ),
+    );
+    const sourceTableId = sourceTable.body.data.id as string;
+    const targetTableId = targetTable.body.data.id as string;
+    const otherTableId = otherTable.body.data.id as string;
+    const target = await request(app.getHttpServer())
+      .post(`/api/base/tables/${targetTableId}/records`)
+      .send({ values: { title: '配置目标记录' } })
+      .expect(201);
+    const oneWay = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'oneWayTarget',
+        name: '单向目标',
+        type: DataFieldType.RELATION,
+        config: { targetTableId, multiple: false, relationMode: 'ONE_WAY' },
+      })
+      .expect(201);
+    const many = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'manyTargets',
+        name: '多个目标',
+        type: DataFieldType.RELATION,
+        config: { targetTableId, multiple: true, relationMode: 'ONE_WAY' },
+      })
+      .expect(201);
+    const source = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/records`)
+      .send({
+        values: {
+          title: '配置来源记录',
+          oneWayTarget: target.body.data.id,
+          manyTargets: [target.body.data.id],
+        },
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/api/base/fields/${oneWay.body.data.id}`)
+      .send({ config: { targetTableId: otherTableId } })
+      .expect(409);
+    await request(app.getHttpServer())
+      .patch(`/api/base/fields/${many.body.data.id}`)
+      .send({ config: { multiple: false } })
+      .expect(409);
+    await expect(
+      prisma.dataField.findUniqueOrThrow({ where: { id: oneWay.body.data.id } }),
+    ).resolves.toMatchObject({
+      config: { targetTableId, multiple: false, relationMode: 'ONE_WAY' },
+    });
+    await expect(
+      prisma.dataField.findUniqueOrThrow({ where: { id: many.body.data.id } }),
+    ).resolves.toMatchObject({
+      config: { targetTableId, multiple: true, relationMode: 'ONE_WAY' },
+    });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: source.body.data.id } }),
+    ).resolves.toMatchObject({
+      values: {
+        oneWayTarget: target.body.data.id,
+        manyTargets: [target.body.data.id],
+      },
+    });
+
+    const paired = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'sharedTarget',
+        name: '共享目标',
+        type: DataFieldType.RELATION,
+        config: { targetTableId, multiple: false, relationMode: 'TWO_WAY' },
+        inverseFieldName: '多个共享来源',
+        inverseMultiple: true,
+      })
+      .expect(201);
+    const inverse = await prisma.dataField.findUniqueOrThrow({
+      where: { id: paired.body.data.config.inverseFieldId },
+    });
+    const secondSource = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/records`)
+      .send({ values: { title: '配置来源记录二', sharedTarget: target.body.data.id } })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/api/base/tables/${sourceTableId}/records/${source.body.data.id}`)
+      .send({ values: { sharedTarget: target.body.data.id } })
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/api/base/fields/${inverse.id}`)
+      .send({ config: { multiple: false } })
+      .expect(409);
+    await expect(
+      prisma.dataField.findUniqueOrThrow({ where: { id: inverse.id } }),
+    ).resolves.toMatchObject({
+      config: {
+        targetTableId: sourceTableId,
+        multiple: true,
+        relationMode: 'TWO_WAY',
+        inverseFieldId: paired.body.data.id,
+      },
+    });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: target.body.data.id } }),
+    ).resolves.toMatchObject({
+      values: { [inverse.key]: [secondSource.body.data.id, source.body.data.id] },
+    });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: source.body.data.id } }),
+    ).resolves.toMatchObject({ values: { sharedTarget: target.body.data.id } });
+    await expect(
+      prisma.dataRecord.findUniqueOrThrow({ where: { id: secondSource.body.data.id } }),
+    ).resolves.toMatchObject({ values: { sharedTarget: target.body.data.id } });
+
+    const emptyMany = await request(app.getHttpServer())
+      .post(`/api/base/tables/${sourceTableId}/fields`)
+      .send({
+        key: 'emptyTargets',
+        name: '空目标',
+        type: DataFieldType.RELATION,
+        config: { targetTableId, multiple: true, relationMode: 'ONE_WAY' },
+      })
+      .expect(201);
+    await Promise.all([
+      request(app.getHttpServer())
+        .post(`/api/base/tables/${sourceTableId}/records`)
+        .send({ values: { title: '未定义空目标' } })
+        .expect(201),
+      request(app.getHttpServer())
+        .post(`/api/base/tables/${sourceTableId}/records`)
+        .send({ values: { title: '空值目标', emptyTargets: null } })
+        .expect(201),
+      request(app.getHttpServer())
+        .post(`/api/base/tables/${sourceTableId}/records`)
+        .send({ values: { title: '空数组目标', emptyTargets: [] } })
+        .expect(201),
+    ]);
+    await request(app.getHttpServer())
+      .patch(`/api/base/fields/${emptyMany.body.data.id}`)
+      .send({ config: { multiple: false, targetTableId: otherTableId } })
+      .expect(200);
   });
 
   it('validates computed field configs and previews formulas without persisting preview data', async () => {
