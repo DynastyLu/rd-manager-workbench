@@ -105,7 +105,7 @@ export interface NormalizedRecordQuery {
 - Modify: `progress.md`
 - Modify: `task_plan.md`
 
-- [ ] Apply the migration and run all backend unit/integration/lint/build gates.
-- [ ] Run frontend typecheck/contracts/all tests/lint/build.
-- [ ] In the real browser create Gantt and Gallery views, drag dates, configure cover/fields, save different filters, refresh and restart services.
-- [ ] Clean acceptance data, write exact results to `progress.md`, mark P1-01B complete, and commit with `docs: record P1-01B acceptance`.
+- [x] Apply the migration and run all backend unit/integration/lint/build gates.
+- [x] Run frontend typecheck/contracts/all tests/lint/build.
+- [x] In the real browser create Gantt and Gallery views, configure their independent saved settings, move a scheduled date range, refresh, and verify persisted API data.
+- [x] Clean acceptance data, write exact results to `progress.md`, mark P1-01B complete, and commit with `docs: record P1-01B acceptance`.
