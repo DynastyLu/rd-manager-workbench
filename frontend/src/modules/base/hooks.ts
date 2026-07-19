@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Toast } from '@douyinfe/semi-ui'
 import {
   createBaseField,
@@ -52,12 +52,32 @@ export function useInfiniteBaseRecords(tableId: string | null, query: BaseRecord
 }
 
 export function useSelectedBaseRecords(tableId: string | null, recordIds: string[]) {
-  const uniqueIds = [...new Set(recordIds)].slice(0, 100)
-  return useQuery({
-    queryKey: baseKeys.selectedRecords(tableId ?? '', uniqueIds),
-    queryFn: () => listBaseRecords(tableId!, { recordIds: uniqueIds, page: 1, pageSize: 100 }),
-    enabled: Boolean(tableId) && uniqueIds.length > 0,
+  const uniqueIds = [...new Set(recordIds)]
+  const batches = Array.from(
+    { length: Math.ceil(uniqueIds.length / 100) },
+    (_, index) => uniqueIds.slice(index * 100, (index + 1) * 100)
+  )
+  const results = useQueries({
+    queries: batches.map((batch) => ({
+      queryKey: baseKeys.selectedRecords(tableId ?? '', batch),
+      queryFn: () => listBaseRecords(tableId!, { recordIds: batch, page: 1, pageSize: 100 }),
+      enabled: Boolean(tableId),
+    })),
   })
+  const byId = new Map(
+    results.flatMap((result) => result.data?.data ?? []).map((record) => [record.id, record])
+  )
+  const data = uniqueIds.flatMap((id) => {
+    const record = byId.get(id)
+    return record ? [record] : []
+  })
+  return {
+    data: { data, meta: { page: 1, pageSize: 100, total: data.length } },
+    isPending: results.some((result) => result.isPending),
+    isError: results.some((result) => result.isError),
+    isSuccess: results.length > 0 && results.every((result) => result.isSuccess),
+    refetch: () => Promise.all(results.map((result) => result.refetch())),
+  }
 }
 
 export function useCreateBaseTable() {

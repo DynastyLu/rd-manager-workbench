@@ -153,6 +153,38 @@ describe('RelationPicker', () => {
     expect(onChange).toHaveBeenCalledWith('position-1')
   })
 
+  it('resolves all labels when a multi relation contains 101 selected ids', async () => {
+    const ids = Array.from({ length: 101 }, (_, index) => `position-${index + 1}`)
+    api.listBaseRecords.mockImplementation(
+      (_tableId: string, query: { recordIds?: string[] } = {}) =>
+        Promise.resolve(
+          query.recordIds
+            ? page(query.recordIds.map((id) => record(id, `岗位 ${id.split('-')[1]}`)))
+            : page([])
+        )
+    )
+    render(
+      <Providers>
+        <RelationPicker
+          field={{
+            ...relationField,
+            config: { ...relationField.config, multiple: true },
+          }}
+          targetTable={targetTable}
+          value={ids}
+          onChange={vi.fn()}
+        />
+      </Providers>
+    )
+
+    expect(await screen.findByText('岗位 101')).toBeInTheDocument()
+    expect(screen.queryByText('目标记录不可用')).not.toBeInTheDocument()
+    const exactCalls = api.listBaseRecords.mock.calls.filter((call) => call[1]?.recordIds)
+    expect(exactCalls).toHaveLength(2)
+    expect(exactCalls[0]?.[1].recordIds).toEqual(ids.slice(0, 100))
+    expect(exactCalls[1]?.[1].recordIds).toEqual(ids.slice(100))
+  })
+
   it('renders loading, empty, request error and unavailable selected-record states', async () => {
     let resolveLoading: ((value: PageResult<BaseRecord>) => void) | undefined
     api.listBaseRecords.mockImplementationOnce(

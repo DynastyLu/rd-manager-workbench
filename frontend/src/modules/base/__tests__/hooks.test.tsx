@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useDebouncedViewConfigSave, useInfiniteBaseRecords, useUpdateBaseRecord } from '../hooks'
+import { useDebouncedViewConfigSave, useInfiniteBaseRecords, useSelectedBaseRecords, useUpdateBaseRecord } from '../hooks'
 
 const api = vi.hoisted(() => ({ listBaseRecords: vi.fn(), updateBaseRecord: vi.fn() }))
 vi.mock('../api', async (importOriginal) => ({
@@ -31,6 +31,25 @@ describe('base hooks', () => {
     expect(api.listBaseRecords).toHaveBeenLastCalledWith('table-1', { query: '研发', page: 1, pageSize: 100 })
     await act(() => result.current.fetchNextPage())
     expect(api.listBaseRecords).toHaveBeenLastCalledWith('table-1', { query: '研发', page: 2, pageSize: 100 })
+  })
+
+  it('fetches selected relation ids in exact batches of 100', async () => {
+    const ids = Array.from({ length: 101 }, (_, index) => `record-${index + 1}`)
+    api.listBaseRecords.mockImplementation((_tableId: string, query: { recordIds: string[] }) =>
+      Promise.resolve({
+        data: query.recordIds.map((id) => ({ id, values: {} })),
+        meta: { page: 1, pageSize: 100, total: query.recordIds.length },
+      })
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    const { result } = renderHook(() => useSelectedBaseRecords('table-1', ids), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(api.listBaseRecords).toHaveBeenCalledTimes(2)
+    expect(api.listBaseRecords.mock.calls[0]?.[1].recordIds).toEqual(ids.slice(0, 100))
+    expect(api.listBaseRecords.mock.calls[1]?.[1].recordIds).toEqual(ids.slice(100))
+    expect(result.current.data?.data.map((record) => record.id)).toEqual(ids)
   })
 
   it('invalidates every consumer cache after a system-backed record update', async () => {
