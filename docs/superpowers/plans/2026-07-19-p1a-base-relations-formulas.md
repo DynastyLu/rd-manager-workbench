@@ -253,7 +253,7 @@ git commit -m "feat: resolve computed table values"
 - Create: `frontend/src/modules/base/components/FormulaEditor.tsx`
 - Create: `frontend/src/modules/base/__tests__/ComputedFields.test.tsx`
 
-- [ ] **Step 1: Write failing UI tests**
+- [x] **Step 1: Write failing UI tests**
 
 ```tsx
 expect(screen.getByRole('option', { name: '查找引用' })).toBeInTheDocument()
@@ -261,20 +261,20 @@ expect(screen.getByText('#DIV/0!')).toHaveAttribute('title', expect.stringContai
 expect(screen.queryByLabelText('计算结果')).not.toBeInTheDocument()
 ```
 
-- [ ] **Step 2: Run the focused test and confirm failure**
+- [x] **Step 2: Run the focused test and confirm failure**
 
 Run: `cd frontend && pnpm test -- src/modules/base/__tests__/ComputedFields.test.tsx`  
 Expected: FAIL because controls do not exist.
 
-- [ ] **Step 3: Implement field configuration and formula preview**
+- [x] **Step 3: Implement field configuration and formula preview**
 
 `RelationPicker` must search target records and save IDs; `FormulaEditor` must insert `{field_key}`, call formula preview, keep drafts after errors, and prevent duplicate preview requests.
 
-- [ ] **Step 4: Make computed values read-only everywhere**
+- [x] **Step 4: Make computed values read-only everywhere**
 
 Grid renders values/errors without editor; Form omits computed fields; Kanban excludes computed grouping; detail sheet shows computed values and explanations.
 
-- [ ] **Step 5: Run frontend gates and commit**
+- [x] **Step 5: Run frontend gates and commit**
 
 Run: `cd frontend && pnpm test -- src/modules/base && pnpm typecheck && pnpm lint && pnpm build`  
 Expected: PASS.
@@ -290,8 +290,8 @@ git commit -m "feat: manage table relations and formulas"
 - Modify: `progress.md`
 - Modify: `task_plan.md`
 
-- [ ] Run `cd backend && pnpm exec prisma validate && pnpm prisma:generate && pnpm prisma:migrate:deploy` and confirm the migration is applied.
-- [ ] Run `cd backend && pnpm test:unit -- --runInBand && pnpm test:integration -- --runInBand && pnpm lint && pnpm build`.
-- [ ] Run `cd frontend && pnpm typecheck && pnpm typecheck:contracts && pnpm test && pnpm lint && pnpm build`.
-- [ ] In the real browser create 岗位/候选人 tables, bidirectional relation, LOOKUP, COUNT/AVG, and `IF({avg_score} >= 80, "通过", "继续评估")`; verify updates and errors.
-- [ ] Remove acceptance records/tables, record exact test totals in `progress.md`, mark P1-01A complete in `task_plan.md`, and commit with `docs: record P1-01A acceptance`.
+- [x] Run `cd backend && pnpm exec prisma validate && pnpm prisma:generate && pnpm prisma:migrate:deploy` and confirm the migration is applied.
+- [x] Run `cd backend && pnpm test:unit -- --runInBand && pnpm test:integration -- --runInBand && pnpm lint && pnpm build`.
+- [x] Run `cd frontend && pnpm typecheck && pnpm typecheck:contracts && pnpm test && pnpm lint && pnpm build`.
+- [x] In the real browser create 岗位/候选人 tables, bidirectional relation, LOOKUP, COUNT/AVG, and `IF({avg_score} >= 80, "通过", "继续评估")`; verify updates and errors.
+- [x] Remove acceptance records/tables, record exact test totals in `progress.md`, mark P1-01A complete in `task_plan.md`, and commit with `docs: record P1-01A acceptance`.
