@@ -5,6 +5,7 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly code: string,
+    public readonly details?: unknown,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -16,6 +17,7 @@ interface ApiFailureEnvelope {
   error: {
     code?: unknown
     message?: unknown
+    details?: unknown
   }
 }
 
@@ -58,7 +60,7 @@ function getEnvelopeError(
   const message =
     typeof payload.error.message === 'string' ? payload.error.message : 'The API request failed.'
 
-  return new ApiError(message, status, code)
+  return new ApiError(message, status, code, payload.error.details)
 }
 
 function getHttpError(response: Response): ApiError {

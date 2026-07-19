@@ -4,6 +4,7 @@ import {
   createBaseTable,
   listBaseRecords,
   listBaseWorkspaces,
+  previewBaseFormula,
   updateBaseRecord,
   updateBaseView,
 } from '../api'
@@ -39,5 +40,14 @@ describe('multidimensional base API', () => {
       ['/base/tables/table-1/fields', { method: 'POST', body: JSON.stringify({ name: '优先级', key: 'priority', type: 'SINGLE_SELECT', config: { options: [{ label: '高', value: '高' }] } }) }],
       ['/base/views/view-1', { method: 'PATCH', body: JSON.stringify({ config: { groupField: 'priority' } }) }],
     ])
+  })
+
+  it('posts formula previews without persisting a field', async () => {
+    await previewBaseFormula('table / 1', { expression: '{score} / 2', recordId: 'record-1' })
+
+    expect(request).toHaveBeenCalledWith('/base/tables/table%20%2F%201/formula-preview', {
+      method: 'POST',
+      body: JSON.stringify({ expression: '{score} / 2', recordId: 'record-1' }),
+    })
   })
 })

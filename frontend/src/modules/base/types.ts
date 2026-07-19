@@ -81,6 +81,27 @@ export interface FormulaFieldConfig {
   ast: FormulaAst
 }
 
+export interface FormulaPreviewInput {
+  expression: string
+  recordId?: string
+}
+
+export interface FormulaPreviewDependency {
+  id: string
+  key?: string
+  name?: string
+  type?: DataFieldType
+}
+
+export interface FormulaPreviewResult {
+  astVersion: 1
+  ast: FormulaAst
+  dependencies: string[]
+  dependencyFields: FormulaPreviewDependency[]
+  value: unknown
+  error?: Pick<ComputedFieldError, 'code' | 'message'>
+}
+
 export interface ComputedFieldError {
   code: 'INVALID_FORMULA' | 'TYPE_ERROR' | 'DIV_ZERO' | 'CYCLE' | 'MISSING_TARGET'
   message: string
@@ -184,4 +205,6 @@ export interface CreateDataFieldInput {
   isPrimary?: boolean
   isRequired?: boolean
   sequence?: number
+  inverseFieldName?: string
+  inverseMultiple?: boolean
 }

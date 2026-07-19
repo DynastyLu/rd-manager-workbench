@@ -9,6 +9,7 @@ import { CalendarView } from '@/modules/base/components/CalendarView'
 import { FormView } from '@/modules/base/components/FormView'
 import { KanbanView } from '@/modules/base/components/KanbanView'
 import { ViewManager } from '@/modules/base/components/ViewManager'
+import { RelationValue } from '@/modules/base/components/RelationPicker'
 import {
   useBaseRecords,
   useBaseWorkspaces,
@@ -22,7 +23,7 @@ import {
   useUpdateBaseView,
 } from '@/modules/base/hooks'
 import { createBaseView, deleteBaseView, updateBaseView } from '@/modules/base/api'
-import type { BaseRecord, BaseRecordQuery, DataTable, DataView, DataViewConfig, DataViewType } from '@/modules/base/types'
+import type { BaseRecord, BaseRecordQuery, DataField, DataTable, DataView, DataViewConfig, DataViewType } from '@/modules/base/types'
 import './LibraryHomePage.less'
 
 const VIEW_SAVE_DELAY_MS = 350
@@ -47,6 +48,33 @@ function valueText(value: unknown) {
   if (typeof value === 'string') return value
   if (typeof value === 'number' || typeof value === 'bigint') return `${value}`
   return '未填写'
+}
+
+function RecordDetailValue({
+  field,
+  record,
+  tables,
+}: {
+  field: DataField
+  record: BaseRecord
+  tables: DataTable[]
+}) {
+  const error = record.computedErrors?.[field.key]
+  if (error) {
+    const text = error.code === 'DIV_ZERO' ? '#DIV/0!' : error.code === 'CYCLE' ? '#CYCLE!' : '⚠ 计算错误'
+    return <strong className="base-record-detail__error" title={error.message}>{text}<small>{error.message}</small></strong>
+  }
+  const targetTable = field.type === 'RELATION' && typeof field.config.targetTableId === 'string'
+    ? tables.find((table) => table.id === field.config.targetTableId)
+    : undefined
+  return (
+    <strong>
+      {targetTable
+        ? <RelationValue field={field} targetTable={targetTable} value={record.values[field.key]} />
+        : valueText(record.values[field.key])}
+      {['LOOKUP', 'ROLLUP', 'FORMULA'].includes(field.type) ? <small>只读计算字段</small> : null}
+    </strong>
+  )
 }
 
 export default function LibraryHomePage() {
@@ -178,13 +206,13 @@ export default function LibraryHomePage() {
               {recordsQuery.isError ? <Banner type="danger" fullMode={false} title="无法读取数据记录" description="数据表结构已加载，但记录服务暂时不可用。" closeIcon={null}><Button onClick={() => void recordsQuery.refetch()}>重试</Button></Banner> : null}
               {recordsQuery.data && resolvedView ? (
                 resolvedView.type === 'GRID' ? (
-                  <GridView fields={fields} records={records} view={resolvedView} isSaving={updateRecordMutation.isPending} onRecordSelect={setSelectedRecord} onRecordChange={(recordId, values) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values })} onViewChange={saveViewConfig} />
+                  <GridView fields={fields} tables={tables} records={records} view={resolvedView} isSaving={updateRecordMutation.isPending} onRecordSelect={setSelectedRecord} onRecordChange={(recordId, values) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values })} onViewChange={saveViewConfig} />
                 ) : resolvedView.type === 'KANBAN' ? (
                   <KanbanView fields={fields} records={records} groupFieldKey={String(resolvedView.config.groupField ?? '') || undefined} isUpdating={updateRecordMutation.isPending} onGroupFieldChange={(groupField) => saveViewConfig({ ...resolvedView.config, groupField })} onRecordUpdate={(recordId, input) => updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values: input.values })} onOpenRecord={setSelectedRecord} />
                 ) : resolvedView.type === 'CALENDAR' ? (
                   <CalendarView fields={fields} records={records} dateFieldKey={String(resolvedView.config.dateField ?? '') || undefined} onDateFieldChange={(dateField) => saveViewConfig({ ...resolvedView.config, dateField })} onOpenRecord={setSelectedRecord} />
                 ) : (
-                  <FormView tableSource={selectedTable.source} fields={fields} isSubmitting={createRecordMutation.isPending} onCreateRecord={(input) => createRecordMutation.mutateAsync({ tableId: selectedTable.id, values: input.values })} />
+                  <FormView tableSource={selectedTable.source} fields={fields} tables={tables} isSubmitting={createRecordMutation.isPending} onCreateRecord={(input) => createRecordMutation.mutateAsync({ tableId: selectedTable.id, values: input.values })} />
                 )
               ) : null}
             </div>
@@ -201,6 +229,7 @@ export default function LibraryHomePage() {
 
       {selectedTable ? <FieldManager
         table={selectedTable}
+        tables={tables}
         visible={isFieldManagerOpen}
         onClose={() => setIsFieldManagerOpen(false)}
         isSaving={createFieldMutation.isPending || updateFieldMutation.isPending || deleteFieldMutation.isPending}
@@ -210,7 +239,7 @@ export default function LibraryHomePage() {
       /> : null}
 
       <SideSheet title="记录详情" visible={Boolean(selectedRecord)} onCancel={() => setSelectedRecord(null)} width={460}>
-        {selectedRecord && selectedTable ? <div className="base-record-detail">{fields.map((field) => <div key={field.id}><span>{field.name}</span><strong>{valueText(selectedRecord.values[field.key])}</strong></div>)}{selectedRecord.sourcePath ? <Link to={selectedRecord.sourcePath}>打开原业务对象 →</Link> : null}</div> : null}
+        {selectedRecord && selectedTable ? <div className="base-record-detail">{fields.map((field) => <div key={field.id}><span>{field.name}</span><RecordDetailValue field={field} record={selectedRecord} tables={tables} /></div>)}{selectedRecord.sourcePath ? <Link to={selectedRecord.sourcePath}>打开原业务对象 →</Link> : null}</div> : null}
       </SideSheet>
     </div>
   )

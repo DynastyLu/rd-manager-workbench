@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Checkbox, Input, InputNumber, Select, TextArea } from '@douyinfe/semi-ui'
-import type { DataField } from '../types'
+import type { DataField, DataTable } from '../types'
+import { RelationPicker, RelationValue } from './RelationPicker'
 
 function optionValues(field: DataField) {
   const options = Array.isArray(field.config.options) ? field.config.options : []
@@ -34,6 +35,7 @@ export function FieldEditor({
   onStartEdit,
   onCancel,
   onCommit,
+  relationTargetTable,
 }: {
   field: DataField
   value: unknown
@@ -42,10 +44,11 @@ export function FieldEditor({
   onStartEdit: () => void
   onCancel: () => void
   onCommit: (value: unknown) => void
+  relationTargetTable?: DataTable
 }) {
   const [draft, setDraft] = useState(value)
 
-  if (readOnly || field.type === 'CREATED_AT' || field.type === 'UPDATED_AT') {
+  if (readOnly || ['LOOKUP', 'ROLLUP', 'FORMULA', 'CREATED_AT', 'UPDATED_AT'].includes(field.type)) {
     return <span className="base-grid__readonly">{displayValue(value)}</span>
   }
 
@@ -62,8 +65,25 @@ export function FieldEditor({
   if (!editing) {
     return (
       <button type="button" className="base-grid__cell-value" onDoubleClick={onStartEdit} onClick={onStartEdit}>
-        {displayValue(value)}
+        {field.type === 'RELATION' && relationTargetTable ? (
+          <RelationValue field={field} targetTable={relationTargetTable} value={value} />
+        ) : displayValue(value)}
       </button>
+    )
+  }
+
+  if (field.type === 'RELATION' && relationTargetTable) {
+    return (
+      <RelationPicker
+        field={field}
+        targetTable={relationTargetTable}
+        value={draft}
+        onChange={(next) => {
+          setDraft(next)
+          if (field.config.multiple !== true) onCommit(next)
+        }}
+        onComplete={field.config.multiple === true ? () => onCommit(draft) : undefined}
+      />
     )
   }
 

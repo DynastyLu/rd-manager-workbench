@@ -44,6 +44,26 @@ describe('workbench HTTP client', () => {
     })
   })
 
+  it('preserves structured error details such as a formula character position', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: false,
+          error: {
+            code: 'HTTP_ERROR',
+            message: 'Unexpected token',
+            details: { code: 'INVALID_FORMULA', position: 7 },
+          },
+        }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    await expect(request('/base/tables/table-1/formula-preview')).rejects.toMatchObject<ApiError>({
+      details: { code: 'INVALID_FORMULA', position: 7 },
+    })
+  })
+
   it('uses the runtime API base URL embedded in the production config file', async () => {
     vi.resetModules()
     window.__APP_CONFIG__ = {

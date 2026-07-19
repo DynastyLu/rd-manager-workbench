@@ -9,6 +9,8 @@ import type {
   DataViewConfig,
   DataViewType,
   DataWorkspace,
+  FormulaPreviewInput,
+  FormulaPreviewResult,
   PageResult,
 } from './types'
 
@@ -46,6 +48,12 @@ export const updateBaseField = (id: string, input: Partial<CreateDataFieldInput>
   request<DataField>(resource('/base/fields', id), { method: 'PATCH', body: JSON.stringify(input) })
 export const deleteBaseField = (id: string) =>
   request<void>(resource('/base/fields', id), { method: 'DELETE' })
+
+export const previewBaseFormula = (tableId: string, input: FormulaPreviewInput) =>
+  request<FormulaPreviewResult>(`${resource('/base/tables', tableId)}/formula-preview`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
 
 export const listBaseRecords = (tableId: string, params: BaseRecordQuery = {}) =>
   request<PageResult<BaseRecord>>(`${resource('/base/tables', tableId)}/records${queryString(params)}`)

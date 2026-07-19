@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react'
 
-import type { DataField, DataTableSource } from '../types'
+import type { DataField, DataTable, DataTableSource } from '../types'
+import { RelationPicker } from './RelationPicker'
 
 interface FormViewProps {
   tableSource: DataTableSource
   fields: DataField[]
+  tables?: DataTable[]
   onCreateRecord: (input: { values: Record<string, unknown> }) => unknown
   isSubmitting?: boolean
 }
@@ -14,7 +16,7 @@ interface SelectOption {
   value: string
 }
 
-const READONLY_FIELD_TYPES = new Set(['CREATED_AT', 'UPDATED_AT'])
+const READONLY_FIELD_TYPES = new Set(['LOOKUP', 'ROLLUP', 'FORMULA', 'CREATED_AT', 'UPDATED_AT'])
 
 function getOptions(field: DataField): SelectOption[] {
   const options = Array.isArray(field.config.options) ? field.config.options : []
@@ -46,7 +48,7 @@ function isBlank(value: unknown) {
 
 function emptyValue(field: DataField) {
   if (field.type === 'CHECKBOX') return false
-  if (field.type === 'MULTI_SELECT' || field.type === 'ATTACHMENT') return []
+  if (field.type === 'MULTI_SELECT' || field.type === 'ATTACHMENT' || (field.type === 'RELATION' && field.config.multiple === true)) return []
   return ''
 }
 
@@ -75,11 +77,13 @@ function FieldControl({
   value,
   required,
   onChange,
+  relationTargetTable,
 }: {
   field: DataField
   value: unknown
   required: boolean
   onChange: (value: unknown) => void
+  relationTargetTable?: DataTable
 }) {
   const commonStyle = {
     width: '100%',
@@ -93,6 +97,17 @@ function FieldControl({
   }
 
   switch (field.type) {
+    case 'RELATION':
+      return relationTargetTable ? (
+        <RelationPicker
+          field={field}
+          targetTable={relationTargetTable}
+          value={value}
+          onChange={onChange}
+        />
+      ) : (
+        <p className="relation-picker__legacy">请先在字段管理中补全目标数据表</p>
+      )
     case 'LONG_TEXT':
       return (
         <textarea
@@ -225,6 +240,7 @@ function FieldControl({
 export function FormView({
   tableSource,
   fields,
+  tables = [],
   onCreateRecord,
   isSubmitting = false,
 }: FormViewProps) {
@@ -282,6 +298,11 @@ export function FormView({
               field={field}
               value={values[field.key]}
               required={field.isPrimary || field.isRequired}
+              relationTargetTable={
+                field.type === 'RELATION' && typeof field.config.targetTableId === 'string'
+                  ? tables.find((table) => table.id === field.config.targetTableId)
+                  : undefined
+              }
               onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))}
             />
           </div>

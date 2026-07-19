@@ -8,15 +8,20 @@ import {
   deleteBaseField,
   listBaseRecords,
   listBaseWorkspaces,
+  previewBaseFormula,
   updateBaseField,
   updateBaseRecord,
   updateBaseView,
 } from './api'
-import type { BaseRecordQuery, CreateDataFieldInput, DataViewConfig } from './types'
+import type { BaseRecordQuery, CreateDataFieldInput, DataViewConfig, FormulaPreviewInput } from './types'
 
 export const baseKeys = {
   workspaces: ['base', 'workspaces'] as const,
   records: (tableId: string, query: BaseRecordQuery) => ['base', 'records', tableId, query] as const,
+}
+
+function invalidateBase(client: ReturnType<typeof useQueryClient>) {
+  return client.invalidateQueries({ queryKey: ['base'] })
 }
 
 export function useBaseWorkspaces() {
@@ -36,7 +41,7 @@ export function useCreateBaseTable() {
   return useMutation({
     mutationFn: ({ workspaceId, name }: { workspaceId: string; name: string }) =>
       createBaseTable(workspaceId, { name }),
-    onSuccess: () => client.invalidateQueries({ queryKey: baseKeys.workspaces }),
+    onSuccess: () => invalidateBase(client),
     onError: () => Toast.error('创建数据表失败。'),
   })
 }
@@ -46,7 +51,7 @@ export function useCreateBaseField() {
   return useMutation({
     mutationFn: ({ tableId, input }: { tableId: string; input: CreateDataFieldInput }) =>
       createBaseField(tableId, input),
-    onSuccess: () => client.invalidateQueries({ queryKey: baseKeys.workspaces }),
+    onSuccess: () => invalidateBase(client),
     onError: () => Toast.error('新增字段失败。'),
   })
 }
@@ -55,7 +60,7 @@ export function useUpdateBaseField() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: Partial<CreateDataFieldInput> }) => updateBaseField(id, input),
-    onSuccess: () => client.invalidateQueries({ queryKey: baseKeys.workspaces }),
+    onSuccess: () => invalidateBase(client),
     onError: () => Toast.error('更新字段失败。'),
   })
 }
@@ -64,7 +69,7 @@ export function useDeleteBaseField() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ id }: { id: string }) => deleteBaseField(id),
-    onSuccess: () => client.invalidateQueries({ queryKey: baseKeys.workspaces }),
+    onSuccess: () => invalidateBase(client),
     onError: () => Toast.error('删除字段失败。'),
   })
 }
@@ -74,7 +79,7 @@ export function useCreateBaseRecord() {
   return useMutation({
     mutationFn: ({ tableId, values }: { tableId: string; values: Record<string, unknown> }) =>
       createBaseRecord(tableId, values),
-    onSuccess: (_, input) => client.invalidateQueries({ queryKey: ['base', 'records', input.tableId] }),
+    onSuccess: () => invalidateBase(client),
     onError: () => Toast.error('新增记录失败。'),
   })
 }
@@ -85,6 +90,7 @@ export function useUpdateBaseRecord() {
     mutationFn: ({ tableId, recordId, values }: { tableId: string; recordId: string; values: Record<string, unknown> }) =>
       updateBaseRecord(tableId, recordId, values),
     onSuccess: (_, input) => Promise.all([
+      invalidateBase(client),
       client.invalidateQueries({ queryKey: ['base', 'records', input.tableId] }),
       client.invalidateQueries({ queryKey: ['my-work'] }),
       client.invalidateQueries({ queryKey: ['tasks'] }),
@@ -106,6 +112,13 @@ export function useUpdateBaseRecord() {
       client.invalidateQueries({ queryKey: ['decision'] }),
     ]),
     onError: () => Toast.error('更新记录失败。'),
+  })
+}
+
+
+export function usePreviewBaseFormula(tableId: string) {
+  return useMutation({
+    mutationFn: (input: FormulaPreviewInput) => previewBaseFormula(tableId, input),
   })
 }
 

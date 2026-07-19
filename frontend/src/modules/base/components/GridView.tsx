@@ -12,7 +12,7 @@ import {
 } from '@tanstack/react-table'
 import { Empty, Tag } from '@douyinfe/semi-ui'
 import { Link } from 'react-router-dom'
-import type { BaseRecord, DataField, DataView, DataViewConfig } from '../types'
+import type { BaseRecord, ComputedFieldError, DataField, DataTable, DataView, DataViewConfig } from '../types'
 import { FieldEditor } from './FieldEditor'
 
 function renderCompact(value: unknown) {
@@ -39,6 +39,19 @@ function orderedFields(fields: DataField[], config: DataViewConfig) {
   })
 }
 
+const COMPUTED_TYPES = new Set(['LOOKUP', 'ROLLUP', 'FORMULA'])
+const EMPTY_TABLES: DataTable[] = []
+
+function ComputedCell({ value, error }: { value: unknown; error?: ComputedFieldError }) {
+  if (!error) return <span className="base-grid__readonly">{renderCompact(value)}</span>
+  const text = error.code === 'DIV_ZERO'
+    ? '#DIV/0!'
+    : error.code === 'CYCLE'
+      ? '#CYCLE!'
+      : `⚠ ${error.message || '计算错误'}`
+  return <span className="base-grid__computed-error" title={error.message}>{text}</span>
+}
+
 export function GridView({
   fields,
   records,
@@ -47,6 +60,7 @@ export function GridView({
   onViewChange,
   onRecordSelect,
   isSaving = false,
+  tables = EMPTY_TABLES,
 }: {
   fields: DataField[]
   records: BaseRecord[]
@@ -55,6 +69,7 @@ export function GridView({
   onViewChange: (config: DataViewConfig) => void
   onRecordSelect?: (record: BaseRecord) => void
   isSaving?: boolean
+  tables?: DataTable[]
 }) {
   const [config, setConfig] = useState<DataViewConfig>(view.config)
   const [editing, setEditing] = useState<{ recordId: string; fieldKey: string } | null>(null)
@@ -97,6 +112,7 @@ export function GridView({
     cell: ({ row }) => {
       const record = row.original
       const value = record.values[field.key]
+      const computedError = record.computedErrors?.[field.key]
       const isEditing = editing?.recordId === record.id && editing.fieldKey === field.key
       const readOnlyRecordTypes = Array.isArray(field.config.readOnlyRecordTypes)
         ? field.config.readOnlyRecordTypes.filter((item): item is string => typeof item === 'string')
@@ -105,28 +121,37 @@ export function GridView({
       const readOnly = isSaving
         || field.config.readOnly === true
         || readOnlyRecordTypes.includes(recordType)
+        || COMPUTED_TYPES.has(field.type)
+      const relationTargetTable = field.type === 'RELATION' && typeof field.config.targetTableId === 'string'
+        ? tables.find((table) => table.id === field.config.targetTableId)
+        : undefined
       return (
         <div className="base-grid__cell-content">
-          <FieldEditor
-            key={`${record.id}:${field.id}:${isEditing ? 'editing' : 'display'}:${record.updatedAt}`}
-            field={field}
-            value={value}
-            editing={isEditing}
-            readOnly={readOnly}
-            onStartEdit={() => setEditing({ recordId: record.id, fieldKey: field.key })}
-            onCancel={() => setEditing(null)}
-            onCommit={(nextValue) => {
-              setEditing(null)
-              if (nextValue !== value) void onRecordChange(record.id, { [field.key]: nextValue })
-            }}
-          />
+          {COMPUTED_TYPES.has(field.type) ? (
+            <ComputedCell value={value} error={computedError} />
+          ) : (
+            <FieldEditor
+              key={`${record.id}:${field.id}:${isEditing ? 'editing' : 'display'}:${record.updatedAt}`}
+              field={field}
+              value={value}
+              editing={isEditing}
+              readOnly={readOnly}
+              relationTargetTable={relationTargetTable}
+              onStartEdit={() => setEditing({ recordId: record.id, fieldKey: field.key })}
+              onCancel={() => setEditing(null)}
+              onCommit={(nextValue) => {
+                setEditing(null)
+                if (nextValue !== value) void onRecordChange(record.id, { [field.key]: nextValue })
+              }}
+            />
+          )}
           {field.isPrimary && record.sourcePath ? (
             <Link className="base-grid__source-link" aria-label={`打开：${renderCompact(value)}`} to={record.sourcePath}>↗</Link>
           ) : null}
         </div>
       )
     },
-  })), [editing, isSaving, onRecordChange, visibleFields])
+  })), [editing, isSaving, onRecordChange, tables, visibleFields])
 
   // TanStack Table intentionally exposes non-memoizable callbacks managed by its own state model.
   // eslint-disable-next-line react-hooks/incompatible-library
