@@ -6,6 +6,7 @@ import { BaseToolbar } from '@/modules/base/components/BaseToolbar'
 import { FieldManager } from '@/modules/base/components/FieldManager'
 import { GridView } from '@/modules/base/components/GridView'
 import { GanttView } from '@/modules/base/components/GanttView'
+import { GalleryView } from '@/modules/base/components/GalleryView'
 import { CalendarView } from '@/modules/base/components/CalendarView'
 import { FormView } from '@/modules/base/components/FormView'
 import { KanbanView } from '@/modules/base/components/KanbanView'
@@ -417,6 +418,13 @@ export default function LibraryHomePage() {
                         values,
                       })
                     }
+                    onOpenRecord={setSelectedRecord}
+                  />
+                ) : resolvedView.type === 'GALLERY' ? (
+                  <GalleryView
+                    fields={fields}
+                    records={records}
+                    config={resolvedView.config}
                     onOpenRecord={setSelectedRecord}
                   />
                 ) : (
