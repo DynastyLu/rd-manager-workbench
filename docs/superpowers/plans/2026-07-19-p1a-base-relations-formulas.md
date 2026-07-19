@@ -18,7 +18,7 @@
 - Modify: `backend/test/integration/prisma/data-table-catalog.spec.ts`
 - Modify: `frontend/src/modules/base/types.ts`
 
-- [ ] **Step 1: Add a failing schema catalog assertion**
+- [x] **Step 1: Add a failing schema catalog assertion**
 
 ```ts
 expect(schema).toContain('LOOKUP')
@@ -26,12 +26,12 @@ expect(schema).toContain('ROLLUP')
 expect(schema).toContain('FORMULA')
 ```
 
-- [ ] **Step 2: Run the catalog test and confirm it fails**
+- [x] **Step 2: Run the catalog test and confirm it fails**
 
 Run: `cd backend && pnpm test:integration -- --runInBand test/integration/prisma/data-table-catalog.spec.ts`  
 Expected: FAIL because the three enum members are absent.
 
-- [ ] **Step 3: Add enum members and typed frontend configs**
+- [x] **Step 3: Add enum members and typed frontend configs**
 
 ```ts
 export type DataFieldType =
@@ -49,12 +49,12 @@ export interface RelationFieldConfig {
 
 Migration SQL must use `ALTER TYPE "app"."DataFieldType" ADD VALUE IF NOT EXISTS` for each new member and must not edit an applied migration.
 
-- [ ] **Step 4: Generate Prisma and run the catalog test**
+- [x] **Step 4: Generate Prisma and run the catalog test**
 
 Run: `cd backend && pnpm prisma:generate && pnpm test:integration -- --runInBand test/integration/prisma/data-table-catalog.spec.ts`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit the schema slice**
+- [x] **Step 5: Commit the schema slice**
 
 ```bash
 git add backend/prisma frontend/src/modules/base/types.ts backend/test/integration/prisma/data-table-catalog.spec.ts
