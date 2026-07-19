@@ -610,6 +610,61 @@ describe('LibraryHomePage saved views', () => {
     expect(screen.getByLabelText('排序方向 2')).toHaveValue('asc')
   })
 
+  it('flushes a pending manual save through the same queue as later edits', async () => {
+    const manualSave = deferred<DataView>()
+    const laterEdit = deferred<DataView>()
+    api.updateBaseView
+      .mockImplementationOnce(() => manualSave.promise)
+      .mockImplementationOnce(() => laterEdit.promise)
+    renderPage()
+
+    await screen.findByRole('heading', { name: '研发工作台' })
+    fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
+    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存当前配置' }))
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1))
+
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 450))
+    })
+    expect(api.updateBaseView).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await act(async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 450))
+    })
+    expect(api.updateBaseView).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      manualSave.resolve({
+        ...views[0],
+        config: {
+          ...views[0].config,
+          sorts: [...(views[0].config.sorts ?? []), { fieldKey: 'score', direction: 'asc' }],
+        },
+      })
+      await manualSave.promise
+    })
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(2))
+    expect(api.updateBaseView.mock.calls[1]?.[1].config.sorts?.at(-1)).toEqual({
+      fieldKey: 'score',
+      direction: 'desc',
+    })
+
+    await act(async () => {
+      laterEdit.resolve({
+        ...views[0],
+        config: {
+          ...views[0].config,
+          sorts: [...(views[0].config.sorts ?? []), { fieldKey: 'score', direction: 'desc' }],
+        },
+      })
+      await laterEdit.promise
+    })
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存名称' })).toBeEnabled())
+  })
+
   it('cancels a pending debounced PATCH before deleting the view', async () => {
     api.deleteBaseView.mockResolvedValue(undefined)
     renderPage()

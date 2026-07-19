@@ -328,6 +328,18 @@ export function useDebouncedViewConfigSave(
     pending.current.delete(viewId)
   }, [])
 
+  const flush = useCallback(
+    (viewId: string, config?: DataViewConfig) => {
+      const timer = timers.current.get(viewId)
+      if (timer !== undefined) window.clearTimeout(timer)
+      const latest = pending.current.get(viewId) ?? config
+      timers.current.delete(viewId)
+      pending.current.delete(viewId)
+      if (latest) enqueue(viewId, latest)
+    },
+    [enqueue]
+  )
+
   useEffect(
     () => () => {
       for (const timer of timers.current.values()) window.clearTimeout(timer)
@@ -354,5 +366,5 @@ export function useDebouncedViewConfigSave(
     [delayMs, enqueue]
   )
 
-  return { schedule, cancel }
+  return { schedule, cancel, flush }
 }

@@ -326,12 +326,7 @@ export default function LibraryHomePage() {
                 }, '重命名视图失败。')
               }
               onConfigChange={saveViewConfig}
-              onSave={(id) =>
-                runViewOperation(async () => {
-                  await updateBaseView(id, { config: resolvedView?.config ?? {} })
-                  await refreshViews()
-                }, '保存视图失败。')
-              }
+              onSave={(id) => viewConfigSave.flush(id, resolvedView?.config ?? {})}
               onDelete={(id) => {
                 viewConfigSave.cancel(id)
                 latestDraftConfigs.current.delete(id)
