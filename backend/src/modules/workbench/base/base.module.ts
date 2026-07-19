@@ -7,11 +7,12 @@ import { SystemRecordsAdapter } from './adapters/system-records.adapter';
 import { BaseController } from './base.controller';
 import { BaseService } from './base.service';
 import { FieldConfigService } from './field-config.service';
+import { RelationSyncService } from './relation-sync.service';
 
 @Module({
   imports: [ProjectsModule, TasksModule, ManagementModule, ContentModule],
   controllers: [BaseController],
-  providers: [BaseService, FieldConfigService, SystemRecordsAdapter],
+  providers: [BaseService, FieldConfigService, RelationSyncService, SystemRecordsAdapter],
   exports: [BaseService],
 })
 export class BaseModule {}

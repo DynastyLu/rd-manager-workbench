@@ -35,6 +35,7 @@ export class FieldConfigService {
     dto: CreateFieldDto,
     client: FieldConfigClient = this.prisma,
   ): Promise<CreateFieldDto> {
+    this.assertInverseOptions(dto);
     const existing = await client.dataField.findFirst({
       where: { tableId, key: dto.key },
     });
@@ -59,6 +60,18 @@ export class FieldConfigService {
           }
         : {}),
     };
+  }
+
+  private assertInverseOptions(dto: CreateFieldDto): void {
+    const config = this.jsonRecord(dto.config ?? {});
+    const isTwoWayRelation =
+      dto.type === DataFieldType.RELATION && config.relationMode === 'TWO_WAY';
+    if (
+      !isTwoWayRelation &&
+      (dto.inverseFieldName !== undefined || dto.inverseMultiple !== undefined)
+    ) {
+      throw new BadRequestException('Inverse options are only valid for two-way relations');
+    }
   }
 
   async normalizeUpdate(
@@ -195,11 +208,16 @@ export class FieldConfigService {
     if (config.relationMode !== 'ONE_WAY' && config.relationMode !== 'TWO_WAY') {
       throw new BadRequestException('relationMode must be ONE_WAY or TWO_WAY');
     }
+    let relationMode = config.relationMode;
     const target = await client.dataTable.findFirst({
       where: { id: targetTableId, archivedAt: null },
     });
     if (!target) throw new NotFoundException('Relation target table not found');
-    if (config.relationMode === 'TWO_WAY') {
+    const trusted = trustedConfig ? this.jsonRecord(trustedConfig) : undefined;
+    if (!isCreate && relationMode === 'TWO_WAY' && trusted?.targetTableId !== targetTableId) {
+      relationMode = 'ONE_WAY';
+    }
+    if (relationMode === 'TWO_WAY') {
       const source = await client.dataTable.findFirst({
         where: { id: sourceTableId, archivedAt: null },
       });
@@ -224,11 +242,10 @@ export class FieldConfigService {
     const normalized: Record<string, Prisma.JsonValue> = {
       targetTableId,
       multiple: config.multiple,
-      relationMode: config.relationMode,
+      relationMode,
     };
-    const trusted = trustedConfig ? this.jsonRecord(trustedConfig) : undefined;
     if (
-      config.relationMode === 'TWO_WAY' &&
+      relationMode === 'TWO_WAY' &&
       trusted?.targetTableId === targetTableId &&
       typeof trusted.inverseFieldId === 'string'
     ) {

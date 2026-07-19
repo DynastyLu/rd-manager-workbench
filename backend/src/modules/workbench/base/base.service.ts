@@ -22,6 +22,7 @@ import {
   UpdateWorkspaceDto,
 } from './dto/base.dto';
 import { FieldConfigService } from './field-config.service';
+import { RelationSyncService } from './relation-sync.service';
 
 const DEFAULT_WORKSPACE_ID = 'rd-workbench-default-data-workspace';
 
@@ -31,6 +32,7 @@ export class BaseService {
     private readonly prisma: PlatformPrismaService,
     private readonly systemRecords: SystemRecordsAdapter,
     private readonly fieldConfig: FieldConfigService,
+    private readonly relationSync: RelationSyncService,
   ) {}
 
   async ensureDefaultWorkspace() {
@@ -219,7 +221,14 @@ export class BaseService {
   async createField(tableId: string, dto: CreateFieldDto) {
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await this.lockFieldConfig(tx, tableId);
+        const requestedTarget =
+          dto.config && typeof dto.config.targetTableId === 'string'
+            ? dto.config.targetTableId
+            : undefined;
+        await this.relationSync.lockTableConfigs(
+          tx,
+          requestedTarget ? [tableId, requestedTarget] : [tableId],
+        );
         const table = await tx.dataTable.findFirst({ where: { id: tableId, archivedAt: null } });
         if (!table) throw new NotFoundException('Data table not found');
         if (table.source !== DataTableSource.CUSTOM)
@@ -244,14 +253,50 @@ export class BaseService {
           isRequired: normalized.isRequired,
           sequence: normalized.sequence,
         };
-        if (archived?.archivedAt) {
-          return tx.dataField.update({
-            where: { id: archived.id },
-            data: { ...fields, archivedAt: null, config: (config ?? {}) as Prisma.InputJsonValue },
-          });
+        const source = archived?.archivedAt
+          ? await tx.dataField.update({
+              where: { id: archived.id },
+              data: {
+                ...fields,
+                archivedAt: null,
+                config: (config ?? {}) as Prisma.InputJsonValue,
+              },
+            })
+          : await tx.dataField.create({
+              data: { ...fields, tableId, config: (config ?? {}) as Prisma.InputJsonValue },
+            });
+        const relationConfig = this.relationSync.relationConfig(source.config);
+        if (source.type !== DataFieldType.RELATION || relationConfig?.relationMode !== 'TWO_WAY') {
+          return source;
         }
-        return tx.dataField.create({
-          data: { ...fields, tableId, config: (config ?? {}) as Prisma.InputJsonValue },
+        const inverseKey = await this.uniqueInverseKey(
+          tx,
+          relationConfig.targetTableId,
+          source.key,
+        );
+        const inverse = await tx.dataField.create({
+          data: {
+            tableId: relationConfig.targetTableId,
+            key: inverseKey,
+            name: normalized.inverseFieldName!,
+            type: DataFieldType.RELATION,
+            sequence: normalized.sequence,
+            config: {
+              targetTableId: tableId,
+              multiple: normalized.inverseMultiple ?? true,
+              relationMode: 'TWO_WAY',
+              inverseFieldId: source.id,
+            },
+          },
+        });
+        return tx.dataField.update({
+          where: { id: source.id },
+          data: {
+            config: {
+              ...relationConfig,
+              inverseFieldId: inverse.id,
+            },
+          },
         });
       });
     } catch (error) {
@@ -263,15 +308,46 @@ export class BaseService {
     }
   }
 
+  private async uniqueInverseKey(
+    tx: Prisma.TransactionClient,
+    tableId: string,
+    sourceKey: string,
+  ): Promise<string> {
+    const keys = new Set(
+      (
+        await tx.dataField.findMany({
+          where: { tableId },
+          select: { key: true },
+        })
+      ).map((field) => field.key),
+    );
+    const base = `inverse_${sourceKey}`.slice(0, 100);
+    if (!keys.has(base)) return base;
+    for (let suffix = 2; ; suffix += 1) {
+      const ending = `_${suffix}`;
+      const candidate = `${base.slice(0, 100 - ending.length)}${ending}`;
+      if (!keys.has(candidate)) return candidate;
+    }
+  }
+
   async updateField(id: string, dto: UpdateFieldDto) {
     const located = await this.prisma.dataField.findFirst({
       where: { id, archivedAt: null },
-      select: { tableId: true },
+      select: { tableId: true, config: true },
     });
     if (!located) throw new NotFoundException('Data field not found');
     try {
       return await this.prisma.$transaction(async (tx) => {
-        await this.lockFieldConfig(tx, located.tableId);
+        const oldRelation = this.relationSync.relationConfig(located.config);
+        const requestedTarget =
+          dto.config && typeof dto.config.targetTableId === 'string'
+            ? dto.config.targetTableId
+            : undefined;
+        await this.relationSync.lockTableConfigs(tx, [
+          located.tableId,
+          ...(oldRelation ? [oldRelation.targetTableId] : []),
+          ...(requestedTarget ? [requestedTarget] : []),
+        ]);
         const field = await tx.dataField.findFirst({
           where: { id, archivedAt: null },
           include: { table: true },
@@ -280,6 +356,21 @@ export class BaseService {
         if (field.table.source !== DataTableSource.CUSTOM)
           throw new BadRequestException('Preset fields cannot be changed');
         const normalized = await this.fieldConfig.normalizeUpdate(field, dto, tx);
+        const prospectiveRelation = this.relationSync.relationConfig(
+          (normalized.config ?? field.config) as Prisma.JsonValue,
+        );
+        const existingRelation = this.relationSync.relationConfig(field.config);
+        if (
+          existingRelation?.relationMode === 'TWO_WAY' &&
+          (prospectiveRelation?.relationMode !== 'TWO_WAY' ||
+            prospectiveRelation.targetTableId !== existingRelation.targetTableId)
+        ) {
+          await this.relationSync.decouplePair(
+            tx,
+            field,
+            prospectiveRelation?.targetTableId !== existingRelation.targetTableId,
+          );
+        }
         if (field.isPrimary && normalized.isPrimary === false)
           throw new BadRequestException('The primary field cannot be downgraded');
         if (
@@ -308,15 +399,23 @@ export class BaseService {
   }
 
   async deleteField(id: string) {
-    const field = await this.prisma.dataField.findFirst({
+    const located = await this.prisma.dataField.findFirst({
       where: { id, archivedAt: null },
       include: { table: true },
     });
-    if (!field) throw new NotFoundException('Data field not found');
-    if (field.table.source !== DataTableSource.CUSTOM)
+    if (!located) throw new NotFoundException('Data field not found');
+    if (located.table.source !== DataTableSource.CUSTOM)
       throw new BadRequestException('Preset fields cannot be deleted');
-    if (field.isPrimary) throw new BadRequestException('The primary field cannot be deleted');
+    if (located.isPrimary) throw new BadRequestException('The primary field cannot be deleted');
     await this.prisma.$transaction(async (tx) => {
+      const relation = this.relationSync.relationConfig(located.config);
+      await this.relationSync.lockTableConfigs(tx, [
+        located.tableId,
+        ...(relation ? [relation.targetTableId] : []),
+      ]);
+      const field = await tx.dataField.findFirst({ where: { id, archivedAt: null } });
+      if (!field) throw new NotFoundException('Data field not found');
+      await this.relationSync.decouplePair(tx, field);
       const records = await tx.dataRecord.findMany({ where: { tableId: field.tableId } });
       for (const record of records) {
         const values = { ...(record.values as Values) };
@@ -348,10 +447,21 @@ export class BaseService {
   }
 
   async createRecord(tableId: string, dto: RecordValuesDto) {
-    await this.assertCustomTable(tableId);
-    await this.validateRecordValues(tableId, dto.values, true);
-    const record = await this.prisma.dataRecord.create({
-      data: { tableId, values: dto.values as Prisma.InputJsonValue },
+    const record = await this.prisma.$transaction(async (tx) => {
+      const table = await tx.dataTable.findFirst({ where: { id: tableId, archivedAt: null } });
+      if (!table) throw new NotFoundException('Data table not found');
+      if (table.source !== DataTableSource.CUSTOM)
+        throw new BadRequestException('This operation is only available for custom tables');
+      await this.relationSync.lockTableConfigs(
+        tx,
+        await this.relationSync.relationTableIds(tx, tableId),
+      );
+      await this.validateRecordValues(tableId, dto.values, true, tx);
+      const created = await tx.dataRecord.create({
+        data: { tableId, values: dto.values as Prisma.InputJsonValue },
+      });
+      await this.relationSync.syncRecord(tx, tableId, created.id, {}, dto.values);
+      return created;
     });
     return this.toCustomRecord(record, await this.generatedFields(tableId));
   }
@@ -362,23 +472,38 @@ export class BaseService {
       await this.validateRecordValues(tableId, dto.values, false);
       return this.systemRecords.update(table.source, id, dto.values);
     }
-    const record = await this.prisma.dataRecord.findFirst({ where: { id, tableId } });
-    if (!record) throw new NotFoundException('Data record not found');
-    const values = { ...(record.values as Values), ...dto.values };
-    await this.validateRecordValues(tableId, values, true);
-    return this.toCustomRecord(
-      await this.prisma.dataRecord.update({
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await this.relationSync.lockTableConfigs(
+        tx,
+        await this.relationSync.relationTableIds(tx, tableId),
+      );
+      const record = await tx.dataRecord.findFirst({ where: { id, tableId } });
+      if (!record) throw new NotFoundException('Data record not found');
+      const oldValues = record.values as Values;
+      const values = { ...oldValues, ...dto.values };
+      await this.validateRecordValues(tableId, values, true, tx);
+      const result = await tx.dataRecord.update({
         where: { id },
         data: { values: values as Prisma.InputJsonValue },
-      }),
-      await this.generatedFields(tableId),
-    );
+      });
+      await this.relationSync.syncRecord(tx, tableId, id, oldValues, values);
+      return result;
+    });
+    return this.toCustomRecord(updated, await this.generatedFields(tableId));
   }
 
   async deleteRecord(tableId: string, id: string) {
     await this.assertCustomTable(tableId);
-    const result = await this.prisma.dataRecord.deleteMany({ where: { id, tableId } });
-    if (!result.count) throw new NotFoundException('Data record not found');
+    await this.prisma.$transaction(async (tx) => {
+      await this.relationSync.lockTableConfigs(
+        tx,
+        await this.relationSync.relationTableIds(tx, tableId),
+      );
+      const record = await tx.dataRecord.findFirst({ where: { id, tableId } });
+      if (!record) throw new NotFoundException('Data record not found');
+      await this.relationSync.syncRecord(tx, tableId, id, record.values as Values, {});
+      await tx.dataRecord.delete({ where: { id } });
+    });
   }
 
   async listViews(tableId: string) {
@@ -433,8 +558,13 @@ export class BaseService {
     }
   }
 
-  private async validateRecordValues(tableId: string, values: Values, requireFields: boolean) {
-    const fields = await this.prisma.dataField.findMany({ where: { tableId, archivedAt: null } });
+  private async validateRecordValues(
+    tableId: string,
+    values: Values,
+    requireFields: boolean,
+    client: BaseDataClient = this.prisma,
+  ) {
+    const fields = await client.dataField.findMany({ where: { tableId, archivedAt: null } });
     const fieldKeys = new Set(fields.map((field) => field.key));
     const unknown = Object.keys(values).filter((key) => !fieldKeys.has(key));
     if (unknown.length) throw new BadRequestException(`Unknown fields: ${unknown.join(', ')}`);
@@ -505,6 +635,7 @@ export class BaseService {
       )
         throw new BadRequestException(`${field.name} contains an unsupported option`);
     }
+    await this.relationSync.validateRelationValues(client, tableId, values, fields);
     if (requireFields) {
       const missing = fields
         .filter((field) => {
@@ -617,12 +748,6 @@ export class BaseService {
     }
   }
 
-  private lockFieldConfig(tx: Prisma.TransactionClient, tableId: string) {
-    return tx.$executeRaw(
-      Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`rd-manager-workbench:data-field-config:${tableId}`}))`,
-    );
-  }
-
   private async assertWorkspace(id: string) {
     const workspace = await this.prisma.dataWorkspace.findFirst({
       where: { id, archivedAt: null },
@@ -662,3 +787,4 @@ export class BaseService {
 }
 
 type Values = Record<string, unknown>;
+type BaseDataClient = Pick<Prisma.TransactionClient, 'dataField' | 'dataTable' | 'dataRecord'>;
