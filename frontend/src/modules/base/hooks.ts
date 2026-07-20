@@ -18,6 +18,12 @@ import {
   updateBaseField,
   updateBaseRecord,
   updateBaseView,
+  listBaseTemplates,
+  getBaseTemplate,
+  instantiateBaseTemplate,
+  uploadBaseImport,
+  previewBaseImport,
+  commitBaseImport,
 } from './api'
 import type {
   BaseRecord,
@@ -27,6 +33,7 @@ import type {
   DataViewConfig,
   FormulaPreviewInput,
   RelationRecordLookup,
+  ImportColumnMapping,
 } from './types'
 
 export const baseKeys = {
@@ -37,6 +44,8 @@ export const baseKeys = {
     ['base', 'records', 'infinite', tableId, query] as const,
   selectedRecords: (tableId: string, recordIds: string[]) =>
     ['base', 'records', 'selected', tableId, recordIds] as const,
+  templates: ['base', 'templates'] as const,
+  template: (key: string) => ['base', 'templates', key] as const,
 }
 
 function invalidateBase(client: ReturnType<typeof useQueryClient>) {
@@ -45,6 +54,42 @@ function invalidateBase(client: ReturnType<typeof useQueryClient>) {
 
 export function useBaseWorkspaces() {
   return useQuery({ queryKey: baseKeys.workspaces, queryFn: listBaseWorkspaces })
+}
+
+export function useBaseTemplates(enabled = true) {
+  return useQuery({ queryKey: baseKeys.templates, queryFn: listBaseTemplates, enabled })
+}
+
+export function useBaseTemplate(key: string | null, enabled = true) {
+  return useQuery({
+    queryKey: baseKeys.template(key ?? ''),
+    queryFn: () => getBaseTemplate(key!),
+    enabled: Boolean(key) && enabled,
+  })
+}
+
+export function useInstantiateBaseTemplate() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workspaceId, key, name }: { workspaceId: string; key: string; name?: string }) =>
+      instantiateBaseTemplate(workspaceId, key, { name }),
+    onSuccess: () => invalidateBase(client),
+    onError: () => Toast.error('模板创建失败。'),
+  })
+}
+
+export function useBaseImportFlow(tableId: string) {
+  const client = useQueryClient()
+  const upload = useMutation({ mutationFn: (file: File) => uploadBaseImport(tableId, file) })
+  const preview = useMutation({
+    mutationFn: ({ id, selectedSheet, mapping }: { id: string; selectedSheet?: string; mapping: ImportColumnMapping[] }) =>
+      previewBaseImport(id, { selectedSheet, mapping }),
+  })
+  const commit = useMutation({
+    mutationFn: (id: string) => commitBaseImport(id),
+    onSuccess: () => invalidateBase(client),
+  })
+  return { upload, preview, commit }
 }
 
 export function useBaseRecords(tableId: string | null, query: BaseRecordQuery, enabled = true) {

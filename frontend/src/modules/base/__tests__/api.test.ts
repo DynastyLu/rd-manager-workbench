@@ -7,15 +7,45 @@ import {
   previewBaseFormula,
   updateBaseRecord,
   updateBaseView,
+  listBaseTemplates,
+  instantiateBaseTemplate,
+  uploadBaseImport,
+  previewBaseImport,
+  commitBaseImport,
+  downloadBaseExport,
+  inspectBaseImport,
 } from '../api'
 
-const { request } = vi.hoisted(() => ({ request: vi.fn() }))
-vi.mock('@/lib/http', () => ({ request }))
+const { request, download } = vi.hoisted(() => ({ request: vi.fn(), download: vi.fn() }))
+vi.mock('@/lib/http', () => ({ request, download }))
 
 describe('multidimensional base API', () => {
   beforeEach(() => {
     request.mockReset()
     request.mockResolvedValue({})
+    download.mockReset()
+    download.mockResolvedValue({ blob: new Blob(), fileName: 'data.csv' })
+  })
+
+  it('uses the template, import preview/commit and export contracts', async () => {
+    const file = new File(['标题\n演示'], 'items.csv', { type: 'text/csv' })
+    await listBaseTemplates()
+    await instantiateBaseTemplate('workspace / 1', 'risk-register', { name: '研发风险' })
+    await uploadBaseImport('table / 1', file)
+    await inspectBaseImport('session / 1', '第二张')
+    await previewBaseImport('session / 1', { selectedSheet: 'CSV', mapping: [{ sourceColumn: '标题', targetFieldId: 'title' }] })
+    await commitBaseImport('session / 1')
+    await downloadBaseExport('table / 1', { format: 'xlsx', scope: 'view', viewId: 'view / 1' })
+
+    expect(request.mock.calls).toEqual([
+      ['/base/templates'],
+      ['/base/workspaces/workspace%20%2F%201/templates/risk-register/instantiate', { method: 'POST', body: JSON.stringify({ name: '研发风险' }) }],
+      ['/base/tables/table%20%2F%201/imports', expect.objectContaining({ method: 'POST', body: expect.any(FormData) })],
+      ['/base/imports/session%20%2F%201/inspect', { method: 'PATCH', body: JSON.stringify({ selectedSheet: '第二张' }) }],
+      ['/base/imports/session%20%2F%201/preview', { method: 'PATCH', body: JSON.stringify({ selectedSheet: 'CSV', mapping: [{ sourceColumn: '标题', targetFieldId: 'title' }] }) }],
+      ['/base/imports/session%20%2F%201/commit', { method: 'POST' }],
+    ])
+    expect(download).toHaveBeenCalledWith('/base/tables/table%20%2F%201/export?format=xlsx&scope=view&viewId=view+%2F+1')
   })
 
   it('uses the workspace and encoded record endpoints', async () => {

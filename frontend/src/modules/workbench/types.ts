@@ -299,10 +299,80 @@ export type MeetingActionStatus = 'OPEN' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED'
 export interface Risk { id:string; projectId:string|null; milestoneId:string|null; taskId:string|null; title:string; description:string|null; likelihood:string; impact:string; level:RiskLevel; mitigation:string|null; ownerName:string|null; status:RiskStatus; closedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string }
 export interface Issue { id:string; projectId:string|null; milestoneId:string|null; taskId:string|null; title:string; description:string|null; impactObject:string|null; proposedResolution:string|null; ownerName:string|null; dueAt:string|null; verificationResult:string|null; status:IssueStatus; closedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string }
 export interface Decision { id:string; projectId:string|null; milestoneId:string|null; taskId:string|null; meetingId:string|null; title:string; background:string|null; alternatives:string[]; basis:string|null; conclusion:string|null; participantNames:string[]; status:DecisionStatus; decidedAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string }
-export interface PartnerContact { id:string; partnerId:string; name:string; title:string|null; phone:string|null; email:string|null; notes:string|null; archivedAt:string|null }
-export interface PartnerAgreement { id:string; partnerId:string; title:string; agreementNo:string|null; status:string; startAt:string|null; endAt:string|null; notes:string|null; archivedAt:string|null }
-export interface CommunicationRecord { id:string; partnerId:string; projectId:string|null; contactId:string|null; type:string; occurredAt:string; subject:string; summary:string|null; promises:string|null; ownerName:string|null; nextFollowUpAt:string|null; archivedAt:string|null; createdAt:string; updatedAt:string }
-export interface Partner { id:string; name:string; shortName:string|null; category:string|null; address:string|null; notes:string|null; archivedAt:string|null; contacts?:PartnerContact[]; agreements?:PartnerAgreement[]; communications?:CommunicationRecord[]; createdAt:string; updatedAt:string }
+export type AgreementStatus = 'DRAFT' | 'ACTIVE' | 'EXPIRED' | 'TERMINATED'
+export type CommunicationType = 'EMAIL' | 'PHONE' | 'MEETING' | 'CHAT' | 'VISIT' | 'OTHER'
+
+export interface PartnerContact {
+  id: string
+  partnerId: string
+  name: string
+  title: string | null
+  phone: string | null
+  email: string | null
+  notes: string | null
+  archivedAt: string | null
+}
+
+export interface PartnerAgreement {
+  id: string
+  partnerId: string
+  title: string
+  agreementNo: string | null
+  status: AgreementStatus
+  startAt: string | null
+  endAt: string | null
+  notes: string | null
+  archivedAt: string | null
+}
+
+export interface PartnerProject {
+  partnerId: string
+  projectId: string
+  role: string | null
+  notes: string | null
+  createdAt: string
+  project?: Pick<Project, 'id' | 'code' | 'name' | 'status'>
+}
+
+export interface CommunicationRecord {
+  id: string
+  partnerId: string
+  projectId: string | null
+  contactId: string | null
+  taskId: string | null
+  type: CommunicationType
+  occurredAt: string
+  subject: string
+  summary: string | null
+  promises: string | null
+  ownerName: string | null
+  nextFollowUpAt: string | null
+  archivedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Partner {
+  id: string
+  name: string
+  shortName: string | null
+  category: string | null
+  address: string | null
+  notes: string | null
+  archivedAt: string | null
+  contactCount?: number
+  activeAgreementCount?: number
+  projectCount?: number
+  fileCount?: number
+  lastCommunicationAt?: string | null
+  nextFollowUpAt?: string | null
+  contacts?: PartnerContact[]
+  agreements?: PartnerAgreement[]
+  communications?: CommunicationRecord[]
+  projects?: PartnerProject[]
+  createdAt: string
+  updatedAt: string
+}
 export interface MeetingAction { id:string; meetingId:string; title:string; description:string|null; ownerName:string|null; dueAt:string|null; status:MeetingActionStatus; taskId:string|null; archivedAt:string|null; createdAt:string; updatedAt:string }
 export interface MeetingAgendaItem { id:string; meetingId:string; title:string; description:string|null; sequence:number; archivedAt:string|null }
 export interface Meeting { id:string; projectId:string|null; title:string; scheduledAt:string; heldAt:string|null; status:MeetingStatus; agenda:string|null; minutes:string|null; participantNames:string[]; archivedAt:string|null; actions?:MeetingAction[]; agendaItems?:MeetingAgendaItem[]; decisions?:Decision[]; minutesDocument?: { id:string; title:string; type:'MEETING_MINUTES'; plainText?:string|null; content?:Record<string,unknown> }|null; attachments?: Array<{ id:string; name:string; latestVersion?:{id:string;versionNumber:number;mimeType:string;size:number}|null }>; createdAt:string; updatedAt:string }

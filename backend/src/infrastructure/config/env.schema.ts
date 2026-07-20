@@ -48,6 +48,8 @@ export const appEnvSchema = z
     PORT: z.coerce.number().int().min(1).max(65535).default(4311),
     DATABASE_URL: approvedDatabaseUrl,
     LOCAL_STORAGE_ROOT: z.string().min(1).default('var/storage'),
+    BACKUP_PROCESS_TIMEOUT_MS: z.coerce.number().int().min(10_000).max(3_600_000).default(300_000),
+    APP_MIGRATION_HEAD: z.string().regex(/^\d{14}_[a-z0-9_]+$/).optional(),
   })
   .superRefine((environment, context) => {
     const expectedDatabaseName =

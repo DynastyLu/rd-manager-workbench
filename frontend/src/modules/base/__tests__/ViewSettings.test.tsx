@@ -271,7 +271,7 @@ describe('ViewSettingsDrawer', () => {
     const localValue = (value: string) => {
       const date = new Date(value)
       const part = (number: number) => String(number).padStart(2, '0')
-      return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())}T${part(date.getHours())}:${part(date.getMinutes())}`
+      return `${date.getFullYear()}-${part(date.getMonth() + 1)}-${part(date.getDate())} ${part(date.getHours())}:${part(date.getMinutes())}`
     }
     const { rerender } = render(
       <ViewSettingsDrawer

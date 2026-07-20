@@ -63,10 +63,10 @@
 - Modify: `backend/src/modules/workbench/content/application/documents.service.ts`
 - Create: `backend/test/unit/modules/workbench/intelligence-conversions.service.spec.ts`
 
-- [ ] 先写 URL 规范化、无 URL hash、重复 occurrence 不覆盖编辑正文、项目/主题归属与四种转换重复调用返回同目标的测试。
-- [ ] 运行目标测试确认 RED。
-- [ ] 给四个目标领域暴露 transaction-aware 创建入口；IntelligenceConversion 与目标对象在同一事务中创建。
-- [ ] 运行目标单元/集成测试和 build。
+- [x] 先写 URL 规范化、无 URL hash、重复 occurrence 不覆盖编辑正文、项目/主题归属与四种转换重复调用返回同目标的测试。
+- [x] 运行目标测试确认 RED。
+- [x] 给四个目标领域暴露 transaction-aware 创建入口；IntelligenceConversion 与目标对象在同一事务中创建。
+- [x] 运行目标单元/集成测试和 build。
 - [ ] Commit: `feat(intelligence): add deduplicated cards and conversions`
 
 ## Task 5: 日报与周报快照
@@ -75,10 +75,10 @@
 - Create: `backend/src/modules/workbench/intelligence/application/intelligence-briefs.service.ts`
 - Create: `backend/test/unit/modules/workbench/intelligence-briefs.service.spec.ts`
 
-- [ ] 先写 kind/date 唯一、顺序、快照不随卡片变化、已归档卡片仍可读历史简报测试。
-- [ ] 运行测试确认 RED。
-- [ ] 实现 briefs CRUD、排序和 snapshot 白名单。
-- [ ] 运行目标测试、lint 和 build。
+- [x] 先写 kind/date 唯一、顺序、快照不随卡片变化、已归档卡片仍可读历史简报测试。
+- [x] 运行测试确认 RED。
+- [x] 实现 briefs CRUD、排序和 snapshot 白名单。
+- [x] 运行目标测试、lint 和 build。
 - [ ] Commit: `feat(intelligence): add immutable intelligence briefs`
 
 ## Task 6: 情报工作区前端
@@ -92,10 +92,10 @@
 - Modify: `frontend/src/pages/LibraryHomePage.tsx`
 - Modify: `frontend/src/router/routes.ts`
 
-- [ ] 先写 `/library/intelligence` 与 briefs 二级入口、四栏 CRUD、运行历史、四种转换、来源链和完整空/错态测试。
-- [ ] 运行目标 Vitest 确认 RED。
-- [ ] 用 Semi Design 实现工作区、SideSheet 详情和日报编辑器，不增加一级导航。
-- [ ] 运行 typecheck、目标测试、build 和浏览器 smoke。
+- [x] 先写 `/library/intelligence` 与 briefs 二级入口、四栏 CRUD、运行历史、四种转换、来源链和完整空/错态测试。
+- [x] 运行目标 Vitest 确认 RED。
+- [x] 用 Semi Design 实现工作区、SideSheet 详情和日报编辑器，不增加一级导航。
+- [x] 运行 typecheck、目标测试、build 和浏览器 smoke。
 - [ ] Commit: `feat(frontend): add intelligence workspace`
 
 ## Task 7: 资源档案与 13 周负荷
@@ -109,10 +109,10 @@
 - Create: `frontend/src/pages/OperationsPage.tsx`
 - Create: `frontend/src/pages/__tests__/OperationsPage.test.tsx`
 
-- [ ] 先写容量、周一归一化、引用类型存在性、归档对象拒绝、13 周上限、超载百分比精度测试。
-- [ ] 运行后端和前端目标测试确认 RED。
-- [ ] 实现 profile/skill/load CRUD 与 summary API；前端在 `/library/operations?tab=resources` 展示可编辑矩阵和可访问表格。
-- [ ] 运行 backend/frontend 目标门禁。
+- [x] 先写容量、周一归一化、引用类型存在性、归档对象拒绝、13 周上限、超载百分比精度测试。
+- [x] 运行后端和前端目标测试确认 RED。
+- [x] 实现 profile/skill/load CRUD 与 summary API；前端在 `/library/operations?tab=resources` 展示可编辑矩阵和可访问表格。
+- [x] 运行 backend/frontend 目标门禁。
 - [ ] Commit: `feat(operations): add resource load workspace`
 
 ## Task 8: 五类真实报表与导出
@@ -126,11 +126,11 @@
 - Create: `frontend/src/pages/ReportsPage.tsx`
 - Create: `frontend/src/pages/__tests__/ReportsPage.test.tsx`
 
-- [ ] 先写 366 天上限、UTC week/month bucket、空数据、项目组合/任务/风险/资源/情报聚合和导出内容一致测试。
-- [ ] 运行目标测试确认 RED。
-- [ ] 实现只读聚合与流式 CSV/XLSX 导出；复用 P1-01C exporter，如尚不可用则先提取通用 exporter 并补契约测试。
-- [ ] 前端 `/library/reports` 提供图表、表格、可访问摘要、筛选与导出状态，不使用假数据。
-- [ ] 运行 backend/frontend 目标门禁和浏览器 smoke。
+- [x] 先写 366 天上限、UTC week/month bucket、空数据、项目组合/任务/风险/资源/情报聚合和导出内容一致测试。
+- [x] 运行目标测试确认 RED。
+- [x] 实现五类只读聚合与同源 CSV/XLSX 导出；当前 P1-01C 尚无通用 exporter，使用共享安全行模型并补 CSV/XLSX 一致性与导出审计测试。
+- [x] 前端 `/library/reports` 提供五页签、表格、可访问摘要、筛选与导出状态，不使用假数据。
+- [x] 运行 backend/frontend 目标门禁和浏览器 smoke。
 - [ ] Commit: `feat(reporting): add operational reports and exports`
 
 ## Task 9: P2-01 完整门禁
@@ -140,4 +140,3 @@
 - [ ] 用一组真实项目/任务/风险/卡片/资源数据验证转换幂等、日报快照、负荷和五类报表。
 - [ ] 请求规格复核和质量复核，修复后提交。
 - [ ] Commit: `test(workbench): verify intelligence and reporting acceptance`
-

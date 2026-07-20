@@ -42,6 +42,18 @@ describe('CalendarService', () => {
           },
         ]),
       },
+      nonProjectRdItem: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'rd-1',
+            title: '向量检索预研',
+            plannedStartAt: new Date('2026-08-01T00:30:00.000Z'),
+            plannedEndAt: new Date('2026-08-01T05:00:00.000Z'),
+            projectId: null,
+            objective: '完成本地选型',
+          },
+        ]),
+      },
       $transaction: jest.fn(async (queries: Array<Promise<unknown>>) => Promise.all(queries)),
     } as unknown as PlatformPrismaService;
     const service = new CalendarService(prisma);
@@ -52,6 +64,13 @@ describe('CalendarService', () => {
     });
 
     expect(entries).toEqual([
+      expect.objectContaining({
+        id: 'NON_PROJECT_RD:rd-1',
+        sourceType: 'NON_PROJECT_RD',
+        sourceId: 'rd-1',
+        startAt: new Date('2026-08-01T00:30:00.000Z'),
+        endAt: new Date('2026-08-01T05:00:00.000Z'),
+      }),
       expect.objectContaining({
         id: 'MEETING:meeting-1',
         sourceType: 'MEETING',
@@ -82,7 +101,7 @@ describe('CalendarService', () => {
       }),
     );
     expect(entries[0]).not.toHaveProperty('status');
-    expect(entries[2]).not.toHaveProperty('status');
+    expect(entries[3]).not.toHaveProperty('status');
   });
 
   it.each([
@@ -102,6 +121,7 @@ describe('CalendarService', () => {
       calendarEvent: { findMany: jest.fn() },
       meeting: { findMany: jest.fn() },
       workTask: { findMany: jest.fn() },
+      nonProjectRdItem: { findMany: jest.fn() },
       $transaction: transaction,
     } as unknown as PlatformPrismaService;
     const service = new CalendarService(prisma);

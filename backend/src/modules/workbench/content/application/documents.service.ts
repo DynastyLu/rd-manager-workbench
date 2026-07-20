@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { ContentStatus, Prisma } from '@prisma/client';
+import { ContentDocumentType, ContentStatus, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
@@ -81,6 +81,19 @@ export class DocumentsService {
         meetingId: dto.meetingId,
       },
     });
+  }
+
+  async createKnowledgePageInTransaction(tx: Prisma.TransactionClient, dto: CreateDocumentDto) {
+    const space = dto.spaceId ? await tx.knowledgeSpace.findFirst({ where: { id: dto.spaceId, archivedAt: null }, select: { id: true } }) : null;
+    if (dto.spaceId && !space) throw this.referenceInvalid('Knowledge space not found');
+    const project = dto.projectId ? await tx.project.findFirst({ where: { id: dto.projectId, archivedAt: null }, select: { id: true } }) : null;
+    if (dto.projectId && !project) throw this.referenceInvalid('Project not found');
+    return tx.contentDocument.create({ data: {
+      type: ContentDocumentType.KNOWLEDGE_PAGE, title: dto.title,
+      content: (dto.content ?? {}) as Prisma.InputJsonValue, plainText: dto.plainText ?? '',
+      tags: this.normalizeTags(dto.tags), isFavorite: dto.isFavorite ?? false,
+      spaceId: dto.spaceId, projectId: dto.projectId,
+    } });
   }
 
   async update(id: string, dto: UpdateDocumentDto) {

@@ -1,0 +1,1 @@
+ALTER TYPE app."ReminderChannel" ADD VALUE IF NOT EXISTS 'SMS';

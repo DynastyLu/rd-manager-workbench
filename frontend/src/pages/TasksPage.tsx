@@ -29,6 +29,7 @@ import {
 import { TaskForm } from '@/modules/workbench/components/TaskForm'
 import type { TaskPriority, WorkTask } from '@/modules/workbench/types'
 import { ROUTES } from '@/constants/routes'
+import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
 import './TasksPage.less'
 
 const VIEW_OPTIONS: Array<{
@@ -345,6 +346,13 @@ export default function TasksPage() {
     closeSchedule()
   }
 
+  const scheduleFieldLabel =
+    scheduleDialog?.kind === 'later'
+      ? '恢复日期'
+      : scheduleDialog?.kind === 'reminder'
+        ? '提醒时间'
+        : '新的截止日期'
+
   return (
     <div className="my-work-page">
       <header className="my-work-page__header">
@@ -499,18 +507,14 @@ export default function TasksPage() {
                 ? '提醒会按本机时间触发，并保存在任务记录中。'
                 : '设置任务新的截止日期。'}
           </p>
-          <label>
-            <span>
-              {scheduleDialog?.kind === 'later'
-                ? '恢复日期'
-                : scheduleDialog?.kind === 'reminder'
-                  ? '提醒时间'
-                  : '新的截止日期'}
-            </span>
-            <input
-              type={scheduleDialog?.kind === 'reminder' ? 'datetime-local' : 'date'}
+          <label htmlFor="task-schedule-value">
+            <span>{scheduleFieldLabel}</span>
+            <DateTimePickerField
+              id="task-schedule-value"
+              aria-label={scheduleFieldLabel}
+              mode={scheduleDialog?.kind === 'reminder' ? 'dateTime' : 'date'}
               value={scheduleValue}
-              onChange={(event) => setScheduleValue(event.target.value)}
+              onChange={setScheduleValue}
             />
           </label>
         </div>

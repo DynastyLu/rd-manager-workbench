@@ -9,6 +9,12 @@ import { CalendarModule } from './calendar/calendar.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ContentModule } from './content/content.module';
 import { BaseModule } from './base/base.module';
+import { SearchModule } from './search/search.module';
+import { OperationsModule } from './operations/operations.module';
+import { IntelligenceModule } from './intelligence/intelligence.module';
+import { GovernanceModule } from './governance/governance.module';
+import { ExtensionsModule } from './extensions/extensions.module';
+import { ReportingModule } from './reporting/reporting.module';
 
 @Module({
   imports: [
@@ -21,6 +27,12 @@ import { BaseModule } from './base/base.module';
     NotificationsModule,
     ContentModule,
     BaseModule,
+    SearchModule,
+    OperationsModule,
+    IntelligenceModule,
+    GovernanceModule,
+    ExtensionsModule,
+    ReportingModule,
   ],
   controllers: [WorkbenchStatusController],
 })

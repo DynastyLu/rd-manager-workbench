@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { PrismaClient } from '@prisma/client';
+import { NonProjectRdKind, PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { LocalStorageAdapter } from '../../../../src/infrastructure/storage/local-storage.adapter';
@@ -39,6 +39,8 @@ describe('File assets API', () => {
   afterAll(async () => {
     await prisma.fileAsset.deleteMany({ where: { name: { startsWith: prefix } } });
     await prisma.contentDocument.deleteMany({ where: { title: { startsWith: prefix } } });
+    await prisma.partner.deleteMany({ where: { name: { startsWith: prefix } } });
+    await prisma.nonProjectRdItem.deleteMany({ where: { code: { startsWith: prefix } } });
     await prisma.project.deleteMany({ where: { code: { startsWith: prefix } } });
     await prisma.$disconnect();
     await app?.close();
@@ -200,5 +202,69 @@ describe('File assets API', () => {
       .field('name', `${prefix} 无关联.bin`)
       .attach('file', Buffer.from('orphan'), 'orphan.bin')
       .expect(422);
+  });
+
+  it('uploads and filters attachments by a real partner association', async () => {
+    const partner = await prisma.partner.create({ data: { name: `${prefix} 资料合作方` } });
+    const uploaded = await request(app.getHttpServer())
+      .post('/api/files')
+      .field('partnerId', partner.id)
+      .field('name', `${prefix} 合作协议.pdf`)
+      .attach('file', Buffer.from('partner-file'), 'agreement.pdf')
+      .expect(201);
+
+    expect(uploaded.body.data).toMatchObject({ partnerId: partner.id });
+    await request(app.getHttpServer())
+      .get('/api/files')
+      .query({ partnerId: partner.id })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.data).toEqual([
+          expect.objectContaining({ id: uploaded.body.data.id, partnerId: partner.id }),
+        ]);
+      });
+    await request(app.getHttpServer()).delete(`/api/partners/${partner.id}`).expect(409);
+    await request(app.getHttpServer()).delete(`/api/files/${uploaded.body.data.id}`).expect(204);
+    await request(app.getHttpServer()).delete(`/api/partners/${partner.id}`).expect(204);
+  });
+
+  it('rejects an attachment that is assigned to more than one owning object', async () => {
+    const [document, partner] = await Promise.all([
+      prisma.contentDocument.create({ data: { type: 'DOCUMENT', title: `${prefix} 单一归属文档` } }),
+      prisma.partner.create({ data: { name: `${prefix} 单一归属合作方` } }),
+    ]);
+
+    await request(app.getHttpServer())
+      .post('/api/files')
+      .field('documentId', document.id)
+      .field('partnerId', partner.id)
+      .field('name', `${prefix} 多重归属.bin`)
+      .attach('file', Buffer.from('ambiguous-owner'), 'ambiguous.bin')
+      .expect(422);
+  });
+
+  it('uploads and filters materials owned by a non-project R&D item', async () => {
+    const item = await prisma.nonProjectRdItem.create({
+      data: {
+        code: `${prefix}-RD`,
+        title: `${prefix} 技术预研`,
+        kind: NonProjectRdKind.TECH_EXPLORATION,
+      },
+    });
+    const uploaded = await request(app.getHttpServer())
+      .post('/api/files')
+      .field('nonProjectRdItemId', item.id)
+      .field('name', `${prefix} 预研资料.md`)
+      .attach('file', Buffer.from('# evidence'), 'evidence.md')
+      .expect(201);
+
+    expect(uploaded.body.data).toMatchObject({ nonProjectRdItemId: item.id });
+    await request(app.getHttpServer())
+      .get('/api/files')
+      .query({ nonProjectRdItemId: item.id })
+      .expect(200)
+      .expect(({ body }) => expect(body.data.data).toEqual([
+        expect.objectContaining({ id: uploaded.body.data.id, nonProjectRdItemId: item.id }),
+      ]));
   });
 });

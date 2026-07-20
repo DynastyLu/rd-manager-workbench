@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 
 import type { DataField, DataTable, DataTableSource } from '../types'
 import { RelationPicker } from './RelationPicker'
+import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
 
 interface FormViewProps {
   tableSource: DataTableSource
@@ -136,14 +137,12 @@ function FieldControl({
       )
     case 'DATETIME':
       return (
-        <input
+        <DateTimePickerField
           id={`base-form-${field.id}`}
           aria-label={field.name}
           required={required}
-          type="datetime-local"
           value={typeof value === 'string' ? value : ''}
-          onChange={(event) => onChange(event.target.value)}
-          style={commonStyle}
+          onChange={onChange}
         />
       )
     case 'SINGLE_SELECT':

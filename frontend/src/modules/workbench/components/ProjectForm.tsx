@@ -1,16 +1,16 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Button, Input } from '@douyinfe/semi-ui'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { createProject, updateProject } from '@/modules/workbench/api/projects'
 import type { Project } from '@/modules/workbench/types'
 
 interface ProjectFormProps {
   project?: Project
   onSuccess?: (project: Project) => void
+  formId?: string
+  showActions?: boolean
 }
 
 interface ProjectValues {
@@ -18,7 +18,12 @@ interface ProjectValues {
   name: string
 }
 
-export function ProjectForm({ project, onSuccess }: ProjectFormProps) {
+export function ProjectForm({
+  project,
+  onSuccess,
+  formId = 'project-form',
+  showActions = true,
+}: ProjectFormProps) {
   const queryClient = useQueryClient()
   const [code, setCode] = useState(project?.code ?? '')
   const [name, setName] = useState(project?.name ?? '')
@@ -58,34 +63,40 @@ export function ProjectForm({ project, onSuccess }: ProjectFormProps) {
   }
 
   return (
-    <form className="grid gap-4" onSubmit={handleSubmit} noValidate>
-      <div className="grid gap-2">
-        <Label htmlFor="project-code">项目编号</Label>
+    <form id={formId} className="workspace-modal-form" onSubmit={handleSubmit} noValidate>
+      <label htmlFor="project-code">
+        <span>项目编号</span>
         <Input
           id="project-code"
           value={code}
-          onChange={(event) => setCode(event.target.value)}
+          onChange={setCode}
           disabled={mutation.isPending}
           autoComplete="off"
+          placeholder="例如：RD-2026-001"
         />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="project-name">项目名称</Label>
+      </label>
+      <label htmlFor="project-name">
+        <span>项目名称</span>
         <Input
           id="project-name"
           value={name}
-          onChange={(event) => setName(event.target.value)}
+          onChange={setName}
           disabled={mutation.isPending}
+          placeholder="输入清晰、可识别的项目名称"
         />
-      </div>
+      </label>
       {validationMessage ? (
-        <p className="text-sm text-destructive" role="alert">
+        <p className="workspace-modal-form__error" role="alert">
           {validationMessage}
         </p>
       ) : null}
-      <Button type="submit" disabled={mutation.isPending}>
-        保存项目
-      </Button>
+      {showActions ? (
+        <div className="workspace-modal-form__actions">
+          <Button htmlType="submit" theme="solid" type="primary" loading={mutation.isPending}>
+            保存项目
+          </Button>
+        </div>
+      ) : null}
     </form>
   )
 }

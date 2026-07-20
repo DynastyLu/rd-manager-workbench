@@ -169,7 +169,7 @@ describe('NotificationCenter', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('再次提醒时间必须晚于当前时间')
     expect(snoozeNotification).not.toHaveBeenCalled()
-    expect(screen.getByLabelText('再次提醒时间')).toHaveValue('2020-01-01T09:30')
+    expect(screen.getByLabelText('再次提醒时间')).toHaveValue('2020-01-01 09:30')
   })
 
   it('keeps the snooze dialog and user input when the API rejects the request', async () => {
@@ -190,7 +190,7 @@ describe('NotificationCenter', () => {
 
     await waitFor(() => expect(snoozeNotification).toHaveBeenCalledTimes(1))
     expect(screen.getByRole('dialog', { name: '稍后提醒' })).toBeInTheDocument()
-    expect(screen.getByLabelText('再次提醒时间')).toHaveValue('2027-07-21T09:30')
+    expect(screen.getByLabelText('再次提醒时间')).toHaveValue('2027-07-21 09:30')
   })
 
   it('refetches REST data after reconnect and a pushed notification', async () => {

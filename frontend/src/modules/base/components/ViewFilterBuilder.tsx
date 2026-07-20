@@ -1,3 +1,4 @@
+import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
 import type { DataField, ViewFilter, ViewFilterOperator } from '../types'
 import {
   editableValueText,
@@ -42,12 +43,6 @@ function normalizeInputValue(
   }
   if (field.type === 'CHECKBOX') return rawValue === 'true'
   return rawValue
-}
-
-function valueInputType(field: DataField) {
-  if (field.type === 'NUMBER') return 'number'
-  if (['DATETIME', 'CREATED_AT', 'UPDATED_AT'].includes(field.type)) return 'datetime-local'
-  return 'text'
 }
 
 function optionValues(field: DataField) {
@@ -110,10 +105,25 @@ function FilterValueEditor({
     ['DATETIME', 'CREATED_AT', 'UPDATED_AT'].includes(field.type) && filter.operator !== 'IN'
       ? localDateTimeText(filter.value)
       : editableValueText(filter.value)
+  if (['DATETIME', 'CREATED_AT', 'UPDATED_AT'].includes(field.type) && filter.operator !== 'IN') {
+    return (
+      <DateTimePickerField
+        aria-label={ariaLabel}
+        mode="dateTime"
+        value={renderedValue}
+        onChange={(nextValue) =>
+          onChange({
+            ...filter,
+            value: normalizeInputValue(field, filter.operator, nextValue),
+          })
+        }
+      />
+    )
+  }
   return (
     <input
       aria-label={ariaLabel}
-      type={filter.operator === 'IN' ? 'text' : valueInputType(field)}
+      type={field.type === 'NUMBER' && filter.operator !== 'IN' ? 'number' : 'text'}
       value={renderedValue}
       placeholder={filter.operator === 'IN' ? '多个值用逗号分隔' : '输入筛选值'}
       onChange={(event) =>

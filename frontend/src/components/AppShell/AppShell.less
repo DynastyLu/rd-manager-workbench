@@ -230,9 +230,9 @@
 
   &__popover {
     display: grid;
-    width: 230px;
-    gap: 6px;
-    padding: 4px;
+    width: 260px;
+    gap: 8px;
+    padding: 10px 12px;
 
     strong {
       color: var(--workspace-text);
@@ -247,12 +247,17 @@
   }
 
   &__popover-link {
-    display: block;
+    display: flex;
+    min-height: 34px;
+    align-items: center;
+    padding: 0 10px;
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-brand-soft);
     color: var(--workspace-brand);
     font-size: 13px;
     text-decoration: none;
 
-    &:hover { text-decoration: underline; }
+    &:hover { background: #dbe7ff; text-decoration: none; }
   }
 }
 

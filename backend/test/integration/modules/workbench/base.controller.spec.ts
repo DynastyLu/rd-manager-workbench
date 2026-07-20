@@ -2289,4 +2289,140 @@ describe('Multi-dimensional base API', () => {
         ]);
       });
   });
+
+  it('lists, inspects and instantiates the five business templates without seed records', async () => {
+    const templates = await request(app.getHttpServer()).get('/api/base/templates').expect(200);
+    expect(templates.body.data).toHaveLength(5);
+    expect(templates.body.data.map((template: { key: string }) => template.key)).toEqual(
+      expect.arrayContaining([
+        'partner-ledger',
+        'rd-application',
+        'risk-register',
+        'interview-tracker',
+        'non-project-rd',
+      ]),
+    );
+
+    await request(app.getHttpServer())
+      .get('/api/base/templates/risk-register')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({ key: 'risk-register', name: '风险台账' });
+        expect(body.data.fields).toHaveLength(13);
+        expect(body.data.views).toHaveLength(4);
+      });
+
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 模板工作区` })
+      .expect(201);
+    const table = await request(app.getHttpServer())
+      .post(`/api/base/workspaces/${workspace.body.data.id}/templates/risk-register/instantiate`)
+      .send({ name: `${prefix} 风险台账` })
+      .expect(201);
+
+    expect(table.body.data).toMatchObject({
+      workspaceId: workspace.body.data.id,
+      name: `${prefix} 风险台账`,
+      source: 'CUSTOM',
+      presetKey: null,
+    });
+    expect(table.body.data.fields).toHaveLength(13);
+    expect(table.body.data.views).toHaveLength(4);
+    await expect(
+      prisma.dataRecord.count({ where: { tableId: table.body.data.id } }),
+    ).resolves.toBe(0);
+  });
+
+  it('previews and commits CSV imports, downloads errors, and exports CSV/XLSX', async () => {
+    const workspace = await request(app.getHttpServer())
+      .post('/api/base/workspaces')
+      .send({ name: `${prefix} 导入导出工作区` })
+      .expect(201);
+    const table = await request(app.getHttpServer())
+      .post(`/api/base/workspaces/${workspace.body.data.id}/tables`)
+      .send({ name: `${prefix} 导入导出表` })
+      .expect(201);
+    const tableId = table.body.data.id as string;
+    const titleField = table.body.data.fields.find(
+      (field: { isPrimary: boolean }) => field.isPrimary,
+    );
+    const amountField = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/fields`)
+      .send({ key: 'amount', name: '数量', type: 'NUMBER', sequence: 1 })
+      .expect(201);
+
+    const upload = await request(app.getHttpServer())
+      .post(`/api/base/tables/${tableId}/imports`)
+      .attach('file', Buffer.from('\uFEFF标题,数量\r\n有效记录,12\r\n错误记录,abc\r\n'), {
+        filename: 'mixed.csv',
+        contentType: 'text/csv',
+      })
+      .expect(201);
+    const importId = upload.body.data.session.id as string;
+    expect(upload.body.data.preview).toMatchObject({
+      selectedSheet: 'CSV',
+      columns: ['标题', '数量'],
+    });
+
+    await request(app.getHttpServer())
+      .patch(`/api/base/imports/${importId}/inspect`)
+      .send({ selectedSheet: 'CSV' })
+      .expect(200)
+      .expect(({ body }) => expect(body.data.rows).toHaveLength(2));
+
+    const preview = await request(app.getHttpServer())
+      .patch(`/api/base/imports/${importId}/preview`)
+      .send({
+        selectedSheet: 'CSV',
+        mapping: [
+          { sourceColumn: '标题', targetFieldId: titleField.id },
+          { sourceColumn: '数量', targetFieldId: amountField.body.data.id },
+        ],
+      })
+      .expect(200);
+    expect(preview.body.data.session).toMatchObject({
+      status: 'PREVIEWED',
+      totalRows: 2,
+      validRows: 1,
+      errorRows: 1,
+      importedRows: 0,
+      hasErrors: true,
+    });
+    await expect(prisma.dataRecord.count({ where: { tableId } })).resolves.toBe(0);
+
+    const commit = await request(app.getHttpServer())
+      .post(`/api/base/imports/${importId}/commit`)
+      .expect(200);
+    expect(commit.body.data).toMatchObject({
+      status: 'PARTIAL',
+      importedRows: 1,
+      errorRows: 1,
+      hasErrors: true,
+    });
+    await expect(prisma.dataRecord.count({ where: { tableId } })).resolves.toBe(1);
+
+    await request(app.getHttpServer())
+      .get(`/api/base/imports/${importId}/errors`)
+      .expect(200)
+      .expect('content-type', /text\/csv/)
+      .expect('content-disposition', /attachment;.*filename\*=UTF-8''/);
+
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${tableId}/export`)
+      .query({ format: 'csv', scope: 'view', viewId: table.body.data.views[0].id })
+      .expect(200)
+      .expect('content-type', /text\/csv/)
+      .expect('content-disposition', /\.csv/);
+
+    await request(app.getHttpServer())
+      .get(`/api/base/tables/${tableId}/export`)
+      .query({ format: 'xlsx', scope: 'all' })
+      .expect(200)
+      .expect('content-type', /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/)
+      .expect('content-disposition', /\.xlsx/)
+      .expect(({ body }) => expect(Buffer.byteLength(body)).toBeGreaterThan(1_000));
+
+    await request(app.getHttpServer()).delete(`/api/base/imports/${importId}`).expect(204);
+  });
 });

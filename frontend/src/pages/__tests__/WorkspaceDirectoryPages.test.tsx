@@ -44,6 +44,11 @@ vi.mock('@/modules/workbench/api/documents', async (importOriginal) => ({
 }))
 
 vi.mock('@/modules/base/api', () => baseApi)
+vi.mock('@/modules/workbench/components/extensions/AiBusinessAction', () => ({
+  AiBusinessAction: ({ buttonLabel, objectId }: { buttonLabel: string; objectId?: string }) => (
+    <button type="button" data-object-id={objectId}>{buttonLabel}</button>
+  ),
+}))
 
 function renderPage(page: React.ReactNode, path = '/') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -143,10 +148,19 @@ describe('workspace directory pages', () => {
     expect(await screen.findByDisplayValue('耐盐材料技术方案')).toBeInTheDocument()
     expect(screen.getByRole('toolbar', { name: '文档格式工具栏' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '保存版本' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'AI 生成摘要' })).toHaveAttribute('data-object-id', 'document-1')
+    expect(screen.getByRole('button', { name: 'AI 知识问答' })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: '上传新版本' })).toBeInTheDocument()
     expect(screen.queryByText(/规划/)).not.toBeInTheDocument()
     expect(documentApi.listDocuments).toHaveBeenCalled()
     expect(documentApi.getDocument).toHaveBeenCalledWith('document-1')
+  })
+
+  it('opens a partner-scoped material workspace and forwards the association to attachments', async () => {
+    renderPage(<KnowledgeHomePage />, '/docs?partnerId=partner-1')
+
+    expect(await screen.findByRole('heading', { name: '合作方资料' })).toBeInTheDocument()
+    expect(documentApi.listFiles).toHaveBeenCalledWith({ partnerId: 'partner-1' })
   })
 
   it('creates a real knowledge space from the directory', async () => {
@@ -160,6 +174,7 @@ describe('workspace directory pages', () => {
     renderPage(<KnowledgeHomePage />, '/docs')
 
     await user.click(await screen.findByRole('button', { name: '新建知识空间' }))
+    expect(screen.getByRole('button', { name: '取消' })).toBeInTheDocument()
     await user.type(screen.getByLabelText('空间名称'), '团队规范')
     await user.click(screen.getByRole('button', { name: '保存知识空间' }))
 

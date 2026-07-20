@@ -7,11 +7,15 @@ export function BaseToolbar({
   onManageFields,
   onCreateRecord,
   isCreatingRecord = false,
+  onImport,
+  onExport,
 }: {
   table: DataTable
   onManageFields: () => void
   onCreateRecord?: () => void
   isCreatingRecord?: boolean
+  onImport?: () => void
+  onExport?: () => void
 }) {
   return (
     <header className="base-toolbar">
@@ -25,6 +29,8 @@ export function BaseToolbar({
       <div className="base-toolbar__view-row">
         <span className="base-toolbar__hint">{table.source === 'CUSTOM' ? '自定义数据' : '编辑将同步回原业务对象'}</span>
         <div className="base-toolbar__actions">
+          {table.source === 'CUSTOM' && onImport ? <Button onClick={onImport}>导入</Button> : null}
+          {onExport ? <Button onClick={onExport}>导出</Button> : null}
           <Button aria-label="字段管理" icon={<IconSetting />} onClick={onManageFields}>字段管理</Button>
           {table.source === 'CUSTOM' && onCreateRecord ? (
             <Button icon={<IconPlus />} theme="solid" type="primary" loading={isCreatingRecord} disabled={isCreatingRecord} onClick={onCreateRecord}>新增记录</Button>

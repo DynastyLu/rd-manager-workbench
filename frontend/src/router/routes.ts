@@ -2,7 +2,6 @@ import { createElement, lazy, type ComponentType } from 'react'
 import { Navigate, useParams } from 'react-router-dom'
 import { PlannedModuleState } from '@/components/AppShell/PlannedModuleState'
 import { ROUTES } from '@/constants/routes'
-import AutomationDataPage from '@/pages/AutomationDataPage'
 import KnowledgeHomePage from '@/pages/KnowledgeHomePage'
 import LibraryHomePage from '@/pages/LibraryHomePage'
 
@@ -43,12 +42,19 @@ const ProjectsPage = lazy(() => import('@/pages/ProjectsPage'))
 const ProjectWorkspacePage = lazy(() => import('@/pages/ProjectWorkspacePage'))
 const TasksPage = lazy(() => import('@/pages/TasksPage'))
 const CalendarPage = lazy(() => import('@/pages/CalendarPage'))
+const SearchPage = lazy(() => import('@/pages/SearchPage'))
 const ApplicationCasesPage = lazy(() => import('@/pages/ApplicationCasesPage'))
 const RisksPage = lazy(() => import('@/pages/RisksPage'))
 const IssuesPage = lazy(() => import('@/pages/IssuesPage'))
 const DecisionsPage = lazy(() => import('@/pages/DecisionsPage'))
 const PartnersPage = lazy(() => import('@/pages/PartnersPage'))
 const WorkbenchSettings = lazy(() => import('@/pages/WorkbenchSettings'))
+const DataGovernancePage = lazy(() => import('@/pages/DataGovernancePage'))
+const ExtensionsSettingsPage = lazy(() => import('@/pages/ExtensionsSettingsPage'))
+const OperationsPage = lazy(() => import('@/pages/OperationsPage'))
+const ReportsPage = lazy(() => import('@/pages/ReportsPage'))
+const IntelligencePage = lazy(() => import('@/pages/IntelligencePage'))
+const IntelligenceBriefsPage = lazy(() => import('@/pages/IntelligenceBriefsPage'))
 
 function PlannedGovernancePage() {
   return createElement(PlannedModuleState, {
@@ -183,7 +189,7 @@ const canonicalRoutes: RouteDefinition[] = [
     path: ROUTES.SEARCH,
     title: '搜索',
     icon: 'search',
-    component: AutomationDataPage,
+    component: SearchPage,
     navigationKey: 'search',
     availability: 'AVAILABLE',
   },
@@ -207,6 +213,34 @@ const canonicalRoutes: RouteDefinition[] = [
     title: '业务库',
     icon: '▤',
     component: GovernancePage,
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.OPERATIONS,
+    title: '非项目研发',
+    icon: '▤',
+    component: OperationsPage,
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.REPORTS,
+    title: '统计报表',
+    icon: '▤',
+    component: ReportsPage,
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.INTELLIGENCE,
+    title: '行业情报',
+    icon: '▤',
+    component: IntelligencePage,
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.INTELLIGENCE_BRIEFS,
+    title: '情报简报',
+    icon: '▤',
+    component: IntelligenceBriefsPage,
     availability: 'AVAILABLE',
   },
   {
@@ -240,9 +274,31 @@ const canonicalRoutes: RouteDefinition[] = [
     component: WorkbenchSettings,
     availability: 'AVAILABLE',
   },
+  {
+    path: ROUTES.DATA_GOVERNANCE,
+    title: '数据安全',
+    icon: '⚙',
+    component: DataGovernancePage,
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.EXTENSIONS_SETTINGS,
+    title: '外部能力',
+    icon: '⚙',
+    component: ExtensionsSettingsPage,
+    availability: 'AVAILABLE',
+  },
 ]
 
 const legacyRoutes: RouteDefinition[] = [
+  {
+    path: ROUTES.RESOURCES_LEGACY,
+    title: '资源负荷',
+    icon: '▦',
+    component: createRedirect(ROUTES.RESOURCES),
+    availability: 'AVAILABLE',
+    redirectTo: ROUTES.RESOURCES,
+  },
   {
     path: ROUTES.PROJECTS,
     title: '项目空间',

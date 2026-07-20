@@ -120,6 +120,13 @@
 - 导入导出复用受控本地存储 key 并新增可过期的导入会话；进阶视图以 `viewId` 在服务端执行保存筛选，保证分页总数和完整数据集过滤正确。
 - 实施文件映射确认：后端 Base 目前只有控制器集成测试，没有公式/查询/模板专用单元测试；计划需为新服务分别建立 focused unit tests，并扩展 `base.controller.spec.ts` 做真实 PostgreSQL 契约验收。
 
+## 原生日期控件漏检根因（2026-07-20）
+
+- `TasksPage` 使用 `type={kind === 'reminder' ? 'datetime-local' : 'date'}`，`FieldEditor` 使用字段类型三元表达式，旧规则只识别 `type="date"` 这类字面量，导致动态 JSX 属性漏检。
+- 第二遍扫描发现 `ViewFilterBuilder` 通过辅助函数间接返回 `datetime-local`，单纯检查 JSX 属性仍无法捕获；生产代码现在同时禁止遗留 `datetime-local` token。
+- 三处均统一迁移到 `DateTimePickerField`（Semi `DatePicker`），并保留原有 `YYYY-MM-DD` / `YYYY-MM-DDTHH:mm` API 序列化契约。
+- 真实浏览器检查“稍后处理”弹窗：原生日期/时间 input 为 0，Semi DatePicker 为 1，日期面板可正常展开。
+
 ## P1-02～P2-02 并行审计补充（2026-07-20）
 
 - `/search` 虽已注册为 AVAILABLE，实际仍指向 `AutomationDataPage` 规划页；顶栏搜索输入也被明确禁用。现有 Project/Task/Document/Meeting/Risk/Decision 深链和各领域查询服务可以作为首版 adapter registry 的真源。
@@ -145,3 +152,24 @@
 ## 视觉/浏览器发现
 - 需求文档共 6 页，包含 13 个表格、完整 P0/P1/P2 优先级和 MVP 验收标准。
 - 页图版式完整，但渲染环境缺少相应中文字体，部分中文显示为方框；文字结构提取完整。
+
+## 弹窗底部间距审计（2026-07-20）
+
+- 截图中的问题来自项目详情页 `ProjectWorkspacePage`：Modal 使用 `footer={null}`，`TaskForm` 的保存按钮位于 body 内部并成为弹窗最后一个元素。
+- 浏览器实测 `.semi-modal-content` 为左右 `24px` padding；`.semi-modal-body` 为 `0px` padding；带 footer 时 `.semi-modal-footer` 使用上下 `24px` margin。因此有 footer 的弹窗底部正常，无 footer 的弹窗 body 会直接触底。
+- `workspace-tokens.css` 之前对 `.semi-modal-body/.semi-modal-footer` 的同权重规则被后加载的 Semi CSS 覆盖，没有形成预期的统一盒模型。
+- 全项目存在多处 `footer={null}`，不能只修项目详情组件；需要对“body 是 modal-content 最后一个子元素”的所有无 footer 弹窗提供统一底部安全间距，并用真实几何测量防止回归。
+- 静态清点覆盖 25 个包含 Modal 的组件文件、44 个 Semi Modal，其中 25 个显式 `footer={null}`；另有 4 个旧 Radix Dialog。Semi 无 footer 模式统一由 `body:last-child` 安全区覆盖，Radix Dialog 原有 `p-4` 四周内边距。
+- 修复后项目工作项弹窗浏览器实测：弹窗 `520×352`，保存按钮到底部和右侧均为 `25px`；修复前底部只有 `1px`。
+
+## 表单控件与项目资料布局审计（2026-07-20）
+
+- 日历“新建日程”真实 DOM 包含 3 个 `input[type=datetime-local]`、1 个原生 `select`、0 个 Semi DatePicker、1 个 Semi Select；截图中的日期面板是 Chromium 原生控件。
+- 源码静态扫描仍发现多处 Semi Input 包装的 `date/datetime-local`，它们虽然输入框外观接近 Semi，但日期弹层仍由浏览器提供；需要改用 Semi DatePicker。
+- 原生 `select` 主要集中在多维表格高级配置、情报、合作方、资源和会议等旧表单；需要区分复杂 Base 编辑器与普通业务弹窗逐批迁移，不能仅靠 CSS 伪装。
+- 项目资料页附件组件盒模型与卡片同宽，标题位于卡片左边界而不是 18px 内容线；浏览器实测附件 `x=373`，期望内容起点与卡片标题一致为约 `x=391`。
+- `FileAttachments` 的样式错误地定义在 `KnowledgeHomePage.less`，组件自身没有导入样式，造成样式职责错位和潜在的按路由加载差异；应迁移到组件专属 Less 并由组件导入。
+- 修复后静态契约覆盖全部生产源码，原生 `date/datetime-local/time/month/week` 输入为 0；统一 `DateTimePickerField` 使用 Semi DatePicker，同时保留 FormData、键盘手输、本地时间序列化和可访问标签契约。
+- 修复后日历创建弹窗真实 DOM 为 3 个 Semi DatePicker、2 个 Semi Select，原生日期和原生 select 均为 0；实际展开 `.semi-datepicker-container` 成功，不再调用 Chromium 原生面板。
+- 修复后项目附件区四边 padding 均为 `18px`，附件内容起点回到卡片内容网格；样式已迁至 `FileAttachments.less` 并由组件自身导入。
+- 普通原生 `select` 仍有 53 处、分布在 18 个生产组件文件：主要是多维表格字段/视图/筛选/导入导出高级配置，以及情报、合作方、资源、会议、非项目研发旧表单。它们不再包含本次截图中的日历弹窗，但仍应作为下一轮组件库迁移范围。

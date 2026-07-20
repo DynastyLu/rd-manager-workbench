@@ -1,17 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export const THEMES = ['worldcup', 'cyberpunk', 'ocean', 'classic'] as const
+export const THEMES = ['classic'] as const
 export type Theme = (typeof THEMES)[number]
-export const DEFAULT_THEME: Theme = 'worldcup'
+export const DEFAULT_THEME: Theme = 'classic'
 export const THEME_STORAGE_NAME = 'app_theme'
-export const THEME_STORAGE_VERSION = 1
+export const THEME_STORAGE_VERSION = 2
 
 export const THEME_LABELS: Record<Theme, { label: string; icon: string; desc: string }> = {
-  worldcup: { label: '世界杯', icon: '⚽', desc: 'Stadium Skin' },
-  cyberpunk: { label: '赛博朋克', icon: '⚡', desc: 'Neon & Dark' },
-  ocean: { label: '深海蓝调', icon: '🌊', desc: 'Ocean Dark' },
-  classic: { label: '经典简约', icon: '☀', desc: 'Classic Light' },
+  classic: { label: '工作台浅色', icon: '☀', desc: 'Workspace Light' },
 }
 
 interface ThemeState {

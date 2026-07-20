@@ -27,6 +27,8 @@ SmsDelivery(id, reminderRuleId?, notificationId?, recipientId, profileId,
  templateKey, status, attemptCount, nextAttemptAt?, providerMessageId?, errorCode?, createdAt, sentAt?)
 ExternalObjectLink(id, profileId, localType, localId, remoteId, remoteVersion?,
  syncDirection, lastSyncedAt?, syncHash?, conflictState?)
+ExternalSyncSession(id, profileId, targetType, request, status,
+ preflightRunId?, commitRunId?, preflight?, preflightHash?, resolutions?, expiresAt?, committedAt?)
 ```
 
 publicConfig 用 provider-specific Zod schema 校验，递归拒绝 key/token/secret/password/phone 等密钥字段。手机号作为 safeStorage credential，只在 DB 保存 mask 和 ref。
@@ -56,6 +58,8 @@ ref、provider、operation、payload schema 都是允许清单。renderer 永远
 
 Provider 实现与当前官方接口文档锁定版本，网络请求设置 20 秒超时、大小上限和重试分类；4xx 配置错误不重试，429/5xx/超时指数退避最多 3 次。
 
+生产契约与版本依据锁定在 `docs/research/2026-07-20-external-provider-contracts.md`：OpenAI 使用 Responses API 的 strict Structured Outputs；阿里云国内短信使用 `Dysmsapi/2017-05-25 SendSms`；CalDAV/WebDAV 分别以 RFC 4791、RFC 4918（增量同步 RFC 6578）为基线。profile 必须显式保存模型或服务配置，代码不得静默切换 provider/model。
+
 ## 6. 短信通知
 
 ReminderRule 增加 `channels[]` 与 `important`；只有 important、SMS channel、活动 recipient/profile 和明确模板映射同时满足才创建 SmsDelivery。页面/桌面通知不等待短信。
@@ -78,6 +82,10 @@ ReminderRule 增加 `channels[]` 与 `important`；只有 important、SMS channe
 - 同步前返回新增/更新/冲突预检；冲突由用户选择保留本地、保留远端或创建副本。
 - WebDAV 只允许 profile 固定 remote root 下的规范化路径，拒绝 `..`、绝对路径和跨 host redirect。
 - 上传前/下载后计算 SHA-256；同 remoteId/version 哈希不一致进入 CONFLICT，不静默覆盖。
+- renderer 只提交 Calendar 范围或 FileAsset ID、远端相对路径和同步方向；localHash、remoteHash、remoteVersion、remoteId 和远端正文均由服务端数据库或 Electron provider 生成，不能接受客户端自报事实。
+- 同步采用持久化会话：prepare 生成服务端 payload 和确认哈希，start 通过 `/extensions` 调用 provider，complete 对远端输出执行严格白名单校验后签发 10 分钟权威 preflight。commit 只接受 preflightHash 和逐项决策。
+- KEEP_REMOTE/CREATE_COPY 在事务内创建或更新普通 CalendarEvent；派生的任务、会议日程不会成为可写目标。WebDAV 只处理显式 FileAsset/FileVersion，下载先校验 Base64 与 SHA-256 并写安全存储，随后在同一数据库事务写 FileVersion 与 ExternalObjectLink；事务失败删除暂存文件。
+- 当前 JSON/Socket 安全桥单文件上限为 750 KiB；HTTP 与 Socket 均固定 2 MiB 帧上限以容纳 Base64。更大附件必须继续使用本地附件功能，不能被静默截断或误报同步成功。
 
 ## 9. API 与 UI
 
@@ -88,15 +96,17 @@ ReminderRule 增加 `channels[]` 与 `important`；只有 important、SMS channe
 /api/extensions/sms/recipients
 /api/extensions/sms/deliveries
 /api/extensions/ai/prepare
-/api/extensions/sync/preflight
-/api/extensions/sync/commit
+/api/extensions/sync/prepare
+/api/extensions/sync/preflights/:sessionId/start
+/api/extensions/sync/preflights/:sessionId
+/api/extensions/sync/preflights/:sessionId/commit
 ```
 
 设置页增加外部能力工作区：短信、AI、日历、云盘四页签。创建 profile 时先保存 public config，再由 desktop bridge 保存凭据，最后执行不含业务正文的连接测试。所有页面显示 enabled、credential available、最近运行、失败原因和数据离开本机提示。
 
 ## 10. 错误码
 
-`EXTENSION_PROFILE_NOT_FOUND`、`EXTENSION_PROFILE_DISABLED`、`EXTENSION_CONFIG_INVALID`、`EXTENSION_SECRET_IN_CONFIG`、`CREDENTIAL_STORE_UNAVAILABLE`、`CREDENTIAL_NOT_FOUND`、`EXTENSION_CONFIRMATION_REQUIRED`、`EXTENSION_OPERATION_UNSUPPORTED`、`EXTENSION_RUN_NOT_FOUND`、`EXTENSION_RUN_TOKEN_INVALID`、`SMS_DELIVERY_FAILED`、`AI_OUTPUT_INVALID`、`EXTERNAL_SYNC_CONFLICT`、`EXTERNAL_PATH_INVALID`。
+`EXTENSION_PROFILE_NOT_FOUND`、`EXTENSION_PROFILE_DISABLED`、`EXTENSION_CONFIG_INVALID`、`EXTENSION_SECRET_IN_CONFIG`、`CREDENTIAL_STORE_UNAVAILABLE`、`CREDENTIAL_NOT_FOUND`、`EXTENSION_CONFIRMATION_REQUIRED`、`EXTENSION_OPERATION_UNSUPPORTED`、`EXTENSION_RUN_NOT_FOUND`、`EXTENSION_RUN_TOKEN_INVALID`、`SMS_DELIVERY_FAILED`、`AI_OUTPUT_INVALID`、`EXTERNAL_SYNC_CONFLICT`、`EXTERNAL_SYNC_NOT_FOUND`、`EXTERNAL_SYNC_OUTPUT_INVALID`、`EXTERNAL_PATH_INVALID`。
 
 ## 11. 验收
 
@@ -106,4 +116,3 @@ ReminderRule 增加 `channels[]` 与 `important`；只有 important、SMS channe
 - AI 每次发送前明确确认数据范围，输出只能在用户采纳后写回并保留引用。
 - CalDAV/WebDAV 预检、冲突和哈希校验完整；外部失败不修改本地对象。
 - desktop/provider 单元测试使用 mock safeStorage/fetch，后端跑状态机集成测试，真实凭据验收由用户配置后执行连接测试。
-

@@ -31,4 +31,26 @@ describe('LocalStorageAdapter', () => {
 
     await rm(root, { recursive: true, force: true });
   });
+
+  it('reports storage stats and walks entries in stable key order', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'backend-core-storage-'));
+    const adapter = new LocalStorageAdapter(root);
+    await adapter.write({ key: 'files/b.txt', content: Buffer.from('bb'), mimeType: 'text/plain' });
+    await adapter.write({ key: 'files/a.txt', content: Buffer.from('a'), mimeType: 'text/plain' });
+
+    await expect(adapter.stat('files/a.txt')).resolves.toMatchObject({
+      key: 'files/a.txt',
+      byteSize: 1,
+      kind: 'FILE',
+    });
+    await expect(adapter.walk('files')).resolves.toMatchObject([
+      { key: 'files/a.txt', byteSize: 1, kind: 'FILE' },
+      { key: 'files/b.txt', byteSize: 2, kind: 'FILE' },
+    ]);
+    const filesystem = await adapter.statfs();
+    expect(filesystem.availableBytes).toBeGreaterThan(0n);
+    expect(filesystem.totalBytes).toBeGreaterThanOrEqual(filesystem.availableBytes);
+
+    await rm(root, { recursive: true, force: true });
+  });
 });

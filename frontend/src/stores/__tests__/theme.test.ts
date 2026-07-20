@@ -12,26 +12,32 @@ describe('useThemeStore', () => {
   beforeEach(() => {
     localStorage.clear()
     document.documentElement.removeAttribute('data-theme')
-    useThemeStore.setState({ theme: 'worldcup' })
+    useThemeStore.setState({ theme: 'classic' })
   })
 
-  it('ships the World Cup skin as the default app theme', () => {
-    expect(THEMES).toContain('worldcup')
-    expect(THEME_LABELS.worldcup.label).toBe('世界杯')
-    expect(useThemeStore.getState().theme).toBe('worldcup')
+  it('ships one stable light workspace theme', () => {
+    expect(THEMES).toEqual(['classic'])
+    expect(THEME_LABELS.classic.label).toBe('工作台浅色')
+    expect(DEFAULT_THEME).toBe('classic')
+    expect(useThemeStore.getState().theme).toBe('classic')
   })
 
-  it('updates the html data-theme attribute when switching skins', () => {
+  it('keeps the html data-theme attribute on the light workspace theme', () => {
     useThemeStore.getState().setTheme('classic')
     expect(document.documentElement).toHaveAttribute('data-theme', 'classic')
-
-    useThemeStore.getState().setTheme('worldcup')
-    expect(document.documentElement).toHaveAttribute('data-theme', 'worldcup')
   })
 
-  it('migrates old saved skins to the World Cup default once', () => {
+  it('migrates old saved skins to the light workspace default', () => {
     const oldRecord = JSON.stringify({ state: { theme: 'cyberpunk' }, version: 0 })
     expect(resolveStoredTheme(oldRecord)).toBe(DEFAULT_THEME)
+  })
+
+  it('ignores a legacy skin saved with the current storage version', () => {
+    const currentLegacyRecord = JSON.stringify({
+      state: { theme: 'worldcup' },
+      version: THEME_STORAGE_VERSION,
+    })
+    expect(resolveStoredTheme(currentLegacyRecord)).toBe('classic')
   })
 
   it('keeps skins explicitly saved with the current storage version', () => {

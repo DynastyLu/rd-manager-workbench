@@ -1,10 +1,12 @@
 import { type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getDashboard } from '@/modules/workbench/api/dashboard'
+import { ROUTES } from '@/constants/routes'
 
 function DashboardSection({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -48,6 +50,24 @@ export default function WorkbenchHome() {
             <p className="app-page__subtitle">优先处理今日行动、风险和临近里程碑。</p>
           </div>
         </div>
+
+        <section aria-label="常用应用" className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            { title: '非项目研发', description: '预研、技术债与成果', to: `${ROUTES.OPERATIONS}?tab=non-project-rd` },
+            { title: '合作方', description: '联系人、协议与沟通', to: ROUTES.PARTNERS },
+            { title: '资源负荷', description: '13 周容量与投入', to: `${ROUTES.OPERATIONS}?tab=resources` },
+            { title: '行业情报', description: '来源、情报卡与简报', to: ROUTES.INTELLIGENCE },
+            { title: '统计报表', description: '项目、任务、风险统计', to: ROUTES.REPORTS },
+            { title: '数据安全', description: '备份、恢复与审计', to: ROUTES.DATA_GOVERNANCE },
+            { title: '多维表格', description: '业务台账与关联数据', to: ROUTES.BASE },
+            { title: '全局搜索', description: '跨业务对象快速查找', to: ROUTES.SEARCH },
+          ].map((item) => (
+            <Link key={item.title} to={item.to} className="rounded-xl border bg-card p-4 text-card-foreground no-underline transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-sm">
+              <strong className="block text-sm">{item.title}</strong>
+              <span className="mt-1 block text-xs text-muted-foreground">{item.description}</span>
+            </Link>
+          ))}
+        </section>
 
         {dashboardQuery.isPending ? <DashboardSkeleton /> : null}
 

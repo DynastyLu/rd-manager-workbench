@@ -303,14 +303,19 @@ export default function ProjectsPage() {
         title="新建项目"
         visible={isCreateOpen}
         onCancel={() => setIsCreateOpen(false)}
-        footer={null}
+        footer={(
+          <div className="workspace-modal-footer">
+            <Button onClick={() => setIsCreateOpen(false)}>取消</Button>
+            <Button htmlType="submit" form="projects-page-create-form" theme="solid" type="primary">保存项目</Button>
+          </div>
+        )}
         closeOnEsc
         width={520}
       >
         <p className="projects-page__modal-copy">
           先填写项目编号和名称，创建后进入项目空间继续完善。
         </p>
-        <ProjectForm onSuccess={() => setIsCreateOpen(false)} />
+        <ProjectForm formId="projects-page-create-form" showActions={false} onSuccess={() => setIsCreateOpen(false)} />
       </Modal>
     </div>
   )

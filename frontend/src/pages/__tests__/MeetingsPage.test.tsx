@@ -65,6 +65,11 @@ vi.mock('@/modules/content/components/FileAttachments', () => ({
     <section aria-label="真实附件组件">会议附件 {associations.meetingId}</section>
   ),
 }))
+vi.mock('@/modules/workbench/components/extensions/AiBusinessAction', () => ({
+  AiBusinessAction: ({ buttonLabel, objectId }: { buttonLabel: string; objectId?: string }) => (
+    <button type="button" data-object-id={objectId}>{buttonLabel}</button>
+  ),
+}))
 
 const meeting = {
   id: 'meeting-1',
@@ -166,6 +171,15 @@ describe('MeetingsPage project context', () => {
     for (const section of ['基本信息', '议程', '纪要', '行动项', '决策', '附件']) {
       expect(screen.getByRole('tab', { name: section })).toBeInTheDocument()
     }
+  })
+
+  it('offers an AI minutes draft inside the selected meeting and keeps adoption scoped to it', async () => {
+    const user = userEvent.setup()
+    renderMeetingsPage('/meetings?meetingId=meeting-1')
+
+    await user.click(await screen.findByRole('tab', { name: '纪要' }))
+    const action = screen.getByRole('button', { name: 'AI 生成纪要' })
+    expect(action).toHaveAttribute('data-object-id', 'meeting-1')
   })
 
   it('creates agenda items and converts an action to a task without offering duplicate creation', async () => {
@@ -300,7 +314,7 @@ describe('MeetingsPage project context', () => {
     const user = userEvent.setup()
     renderMeetingsPage('/meetings?meetingId=meeting-1')
 
-    await screen.findByRole('tab', { name: '基本信息' })
+    await user.click(await screen.findByRole('tab', { name: '基本信息' }))
     fireEvent.change(screen.getByLabelText('会议提醒时间'), {
       target: { value: '2026-07-20T09:00' },
     })

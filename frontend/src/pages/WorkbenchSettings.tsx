@@ -1,4 +1,6 @@
 import { Banner, Tag } from '@douyinfe/semi-ui'
+import { Link } from 'react-router-dom'
+import { ROUTES } from '@/constants/routes'
 
 export default function WorkbenchSettings() {
   return (
@@ -20,15 +22,23 @@ export default function WorkbenchSettings() {
             type="warning"
             fullMode={false}
             title="短信通道未配置，不会发送短信"
-            description="短信属于后续可选外部能力。服务商、手机号、签名和费用配置完成前，系统只执行本地页面与桌面通知。"
+            description="服务商、收件人、签名和费用配置完成前，系统只执行本地页面与桌面通知；连接测试和真实调用都需要显式确认。"
             closeIcon={null}
           />
+        </section>
+
+        <section className="project-workspace__panel">
+          <header><h2>外部能力</h2><Tag color="blue">显式授权</Tag></header>
+          <p>在一个工作区内配置短信、AI、CalDAV 日历和 WebDAV 云盘，查看每次调用的状态与失败原因。</p>
+          <p>密钥只进入 Electron 加密保险箱，不写 PostgreSQL、浏览器存储、备份或运行日志。</p>
+          <Link to={ROUTES.EXTENSIONS_SETTINGS}>打开外部能力设置</Link>
         </section>
 
         <section className="project-workspace__panel">
           <header><h2>本地数据</h2><Tag color="blue">本机优先</Tag></header>
           <p>结构化数据保存在本机 PostgreSQL，附件和版本文件保存在本机工作台文件目录。</p>
           <p>核心功能不会把项目、会议、文档或提醒内容上传到外部服务。</p>
+          <Link to={ROUTES.DATA_GOVERNANCE}>打开数据安全：备份、恢复、审计与健康检查</Link>
         </section>
       </div>
     </div>

@@ -5,17 +5,20 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProjectWorkspacePage from '../ProjectWorkspacePage'
 
-const { createProgressReport, createTask, getProject, listMeetings, request } = vi.hoisted(() => ({
+const { createProgressReport, createTask, getProject, listMeetings, listNonProjectRd, listPartners, request } = vi.hoisted(() => ({
   createProgressReport: vi.fn(),
   createTask: vi.fn(),
   getProject: vi.fn(),
   listMeetings: vi.fn(),
+  listNonProjectRd: vi.fn(),
+  listPartners: vi.fn(),
   request: vi.fn(),
 }))
 
 vi.mock('@/modules/workbench/api/projects', () => ({ createProgressReport, getProject }))
 vi.mock('@/modules/workbench/api/tasks', () => ({ createTask }))
-vi.mock('@/modules/workbench/api/management', () => ({ listMeetings }))
+vi.mock('@/modules/workbench/api/management', () => ({ listMeetings, listPartners }))
+vi.mock('@/modules/workbench/api/operations', () => ({ listNonProjectRd }))
 vi.mock('@/lib/http', () => ({ request }))
 
 function CurrentPath() {
@@ -126,9 +129,13 @@ describe('ProjectWorkspacePage', () => {
     createTask.mockReset()
     getProject.mockReset()
     listMeetings.mockReset()
+    listNonProjectRd.mockReset()
+    listPartners.mockReset()
     request.mockReset()
     getProject.mockResolvedValue(project)
     listMeetings.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
+    listNonProjectRd.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
+    listPartners.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
     request.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
   })
 
@@ -254,6 +261,50 @@ describe('ProjectWorkspacePage', () => {
     expect(screen.getByRole('link', { name: '打开文档：耐盐材料技术方案' })).toHaveAttribute(
       'href',
       '/docs?documentId=document-1'
+    )
+  })
+
+  it('shows associated partners in the project overview and opens the shared partner workspace', async () => {
+    listPartners.mockResolvedValue({
+      data: [
+        {
+          id: 'partner-1',
+          name: '星海研究院',
+          shortName: '星海',
+          category: '高校',
+          contactCount: 2,
+          activeAgreementCount: 1,
+          projectCount: 1,
+          lastCommunicationAt: '2026-07-20T02:00:00.000Z',
+          nextFollowUpAt: '2026-07-24T02:00:00.000Z',
+        },
+      ],
+      meta: { page: 1, pageSize: 6, total: 1 },
+    })
+
+    renderWorkspace()
+
+    expect(await screen.findByText('星海研究院')).toBeInTheDocument()
+    expect(listPartners).toHaveBeenCalledWith({ projectId: 'project-1', pageSize: 6 })
+    expect(screen.getByRole('link', { name: '打开合作方：星海研究院' })).toHaveAttribute(
+      'href',
+      '/library/governance/partners?recordId=partner-1&projectId=project-1',
+    )
+  })
+
+  it('shows associated non-project R&D work in the project overview', async () => {
+    listNonProjectRd.mockResolvedValue({
+      data: [{ id: 'rd-1', code: 'NPR-001', title: '向量检索预研', status: 'IN_PROGRESS' }],
+      meta: { page: 1, pageSize: 6, total: 1 },
+    })
+
+    renderWorkspace()
+
+    expect(await screen.findByText('向量检索预研')).toBeInTheDocument()
+    expect(listNonProjectRd).toHaveBeenCalledWith({ projectId: 'project-1', pageSize: 6 })
+    expect(screen.getByRole('link', { name: '打开研发事项：向量检索预研' })).toHaveAttribute(
+      'href',
+      '/library/operations?tab=non-project-rd&recordId=rd-1&projectId=project-1',
     )
   })
 })

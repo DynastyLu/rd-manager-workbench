@@ -127,5 +127,24 @@ export class UpdateViewDto {
   @IsOptional() @IsInt() @Min(0) @Max(100_000) sequence?: number;
 }
 
+export class PreviewImportDto {
+  @Transform(trim) @IsOptional() @IsString() @IsNotEmpty() @MaxLength(200) selectedSheet?: string;
+  @IsArray() @ArrayMaxSize(200) @IsObject({ each: true }) mapping!: Array<Record<string, unknown>>;
+}
+
+export class InspectImportDto {
+  @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(200) selectedSheet!: string;
+}
+
+export class InstantiateTemplateDto {
+  @Transform(trim) @IsOptional() @IsString() @IsNotEmpty() @MaxLength(200) name?: string;
+}
+
+export class BaseExportQueryDto {
+  @IsIn(['csv', 'xlsx']) format!: 'csv' | 'xlsx';
+  @IsIn(['view', 'all']) scope!: 'view' | 'all';
+  @Transform(trim) @IsOptional() @IsString() @IsNotEmpty() @MaxLength(300) viewId?: string;
+}
+
 // Re-exported for consumers that build exhaustive UI mappings from the API contract.
 export { DataFieldType, DataTableSource, DataViewType };

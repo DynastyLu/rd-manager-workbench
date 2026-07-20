@@ -93,7 +93,7 @@ export class CalendarService {
     const from = new Date(query.from);
     const to = new Date(query.to);
     this.assertRange(from, to);
-    const [events, meetings, tasks] = await this.prisma.$transaction([
+    const [events, meetings, tasks, nonProjectItems] = await this.prisma.$transaction([
       this.prisma.calendarEvent.findMany({
         where: {
           archivedAt: null,
@@ -115,6 +115,22 @@ export class CalendarService {
           dueAt: { gte: from, lt: to },
         },
         orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.nonProjectRdItem.findMany({
+        where: {
+          archivedAt: null,
+          OR: [
+            { plannedStartAt: { gte: from, lt: to } },
+            { plannedEndAt: { gte: from, lt: to } },
+            {
+              AND: [
+                { plannedStartAt: { lt: from } },
+                { plannedEndAt: { gte: to } },
+              ],
+            },
+          ],
+        },
+        orderBy: [{ plannedStartAt: 'asc' }, { plannedEndAt: 'asc' }, { id: 'asc' }],
       }),
     ]);
 
@@ -163,6 +179,32 @@ export class CalendarService {
           type: 'TASK' as const,
           projectId: task.projectId,
         })),
+      ...nonProjectItems
+        .filter(
+          (item): item is typeof item & { plannedStartAt: Date } =>
+            item.plannedStartAt !== null || item.plannedEndAt !== null,
+        )
+        .map((item) => {
+          const startAt = item.plannedStartAt ?? item.plannedEndAt!;
+          const endAt =
+            item.plannedEndAt && item.plannedEndAt.getTime() > startAt.getTime()
+              ? item.plannedEndAt
+              : null;
+          return {
+            id: `NON_PROJECT_RD:${item.id}`,
+            sourceType: 'NON_PROJECT_RD' as const,
+            sourceId: item.id,
+            title: item.title,
+            startAt,
+            endAt,
+            allDay: false,
+            location: null,
+            link: `/library/operations?tab=non-project-rd&recordId=${encodeURIComponent(item.id)}`,
+            notes: item.objective,
+            type: 'NON_PROJECT_RD' as const,
+            projectId: item.projectId,
+          };
+        }),
     ].sort(
       (left, right) =>
         left.startAt.getTime() - right.startAt.getTime() || left.id.localeCompare(right.id),

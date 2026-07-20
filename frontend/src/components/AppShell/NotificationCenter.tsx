@@ -4,6 +4,7 @@ import { Badge, Button, Modal, Popover, Skeleton } from '@douyinfe/semi-ui'
 import { IconBellStroked, IconChevronRight } from '@douyinfe/semi-icons'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
+import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
 
 import {
   dismissNotification,
@@ -249,19 +250,16 @@ export function NotificationCenter() {
       >
         <div className="notification-center__snooze-form">
           <p>到达新时间后会生成新的有效提醒，当前通知将离开未读列表。</p>
-          <label>
+          <label htmlFor="notification-snooze-until">
             <span>再次提醒时间</span>
-            <input
-              type="datetime-local"
+            <DateTimePickerField
+              id="notification-snooze-until"
+              aria-label="再次提醒时间"
               value={snoozeUntil}
-              onChange={(event) => {
-                setSnoozeUntil(event.target.value)
+              onChange={(value) => {
+                setSnoozeUntil(value)
                 setSnoozeValidationMessage('')
               }}
-              aria-invalid={Boolean(snoozeValidationMessage)}
-              aria-describedby={
-                snoozeValidationMessage ? 'notification-snooze-validation' : undefined
-              }
             />
           </label>
           {snoozeValidationMessage ? (

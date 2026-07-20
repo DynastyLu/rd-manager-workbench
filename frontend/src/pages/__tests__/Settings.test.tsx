@@ -1,10 +1,11 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import WorkbenchSettings from '../WorkbenchSettings'
 
 describe('WorkbenchSettings', () => {
   it('describes local preferences without exposing account management', () => {
-    render(<WorkbenchSettings />)
+    render(<MemoryRouter><WorkbenchSettings /></MemoryRouter>)
 
     expect(screen.getByRole('heading', { name: '工作台设置' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '通知送达范围' })).toBeInTheDocument()

@@ -10,6 +10,7 @@
 [data-theme='worldcup'] {
   --workspace-sidebar-width: 208px;
   --workspace-header-height: 56px;
+  --workspace-page-padding: 24px 28px 40px;
   --workspace-brand: #3370ff;
   --workspace-brand-hover: #245bdb;
   --workspace-brand-soft: #e8f0ff;
@@ -59,6 +60,25 @@
   --glow-pink: none;
   --glow-gold: none;
 
+  /* Keep the remaining shadcn utilities visually aligned until migration ends. */
+  --background: #f5f6f7;
+  --foreground: #1f2329;
+  --card: #ffffff;
+  --card-foreground: #1f2329;
+  --popover: #ffffff;
+  --popover-foreground: #1f2329;
+  --primary: #3370ff;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f3f5;
+  --secondary-foreground: #1f2329;
+  --muted: #f2f3f5;
+  --muted-foreground: #646a73;
+  --accent: #e8f0ff;
+  --accent-foreground: #245bdb;
+  --border: #e5e7eb;
+  --input: #d9dce1;
+  --ring: #3370ff;
+
   --semi-color-primary: var(--workspace-brand);
   --semi-color-primary-hover: var(--workspace-brand-hover);
   --semi-color-bg-0: var(--workspace-surface);
@@ -87,4 +107,156 @@ body::after {
 ::selection {
   background: #cbdcff;
   color: var(--workspace-text);
+}
+
+/* Stable light page surfaces. These intentionally override the retired skins. */
+.app-page,
+[data-theme] .app-page {
+  min-height: 100%;
+  padding: var(--workspace-page-padding);
+  background: var(--workspace-canvas);
+  color: var(--workspace-text);
+}
+
+.app-page::before,
+[data-theme] .app-page::before {
+  display: none;
+}
+
+.app-page__inner,
+.app-page__inner--narrow,
+.app-page__inner--wide {
+  width: min(100%, 1280px);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.app-page__inner--narrow { max-width: 1040px; }
+
+.app-page__hero,
+[data-theme] .app-page__hero {
+  min-height: 0;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 0;
+  border: 0;
+}
+
+.app-page__eyebrow { display: none; }
+
+.app-page__title,
+[data-theme] .app-page__title {
+  margin: 0;
+  color: var(--workspace-text);
+  font-size: 26px;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+  text-shadow: none;
+}
+
+.app-page__subtitle {
+  margin-top: 7px;
+  color: var(--workspace-text-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+[data-theme] .tool-panel,
+[data-theme] .workbench-placeholder,
+[data-theme] .tool-tile,
+[data-theme] .app-page__chip {
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+  box-shadow: var(--workspace-shadow-panel);
+  backdrop-filter: none;
+}
+
+.app-page--settings .project-workspace__panel {
+  overflow: hidden;
+  margin-bottom: 16px;
+  padding: 0 20px 20px;
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--workspace-radius-lg);
+  background: var(--workspace-surface);
+  box-shadow: var(--workspace-shadow-panel);
+}
+
+.app-page--settings .project-workspace__panel > header {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -20px 16px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--workspace-border);
+}
+
+.app-page--settings .project-workspace__panel h2 { margin: 0; font-size: 15px; }
+.app-page--settings .project-workspace__panel p { margin: 8px 0; color: var(--workspace-text-secondary); line-height: 1.65; }
+.app-page--settings .project-workspace__panel > a { display: inline-flex; margin-top: 8px; color: var(--workspace-brand); text-decoration: none; }
+.app-page--settings .project-workspace__panel .semi-banner { margin-top: 16px; }
+
+/* Semi modal and local forms share one predictable layout. */
+.semi-modal-content {
+  overflow: hidden;
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--workspace-radius-lg);
+  box-shadow: 0 16px 48px rgb(31 35 41 / 18%);
+}
+
+/*
+ * Semi keeps horizontal spacing on modal-content and vertical spacing on
+ * header/footer margins. A footerless modal therefore needs an explicit
+ * trailing safe area or an action placed at the end of the body touches the
+ * dialog edge.
+ */
+.semi-modal-content > .semi-modal-body:last-child {
+  margin-bottom: 24px;
+}
+
+.workspace-modal-form {
+  display: grid;
+  gap: 16px;
+}
+
+.workspace-modal-form label,
+.workspace-modal-form__field {
+  display: grid;
+  gap: 6px;
+  color: var(--workspace-text);
+  font-size: 13px;
+  font-weight: 520;
+}
+
+.workspace-modal-form__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workspace-modal-form__actions,
+.workspace-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workspace-modal-form__error {
+  margin: -4px 0 0;
+  color: var(--workspace-danger);
+  font-size: 12px;
+}
+
+.workspace-modal-form .semi-datepicker,
+.workspace-modal-form .semi-select,
+.workspace-modal-form .semi-input-wrapper {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  :root { --workspace-page-padding: 18px 16px 32px; }
+  .workspace-modal-form__grid { grid-template-columns: 1fr; }
 }

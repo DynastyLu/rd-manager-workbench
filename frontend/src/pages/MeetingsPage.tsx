@@ -18,6 +18,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { FileAttachments } from '@/modules/content/components/FileAttachments'
 import { RichTextEditor } from '@/modules/content/components/RichTextEditor'
+import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
 
 import {
   createDecision,
@@ -36,6 +37,7 @@ import {
   listReminderRules,
 } from '@/modules/workbench/api/notifications'
 import { updateDocument } from '@/modules/workbench/api/documents'
+import { AiBusinessAction } from '@/modules/workbench/components/extensions/AiBusinessAction'
 import type { Meeting, MeetingAction, MeetingStatus } from '@/modules/workbench/types'
 import './MeetingsPage.less'
 
@@ -137,7 +139,15 @@ function MeetingMinutesEditor({
   )
 }
 
-function MeetingDetail({ meetingId, onClose }: { meetingId: string | null; onClose: () => void }) {
+function MeetingDetail({
+  meetingId,
+  focusedFileId,
+  onClose,
+}: {
+  meetingId: string | null
+  focusedFileId?: string
+  onClose: () => void
+}) {
   const queryClient = useQueryClient()
   const [agendaTitle, setAgendaTitle] = useState('')
   const [actionTitle, setActionTitle] = useState('')
@@ -282,7 +292,7 @@ function MeetingDetail({ meetingId, onClose }: { meetingId: string | null; onClo
         </Banner>
       ) : null}
       {meeting ? (
-        <Tabs type="line" keepDOM={false}>
+        <Tabs type="line" keepDOM={false} defaultActiveKey={focusedFileId ? 'attachments' : undefined}>
           <TabPane tab="基本信息" itemKey="overview">
             <section className="meeting-detail__section">
               <dl className="meeting-detail__facts">
@@ -294,8 +304,7 @@ function MeetingDetail({ meetingId, onClose }: { meetingId: string | null; onClo
               <div className="meeting-detail__subsection">
                 <h3>会议提醒</h3>
                 <div className="meeting-detail__inline-form">
-                  <Input
-                    type="datetime-local"
+                  <DateTimePickerField
                     aria-label="会议提醒时间"
                     value={remindAt}
                     onChange={setRemindAt}
@@ -350,6 +359,15 @@ function MeetingDetail({ meetingId, onClose }: { meetingId: string | null; onClo
           </TabPane>
           <TabPane tab="纪要" itemKey="minutes">
             <section className="meeting-detail__section">
+              <div className="meeting-detail__ai-action">
+                <AiBusinessAction
+                  operation="AI_SUMMARIZE_MEETING"
+                  objectId={meeting.id}
+                  objectLabel={meeting.title}
+                  buttonLabel="AI 生成纪要"
+                  adoptLabel="采纳到会议纪要"
+                />
+              </div>
               {meeting.minutesDocument ? (
                 <MeetingMinutesEditor key={meeting.minutesDocument.id} document={meeting.minutesDocument} />
               ) : (
@@ -421,7 +439,7 @@ function MeetingDetail({ meetingId, onClose }: { meetingId: string | null; onClo
               >
                 <Input aria-label="行动项标题" placeholder="新增行动项" value={actionTitle} onChange={setActionTitle} />
                 <Input aria-label="负责人" placeholder="负责人" value={actionOwner} onChange={setActionOwner} />
-                <Input aria-label="截止时间" type="datetime-local" value={actionDueAt} onChange={setActionDueAt} />
+                <DateTimePickerField aria-label="截止时间" value={actionDueAt} onChange={setActionDueAt} />
                 <Button htmlType="submit" theme="solid" type="primary" loading={actionMutation.isPending}>添加行动项</Button>
               </form>
             </section>
@@ -454,7 +472,10 @@ function MeetingDetail({ meetingId, onClose }: { meetingId: string | null; onClo
           </TabPane>
           <TabPane tab="附件" itemKey="attachments">
             <section className="meeting-detail__section">
-              <FileAttachments associations={{ meetingId: meeting.id }} />
+              <FileAttachments
+                associations={{ meetingId: meeting.id }}
+                focusedFileId={focusedFileId}
+              />
             </section>
           </TabPane>
         </Tabs>
@@ -484,7 +505,7 @@ function MeetingDetail({ meetingId, onClose }: { meetingId: string | null; onClo
         >
           <Input aria-label="编辑行动项标题" value={editActionTitle} onChange={setEditActionTitle} />
           <Input aria-label="编辑行动项负责人" value={editActionOwner} onChange={setEditActionOwner} />
-          <Input aria-label="编辑行动项截止时间" type="datetime-local" value={editActionDueAt} onChange={setEditActionDueAt} />
+          <DateTimePickerField aria-label="编辑行动项截止时间" value={editActionDueAt} onChange={setEditActionDueAt} />
           <Button htmlType="submit" theme="solid" type="primary" loading={updateActionMutation.isPending}>保存行动项</Button>
         </form>
       </Modal>
@@ -496,6 +517,7 @@ export function MeetingsWorkspace({ embedded = false }: { embedded?: boolean }) 
   const [searchParams, setSearchParams] = useSearchParams()
   const projectId = searchParams.get('projectId')?.trim() || undefined
   const selectedMeetingId = searchParams.get('meetingId')?.trim() || null
+  const focusedFileId = searchParams.get('fileId')?.trim() || undefined
   const [status, setStatus] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
@@ -575,8 +597,8 @@ export function MeetingsWorkspace({ embedded = false }: { embedded?: boolean }) 
           <select aria-label="会议状态" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }}>
             {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
-          <label htmlFor="meeting-start-date"><span>从</span><input id="meeting-start-date" aria-label="会议开始日期" type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setPage(1) }} /></label>
-          <label htmlFor="meeting-end-date"><span>至</span><input id="meeting-end-date" aria-label="会议结束日期" type="date" value={endDate} onChange={(event) => { setEndDate(event.target.value); setPage(1) }} /></label>
+          <label htmlFor="meeting-start-date"><span>从</span><DateTimePickerField id="meeting-start-date" aria-label="会议开始日期" mode="date" value={startDate} onChange={(value) => { setStartDate(value); setPage(1) }} /></label>
+          <label htmlFor="meeting-end-date"><span>至</span><DateTimePickerField id="meeting-end-date" aria-label="会议结束日期" mode="date" value={endDate} onChange={(value) => { setEndDate(value); setPage(1) }} /></label>
         </div>
         <span>{meetingsQuery.data?.meta.total ?? 0} 场会议</span>
       </div>
@@ -617,12 +639,16 @@ export function MeetingsWorkspace({ embedded = false }: { embedded?: boolean }) 
       <Modal title="新建会议" visible={isCreateOpen} footer={null} onCancel={() => setIsCreateOpen(false)} width={520}>
         <form className="meetings-workspace__form" onSubmit={submitMeeting}>
           <label htmlFor="meeting-title"><span>会议标题</span><Input id="meeting-title" aria-label="会议标题" placeholder="会议标题" value={title} onChange={setTitle} /></label>
-          <label htmlFor="meeting-scheduled-at"><span>开始时间</span><Input id="meeting-scheduled-at" aria-label="会议开始时间" type="datetime-local" value={scheduledAt} onChange={setScheduledAt} /></label>
+          <label htmlFor="meeting-scheduled-at"><span>开始时间</span><DateTimePickerField id="meeting-scheduled-at" aria-label="会议开始时间" value={scheduledAt} onChange={setScheduledAt} required /></label>
           <label htmlFor="meeting-participants"><span>参会人</span><Input id="meeting-participants" aria-label="参会人" placeholder="使用逗号分隔" value={participants} onChange={setParticipants} /></label>
           <Button htmlType="submit" theme="solid" type="primary" disabled={!title.trim() || !scheduledAt} loading={createMeetingMutation.isPending}>保存会议</Button>
         </form>
       </Modal>
-      <MeetingDetail meetingId={selectedMeetingId} onClose={closeMeeting} />
+      <MeetingDetail
+        meetingId={selectedMeetingId}
+        focusedFileId={focusedFileId}
+        onClose={closeMeeting}
+      />
     </div>
   )
 }

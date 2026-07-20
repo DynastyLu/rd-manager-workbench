@@ -9,8 +9,18 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { BaseService } from './base.service';
+import { UploadedContentFile } from '../content/application/files.service';
+import { BaseImportService } from './import/base-import.service';
+import { BaseExportService } from './export/base-export.service';
+import { BaseTemplateService } from './templates/base-template.service';
+import { ImportColumnMapping } from './import/import.types';
 import {
   CreateFieldDto,
   CreateTableDto,
@@ -23,11 +33,37 @@ import {
   UpdateTableDto,
   UpdateViewDto,
   UpdateWorkspaceDto,
+  BaseExportQueryDto,
+  InstantiateTemplateDto,
+  PreviewImportDto,
+  InspectImportDto,
 } from './dto/base.dto';
+
+const importUploadOptions = { limits: { files: 1, fileSize: 20 * 1024 * 1024 } };
 
 @Controller('base')
 export class BaseController {
-  constructor(private readonly service: BaseService) {}
+  constructor(
+    private readonly service: BaseService,
+    private readonly imports: BaseImportService,
+    private readonly exports: BaseExportService,
+    private readonly templates: BaseTemplateService,
+  ) {}
+
+  @Get('templates') listTemplates() {
+    return this.templates.list();
+  }
+  @Get('templates/:key') getTemplate(@Param('key') key: string) {
+    return this.templates.detail(key);
+  }
+  @Post('workspaces/:workspaceId/templates/:key/instantiate')
+  instantiateTemplate(
+    @Param('workspaceId') workspaceId: string,
+    @Param('key') key: string,
+    @Body() dto: InstantiateTemplateDto,
+  ) {
+    return this.templates.instantiate(workspaceId, key, dto);
+  }
 
   @Get('workspaces') listWorkspaces() {
     return this.service.listWorkspaces();
@@ -67,6 +103,58 @@ export class BaseController {
   }
   @Delete('tables/:id') @HttpCode(HttpStatus.NO_CONTENT) deleteTable(@Param('id') id: string) {
     return this.service.deleteTable(id);
+  }
+
+  @Post('tables/:tableId/imports')
+  @UseInterceptors(FileInterceptor('file', importUploadOptions))
+  uploadImport(
+    @Param('tableId') tableId: string,
+    @UploadedFile() file: UploadedContentFile | undefined,
+  ) {
+    return this.imports.upload(tableId, file);
+  }
+  @Patch('imports/:id/preview') previewImport(
+    @Param('id') id: string,
+    @Body() dto: PreviewImportDto,
+  ) {
+    return this.imports.preview(id, {
+      selectedSheet: dto.selectedSheet,
+      mapping: dto.mapping as unknown as ImportColumnMapping[],
+    });
+  }
+  @Patch('imports/:id/inspect') inspectImport(
+    @Param('id') id: string,
+    @Body() dto: InspectImportDto,
+  ) {
+    return this.imports.inspect(id, dto.selectedSheet);
+  }
+  @Post('imports/:id/commit') @HttpCode(HttpStatus.OK) commitImport(@Param('id') id: string) {
+    return this.imports.commit(id);
+  }
+  @Get('imports/:id') getImport(@Param('id') id: string) {
+    return this.imports.get(id);
+  }
+  @Get('imports/:id/errors') async downloadImportErrors(
+    @Param('id') id: string,
+    @Res() response: Response,
+  ) {
+    const file = await this.imports.errorFile(id);
+    this.setDownloadHeaders(response, file.fileName, file.mimeType);
+    response.status(HttpStatus.OK).send(file.content);
+  }
+  @Delete('imports/:id') @HttpCode(HttpStatus.NO_CONTENT) removeImport(@Param('id') id: string) {
+    return this.imports.remove(id);
+  }
+
+  @Get('tables/:tableId/export') async exportTable(
+    @Param('tableId') tableId: string,
+    @Query() query: BaseExportQueryDto,
+    @Res() response: Response,
+  ) {
+    const result = await this.exports.create(tableId, query);
+    this.setDownloadHeaders(response, result.fileName, result.contentType);
+    response.status(HttpStatus.OK);
+    await result.writeTo(response);
   }
 
   @Get('tables/:tableId/fields') listFields(@Param('tableId') id: string) {
@@ -131,5 +219,14 @@ export class BaseController {
   }
   @Delete('views/:id') @HttpCode(HttpStatus.NO_CONTENT) deleteView(@Param('id') id: string) {
     return this.service.deleteView(id);
+  }
+
+  private setDownloadHeaders(response: Response, fileName: string, contentType: string) {
+    const fallback = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+    response.setHeader('Content-Type', contentType);
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    );
   }
 }

@@ -1,8 +1,16 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, Menu, nativeImage, Notification, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, Tray } from 'electron'
 import { io, type Socket } from 'socket.io-client'
+import { BackupSettings } from './backup-settings.js'
+import { CredentialVault } from './credential-vault.js'
+import { configureExtensionIpc, executeExtensionWithCredentials } from './extension-ipc.js'
+import { ExtensionRunBroker } from './extension-run-broker.js'
+import type { ExtensionExecutionResult } from './extensions/contracts.js'
+import { ProviderRegistry } from './extensions/provider-registry.js'
+import { registerBuiltinProviders } from './extensions/providers/index.js'
+import { RestoreOrchestrator } from './restore-orchestrator.js'
 import { normalizeSourcePath, resolveBackendEntry, resolveRendererTarget } from './runtime.js'
 
 interface RealtimeNotification {
@@ -18,9 +26,14 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let backendProcess: ChildProcess | null = null
 let notificationSocket: Socket | null = null
+let extensionSocket: Socket | null = null
+let extensionRunBroker: ExtensionRunBroker | null = null
 const shownNotificationIds = new Set<string>()
 let isQuitting = false
 let pendingSourcePath: string | null = null
+let isRestoring = false
+let restoreOrchestrator: RestoreOrchestrator | null = null
+let backupSettings: BackupSettings | null = null
 
 function runtimeInput() {
   return {
@@ -32,31 +45,60 @@ function runtimeInput() {
   }
 }
 
-function startBackend() {
+function backendEnvironment(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '1',
+    NODE_ENV: process.env['NODE_ENV'] ?? 'local',
+    HOST: '127.0.0.1',
+    PORT: process.env['PORT'] ?? '4311',
+    DATABASE_URL:
+      process.env['DATABASE_URL'] ??
+      'postgresql://rd_manager_workbench_app@127.0.0.1:5432/rd_manager_workbench?schema=app',
+    LOCAL_STORAGE_ROOT: process.env['LOCAL_STORAGE_ROOT'] ?? path.join(app.getPath('userData'), 'storage'),
+  }
+}
+
+async function startBackend(): Promise<void> {
   const entry = resolveBackendEntry(runtimeInput())
   if (!entry) return
   backendProcess = spawn(process.execPath, [entry], {
     cwd: path.dirname(entry),
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-      NODE_ENV: process.env['NODE_ENV'] ?? 'local',
-      HOST: '127.0.0.1',
-      PORT: process.env['PORT'] ?? '4311',
-      DATABASE_URL:
-        process.env['DATABASE_URL'] ??
-        'postgresql://rd_manager_workbench_app@127.0.0.1:5432/rd_manager_workbench?schema=app',
-      LOCAL_STORAGE_ROOT: process.env['LOCAL_STORAGE_ROOT'] ?? path.join(app.getPath('userData'), 'storage'),
-    },
+    env: backendEnvironment(),
     stdio: 'inherit',
   })
   backendProcess.on('error', (error) => {
     dialog.showErrorBox('本地服务启动失败', error.message)
   })
   backendProcess.on('exit', (code, signal) => {
-    if (!isQuitting && code !== 0) {
+    backendProcess = null
+    if (!isQuitting && !isRestoring && code !== 0) {
       dialog.showErrorBox('本地服务已停止', `退出码：${String(code)}，信号：${String(signal)}`)
     }
+  })
+}
+
+async function stopBackend(): Promise<void> {
+  const processToStop = backendProcess
+  if (!processToStop) throw new Error('Managed backend is not running')
+  isRestoring = true
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      if (error) reject(error)
+      else resolve()
+    }
+    const timeout = setTimeout(() => {
+      processToStop.kill('SIGKILL')
+      finish(new Error('Backend did not stop in time'))
+    }, 10_000)
+    timeout.unref()
+    processToStop.once('exit', () => finish())
+    processToStop.once('error', () => finish(new Error('Backend stop failed')))
+    processToStop.kill('SIGTERM')
   })
 }
 
@@ -143,12 +185,82 @@ function connectNotifications() {
   })
 }
 
+function configureDataGovernanceIpc() {
+  backupSettings = new BackupSettings(path.join(app.getPath('userData'), 'settings', 'backup.json'))
+  const backendEntry = resolveBackendEntry(runtimeInput())
+  const maintenanceEntry = process.env['RD_WORKBENCH_MAINTENANCE_ENTRY']
+    ? path.resolve(process.env['RD_WORKBENCH_MAINTENANCE_ENTRY'])
+    : backendEntry
+      ? path.join(path.dirname(backendEntry), 'maintenance.js')
+      : path.join(projectRoot, 'backend', 'dist', 'src', 'maintenance.js')
+  restoreOrchestrator = new RestoreOrchestrator({
+    maintenanceEntry,
+    backendDirectory: path.resolve(maintenanceEntry, '..', '..', '..'),
+    backendEnvironment: backendEnvironment(),
+    stopBackend,
+    startBackend: async () => {
+      await startBackend()
+      isRestoring = false
+    },
+    waitForBackend,
+  })
+
+  ipcMain.handle('desktop:choose-backup-directory', async () => {
+    const options = {
+      title: '选择本地备份目录',
+      properties: ['openDirectory', 'createDirectory'] as Array<'openDirectory' | 'createDirectory'>,
+    }
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options)
+    const directory = result.canceled ? null : result.filePaths[0] ?? null
+    if (directory) await backupSettings?.setDirectory(directory)
+    return directory
+  })
+  ipcMain.handle('desktop:restore-backup', async (_event, input: unknown) => {
+    if (!restoreOrchestrator) throw new Error('恢复服务尚未就绪')
+    await restoreOrchestrator.restoreBackup(input as never)
+  })
+}
+
+function configureExtensionsIpc() {
+  const credentialVault = new CredentialVault(
+    path.join(app.getPath('userData'), 'settings', 'extension-credentials.json'),
+    safeStorage,
+  )
+  const providerRegistry = registerBuiltinProviders(new ProviderRegistry())
+  configureExtensionIpc(ipcMain, credentialVault, providerRegistry)
+  const socketUrl = process.env['RD_WORKBENCH_EXTENSION_SOCKET_URL'] ?? 'http://127.0.0.1:4311/extensions'
+  extensionSocket = io(socketUrl, { transports: ['websocket'], reconnection: true })
+  extensionRunBroker = new ExtensionRunBroker({
+    socket: extensionSocket,
+    execute: (input) => executeExtensionWithCredentials(
+      credentialVault,
+      providerRegistry,
+      input,
+    ) as Promise<ExtensionExecutionResult>,
+    complete: async (runId, input) => {
+      const response = await fetch(
+        `http://127.0.0.1:4311/api/extensions/runs/${encodeURIComponent(runId)}/complete`,
+        {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(input),
+          signal: AbortSignal.timeout(20_000),
+        },
+      )
+      if (!response.ok) throw new Error('EXTENSION_COMPLETE_FAILED')
+    },
+  })
+  extensionRunBroker.start()
+}
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
 else {
   app.on('second-instance', () => showMainWindow())
   app.whenReady().then(async () => {
-    startBackend()
+    await startBackend()
     try {
       await waitForBackend()
     } catch (error) {
@@ -157,11 +269,22 @@ else {
     createWindow()
     createTray()
     connectNotifications()
+    configureDataGovernanceIpc()
+    configureExtensionsIpc()
   })
   app.on('activate', () => showMainWindow())
   app.on('before-quit', () => { isQuitting = true })
   app.on('will-quit', () => {
     notificationSocket?.disconnect()
+    extensionRunBroker?.stop()
+    extensionSocket?.disconnect()
     backendProcess?.kill('SIGTERM')
+    ipcMain.removeHandler('desktop:choose-backup-directory')
+    ipcMain.removeHandler('desktop:restore-backup')
+    ipcMain.removeHandler('desktop:credentials:is-available')
+    ipcMain.removeHandler('desktop:credentials:put')
+    ipcMain.removeHandler('desktop:credentials:has')
+    ipcMain.removeHandler('desktop:credentials:delete')
+    ipcMain.removeHandler('desktop:extensions:execute')
   })
 }

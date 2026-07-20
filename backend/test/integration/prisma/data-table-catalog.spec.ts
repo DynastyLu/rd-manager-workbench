@@ -67,6 +67,15 @@ describe('multi-dimensional data table catalog', () => {
     (model) => expect(schema).toContain(`model ${model}`),
   );
 
+  it('persists safe, expiring import sessions without storing arbitrary paths', () => {
+    expect(schema).toContain('model DataImportSession');
+    expect(schema).toContain('enum DataImportFormat');
+    expect(schema).toContain('enum DataImportStatus');
+    expect(schema).toMatch(/sourceStorageKey\s+String/);
+    expect(schema).toMatch(/errorStorageKey\s+String\?/);
+    expect(schema).toContain('importSessions DataImportSession[]');
+  });
+
   it.each(['DataTableSource', 'DataFieldType', 'DataViewType'])(
     'declares %s in the Prisma schema',
     (type) => expect(schema).toContain(`enum ${type}`),
@@ -100,8 +109,8 @@ describe('multi-dimensional data table catalog', () => {
   });
 
   it('keeps custom records and saved views attached to their table', () => {
-    expect(schema).toContain('records     DataRecord[]');
-    expect(schema).toContain('views       DataView[]');
+    expect(schema).toMatch(/records\s+DataRecord\[\]/);
+    expect(schema).toMatch(/views\s+DataView\[\]/);
     expect(schema).toContain('@@unique([tableId, key])');
   });
 

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Checkbox, Input, InputNumber, Select, TextArea } from '@douyinfe/semi-ui'
+import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
 import type { DataField, DataTable, RelationRecordLookup } from '../types'
 import { RelationPicker, ResolvedRelationValue } from './RelationPicker'
 
@@ -127,6 +128,20 @@ export function FieldEditor({
     )
   }
 
+  if (field.type === 'DATETIME') {
+    return (
+      <DateTimePickerField
+        aria-label={`编辑${field.name}`}
+        mode="dateTime"
+        value={typeof draft === 'string' ? draft : ''}
+        onChange={(next) => {
+          setDraft(next)
+          onCommit(next)
+        }}
+      />
+    )
+  }
+
   if (field.type === 'LONG_TEXT' || field.type === 'ATTACHMENT' || field.type === 'RELATION') {
     const commitTextArea = () => {
       if (field.type === 'ATTACHMENT' || field.type === 'RELATION') {
@@ -151,7 +166,7 @@ export function FieldEditor({
   return (
     <Input
       aria-label={`编辑${field.name}`}
-      type={field.type === 'DATETIME' ? 'datetime-local' : field.type === 'LINK' ? 'url' : 'text'}
+      type={field.type === 'LINK' ? 'url' : 'text'}
       value={typeof draft === 'string' || typeof draft === 'number' ? `${draft}` : ''}
       onChange={setDraft}
       onBlur={commit}

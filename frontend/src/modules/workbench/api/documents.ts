@@ -56,6 +56,9 @@ export type FileAsset = {
   documentId: string | null
   projectId: string | null
   meetingId: string | null
+  partnerId: string | null
+  nonProjectRdItemId: string | null
+  nonProjectRdOutcomeId: string | null
   versions: FileVersion[]
   createdAt: string
   updatedAt: string
@@ -136,10 +139,13 @@ export const listFiles = (filters: {
   documentId?: string
   projectId?: string
   meetingId?: string
+  partnerId?: string
+  nonProjectRdItemId?: string
+  nonProjectRdOutcomeId?: string
   status?: 'ACTIVE' | 'TRASHED'
 } = {}) => request<Page<FileAsset>>(`/files${queryString(filters)}`)
 
-export function uploadFile(file: File, associations: { documentId?: string; projectId?: string; meetingId?: string }) {
+export function uploadFile(file: File, associations: { documentId?: string; projectId?: string; meetingId?: string; partnerId?: string; nonProjectRdItemId?: string; nonProjectRdOutcomeId?: string }) {
   const form = new FormData()
   form.append('file', file)
   for (const [key, value] of Object.entries(associations)) if (value) form.append(key, value)

@@ -7,9 +7,10 @@ import {
   IconFolderStroked,
   IconPlus,
 } from '@douyinfe/semi-icons'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { getProject } from '@/modules/workbench/api/projects'
-import { listMeetings } from '@/modules/workbench/api/management'
+import { listMeetings, listPartners } from '@/modules/workbench/api/management'
+import { listNonProjectRd } from '@/modules/workbench/api/operations'
 import { request } from '@/lib/http'
 import type {
   MilestoneStatus,
@@ -21,6 +22,7 @@ import type {
 import { ROUTES } from '@/constants/routes'
 import { ProgressReportForm } from '@/modules/workbench/components/ProgressReportForm'
 import { TaskForm } from '@/modules/workbench/components/TaskForm'
+import { FileAttachments } from '@/modules/content/components/FileAttachments'
 import './ProjectWorkspacePage.less'
 
 const SECTIONS = [
@@ -105,6 +107,90 @@ function EmptySection({
       <p>{description}</p>
       {action}
     </div>
+  )
+}
+
+function ProjectPartnersSection({ projectId }: { projectId: string }) {
+  const partnersQuery = useQuery({
+    queryKey: ['partners', { projectId, pageSize: 6 }],
+    queryFn: () => listPartners({ projectId, pageSize: 6 }),
+  })
+
+  return (
+    <section className="project-workspace__panel project-workspace__panel--wide">
+      <header>
+        <h2>关联合作方</h2>
+        <Link to={`${ROUTES.governance('partners')}?projectId=${encodeURIComponent(projectId)}`}>
+          管理合作方
+        </Link>
+      </header>
+      {partnersQuery.isPending ? <Skeleton.Paragraph rows={2} /> : null}
+      {partnersQuery.isError ? (
+        <div className="project-workspace__inline-error">
+          <span>无法读取项目合作方。</span>
+          <Button size="small" onClick={() => void partnersQuery.refetch()}>重试</Button>
+        </div>
+      ) : null}
+      {partnersQuery.data?.data.length ? (
+        <ul className="project-workspace__partner-list">
+          {partnersQuery.data.data.map((partner) => (
+            <li key={partner.id}>
+              <span className="project-workspace__partner-mark">{partner.name.slice(0, 1)}</span>
+              <div>
+                <strong>{partner.name}</strong>
+                <span>{partner.category || '未分类'} · {partner.contactCount ?? 0} 位联系人 · {partner.activeAgreementCount ?? 0} 份履约协议</span>
+              </div>
+              <time>下次跟进 {formatDate(partner.nextFollowUpAt ?? null)}</time>
+              <Link
+                aria-label={`打开合作方：${partner.name}`}
+                to={`${ROUTES.governance('partners')}?recordId=${encodeURIComponent(partner.id)}&projectId=${encodeURIComponent(projectId)}`}
+              >
+                查看
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : partnersQuery.data ? (
+        <p className="project-workspace__muted">当前项目还没有关联合作方。</p>
+      ) : null}
+    </section>
+  )
+}
+
+function ProjectNonProjectRdSection({ projectId }: { projectId: string }) {
+  const itemsQuery = useQuery({
+    queryKey: ['non-project-rd', { projectId, pageSize: 6 }],
+    queryFn: () => listNonProjectRd({ projectId, pageSize: 6 }),
+  })
+  return (
+    <section className="project-workspace__panel project-workspace__panel--wide" aria-label="关联非项目研发">
+      <header>
+        <h2>关联非项目研发</h2>
+        <Link to={`${ROUTES.OPERATIONS}?tab=non-project-rd&projectId=${encodeURIComponent(projectId)}`}>
+          管理研发事项
+        </Link>
+      </header>
+      {itemsQuery.isPending ? <Skeleton.Paragraph rows={2} /> : null}
+      {itemsQuery.isError ? (
+        <div><span>无法读取关联研发事项。</span><Button size="small" onClick={() => void itemsQuery.refetch()}>重试</Button></div>
+      ) : null}
+      {itemsQuery.data?.data.length ? (
+        <ul className="project-workspace__partner-list">
+          {itemsQuery.data.data.map((item) => (
+            <li key={item.id}>
+              <span className="project-workspace__partner-mark">研</span>
+              <div><strong>{item.title}</strong><span>{item.code} · {item.status}</span></div>
+              <Link
+                aria-label={`打开研发事项：${item.title}`}
+                to={`${ROUTES.OPERATIONS}?tab=non-project-rd&recordId=${encodeURIComponent(item.id)}&projectId=${encodeURIComponent(projectId)}`}
+              >
+                查看
+              </Link>
+            </li>
+          ))}
+        </ul>
+      ) : itemsQuery.data ? <p className="project-workspace__muted">当前项目还没有关联非项目研发事项。</p> : null}
+    </section>
   )
 }
 
@@ -195,6 +281,9 @@ function OverviewSection({ project }: { project: ProjectDetail }) {
             </ul>
           ) : <p className="project-workspace__muted">当前没有待处理工作项。</p>}
         </section>
+
+        <ProjectPartnersSection projectId={project.id} />
+        <ProjectNonProjectRdSection projectId={project.id} />
       </div>
     </div>
   )
@@ -310,7 +399,13 @@ function ProjectMeetingsSection({ project }: { project: ProjectDetail }) {
   )
 }
 
-function ProjectDocumentsSection({ project }: { project: ProjectDetail }) {
+function ProjectDocumentsSection({
+  project,
+  focusedFileId,
+}: {
+  project: ProjectDetail
+  focusedFileId?: string
+}) {
   const documentsQuery = useQuery({
     queryKey: ['documents', { projectId: project.id, pageSize: 6 }],
     queryFn: () =>
@@ -356,6 +451,7 @@ function ProjectDocumentsSection({ project }: { project: ProjectDetail }) {
       ) : (
         <p className="project-workspace__muted">当前项目还没有文档或知识页。</p>
       )}
+      <FileAttachments associations={{ projectId: project.id }} focusedFileId={focusedFileId} />
     </section>
   )
 }
@@ -365,11 +461,13 @@ function ProjectSectionContent({
   project,
   onCreateProgress,
   onCreateTask,
+  focusedFileId,
 }: {
   section: ProjectSection
   project: ProjectDetail
   onCreateProgress: () => void
   onCreateTask: () => void
+  focusedFileId?: string
 }) {
   if (section === 'work-items') return <WorkItemsSection project={project} onCreate={onCreateTask} />
   if (section === 'progress') return <ProgressSection project={project} onCreate={onCreateProgress} />
@@ -380,7 +478,7 @@ function ProjectSectionContent({
     return <ProjectMeetingsSection project={project} />
   }
   if (section === 'docs') {
-    return <ProjectDocumentsSection project={project} />
+    return <ProjectDocumentsSection project={project} focusedFileId={focusedFileId} />
   }
   return <OverviewSection project={project} />
 }
@@ -391,6 +489,8 @@ export default function ProjectWorkspacePage() {
     section: string
   }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const focusedFileId = searchParams.get('fileId')?.trim() || undefined
   const [createTarget, setCreateTarget] = useState<'task' | 'progress' | null>(null)
   const section = SECTIONS.some((item) => item.key === requestedSection)
     ? (requestedSection as ProjectSection)
@@ -470,6 +570,7 @@ export default function ProjectWorkspacePage() {
           project={project}
           onCreateProgress={() => setCreateTarget('progress')}
           onCreateTask={() => setCreateTarget('task')}
+          focusedFileId={focusedFileId}
         />
       </section>
 

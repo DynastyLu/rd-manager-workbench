@@ -16,6 +16,15 @@ const api = vi.hoisted(() => ({
   updateBaseRecord: vi.fn(),
   updateBaseField: vi.fn(),
   updateBaseView: vi.fn(),
+  listBaseTemplates: vi.fn(),
+  getBaseTemplate: vi.fn(),
+  instantiateBaseTemplate: vi.fn(),
+  uploadBaseImport: vi.fn(),
+  previewBaseImport: vi.fn(),
+  commitBaseImport: vi.fn(),
+  downloadBaseImportErrors: vi.fn(),
+  downloadBaseExport: vi.fn(),
+  inspectBaseImport: vi.fn(),
 }))
 
 vi.mock('../api', () => api)
@@ -55,11 +64,11 @@ const customTable = {
   views: [{ ...projectTable.views[0], id: 'view-custom', tableId: 'table-custom' }],
 }
 
-function renderPage() {
+function renderPage(initialEntry = '/base') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/base']}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <LibraryHomePage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -76,6 +85,7 @@ describe('multidimensional base workspace', () => {
       data: [{ id: 'project-1', values: { name: '北斗项目', status: 'ACTIVE' }, sourceType: 'PROJECT', sourceId: 'project-1', sourcePath: '/spaces/projects/project-1', createdAt: '2026-07-19T00:00:00.000Z', updatedAt: '2026-07-19T00:00:00.000Z' }],
       meta: { page: 1, pageSize: 100, total: 1 },
     })
+    api.listBaseTemplates.mockResolvedValue([])
   })
 
   it('loads the default workspace and switches between real data tables', async () => {
@@ -88,6 +98,39 @@ describe('multidimensional base workspace', () => {
 
     await user.click(screen.getByRole('button', { name: '任务清单' }))
     await waitFor(() => expect(api.listBaseRecords).toHaveBeenLastCalledWith('table-tasks', expect.any(Object)))
+  })
+
+  it('opens an exact custom record from a global-search deep link', async () => {
+    api.listBaseRecords.mockImplementation((tableId: string, query: { recordIds?: string[] }) =>
+      Promise.resolve({
+        data:
+          tableId === 'table-custom' && query.recordIds?.includes('record-target')
+            ? [
+                {
+                  id: 'record-target',
+                  values: { name: '明日面试' },
+                  sourceType: 'CUSTOM',
+                  sourceId: 'record-target',
+                  sourcePath: '',
+                  createdAt: '2026-07-20T00:00:00.000Z',
+                  updatedAt: '2026-07-20T00:00:00.000Z',
+                },
+              ]
+            : [],
+        meta: { page: 1, pageSize: 100, total: 1 },
+      }),
+    )
+
+    renderPage('/base?tableId=table-custom&recordId=record-target')
+
+    await waitFor(() =>
+      expect(api.listBaseRecords).toHaveBeenCalledWith(
+        'table-custom',
+        expect.objectContaining({ recordIds: ['record-target'] }),
+      ),
+    )
+    expect(await screen.findByText('记录详情')).toBeInTheDocument()
+    expect(screen.getAllByText('明日面试').length).toBeGreaterThan(0)
   })
 
   it('does not fetch relation labels while a non-grid view is active', async () => {
@@ -151,8 +194,9 @@ describe('multidimensional base workspace', () => {
     renderPage()
 
     await user.click(await screen.findByRole('button', { name: '新建数据表' }))
+    await user.click(screen.getByRole('button', { name: '空白表格' }))
     await user.type(screen.getByLabelText('数据表名称'), '面试候选人')
-    await user.click(screen.getByRole('button', { name: '保存数据表' }))
+    await user.click(screen.getByRole('button', { name: '创建空白表格' }))
 
     expect(api.createBaseTable).toHaveBeenCalledWith('workspace-1', { name: '面试候选人' })
   })

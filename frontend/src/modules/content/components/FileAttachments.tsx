@@ -8,10 +8,25 @@ import {
   uploadFile,
   uploadFileVersion,
 } from '@/modules/workbench/api/documents'
+import { SyncBusinessAction } from '@/modules/workbench/components/extensions/SyncBusinessAction'
+import './FileAttachments.less'
 
-type FileAssociations = { documentId?: string; projectId?: string; meetingId?: string }
+type FileAssociations = {
+  documentId?: string
+  projectId?: string
+  meetingId?: string
+  partnerId?: string
+  nonProjectRdItemId?: string
+  nonProjectRdOutcomeId?: string
+}
 
-export function FileAttachments({ associations }: { associations: FileAssociations }) {
+export function FileAttachments({
+  associations,
+  focusedFileId,
+}: {
+  associations: FileAssociations
+  focusedFileId?: string
+}) {
   const inputRef = useRef<HTMLInputElement>(null)
   const versionInputRef = useRef<HTMLInputElement>(null)
   const [versionTargetId, setVersionTargetId] = useState<string | null>(null)
@@ -37,10 +52,12 @@ export function FileAttachments({ associations }: { associations: FileAssociatio
   return (
     <section className="file-attachments" aria-label="附件">
       <header>
-        <h3>附件</h3>
-        <Button size="small" onClick={() => inputRef.current?.click()} loading={uploadMutation.isPending}>
-          上传附件
-        </Button>
+        <div><h3>附件</h3><small>WebDAV 单文件上限 750 KB</small></div>
+        <div className="file-attachments__header-actions">
+          <Button size="small" onClick={() => inputRef.current?.click()} loading={uploadMutation.isPending}>
+            上传附件
+          </Button>
+        </div>
         <input
           ref={inputRef}
           type="file"
@@ -72,10 +89,30 @@ export function FileAttachments({ associations }: { associations: FileAssociatio
           {filesQuery.data.data.map((file) => {
             const latest = file.versions[0]
             return (
-              <li key={file.id}>
+              <li
+                key={file.id}
+                aria-current={file.id === focusedFileId ? 'true' : undefined}
+                className={file.id === focusedFileId ? 'file-attachments__item--focused' : undefined}
+              >
                 <a href={getFileDownloadUrl(file.id)} download>{file.name}</a>
                 <span>{latest ? `${Math.ceil(latest.size / 1024)} KB · v${latest.versionNumber}` : '暂无版本'}</span>
                 <span className="file-attachments__actions">
+                  {latest && latest.size <= 750 * 1024 ? (
+                    <SyncBusinessAction
+                      kind="CLOUD_DRIVE"
+                      buttonLabel={`WebDAV 同步：${file.name}`}
+                      target={{
+                        type: 'FILE',
+                        fileAssetId: file.id,
+                        remotePath: `attachments/${file.id}/${encodeURIComponent(file.name)}`,
+                        mode: 'UPLOAD',
+                      }}
+                      labels={{ [file.id]: file.name }}
+                      onCommitted={async () => { await filesQuery.refetch() }}
+                    />
+                  ) : latest ? (
+                    <button type="button" disabled title="WebDAV 单文件上限 750 KB">WebDAV 同步：{file.name}</button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => {

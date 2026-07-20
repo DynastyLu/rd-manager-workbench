@@ -18,6 +18,14 @@ export const ROUTES = {
   KNOWLEDGE: '/knowledge',
   AUTOMATION_DATA: '/automation-data',
   SETTINGS: '/settings',
+  DATA_GOVERNANCE: '/settings/data-governance',
+  EXTENSIONS_SETTINGS: '/settings/extensions',
+  OPERATIONS: '/library/operations',
+  RESOURCES: '/library/operations?tab=resources',
+  RESOURCES_LEGACY: '/resources',
+  REPORTS: '/library/reports',
+  INTELLIGENCE: '/library/intelligence',
+  INTELLIGENCE_BRIEFS: '/library/intelligence/briefs',
 
   // Legacy paths remain available for redirects until bookmarks have migrated.
   PROJECTS: '/projects',

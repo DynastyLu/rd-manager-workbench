@@ -1,4 +1,4 @@
-import { request } from '@/lib/http'
+import { download, request } from '@/lib/http'
 import type {
   BaseRecord,
   BaseRecordQuery,
@@ -12,6 +12,12 @@ import type {
   FormulaPreviewInput,
   FormulaPreviewResult,
   PageResult,
+  BaseImportPreviewResult,
+  BaseImportSession,
+  BaseImportUploadResult,
+  DataTableTemplateDetail,
+  DataTableTemplateSummary,
+  ImportColumnMapping,
 } from './types'
 
 function resource(path: string, id: string) {
@@ -72,3 +78,46 @@ export const updateBaseView = (id: string, input: Partial<Pick<DataView, 'name' 
   request<DataView>(resource('/base/views', id), { method: 'PATCH', body: JSON.stringify(input) })
 export const deleteBaseView = (id: string) =>
   request<void>(resource('/base/views', id), { method: 'DELETE' })
+
+export const listBaseTemplates = () => request<DataTableTemplateSummary[]>('/base/templates')
+export const getBaseTemplate = (key: string) =>
+  request<DataTableTemplateDetail>(resource('/base/templates', key))
+export const instantiateBaseTemplate = (workspaceId: string, key: string, input: { name?: string }) =>
+  request<DataTable>(`${resource('/base/workspaces', workspaceId)}/templates/${encodeURIComponent(key)}/instantiate`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+
+export const uploadBaseImport = (tableId: string, file: File) => {
+  const body = new FormData()
+  body.append('file', file)
+  return request<BaseImportUploadResult>(`${resource('/base/tables', tableId)}/imports`, {
+    method: 'POST',
+    body,
+  })
+}
+export const previewBaseImport = (
+  id: string,
+  input: { selectedSheet?: string; mapping: ImportColumnMapping[] },
+) => request<BaseImportPreviewResult>(`${resource('/base/imports', id)}/preview`, {
+  method: 'PATCH',
+  body: JSON.stringify(input),
+})
+export const inspectBaseImport = (id: string, selectedSheet: string) =>
+  request<BaseImportUploadResult['preview']>(`${resource('/base/imports', id)}/inspect`, {
+    method: 'PATCH',
+    body: JSON.stringify({ selectedSheet }),
+  })
+export const commitBaseImport = (id: string) =>
+  request<BaseImportSession>(`${resource('/base/imports', id)}/commit`, { method: 'POST' })
+export const getBaseImport = (id: string) => request<BaseImportSession>(resource('/base/imports', id))
+export const deleteBaseImport = (id: string) => request<void>(resource('/base/imports', id), { method: 'DELETE' })
+export const downloadBaseImportErrors = (id: string) => download(`${resource('/base/imports', id)}/errors`)
+export const downloadBaseExport = (
+  tableId: string,
+  input: { format: 'csv' | 'xlsx'; scope: 'view' | 'all'; viewId?: string },
+) => {
+  const query = new URLSearchParams({ format: input.format, scope: input.scope })
+  if (input.viewId) query.set('viewId', input.viewId)
+  return download(`${resource('/base/tables', tableId)}/export?${query.toString()}`)
+}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Banner, Button, Empty, Input, Modal, SideSheet, Skeleton, Toast } from '@douyinfe/semi-ui'
-import { Link } from 'react-router-dom'
+import { Banner, Button, Empty, SideSheet, Skeleton, Toast } from '@douyinfe/semi-ui'
+import { Link, useSearchParams } from 'react-router-dom'
+import { ROUTES } from '@/constants/routes'
 import { BaseSidebar } from '@/modules/base/components/BaseSidebar'
 import { BaseToolbar } from '@/modules/base/components/BaseToolbar'
 import { FieldManager } from '@/modules/base/components/FieldManager'
@@ -13,6 +14,9 @@ import { KanbanView } from '@/modules/base/components/KanbanView'
 import { ViewManager } from '@/modules/base/components/ViewManager'
 import { RelationValue } from '@/modules/base/components/RelationPicker'
 import { ComputedFieldExplanation } from '@/modules/base/components/ComputedFieldExplanation'
+import { TemplateCenter } from '@/modules/base/components/TemplateCenter'
+import { ImportDialog } from '@/modules/base/components/ImportDialog'
+import { ExportDialog } from '@/modules/base/components/ExportDialog'
 import {
   useAllBaseRecords,
   useBaseRecords,
@@ -40,10 +44,16 @@ import './LibraryHomePage.less'
 
 const VIEW_SAVE_DELAY_MS = 350
 
-function viewQuery(viewId: string | undefined, temporaryQuery: string, page = 1): BaseRecordQuery {
+function viewQuery(
+  viewId: string | undefined,
+  temporaryQuery: string,
+  page = 1,
+  recordId?: string
+): BaseRecordQuery {
   return {
     ...(viewId ? { viewId } : {}),
     ...(temporaryQuery.trim() ? { query: temporaryQuery.trim() } : {}),
+    ...(recordId ? { recordIds: [recordId] } : {}),
     page,
     pageSize: 100,
   }
@@ -102,18 +112,23 @@ function RecordDetailValue({
 }
 
 export default function LibraryHomePage() {
+  const [searchParams] = useSearchParams()
+  const requestedTableId = searchParams.get('tableId')?.trim() || null
+  const requestedRecordId = searchParams.get('recordId')?.trim() || null
   const workspacesQuery = useBaseWorkspaces()
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(() => requestedTableId)
   const [selectedViewId, setSelectedViewId] = useState<string | null>(null)
   const [viewOverrides, setViewOverrides] = useState<Record<string, DataViewConfig>>({})
   const [temporaryQuery, setTemporaryQuery] = useState('')
   const [isCreateTableOpen, setIsCreateTableOpen] = useState(false)
-  const [tableName, setTableName] = useState('')
+  const [isImportOpen, setIsImportOpen] = useState(false)
+  const [isExportOpen, setIsExportOpen] = useState(false)
   const [isFieldManagerOpen, setIsFieldManagerOpen] = useState(false)
   const [isViewSaving, setIsViewSaving] = useState(false)
   const [configSaveCount, setConfigSaveCount] = useState(0)
   const [galleryPagination, setGalleryPagination] = useState({ key: '', page: 1 })
   const [selectedRecord, setSelectedRecord] = useState<BaseRecord | null>(null)
+  const openedDeepLinkRef = useRef('')
   const serverViewConfigs = useRef(new Map<string, DataViewConfig>())
   const latestDraftConfigs = useRef(new Map<string, DataViewConfig>())
   const createTableMutation = useCreateBaseTable()
@@ -126,6 +141,11 @@ export default function LibraryHomePage() {
   const workspace = workspacesQuery.data?.[0]
   const tables = useMemo(() => workspace?.tables ?? [], [workspace?.tables])
   const selectedTable = tables.find((table) => table.id === selectedTableId) ?? tables[0] ?? null
+  useEffect(() => {
+    if (requestedTableId && tables.some((table) => table.id === requestedTableId)) {
+      setSelectedTableId(requestedTableId)
+    }
+  }, [requestedTableId, tables])
   const views = useMemo(() => selectedTable?.views ?? [], [selectedTable?.views])
   useEffect(() => {
     serverViewConfigs.current = new Map(views.map((view) => [view.id, view.config]))
@@ -159,8 +179,22 @@ export default function LibraryHomePage() {
   const galleryPageKey = `${selectedTable?.id ?? ''}:${resolvedView?.id ?? ''}:${temporaryQuery}:${galleryResultConfig}`
   const galleryPage = galleryPagination.key === galleryPageKey ? galleryPagination.page : 1
   const recordQuery = useMemo(
-    () => viewQuery(resolvedView?.id, temporaryQuery, resolvedView?.type === 'GALLERY' ? galleryPage : 1),
-    [galleryPage, resolvedView?.id, resolvedView?.type, temporaryQuery]
+    () =>
+      viewQuery(
+        resolvedView?.id,
+        temporaryQuery,
+        resolvedView?.type === 'GALLERY' ? galleryPage : 1,
+        selectedTable?.id === requestedTableId ? requestedRecordId ?? undefined : undefined
+      ),
+    [
+      galleryPage,
+      requestedRecordId,
+      requestedTableId,
+      resolvedView?.id,
+      resolvedView?.type,
+      selectedTable?.id,
+      temporaryQuery,
+    ]
   )
   const isGanttView = resolvedView?.type === 'GANTT'
   const pagedRecordsQuery = useBaseRecords(selectedTable?.id ?? null, recordQuery, !isGanttView)
@@ -198,7 +232,14 @@ export default function LibraryHomePage() {
     }
   }, VIEW_SAVE_DELAY_MS)
   const fields = selectedTable?.fields ?? []
-  const records = recordsQuery.data?.data ?? []
+  const records = useMemo(() => recordsQuery.data?.data ?? [], [recordsQuery.data?.data])
+  useEffect(() => {
+    if (!requestedTableId || !requestedRecordId || selectedTable?.id !== requestedTableId) return
+    const key = `${requestedTableId}:${requestedRecordId}`
+    if (openedDeepLinkRef.current === key || recordsQuery.isPending) return
+    openedDeepLinkRef.current = key
+    setSelectedRecord(records.find((record) => record.id === requestedRecordId) ?? null)
+  }, [records, recordsQuery.isPending, requestedRecordId, requestedTableId, selectedTable?.id])
   const relationLookups = useGridRelationRecords(
     fields,
     resolvedView?.type === 'GRID' ? records : []
@@ -299,11 +340,19 @@ export default function LibraryHomePage() {
       <main className="base-page__main">
         {selectedTable ? (
           <>
+            <nav className="base-business-links" aria-label="业务库快捷入口">
+              <Link to={ROUTES.INTELLIGENCE}>行业情报</Link>
+              <Link to={ROUTES.INTELLIGENCE_BRIEFS}>日报与周报</Link>
+              <Link to={ROUTES.OPERATIONS}>非项目研发</Link>
+              <Link to={ROUTES.RESOURCES}>资源负荷</Link>
+            </nav>
             <BaseToolbar
               table={selectedTable}
               isCreatingRecord={createRecordMutation.isPending}
               onManageFields={() => setIsFieldManagerOpen(true)}
               onCreateRecord={() => void openCreateRecordForm()}
+              onImport={() => setIsImportOpen(true)}
+              onExport={() => setIsExportOpen(true)}
             />
             <ViewManager
               views={resolvedViews}
@@ -463,51 +512,34 @@ export default function LibraryHomePage() {
         )}
       </main>
 
-      <Modal
-        title="新建数据表"
+      <TemplateCenter
         visible={isCreateTableOpen}
-        footer={null}
-        onCancel={() => setIsCreateTableOpen(false)}
-        width={480}
-      >
-        <form
-          className="base-dialog-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!tableName.trim() || createTableMutation.isPending) return
-            createTableMutation.mutate(
-              { workspaceId: workspace.id, name: tableName.trim() },
-              {
-                onSuccess: (created) => {
-                  setSelectedTableId(created.id)
-                  setTableName('')
-                  setIsCreateTableOpen(false)
-                },
-              }
-            )
-          }}
-        >
-          <label htmlFor="base-table-name">
-            <span>数据表名称</span>
-            <Input
-              id="base-table-name"
-              aria-label="数据表名称"
-              value={tableName}
-              onChange={setTableName}
-              placeholder="例如：面试候选人"
-            />
-          </label>
-          <Button
-            htmlType="submit"
-            theme="solid"
-            type="primary"
-            loading={createTableMutation.isPending}
-            disabled={!tableName.trim()}
-          >
-            保存数据表
-          </Button>
-        </form>
-      </Modal>
+        workspaceId={workspace.id}
+        onClose={() => setIsCreateTableOpen(false)}
+        onCreateBlank={(name) => createTableMutation.mutateAsync({ workspaceId: workspace.id, name })}
+        onCreated={(created) => {
+          setSelectedTableId(created.id)
+          setSelectedViewId(created.views?.find((view) => view.isDefault)?.id ?? created.views?.[0]?.id ?? null)
+          void workspacesQuery.refetch()
+        }}
+      />
+
+      {selectedTable ? (
+        <>
+          <ImportDialog
+            visible={isImportOpen}
+            table={selectedTable}
+            onClose={() => setIsImportOpen(false)}
+            onCompleted={() => void recordsQuery.refetch()}
+          />
+          <ExportDialog
+            visible={isExportOpen}
+            table={selectedTable}
+            view={resolvedView}
+            onClose={() => setIsExportOpen(false)}
+          />
+        </>
+      ) : null}
 
       {selectedTable ? (
         <FieldManager

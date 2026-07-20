@@ -4,7 +4,8 @@ import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import { Banner, Button, ButtonGroup, Checkbox, Input, Modal, Select, TextArea } from '@douyinfe/semi-ui'
+import zhCnLocale from '@fullcalendar/core/locales/zh-cn'
+import { Banner, Button, ButtonGroup, Checkbox, DatePicker, Input, Modal, Select, TextArea } from '@douyinfe/semi-ui'
 import { IconCalendar, IconPlus } from '@douyinfe/semi-icons'
 import { toast } from 'sonner'
 import { useSearchParams } from 'react-router-dom'
@@ -25,6 +26,7 @@ import {
   listReminderRules,
 } from '@/modules/workbench/api/notifications'
 import { updateTask } from '@/modules/workbench/api/tasks'
+import { SyncBusinessAction } from '@/modules/workbench/components/extensions/SyncBusinessAction'
 import { MeetingsWorkspace } from './MeetingsPage'
 import './CalendarPage.less'
 
@@ -62,6 +64,10 @@ function eventColor(entry: CalendarEntry) {
 function toLocalDateTime(value: Date) {
   const shifted = new Date(value.getTime() - value.getTimezoneOffset() * 60_000)
   return shifted.toISOString().slice(0, 16)
+}
+
+function fromDatePicker(value: unknown) {
+  return value instanceof Date && !Number.isNaN(value.getTime()) ? toLocalDateTime(value) : ''
 }
 
 export default function CalendarPage() {
@@ -117,6 +123,7 @@ export default function CalendarPage() {
       })),
     [entriesQuery.data]
   )
+
 
   const createMutation = useMutation({
     mutationFn: async ({
@@ -387,6 +394,13 @@ export default function CalendarPage() {
                   </Button>
                 ))}
               </ButtonGroup>
+              <SyncBusinessAction
+                kind="CALENDAR"
+                buttonLabel="外部日历同步"
+                target={{ type: 'CALENDAR', startAt: range.from, endAt: range.to }}
+                labels={Object.fromEntries((entriesQuery.data ?? []).map((entry) => [entry.sourceId, entry.title]))}
+                onCommitted={async () => { await entriesQuery.refetch() }}
+              />
               <Button
                 theme="solid"
                 type="primary"
@@ -423,6 +437,7 @@ export default function CalendarPage() {
           key={view}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView={view}
+          locale={zhCnLocale}
           headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
           buttonText={{ today: '今天' }}
           firstDay={1}
@@ -493,30 +508,32 @@ export default function CalendarPage() {
             <Input id="calendar-title" aria-label="日程主题" value={title} onChange={setTitle} />
           </label>
           <label htmlFor="calendar-type">
-            <span>日程类型</span>
+            <span id="calendar-type-label">日程类型</span>
             <Select
               id="calendar-type"
-              aria-label="日程类型"
+              aria-labelledby="calendar-type-label"
               value={type}
               onChange={(value) => setType(value as CalendarEventType)}
               optionList={EVENT_TYPE_OPTIONS}
             />
           </label>
           <label htmlFor="calendar-project">
-            <span>关联项目（可选）</span>
-            <select
+            <span id="calendar-project-label">关联项目（可选）</span>
+            <Select
               id="calendar-project"
-              name="projectId"
+              aria-labelledby="calendar-project-label"
               value={projectId ?? ''}
               disabled={projectsQuery.isLoading}
-              onChange={(event) => setProjectId(event.target.value || undefined)}
-              className="calendar-page__native-select"
-            >
-              <option value="">不关联项目</option>
-              {(projectsQuery.data?.data ?? []).map((project) => (
-                <option key={project.id} value={project.id}>{project.code} · {project.name}</option>
-              ))}
-            </select>
+              onChange={(value) => setProjectId(String(value) || undefined)}
+              optionList={[
+                { value: '', label: '不关联项目' },
+                ...(projectsQuery.data?.data ?? []).map((project) => ({
+                  value: project.id,
+                  label: `${project.code} · ${project.name}`,
+                })),
+              ]}
+              style={{ width: '100%' }}
+            />
           </label>
           <Checkbox checked={allDay} onChange={(event) => setAllDay(Boolean(event.target.checked))}>
             全天日程
@@ -525,15 +542,19 @@ export default function CalendarPage() {
             <legend>提醒时间（可添加多个）</legend>
             {reminderTimes.map((value, index) => (
               <div key={index} className="calendar-page__reminder-row">
-                <Input
-                  type="datetime-local"
+                <DatePicker
+                  type="dateTime"
+                  format="yyyy-MM-dd HH:mm"
                   aria-label={`提醒时间 ${index + 1}`}
-                  value={value}
+                  value={value ? new Date(value) : undefined}
                   onChange={(nextValue) =>
                     setReminderTimes((current) =>
-                      current.map((item, itemIndex) => itemIndex === index ? nextValue : item)
+                      current.map((item, itemIndex) => itemIndex === index ? fromDatePicker(nextValue) : item)
                     )
                   }
+                  placeholder="选择提醒时间"
+                  showClear
+                  style={{ width: '100%' }}
                 />
                 {reminderTimes.length > 1 ? (
                   <Button
@@ -557,12 +578,30 @@ export default function CalendarPage() {
           </fieldset>
           <div className="calendar-page__form-grid">
             <label htmlFor="calendar-start">
-              <span>开始时间</span>
-              <Input id="calendar-start" type="datetime-local" aria-label="开始时间" value={startAt} onChange={setStartAt} />
+              <span id="calendar-start-label">开始时间</span>
+              <DatePicker
+                aria-labelledby="calendar-start-label"
+                type="dateTime"
+                format="yyyy-MM-dd HH:mm"
+                value={startAt ? new Date(startAt) : undefined}
+                onChange={(value) => setStartAt(fromDatePicker(value))}
+                placeholder="选择开始时间"
+                showClear
+                style={{ width: '100%' }}
+              />
             </label>
             <label htmlFor="calendar-end">
-              <span>结束时间</span>
-              <Input id="calendar-end" type="datetime-local" aria-label="结束时间" value={endAt} onChange={setEndAt} />
+              <span id="calendar-end-label">结束时间</span>
+              <DatePicker
+                aria-labelledby="calendar-end-label"
+                type="dateTime"
+                format="yyyy-MM-dd HH:mm"
+                value={endAt ? new Date(endAt) : undefined}
+                onChange={(value) => setEndAt(fromDatePicker(value))}
+                placeholder="选择结束时间"
+                showClear
+                style={{ width: '100%' }}
+              />
             </label>
           </div>
           <div className="calendar-page__form-grid">

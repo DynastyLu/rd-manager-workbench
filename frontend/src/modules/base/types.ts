@@ -274,3 +274,57 @@ export interface CreateDataFieldInput {
   inverseFieldName?: string
   inverseMultiple?: boolean
 }
+
+export interface DataTableTemplateSummary {
+  key: string
+  version: 1
+  name: string
+  description: string
+  icon: string
+  category: 'PARTNER' | 'APPLICATION' | 'GOVERNANCE' | 'INTERVIEW' | 'RESEARCH'
+  fieldCount: number
+  viewTypes: DataViewType[]
+  primaryFields: string[]
+}
+
+export interface DataTableTemplateDetail extends Omit<DataTableTemplateSummary, 'fieldCount' | 'viewTypes' | 'primaryFields'> {
+  fields: Array<Pick<DataField, 'key' | 'name' | 'type' | 'config' | 'isPrimary' | 'isRequired' | 'sequence'>>
+  views: Array<Pick<DataView, 'name' | 'type' | 'config' | 'isDefault' | 'sequence'>>
+}
+
+export type DataImportStatus = 'UPLOADED' | 'PREVIEWED' | 'IMPORTING' | 'COMPLETED' | 'PARTIAL' | 'FAILED' | 'EXPIRED'
+
+export interface BaseImportSession {
+  id: string
+  tableId: string
+  originalName: string
+  format: 'CSV' | 'XLSX'
+  selectedSheet: string | null
+  status: DataImportStatus
+  totalRows: number
+  validRows: number
+  errorRows: number
+  importedRows: number
+  hasErrors: boolean
+  expiresAt: string
+}
+
+export interface BaseImportPreview {
+  sheetNames: string[]
+  selectedSheet: string
+  columns: string[]
+  inferredTypes: Record<string, 'TEXT' | 'NUMBER' | 'DATETIME' | 'CHECKBOX'>
+  rows: Array<{ rowNumber: number; values: Record<string, unknown> }>
+}
+
+export interface ImportColumnMapping {
+  sourceColumn: string
+  targetFieldId?: string
+  newField?: { name: string; key: string; type: Extract<DataFieldType, 'TEXT' | 'LONG_TEXT' | 'NUMBER' | 'DATETIME' | 'SINGLE_SELECT' | 'MULTI_SELECT' | 'CHECKBOX' | 'LINK'> }
+  ignored?: boolean
+}
+
+export interface BaseImportUploadResult { session: BaseImportSession; preview: BaseImportPreview }
+export interface BaseImportPreviewResult extends BaseImportUploadResult {
+  errors: Array<{ rowNumber: number; fields: string[]; message: string; source: Record<string, unknown> }>
+}

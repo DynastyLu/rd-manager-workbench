@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Modal, Skeleton, Tag, Toast } from '@douyinfe/semi-ui'
+import { Button, Input, Modal, Skeleton, Tag, TextArea, Toast } from '@douyinfe/semi-ui'
 import {
   IconChevronRight,
   IconDelete,
@@ -30,6 +30,7 @@ import {
 } from '@/modules/workbench/api/documents'
 import { RichTextEditor } from '@/modules/content/components/RichTextEditor'
 import { FileAttachments } from '@/modules/content/components/FileAttachments'
+import { AiBusinessAction } from '@/modules/workbench/components/extensions/AiBusinessAction'
 import './KnowledgeHomePage.less'
 
 type DirectoryView = 'all' | 'favorites' | 'trash'
@@ -55,7 +56,9 @@ export default function KnowledgeHomePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const selectedDocumentId = searchParams.get('documentId') ?? ''
+  const focusedFileId = searchParams.get('fileId')?.trim() || undefined
   const projectId = searchParams.get('projectId') ?? undefined
+  const partnerId = searchParams.get('partnerId')?.trim() || undefined
   const requestedCreate = searchParams.get('create')
   const [directoryView, setDirectoryView] = useState<DirectoryView>('all')
   const [spaceId, setSpaceId] = useState<string | undefined>()
@@ -64,6 +67,8 @@ export default function KnowledgeHomePage() {
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [spaceModalOpen, setSpaceModalOpen] = useState(false)
   const [spaceName, setSpaceName] = useState('')
+  const [qaOpen, setQaOpen] = useState(false)
+  const [qaQuestion, setQaQuestion] = useState('')
   const handledCreate = useRef<string | null>(null)
 
   const spacesQuery = useQuery({ queryKey: ['knowledge-spaces'], queryFn: listKnowledgeSpaces })
@@ -244,6 +249,7 @@ export default function KnowledgeHomePage() {
         <header>
           <div className="knowledge-workspace__search"><IconSearch /><input aria-label="搜索文档" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、正文和标签" /></div>
           <div>
+            <Button onClick={() => setQaOpen(true)}>AI 知识问答</Button>
             <Button icon={<IconPlus />} onClick={() => createMutation.mutate('DOCUMENT')}>新建文档</Button>
             <Button icon={<IconPlus />} onClick={() => createMutation.mutate('KNOWLEDGE_PAGE')}>知识页</Button>
           </div>
@@ -266,7 +272,20 @@ export default function KnowledgeHomePage() {
 
       <main className="knowledge-workspace__editor">
         {!selectedDocumentId ? (
-          <div className="knowledge-workspace__welcome"><IconFile /><h2>选择或新建一篇文档</h2><p>项目方案、会议纪要和知识页都保存在同一处，并可关联原始对象。</p></div>
+          partnerId ? (
+            <div className="knowledge-workspace__partner-materials">
+              <header>
+                <IconFile />
+                <div>
+                  <h2>合作方资料</h2>
+                  <p>这里的附件与当前合作方直接关联，上传后可从合作方详情再次打开。</p>
+                </div>
+              </header>
+              <FileAttachments associations={{ partnerId }} focusedFileId={focusedFileId} />
+            </div>
+          ) : (
+            <div className="knowledge-workspace__welcome"><IconFile /><h2>选择或新建一篇文档</h2><p>项目方案、会议纪要和知识页都保存在同一处，并可关联原始对象。</p></div>
+          )
         ) : documentQuery.isPending ? (
           <Skeleton.Paragraph rows={10} />
         ) : documentQuery.isError ? (
@@ -289,6 +308,13 @@ export default function KnowledgeHomePage() {
                   <Button onClick={() => restoreMutation.mutate()}>恢复</Button>
                 ) : (
                   <>
+                    <AiBusinessAction
+                      operation="AI_SUMMARIZE_DOCUMENT"
+                      objectId={documentQuery.data.id}
+                      objectLabel={documentQuery.data.title}
+                      buttonLabel="AI 生成摘要"
+                      adoptLabel="采纳到文档"
+                    />
                     <Button aria-label={documentQuery.data.isFavorite ? '取消收藏' : '收藏'} icon={<IconStar />} onClick={() => saveDocument({ isFavorite: !documentQuery.data.isFavorite })}>{documentQuery.data.isFavorite ? '取消收藏' : '收藏'}</Button>
                     <Button aria-label="保存版本" icon={<IconSave />} onClick={() => versionMutation.mutate()} loading={versionMutation.isPending}>保存版本</Button>
                     <Button onClick={() => setVersionsOpen(true)}>版本记录</Button>
@@ -312,7 +338,12 @@ export default function KnowledgeHomePage() {
               readOnly={directoryView === 'trash'}
               onChange={(nextContent, nextPlainText) => activeDraft && setDraft({ ...activeDraft, content: nextContent, plainText: nextPlainText, dirty: true })}
             />
-            <FileAttachments associations={{ documentId: documentQuery.data.id }} />
+            <FileAttachments
+              associations={{
+                documentId: documentQuery.data.id,
+              }}
+              focusedFileId={focusedFileId}
+            />
           </>
         ) : null}
       </main>
@@ -327,13 +358,64 @@ export default function KnowledgeHomePage() {
         </ol>
       </Modal>
       <Modal
+        title="AI 知识问答"
+        visible={qaOpen}
+        onCancel={() => setQaOpen(false)}
+        footer={(
+          <div className="workspace-modal-footer knowledge-workspace__qa-actions">
+            <Button onClick={() => setQaOpen(false)}>取消</Button>
+            <AiBusinessAction
+              operation="AI_KNOWLEDGE_QA"
+              objectLabel="知识库检索片段"
+              buttonLabel="发送问题"
+              adoptLabel="采纳为知识页"
+              question={qaQuestion}
+              title={qaQuestion.trim() ? `AI 问答：${qaQuestion.trim().slice(0, 80)}` : undefined}
+              spaceId={spaceId}
+              onAdopted={() => {
+                setQaQuestion('')
+                setQaOpen(false)
+              }}
+            />
+          </div>
+        )}
+        width={560}
+      >
+        <div className="knowledge-workspace__qa">
+          <p>只会发送与你问题相关的最多 8 篇本地知识片段；发送前会再次展示范围。</p>
+          <TextArea
+            aria-label="知识问题"
+            value={qaQuestion}
+            onChange={setQaQuestion}
+            placeholder="例如：上次架构评审确定了哪些行动项？"
+            autosize={{ minRows: 3, maxRows: 7 }}
+          />
+        </div>
+      </Modal>
+      <Modal
         title="新建知识空间"
         visible={spaceModalOpen}
-        onCancel={() => setSpaceModalOpen(false)}
-        footer={null}
+        onCancel={() => { setSpaceModalOpen(false); setSpaceName('') }}
+        footer={(
+          <div className="workspace-modal-footer">
+            <Button onClick={() => { setSpaceModalOpen(false); setSpaceName('') }}>取消</Button>
+            <Button
+              htmlType="submit"
+              form="knowledge-space-form"
+              aria-label="保存知识空间"
+              theme="solid"
+              type="primary"
+              disabled={!spaceName.trim()}
+              loading={createSpaceMutation.isPending}
+            >
+              保存
+            </Button>
+          </div>
+        )}
         width={420}
       >
         <form
+          id="knowledge-space-form"
           className="knowledge-workspace__space-form"
           onSubmit={(event) => {
             event.preventDefault()
@@ -341,8 +423,7 @@ export default function KnowledgeHomePage() {
           }}
         >
           <label htmlFor="knowledge-space-name">空间名称</label>
-          <input id="knowledge-space-name" aria-label="空间名称" value={spaceName} onChange={(event) => setSpaceName(event.target.value)} placeholder="例如：研发知识" />
-          <Button htmlType="submit" aria-label="保存知识空间" theme="solid" type="primary" disabled={!spaceName.trim()} loading={createSpaceMutation.isPending}>保存</Button>
+          <Input id="knowledge-space-name" aria-label="空间名称" value={spaceName} onChange={setSpaceName} placeholder="例如：研发知识" />
         </form>
       </Modal>
     </div>

@@ -20,6 +20,21 @@ export class ListFilesQueryDto {
   @IsString()
   meetingId?: string;
 
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  partnerId?: string;
+
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  nonProjectRdItemId?: string;
+
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  nonProjectRdOutcomeId?: string;
+
   @IsOptional()
   @IsEnum(FileAssetStatus)
   status?: FileAssetStatus;
@@ -59,6 +74,21 @@ export class CreateFileDto {
   @IsOptional()
   @IsString()
   meetingId?: string;
+
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  partnerId?: string;
+
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  nonProjectRdItemId?: string;
+
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  nonProjectRdOutcomeId?: string;
 }
 
 export class UpdateFileDto {
@@ -83,6 +113,21 @@ export class UpdateFileDto {
   @IsOptional()
   @IsString()
   meetingId?: string | null;
+
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  partnerId?: string | null;
+
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  nonProjectRdItemId?: string | null;
+
+  @Transform(trim)
+  @IsOptional()
+  @IsString()
+  nonProjectRdOutcomeId?: string | null;
 }
 
 export class DownloadFileQueryDto {

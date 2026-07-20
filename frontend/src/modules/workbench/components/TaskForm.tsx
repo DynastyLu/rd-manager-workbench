@@ -1,41 +1,26 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Button, DatePicker, Input, Select } from '@douyinfe/semi-ui'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { createTask, type CreateTaskInput } from '@/modules/workbench/api/tasks'
 import type { TaskPriority, TaskStatus, WorkTask } from '@/modules/workbench/types'
+
+import { PRIORITY_OPTIONS, STATUS_OPTIONS } from './task-form-options'
 
 interface TaskFormProps {
   onSuccess?: (task: WorkTask) => void
   projectId?: string
+  formId?: string
+  showActions?: boolean
 }
 
-const PRIORITY_OPTIONS: Array<{ value: TaskPriority; label: string }> = [
-  { value: 'LOW', label: '低' },
-  { value: 'MEDIUM', label: '中' },
-  { value: 'HIGH', label: '高' },
-  { value: 'CRITICAL', label: '紧急' },
-]
-
-const STATUS_OPTIONS: Array<{ value: TaskStatus; label: string }> = [
-  { value: 'TODO', label: '待开始' },
-  { value: 'IN_PROGRESS', label: '进行中' },
-  { value: 'BLOCKED', label: '受阻' },
-  { value: 'DONE', label: '已完成' },
-  { value: 'CANCELLED', label: '已取消' },
-]
-
-export function TaskForm({ onSuccess, projectId }: TaskFormProps) {
+export function TaskForm({
+  onSuccess,
+  projectId,
+  formId = 'task-form',
+  showActions = true,
+}: TaskFormProps) {
   const queryClient = useQueryClient()
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState('')
@@ -84,77 +69,78 @@ export function TaskForm({ onSuccess, projectId }: TaskFormProps) {
   }
 
   return (
-    <form className="grid gap-4" onSubmit={handleSubmit} noValidate>
-      <div className="grid gap-2">
-        <Label htmlFor="task-title">任务名称</Label>
+    <form id={formId} className="workspace-modal-form" onSubmit={handleSubmit} noValidate>
+      <label htmlFor="task-title">
+        <span>任务名称</span>
         <Input
           id="task-title"
           value={title}
-          onChange={(event) => setTitle(event.target.value)}
+          onChange={setTitle}
           disabled={mutation.isPending}
           autoComplete="off"
+          placeholder="输入需要完成的事项"
         />
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="task-due-at">截止日期（可选）</Label>
-        <Input
-          id="task-due-at"
+      </label>
+      <div className="workspace-modal-form__field" role="group" aria-labelledby="task-due-at-label">
+        <span id="task-due-at-label">截止日期（可选）</span>
+        <DatePicker
+          aria-labelledby="task-due-at-label"
           type="date"
+          format="yyyy-MM-dd"
           value={dueAt}
-          onChange={(event) => setDueAt(event.target.value)}
+          onChange={(_, value) => setDueAt(String(value ?? ''))}
           disabled={mutation.isPending}
+          placeholder="选择截止日期"
+          style={{ width: '100%' }}
+          showClear
         />
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
-        <div className="grid gap-2">
-          <Label htmlFor="task-priority">优先级（可选）</Label>
+      <div className="workspace-modal-form__grid">
+        <div
+          className="workspace-modal-form__field"
+          role="group"
+          aria-labelledby="task-priority-label"
+        >
+          <span id="task-priority-label">优先级（可选）</span>
           <Select
+            id="task-priority"
+            aria-labelledby="task-priority-label"
             value={priority ?? 'UNSET'}
-            onValueChange={(value) => setPriority(value === 'UNSET' ? undefined : (value as TaskPriority))}
+            onChange={(value) => setPriority(value === 'UNSET' ? undefined : (value as TaskPriority))}
             disabled={mutation.isPending}
-          >
-            <SelectTrigger id="task-priority" aria-label="优先级（可选）">
-              <SelectValue placeholder="不指定" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="UNSET">不指定</SelectItem>
-              {PRIORITY_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            optionList={[{ value: 'UNSET', label: '不指定' }, ...PRIORITY_OPTIONS]}
+            style={{ width: '100%' }}
+          />
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="task-status">状态（可选）</Label>
+        <div
+          className="workspace-modal-form__field"
+          role="group"
+          aria-labelledby="task-status-label"
+        >
+          <span id="task-status-label">状态（可选）</span>
           <Select
+            id="task-status"
+            aria-labelledby="task-status-label"
             value={status ?? 'UNSET'}
-            onValueChange={(value) => setStatus(value === 'UNSET' ? undefined : (value as TaskStatus))}
+            onChange={(value) => setStatus(value === 'UNSET' ? undefined : (value as TaskStatus))}
             disabled={mutation.isPending}
-          >
-            <SelectTrigger id="task-status" aria-label="状态（可选）">
-              <SelectValue placeholder="不指定" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="UNSET">不指定</SelectItem>
-              {STATUS_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            optionList={[{ value: 'UNSET', label: '不指定' }, ...STATUS_OPTIONS]}
+            style={{ width: '100%' }}
+          />
         </div>
       </div>
       {validationMessage ? (
-        <p className="text-sm text-destructive" role="alert">
+        <p className="workspace-modal-form__error" role="alert">
           {validationMessage}
         </p>
       ) : null}
-      <Button type="submit" disabled={mutation.isPending}>
-        保存任务
-      </Button>
+      {showActions ? (
+        <div className="workspace-modal-form__actions">
+          <Button htmlType="submit" theme="solid" type="primary" loading={mutation.isPending}>
+            保存任务
+          </Button>
+        </div>
+      ) : null}
     </form>
   )
 }

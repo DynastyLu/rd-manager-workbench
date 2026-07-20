@@ -133,48 +133,62 @@ enum RiskLikelihood {
   LOW
   MEDIUM
   HIGH
+
   @@schema("app")
 }
+
 enum RiskImpact {
   LOW
   MEDIUM
   HIGH
   CRITICAL
+
   @@schema("app")
 }
+
 enum RiskLevel {
   LOW
   MEDIUM
   HIGH
   CRITICAL
+
   @@schema("app")
 }
+
 enum RiskStatus {
   OPEN
   MITIGATING
   CLOSED
+
   @@schema("app")
 }
+
 enum IssueStatus {
   OPEN
   IN_PROGRESS
   RESOLVED
   CLOSED
+
   @@schema("app")
 }
+
 enum DecisionStatus {
   DRAFT
   DECIDED
   SUPERSEDED
+
   @@schema("app")
 }
+
 enum AgreementStatus {
   DRAFT
   ACTIVE
   EXPIRED
   TERMINATED
+
   @@schema("app")
 }
+
 enum CommunicationType {
   EMAIL
   PHONE
@@ -182,19 +196,150 @@ enum CommunicationType {
   CHAT
   VISIT
   OTHER
+
   @@schema("app")
 }
+
 enum MeetingStatus {
   PLANNED
   HELD
   CANCELLED
+
   @@schema("app")
 }
+
 enum MeetingActionStatus {
   OPEN
   IN_PROGRESS
   DONE
   CANCELLED
+
+  @@schema("app")
+}
+
+enum NonProjectRdKind {
+  TECH_EXPLORATION
+  NEW_DIRECTION
+  PLATFORM_TOOL
+  TECH_DEBT
+  PATENT
+  STANDARD_METHOD
+  TRAINING
+  TEMPORARY_SUPPORT
+
+  @@schema("app")
+}
+
+enum NonProjectRdStatus {
+  DRAFT
+  PLANNED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+
+  @@schema("app")
+}
+
+enum NonProjectOutcomeStatus {
+  DRAFT
+  VERIFIED
+  REJECTED
+
+  @@schema("app")
+}
+
+enum SkillLevel {
+  AWARE
+  PRACTICING
+  PROFICIENT
+  EXPERT
+
+  @@schema("app")
+}
+
+enum LoadEntryKind {
+  NON_PROJECT_RD
+  PROJECT
+  TASK
+  OTHER
+
+  @@schema("app")
+}
+
+enum WeeklyReportStatus {
+  DRAFT
+  FINAL
+  ARCHIVED
+
+  @@schema("app")
+}
+
+enum IntelligenceSourceKind {
+  WEBSITE
+  RSS
+  NEWSLETTER
+  DATABASE
+  MANUAL
+
+  @@schema("app")
+}
+
+enum IntelligenceCollectionFrequency {
+  MANUAL
+  DAILY
+  WEEKLY
+
+  @@schema("app")
+}
+
+enum IntelligenceRunTrigger {
+  MANUAL
+  SCHEDULED
+  CONNECTOR
+
+  @@schema("app")
+}
+
+enum IntelligenceRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+
+  @@schema("app")
+}
+
+enum IntelligencePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+
+  @@schema("app")
+}
+
+enum IntelligenceItemStatus {
+  NEW
+  REVIEWING
+  ACTIONED
+  DISMISSED
+
+  @@schema("app")
+}
+
+enum IntelligenceConversionKind {
+  TASK
+  RISK
+  MEETING
+  KNOWLEDGE
+
+  @@schema("app")
+}
+
+enum IntelligenceBriefKind {
+  DAILY
+  WEEKLY
+
   @@schema("app")
 }
 
@@ -220,6 +365,62 @@ enum NotificationStatus {
   READ
   DISMISSED
   SNOOZED
+
+  @@schema("app")
+}
+
+enum ReminderChannel {
+  IN_APP
+  DESKTOP
+  SMS
+
+  @@schema("app")
+}
+
+enum ExtensionKind {
+  SMS
+  AI
+  CALENDAR
+  CLOUD_DRIVE
+
+  @@schema("app")
+}
+
+enum ExtensionRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  REJECTED
+
+  @@schema("app")
+}
+
+enum SmsDeliveryStatus {
+  PENDING
+  RUNNING
+  SENT
+  FAILED
+  PREVIEW
+  CANCELLED
+
+  @@schema("app")
+}
+
+enum ExternalSyncDirection {
+  PULL_ONLY
+  PUSH_ONLY
+  BIDIRECTIONAL
+
+  @@schema("app")
+}
+
+enum ExternalConflictState {
+  NONE
+  CONFLICT
+  KEEP_LOCAL
+  KEEP_REMOTE
+  CREATE_COPY
 
   @@schema("app")
 }
@@ -288,38 +489,62 @@ enum DataViewType {
   @@schema("app")
 }
 
+enum DataImportFormat {
+  CSV
+  XLSX
+
+  @@schema("app")
+}
+
+enum DataImportStatus {
+  UPLOADED
+  PREVIEWED
+  IMPORTING
+  COMPLETED
+  PARTIAL
+  FAILED
+  EXPIRED
+
+  @@schema("app")
+}
+
 model Project {
-  id                String                  @id @default(cuid())
-  code              String                  @unique
-  name              String
-  type              String?
-  researchDirection String?                 @map("research_direction")
-  objective         String?
-  expectedOutcome   String?                 @map("expected_outcome")
-  leadName          String?                 @map("lead_name")
-  participantNames  String[]                @default([]) @map("participant_names")
-  plannedStartAt    DateTime?               @map("planned_start_at") @db.Timestamptz(6)
-  plannedEndAt      DateTime?               @map("planned_end_at") @db.Timestamptz(6)
-  actualStartAt     DateTime?               @map("actual_start_at") @db.Timestamptz(6)
-  actualEndAt       DateTime?               @map("actual_end_at") @db.Timestamptz(6)
-  phase             ProjectPhase            @default(PLANNING)
-  status            ProjectStatus           @default(DRAFT)
-  archivedAt        DateTime?               @map("archived_at") @db.Timestamptz(6)
-  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
-  milestones        Milestone[]
-  tasks             WorkTask[]
-  progressReports   ProgressReport[]
-  healthSnapshots   ProjectHealthSnapshot[]
-  applicationCases  ApplicationCase[]
-  risks             Risk[]
-  issues            Issue[]
-  decisions         Decision[]
-  communications    CommunicationRecord[]
-  meetings          Meeting[]
-  calendarEvents    CalendarEvent[]
-  contentDocuments  ContentDocument[]
-  fileAssets        FileAsset[]
+  id                  String                     @id @default(cuid())
+  code                String                     @unique
+  name                String
+  type                String?
+  researchDirection   String?                    @map("research_direction")
+  objective           String?
+  expectedOutcome     String?                    @map("expected_outcome")
+  leadName            String?                    @map("lead_name")
+  participantNames    String[]                   @default([]) @map("participant_names")
+  plannedStartAt      DateTime?                  @map("planned_start_at") @db.Timestamptz(6)
+  plannedEndAt        DateTime?                  @map("planned_end_at") @db.Timestamptz(6)
+  actualStartAt       DateTime?                  @map("actual_start_at") @db.Timestamptz(6)
+  actualEndAt         DateTime?                  @map("actual_end_at") @db.Timestamptz(6)
+  phase               ProjectPhase               @default(PLANNING)
+  status              ProjectStatus              @default(DRAFT)
+  archivedAt          DateTime?                  @map("archived_at") @db.Timestamptz(6)
+  createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  milestones          Milestone[]
+  tasks               WorkTask[]
+  progressReports     ProgressReport[]
+  healthSnapshots     ProjectHealthSnapshot[]
+  applicationCases    ApplicationCase[]
+  risks               Risk[]
+  issues              Issue[]
+  decisions           Decision[]
+  communications      CommunicationRecord[]
+  partnerProjects     PartnerProject[]
+  meetings            Meeting[]
+  calendarEvents      CalendarEvent[]
+  contentDocuments    ContentDocument[]
+  fileAssets          FileAsset[]
+  nonProjectRdItems   NonProjectRdItem[]
+  resourceLoadEntries ResourceLoadEntry[]
+  intelligenceTopics  IntelligenceTopicProject[]
+  intelligenceItems   IntelligenceItemProject[]
 
   @@index([status, archivedAt])
   @@index([plannedEndAt])
@@ -351,34 +576,37 @@ model Milestone {
 }
 
 model WorkTask {
-  id                String           @id @default(cuid())
-  projectId         String?          @map("project_id")
-  milestoneId       String?          @map("milestone_id")
-  parentId          String?          @map("parent_id")
-  title             String
-  description       String?
-  assigneeName      String?          @map("assignee_name")
-  collaboratorNames String[]         @default([]) @map("collaborator_names")
-  priority          TaskPriority     @default(MEDIUM)
-  status            TaskStatus       @default(TODO)
-  dueAt             DateTime?        @map("due_at") @db.Timestamptz(6)
-  completedAt       DateTime?        @map("completed_at") @db.Timestamptz(6)
-  sourceType        String?          @map("source_type")
-  sourceId          String?          @map("source_id")
-  archivedAt        DateTime?        @map("archived_at") @db.Timestamptz(6)
-  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
-  project           Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  milestone         Milestone?       @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
-  parent            WorkTask?        @relation("TaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children          WorkTask[]       @relation("TaskHierarchy")
-  dependencies      TaskDependency[] @relation("DependencyTask")
-  dependents        TaskDependency[] @relation("DependencyDependsOn")
-  risks             Risk[]
-  issues            Issue[]
-  decisions         Decision[]
-  reminder          TaskReminder?
-  later             TaskLater?
+  id                  String               @id @default(cuid())
+  projectId           String?              @map("project_id")
+  milestoneId         String?              @map("milestone_id")
+  parentId            String?              @map("parent_id")
+  title               String
+  description         String?
+  assigneeName        String?              @map("assignee_name")
+  collaboratorNames   String[]             @default([]) @map("collaborator_names")
+  priority            TaskPriority         @default(MEDIUM)
+  status              TaskStatus           @default(TODO)
+  dueAt               DateTime?            @map("due_at") @db.Timestamptz(6)
+  completedAt         DateTime?            @map("completed_at") @db.Timestamptz(6)
+  sourceType          String?              @map("source_type")
+  sourceId            String?              @map("source_id")
+  archivedAt          DateTime?            @map("archived_at") @db.Timestamptz(6)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project             Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  milestone           Milestone?           @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  parent              WorkTask?            @relation("TaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children            WorkTask[]           @relation("TaskHierarchy")
+  dependencies        TaskDependency[]     @relation("DependencyTask")
+  dependents          TaskDependency[]     @relation("DependencyDependsOn")
+  risks               Risk[]
+  issues              Issue[]
+  decisions           Decision[]
+  communicationRecord CommunicationRecord?
+  nonProjectRdItem    NonProjectRdItem?
+  reminder            TaskReminder?
+  later               TaskLater?
+  resourceLoadEntries ResourceLoadEntry[]
 
   @@index([projectId, status, dueAt])
   @@index([milestoneId])
@@ -417,14 +645,17 @@ model TaskLater {
 }
 
 model ReminderRule {
-  id           String             @id @default(cuid())
-  sourceType   ReminderSourceType @map("source_type")
-  sourceId     String             @map("source_id")
-  remindAt     DateTime           @map("remind_at") @db.Timestamptz(6)
-  archivedAt   DateTime?          @map("archived_at") @db.Timestamptz(6)
-  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-  notification Notification?
+  id            String             @id @default(cuid())
+  sourceType    ReminderSourceType @map("source_type")
+  sourceId      String             @map("source_id")
+  remindAt      DateTime           @map("remind_at") @db.Timestamptz(6)
+  channels      ReminderChannel[]  @default([IN_APP])
+  important     Boolean            @default(false)
+  archivedAt    DateTime?          @map("archived_at") @db.Timestamptz(6)
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  notification  Notification?
+  smsDeliveries SmsDelivery[]
 
   @@unique([sourceType, sourceId, remindAt])
   @@index([archivedAt, remindAt])
@@ -449,6 +680,7 @@ model Notification {
   createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
   reminderRule   ReminderRule       @relation(fields: [reminderRuleId], references: [id], onDelete: Restrict)
+  smsDeliveries  SmsDelivery[]
 
   @@unique([sourceType, sourceId, scheduledFor])
   @@index([status, triggeredAt])
@@ -533,23 +765,32 @@ model DocumentVersion {
 }
 
 model FileAsset {
-  id         String          @id @default(cuid())
-  name       String
-  documentId String?         @map("document_id")
-  projectId  String?         @map("project_id")
-  meetingId  String?         @map("meeting_id")
-  status     FileAssetStatus @default(ACTIVE)
-  trashedAt  DateTime?       @map("trashed_at") @db.Timestamptz(6)
-  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
-  document   ContentDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
-  project    Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  meeting    Meeting?         @relation(fields: [meetingId], references: [id], onDelete: SetNull)
-  versions   FileVersion[]
+  id                    String               @id @default(cuid())
+  name                  String
+  documentId            String?              @map("document_id")
+  projectId             String?              @map("project_id")
+  meetingId             String?              @map("meeting_id")
+  partnerId             String?              @map("partner_id")
+  nonProjectRdItemId    String?              @map("non_project_rd_item_id")
+  nonProjectRdOutcomeId String?              @map("non_project_rd_outcome_id")
+  status                FileAssetStatus      @default(ACTIVE)
+  trashedAt             DateTime?            @map("trashed_at") @db.Timestamptz(6)
+  createdAt             DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  document              ContentDocument?     @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  project               Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  meeting               Meeting?             @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  partner               Partner?             @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  nonProjectRdItem      NonProjectRdItem?    @relation(fields: [nonProjectRdItemId], references: [id], onDelete: SetNull)
+  nonProjectRdOutcome   NonProjectRdOutcome? @relation(fields: [nonProjectRdOutcomeId], references: [id], onDelete: SetNull)
+  versions              FileVersion[]
 
   @@index([documentId, status, updatedAt])
   @@index([projectId, status, updatedAt])
   @@index([meetingId, status, updatedAt])
+  @@index([partnerId, status, updatedAt])
+  @@index([nonProjectRdItemId, status, updatedAt])
+  @@index([nonProjectRdOutcomeId, status, updatedAt])
   @@index([status, updatedAt])
   @@map("file_assets")
   @@schema("app")
@@ -965,18 +1206,20 @@ model Decision {
 }
 
 model Partner {
-  id          String                @id @default(cuid())
-  name        String
-  shortName   String?               @map("short_name")
-  category    String?
-  address     String?
-  notes       String?
-  archivedAt  DateTime?             @map("archived_at") @db.Timestamptz(6)
-  createdAt   DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
-  contacts    PartnerContact[]
-  agreements  PartnerAgreement[]
+  id             String                @id @default(cuid())
+  name           String
+  shortName      String?               @map("short_name")
+  category       String?
+  address        String?
+  notes          String?
+  archivedAt     DateTime?             @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  contacts       PartnerContact[]
+  agreements     PartnerAgreement[]
   communications CommunicationRecord[]
+  projects       PartnerProject[]
+  fileAssets     FileAsset[]
 
   @@index([archivedAt, name])
   @@map("partners")
@@ -984,17 +1227,17 @@ model Partner {
 }
 
 model PartnerContact {
-  id         String    @id @default(cuid())
-  partnerId  String    @map("partner_id")
-  name       String
-  title      String?
-  phone      String?
-  email      String?
-  notes      String?
-  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
-  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  partner    Partner   @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  id             String                @id @default(cuid())
+  partnerId      String                @map("partner_id")
+  name           String
+  title          String?
+  phone          String?
+  email          String?
+  notes          String?
+  archivedAt     DateTime?             @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  partner        Partner               @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   communications CommunicationRecord[]
 
   @@index([partnerId, archivedAt])
@@ -1021,11 +1264,27 @@ model PartnerAgreement {
   @@schema("app")
 }
 
+model PartnerProject {
+  partnerId String   @map("partner_id")
+  projectId String   @map("project_id")
+  role      String?
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  partner   Partner  @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@id([partnerId, projectId])
+  @@index([projectId])
+  @@map("partner_projects")
+  @@schema("app")
+}
+
 model CommunicationRecord {
   id             String            @id @default(cuid())
   partnerId      String            @map("partner_id")
   projectId      String?           @map("project_id")
   contactId      String?           @map("contact_id")
+  taskId         String?           @unique @map("task_id")
   type           CommunicationType
   occurredAt     DateTime          @map("occurred_at") @db.Timestamptz(6)
   subject        String
@@ -1039,6 +1298,7 @@ model CommunicationRecord {
   partner        Partner           @relation(fields: [partnerId], references: [id], onDelete: Restrict)
   project        Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
   contact        PartnerContact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  task           WorkTask?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   @@index([partnerId, archivedAt, occurredAt])
   @@index([nextFollowUpAt])
@@ -1047,22 +1307,22 @@ model CommunicationRecord {
 }
 
 model Meeting {
-  id                String           @id @default(cuid())
-  projectId         String?          @map("project_id")
-  minutesDocumentId String?          @unique @map("minutes_document_id")
+  id                String              @id @default(cuid())
+  projectId         String?             @map("project_id")
+  minutesDocumentId String?             @unique @map("minutes_document_id")
   title             String
-  scheduledAt       DateTime         @map("scheduled_at") @db.Timestamptz(6)
-  heldAt            DateTime?        @map("held_at") @db.Timestamptz(6)
-  status            MeetingStatus    @default(PLANNED)
+  scheduledAt       DateTime            @map("scheduled_at") @db.Timestamptz(6)
+  heldAt            DateTime?           @map("held_at") @db.Timestamptz(6)
+  status            MeetingStatus       @default(PLANNED)
   agenda            String?
   minutes           String?
-  participantNames  String[]         @default([]) @map("participant_names")
-  archivedAt        DateTime?        @map("archived_at") @db.Timestamptz(6)
-  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
-  project           Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  minutesDocument   ContentDocument? @relation("MeetingMinutesDocument", fields: [minutesDocumentId], references: [id], onDelete: SetNull)
-  documents         ContentDocument[] @relation("MeetingDocuments")
+  participantNames  String[]            @default([]) @map("participant_names")
+  archivedAt        DateTime?           @map("archived_at") @db.Timestamptz(6)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project           Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  minutesDocument   ContentDocument?    @relation("MeetingMinutesDocument", fields: [minutesDocumentId], references: [id], onDelete: SetNull)
+  documents         ContentDocument[]   @relation("MeetingDocuments")
   fileAssets        FileAsset[]
   actions           MeetingAction[]
   agendaItems       MeetingAgendaItem[]
@@ -1147,24 +1407,51 @@ model DataWorkspace {
 }
 
 model DataTable {
-  id          String          @id @default(cuid())
-  workspaceId String          @map("workspace_id")
-  name        String
-  description String?
-  source      DataTableSource @default(CUSTOM)
-  presetKey   String?         @unique @map("preset_key")
-  icon        String?
-  sequence    Int             @default(0)
-  archivedAt  DateTime?       @map("archived_at") @db.Timestamptz(6)
-  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
-  workspace   DataWorkspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  fields      DataField[]
-  records     DataRecord[]
-  views       DataView[]
+  id             String              @id @default(cuid())
+  workspaceId    String              @map("workspace_id")
+  name           String
+  description    String?
+  source         DataTableSource     @default(CUSTOM)
+  presetKey      String?             @unique @map("preset_key")
+  icon           String?
+  sequence       Int                 @default(0)
+  archivedAt     DateTime?           @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  workspace      DataWorkspace       @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  fields         DataField[]
+  records        DataRecord[]
+  views          DataView[]
+  importSessions DataImportSession[]
 
   @@index([workspaceId, archivedAt, sequence])
   @@map("data_tables")
+  @@schema("app")
+}
+
+model DataImportSession {
+  id                 String           @id @default(cuid())
+  tableId            String           @map("table_id")
+  originalName       String           @map("original_name")
+  format             DataImportFormat
+  selectedSheet      String?          @map("selected_sheet")
+  status             DataImportStatus @default(UPLOADED)
+  mapping            Json             @default("[]")
+  previewFingerprint String?          @map("preview_fingerprint")
+  totalRows          Int              @default(0) @map("total_rows")
+  validRows          Int              @default(0) @map("valid_rows")
+  errorRows          Int              @default(0) @map("error_rows")
+  importedRows       Int              @default(0) @map("imported_rows")
+  sourceStorageKey   String           @map("source_storage_key")
+  errorStorageKey    String?          @map("error_storage_key")
+  expiresAt          DateTime         @map("expires_at") @db.Timestamptz(6)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  table              DataTable        @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@index([tableId, createdAt])
+  @@index([expiresAt, status])
+  @@map("data_import_sessions")
   @@schema("app")
 }
 
@@ -1216,5 +1503,585 @@ model DataView {
 
   @@index([tableId, sequence])
   @@map("data_views")
+  @@schema("app")
+}
+
+model NonProjectRdItem {
+  id                   String                @id @default(cuid())
+  code                 String                @unique
+  kind                 NonProjectRdKind
+  title                String
+  objective            String?
+  expectedOutcome      String?               @map("expected_outcome")
+  ownerName            String?               @map("owner_name")
+  plannedStartAt       DateTime?             @map("planned_start_at") @db.Timestamptz(6)
+  plannedEndAt         DateTime?             @map("planned_end_at") @db.Timestamptz(6)
+  actualStartAt        DateTime?             @map("actual_start_at") @db.Timestamptz(6)
+  actualEndAt          DateTime?             @map("actual_end_at") @db.Timestamptz(6)
+  plannedPersonHours   Int                   @default(0) @map("planned_person_hours")
+  status               NonProjectRdStatus    @default(DRAFT)
+  impactScope          String?               @map("impact_scope")
+  severity             String?
+  suggestedProjectName String?               @map("suggested_project_name")
+  outcomeWaivedReason  String?               @map("outcome_waived_reason")
+  projectId            String?               @map("project_id")
+  taskId               String?               @unique @map("task_id")
+  archivedAt           DateTime?             @map("archived_at") @db.Timestamptz(6)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project              Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task                 WorkTask?             @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  outcomes             NonProjectRdOutcome[]
+  resourceLoadEntries  ResourceLoadEntry[]
+  fileAssets           FileAsset[]
+
+  @@index([status, archivedAt, plannedEndAt])
+  @@map("non_project_rd_items")
+  @@schema("app")
+}
+
+model NonProjectRdOutcome {
+  id           String                  @id @default(cuid())
+  itemId       String                  @map("item_id")
+  title        String
+  summary      String?
+  status       NonProjectOutcomeStatus @default(DRAFT)
+  verifiedAt   DateTime?               @map("verified_at") @db.Timestamptz(6)
+  evidenceNote String?                 @map("evidence_note")
+  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  item         NonProjectRdItem        @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  fileAssets   FileAsset[]
+
+  @@index([itemId, createdAt])
+  @@map("non_project_rd_outcomes")
+  @@schema("app")
+}
+
+model ResourceProfile {
+  id                  String              @id @default(cuid())
+  displayName         String              @unique @map("display_name")
+  roleTitle           String?             @map("role_title")
+  weeklyCapacityHours Int                 @default(40) @map("weekly_capacity_hours")
+  developmentGoal     String?             @map("development_goal")
+  notes               String?
+  archivedAt          DateTime?           @map("archived_at") @db.Timestamptz(6)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  skills              ResourceSkill[]
+  loadEntries         ResourceLoadEntry[]
+
+  @@index([archivedAt, displayName])
+  @@map("resource_profiles")
+  @@schema("app")
+}
+
+model ResourceSkill {
+  id         String          @id @default(cuid())
+  resourceId String          @map("resource_id")
+  name       String
+  level      SkillLevel
+  evidence   String?
+  assessedAt DateTime?       @map("assessed_at") @db.Timestamptz(6)
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  resource   ResourceProfile @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+
+  @@unique([resourceId, name])
+  @@map("resource_skills")
+  @@schema("app")
+}
+
+model ResourceLoadEntry {
+  id                 String            @id @default(cuid())
+  resourceId         String            @map("resource_id")
+  weekStartAt        DateTime          @map("week_start_at") @db.Date
+  kind               LoadEntryKind
+  nonProjectRdItemId String?           @map("non_project_rd_item_id")
+  projectId          String?           @map("project_id")
+  taskId             String?           @map("task_id")
+  plannedHours       Decimal           @map("planned_hours") @db.Decimal(6, 2)
+  note               String?
+  archivedAt         DateTime?         @map("archived_at") @db.Timestamptz(6)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  resource           ResourceProfile   @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+  nonProjectRdItem   NonProjectRdItem? @relation(fields: [nonProjectRdItemId], references: [id], onDelete: SetNull)
+  project            Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task               WorkTask?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([resourceId, archivedAt, weekStartAt])
+  @@map("resource_load_entries")
+  @@schema("app")
+}
+
+model WeeklyReportDraft {
+  id             String             @id @default(cuid())
+  weekStartAt    DateTime           @map("week_start_at") @db.Date
+  title          String
+  content        Json
+  sourceSnapshot Json               @map("source_snapshot")
+  status         WeeklyReportStatus @default(DRAFT)
+  version        Int
+  generatedAt    DateTime           @default(now()) @map("generated_at") @db.Timestamptz(6)
+  archivedAt     DateTime?          @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([weekStartAt, version])
+  @@index([weekStartAt, archivedAt])
+  @@map("weekly_report_drafts")
+  @@schema("app")
+}
+
+enum BackupKind {
+  MANUAL
+  SCHEDULED
+  PRE_RESTORE
+
+  @@schema("app")
+}
+
+enum BackupStatus {
+  CREATING
+  CREATED
+  VERIFIED
+  RESTORING
+  RESTORED
+  FAILED
+
+  @@schema("app")
+}
+
+enum RestorePreflightStatus {
+  READY
+  INVALID
+  EXPIRED
+  CONSUMED
+
+  @@schema("app")
+}
+
+enum AuditOutcome {
+  SUCCEEDED
+  FAILED
+
+  @@schema("app")
+}
+
+model GovernanceSetting {
+  id                      String    @id
+  autoBackupEnabled       Boolean   @default(false) @map("auto_backup_enabled")
+  autoBackupTimeLocal     String    @default("02:00") @map("auto_backup_time_local")
+  retentionDays           Int       @default(30) @map("retention_days")
+  lastAutoBackupLocalDate DateTime? @map("last_auto_backup_local_date") @db.Date
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("governance_settings")
+  @@schema("app")
+}
+
+model BackupRecord {
+  id                 String             @id @default(cuid())
+  kind               BackupKind
+  status             BackupStatus       @default(CREATING)
+  relativeDirectory  String             @map("relative_directory")
+  scheduledLocalDate DateTime?          @map("scheduled_local_date") @db.Date
+  schemaVersion      String             @map("schema_version")
+  manifestSha256     String?            @map("manifest_sha256")
+  databaseSha256     String?            @map("database_sha256")
+  fileCount          Int                @default(0) @map("file_count")
+  byteSize           BigInt             @default(0) @map("byte_size")
+  failureCode        String?            @map("failure_code")
+  failureMessage     String?            @map("failure_message")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  verifiedAt         DateTime?          @map("verified_at") @db.Timestamptz(6)
+  restoredAt         DateTime?          @map("restored_at") @db.Timestamptz(6)
+  restorePreflights  RestorePreflight[]
+
+  @@index([status, createdAt])
+  @@map("backup_records")
+  @@schema("app")
+}
+
+model RestorePreflight {
+  id               String                 @id @default(cuid())
+  backupId         String                 @map("backup_id")
+  manifestSha256   String                 @map("manifest_sha256")
+  status           RestorePreflightStatus @default(READY)
+  warnings         Json
+  summary          Json
+  confirmationHash String                 @map("confirmation_hash")
+  expiresAt        DateTime               @map("expires_at") @db.Timestamptz(6)
+  createdAt        DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  backup           BackupRecord           @relation(fields: [backupId], references: [id], onDelete: Restrict)
+
+  @@index([backupId, status])
+  @@index([status, expiresAt])
+  @@map("restore_preflights")
+  @@schema("app")
+}
+
+model AuditLog {
+  id            String       @id @default(cuid())
+  action        String
+  entityType    String       @map("entity_type")
+  entityId      String?      @map("entity_id")
+  outcome       AuditOutcome
+  changedFields String[]     @default([]) @map("changed_fields")
+  metadata      Json
+  traceId       String?      @map("trace_id")
+  occurredAt    DateTime     @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  @@index([occurredAt])
+  @@index([entityType, entityId, occurredAt])
+  @@index([action, outcome, occurredAt])
+  @@map("audit_logs")
+  @@schema("app")
+}
+
+model IntelligenceTopic {
+  id          String                     @id @default(cuid())
+  name        String
+  description String?
+  keywords    String[]                   @default([])
+  archivedAt  DateTime?                  @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  projects    IntelligenceTopicProject[]
+  items       IntelligenceItemTopic[]
+
+  @@index([archivedAt, updatedAt])
+  @@map("intelligence_topics")
+  @@schema("app")
+}
+
+model IntelligenceTopicProject {
+  topicId   String            @map("topic_id")
+  projectId String            @map("project_id")
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  topic     IntelligenceTopic @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@id([topicId, projectId])
+  @@index([projectId])
+  @@map("intelligence_topic_projects")
+  @@schema("app")
+}
+
+model IntelligenceSource {
+  id          String                       @id @default(cuid())
+  name        String
+  kind        IntelligenceSourceKind       @default(WEBSITE)
+  url         String?
+  credibility Int                          @default(3)
+  notes       String?
+  archivedAt  DateTime?                    @map("archived_at") @db.Timestamptz(6)
+  createdAt   DateTime                     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime                     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  plans       IntelligenceCollectionPlan[]
+  occurrences IntelligenceOccurrence[]
+
+  @@index([archivedAt, updatedAt])
+  @@map("intelligence_sources")
+  @@schema("app")
+}
+
+model IntelligenceCollectionPlan {
+  id                 String                          @id @default(cuid())
+  sourceId           String                          @map("source_id")
+  name               String
+  frequency          IntelligenceCollectionFrequency @default(MANUAL)
+  runAtLocalTime     String?                         @map("run_at_local_time")
+  weekday            Int?
+  enabled            Boolean                         @default(true)
+  connectorProfileId String?                         @map("connector_profile_id")
+  lastRunAt          DateTime?                       @map("last_run_at") @db.Timestamptz(6)
+  nextRunAt          DateTime?                       @map("next_run_at") @db.Timestamptz(6)
+  archivedAt         DateTime?                       @map("archived_at") @db.Timestamptz(6)
+  createdAt          DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  source             IntelligenceSource              @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+  runs               IntelligenceRun[]
+
+  @@index([sourceId, archivedAt, enabled])
+  @@index([enabled, nextRunAt])
+  @@map("intelligence_collection_plans")
+  @@schema("app")
+}
+
+model IntelligenceRun {
+  id           String                     @id @default(cuid())
+  planId       String                     @map("plan_id")
+  trigger      IntelligenceRunTrigger     @default(MANUAL)
+  status       IntelligenceRunStatus
+  startedAt    DateTime                   @map("started_at") @db.Timestamptz(6)
+  finishedAt   DateTime?                  @map("finished_at") @db.Timestamptz(6)
+  itemCount    Int                        @default(0) @map("item_count")
+  inputSummary String?                    @map("input_summary")
+  errorCode    String?                    @map("error_code")
+  errorMessage String?                    @map("error_message")
+  createdAt    DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  plan         IntelligenceCollectionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([planId, startedAt])
+  @@index([status, startedAt])
+  @@map("intelligence_runs")
+  @@schema("app")
+}
+
+model IntelligenceItem {
+  id             String                    @id @default(cuid())
+  title          String
+  summary        String?
+  impact         String?
+  recommendation String?
+  canonicalUrl   String?                   @map("canonical_url")
+  publishedAt    DateTime?                 @map("published_at") @db.Timestamptz(6)
+  priority       IntelligencePriority      @default(MEDIUM)
+  status         IntelligenceItemStatus    @default(NEW)
+  contentHash    String                    @unique(map: "intelligence_items_content_hash_key") @map("content_hash")
+  archivedAt     DateTime?                 @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  occurrences    IntelligenceOccurrence[]
+  topics         IntelligenceItemTopic[]
+  projects       IntelligenceItemProject[]
+  conversions    IntelligenceConversion[]
+  briefItems     IntelligenceBriefItem[]
+
+  @@index([archivedAt, publishedAt])
+  @@index([archivedAt, priority, status])
+  @@map("intelligence_items")
+  @@schema("app")
+}
+
+model IntelligenceOccurrence {
+  id         String             @id @default(cuid())
+  itemId     String             @map("item_id")
+  sourceId   String             @map("source_id")
+  sourceUrl  String?            @map("source_url")
+  capturedAt DateTime           @default(now()) @map("captured_at") @db.Timestamptz(6)
+  rawTitle   String?            @map("raw_title")
+  rawSummary String?            @map("raw_summary")
+  item       IntelligenceItem   @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  source     IntelligenceSource @relation(fields: [sourceId], references: [id], onDelete: Restrict)
+
+  @@unique([itemId, sourceId, sourceUrl], map: "intelligence_occurrences_item_id_source_id_source_url_key")
+  @@index([sourceId, capturedAt])
+  @@map("intelligence_occurrences")
+  @@schema("app")
+}
+
+model IntelligenceItemTopic {
+  itemId    String            @map("item_id")
+  topicId   String            @map("topic_id")
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  item      IntelligenceItem  @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  topic     IntelligenceTopic @relation(fields: [topicId], references: [id], onDelete: Restrict)
+
+  @@id([itemId, topicId])
+  @@index([topicId])
+  @@map("intelligence_item_topics")
+  @@schema("app")
+}
+
+model IntelligenceItemProject {
+  itemId    String           @map("item_id")
+  projectId String           @map("project_id")
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  item      IntelligenceItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  project   Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@id([itemId, projectId])
+  @@index([projectId])
+  @@map("intelligence_item_projects")
+  @@schema("app")
+}
+
+model IntelligenceConversion {
+  id        String                     @id @default(cuid())
+  itemId    String                     @map("item_id")
+  kind      IntelligenceConversionKind
+  targetId  String                     @map("target_id")
+  createdAt DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  item      IntelligenceItem           @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([itemId, kind], map: "intelligence_conversions_item_id_kind_key")
+  @@unique([kind, targetId])
+  @@map("intelligence_conversions")
+  @@schema("app")
+}
+
+model IntelligenceBrief {
+  id           String                  @id @default(cuid())
+  kind         IntelligenceBriefKind
+  briefDate    DateTime                @map("brief_date") @db.Date
+  title        String
+  introduction String?
+  archivedAt   DateTime?               @map("archived_at") @db.Timestamptz(6)
+  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  items        IntelligenceBriefItem[]
+
+  @@unique([kind, briefDate], map: "intelligence_briefs_kind_brief_date_key")
+  @@index([archivedAt, briefDate])
+  @@map("intelligence_briefs")
+  @@schema("app")
+}
+
+model IntelligenceBriefItem {
+  id        String            @id @default(cuid())
+  briefId   String            @map("brief_id")
+  itemId    String            @map("item_id")
+  sequence  Int
+  snapshot  Json
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  brief     IntelligenceBrief @relation(fields: [briefId], references: [id], onDelete: Restrict)
+  item      IntelligenceItem  @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([briefId, itemId])
+  @@unique([briefId, sequence])
+  @@index([itemId])
+  @@map("intelligence_brief_items")
+  @@schema("app")
+}
+
+model ExtensionProfile {
+  id            String                @id @default(cuid())
+  kind          ExtensionKind
+  provider      String
+  name          String
+  enabled       Boolean               @default(false)
+  publicConfig  Json                  @default("{}") @map("public_config")
+  credentialRef String?               @map("credential_ref")
+  permissions   String[]              @default([])
+  archivedAt    DateTime?             @map("archived_at") @db.Timestamptz(6)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  runs          ExtensionRun[]
+  smsDeliveries SmsDelivery[]
+  objectLinks   ExternalObjectLink[]
+  syncSessions  ExternalSyncSession[]
+
+  @@index([kind, archivedAt, enabled])
+  @@index([provider, archivedAt])
+  @@map("extension_profiles")
+  @@schema("app")
+}
+
+model ExtensionRun {
+  id                    String             @id @default(cuid())
+  profileId             String             @map("profile_id")
+  operation             String
+  status                ExtensionRunStatus @default(PENDING)
+  inputSha256           String             @map("input_sha256")
+  inputBytes            Int                @map("input_bytes")
+  outputSha256          String?            @map("output_sha256")
+  outputBytes           Int?               @map("output_bytes")
+  confirmationHash      String?            @map("confirmation_hash")
+  completionTokenHash   String?            @map("completion_token_hash")
+  completionReceiptHash String?            @map("completion_receipt_hash")
+  errorCode             String?            @map("error_code")
+  metadata              Json               @default("{}")
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  startedAt             DateTime?          @map("started_at") @db.Timestamptz(6)
+  finishedAt            DateTime?          @map("finished_at") @db.Timestamptz(6)
+  profile               ExtensionProfile   @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  smsDelivery           SmsDelivery?
+
+  @@index([profileId, createdAt])
+  @@index([status, createdAt])
+  @@map("extension_runs")
+  @@schema("app")
+}
+
+model SmsRecipient {
+  id            String        @id @default(cuid())
+  label         String
+  maskedPhone   String        @map("masked_phone")
+  credentialRef String        @unique @map("credential_ref")
+  enabled       Boolean       @default(true)
+  archivedAt    DateTime?     @map("archived_at") @db.Timestamptz(6)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deliveries    SmsDelivery[]
+
+  @@index([archivedAt, enabled])
+  @@map("sms_recipients")
+  @@schema("app")
+}
+
+model SmsDelivery {
+  id                String            @id @default(cuid())
+  reminderRuleId    String?           @map("reminder_rule_id")
+  notificationId    String?           @map("notification_id")
+  recipientId       String            @map("recipient_id")
+  profileId         String            @map("profile_id")
+  extensionRunId    String?           @unique @map("extension_run_id")
+  templateKey       String            @map("template_key")
+  status            SmsDeliveryStatus @default(PENDING)
+  attemptCount      Int               @default(0) @map("attempt_count")
+  nextAttemptAt     DateTime?         @map("next_attempt_at") @db.Timestamptz(6)
+  providerMessageId String?           @map("provider_message_id")
+  errorCode         String?           @map("error_code")
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  sentAt            DateTime?         @map("sent_at") @db.Timestamptz(6)
+  reminderRule      ReminderRule?     @relation(fields: [reminderRuleId], references: [id], onDelete: Restrict)
+  notification      Notification?     @relation(fields: [notificationId], references: [id], onDelete: Restrict)
+  recipient         SmsRecipient      @relation(fields: [recipientId], references: [id], onDelete: Restrict)
+  profile           ExtensionProfile  @relation(fields: [profileId], references: [id], onDelete: Restrict)
+  extensionRun      ExtensionRun?     @relation(fields: [extensionRunId], references: [id], onDelete: Restrict)
+
+  @@unique([reminderRuleId, recipientId, templateKey])
+  @@index([status, nextAttemptAt])
+  @@index([profileId, createdAt])
+  @@map("sms_deliveries")
+  @@schema("app")
+}
+
+model ExternalObjectLink {
+  id            String                @id @default(cuid())
+  profileId     String                @map("profile_id")
+  localType     String                @map("local_type")
+  localId       String                @map("local_id")
+  remoteId      String                @map("remote_id")
+  remoteVersion String?               @map("remote_version")
+  syncDirection ExternalSyncDirection @default(PULL_ONLY) @map("sync_direction")
+  lastSyncedAt  DateTime?             @map("last_synced_at") @db.Timestamptz(6)
+  syncHash      String?               @map("sync_hash")
+  conflictState ExternalConflictState @default(NONE) @map("conflict_state")
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  profile       ExtensionProfile      @relation(fields: [profileId], references: [id], onDelete: Restrict)
+
+  @@unique([profileId, localType, localId])
+  @@unique([profileId, remoteId])
+  @@index([profileId, conflictState])
+  @@map("external_object_links")
+  @@schema("app")
+}
+
+model ExternalSyncSession {
+  id             String           @id @default(cuid())
+  profileId      String           @map("profile_id")
+  targetType     String           @map("target_type")
+  request        Json
+  status         String
+  preflightRunId String?          @unique @map("preflight_run_id")
+  commitRunId    String?          @unique @map("commit_run_id")
+  preflight      Json?
+  preflightHash  String?          @map("preflight_hash")
+  resolutions    Json?
+  expiresAt      DateTime?        @map("expires_at") @db.Timestamptz(6)
+  errorCode      String?          @map("error_code")
+  committedAt    DateTime?        @map("committed_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  profile        ExtensionProfile @relation(fields: [profileId], references: [id], onDelete: Restrict)
+
+  @@index([profileId, status, createdAt])
+  @@index([expiresAt])
+  @@map("external_sync_sessions")
   @@schema("app")
 }

@@ -32,6 +32,9 @@ export class FilesService {
       documentId: query.documentId,
       projectId: query.projectId,
       meetingId: query.meetingId,
+      partnerId: query.partnerId,
+      nonProjectRdItemId: query.nonProjectRdItemId,
+      nonProjectRdOutcomeId: query.nonProjectRdOutcomeId,
       status: query.status ?? FileAssetStatus.ACTIVE,
     };
     const [data, total] = await this.prisma.$transaction([
@@ -153,6 +156,13 @@ export class FilesService {
       documentId: dto.documentId !== undefined ? dto.documentId : asset.documentId,
       projectId: dto.projectId !== undefined ? dto.projectId : asset.projectId,
       meetingId: dto.meetingId !== undefined ? dto.meetingId : asset.meetingId,
+      partnerId: dto.partnerId !== undefined ? dto.partnerId : asset.partnerId,
+      nonProjectRdItemId: dto.nonProjectRdItemId !== undefined
+        ? dto.nonProjectRdItemId
+        : asset.nonProjectRdItemId,
+      nonProjectRdOutcomeId: dto.nonProjectRdOutcomeId !== undefined
+        ? dto.nonProjectRdOutcomeId
+        : asset.nonProjectRdOutcomeId,
     });
     await this.prisma.fileAsset.update({
       where: { id },
@@ -212,16 +222,33 @@ export class FilesService {
     documentId?: string | null;
     projectId?: string | null;
     meetingId?: string | null;
+    partnerId?: string | null;
+    nonProjectRdItemId?: string | null;
+    nonProjectRdOutcomeId?: string | null;
   }) {
     const references = {
       documentId: dto.documentId || null,
       projectId: dto.projectId || null,
       meetingId: dto.meetingId || null,
+      partnerId: dto.partnerId || null,
+      nonProjectRdItemId: dto.nonProjectRdItemId || null,
+      nonProjectRdOutcomeId: dto.nonProjectRdOutcomeId || null,
     };
-    if (!references.documentId && !references.projectId && !references.meetingId) {
-      throw this.referenceInvalid('A document, project or meeting association is required');
+    if (
+      !references.documentId &&
+      !references.projectId &&
+      !references.meetingId &&
+      !references.partnerId
+      && !references.nonProjectRdItemId
+      && !references.nonProjectRdOutcomeId
+    ) {
+      throw this.referenceInvalid('A supported owning-object association is required');
     }
-    const [document, project, meeting] = await Promise.all([
+    const ownerCount = Object.values(references).filter(Boolean).length;
+    if (ownerCount !== 1) {
+      throw this.referenceInvalid('A file must be associated with exactly one owning object');
+    }
+    const [document, project, meeting, partner, nonProjectRdItem, nonProjectRdOutcome] = await Promise.all([
       references.documentId
         ? this.prisma.contentDocument.findFirst({
             where: { id: references.documentId, status: 'ACTIVE' },
@@ -237,8 +264,26 @@ export class FilesService {
             where: { id: references.meetingId, archivedAt: null },
           })
         : true,
+      references.partnerId
+        ? this.prisma.partner.findFirst({
+            where: { id: references.partnerId, archivedAt: null },
+          })
+        : true,
+      references.nonProjectRdItemId
+        ? this.prisma.nonProjectRdItem.findFirst({
+            where: { id: references.nonProjectRdItemId, archivedAt: null },
+          })
+        : true,
+      references.nonProjectRdOutcomeId
+        ? this.prisma.nonProjectRdOutcome.findFirst({
+            where: {
+              id: references.nonProjectRdOutcomeId,
+              item: { archivedAt: null },
+            },
+          })
+        : true,
     ]);
-    if (!document || !project || !meeting) {
+    if (!document || !project || !meeting || !partner || !nonProjectRdItem || !nonProjectRdOutcome) {
       throw this.referenceInvalid('A file association does not exist or is inactive');
     }
     return references;

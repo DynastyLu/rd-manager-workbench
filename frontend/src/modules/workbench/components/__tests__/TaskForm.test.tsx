@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { TaskForm } from '../TaskForm'
+import { STATUS_OPTIONS } from '../task-form-options'
 
 const { createTask, updateTask } = vi.hoisted(() => ({ createTask: vi.fn(), updateTask: vi.fn() }))
 
@@ -33,7 +34,7 @@ describe('TaskForm', () => {
     })
   })
 
-  it('offers cancelled as an explicit creation status', async () => {
+  it('offers cancelled as an explicit creation status', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
     render(
@@ -42,7 +43,25 @@ describe('TaskForm', () => {
       </QueryClientProvider>
     )
 
-    expect(screen.getByText('已取消', { selector: 'option' })).toBeInTheDocument()
+    expect(STATUS_OPTIONS).toContainEqual({ value: 'CANCELLED', label: '已取消' })
+    expect(screen.getByRole('combobox', { name: '状态（可选）' })).toBeInTheDocument()
+  })
+
+  it('uses the workspace date and select controls instead of browser-native fields', () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <TaskForm />
+      </QueryClientProvider>
+    )
+
+    expect(container.querySelector('input[type="date"]')).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.semi-select')).toHaveLength(2)
+    expect(container.querySelector('.semi-datepicker')).toHaveAttribute(
+      'aria-labelledby',
+      'task-due-at-label'
+    )
   })
 
   it('keeps a task inside the project that opened the form', async () => {

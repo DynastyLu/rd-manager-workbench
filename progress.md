@@ -1,5 +1,28 @@
 # 进度日志
 
+## 会话：2026-07-20（组件库控件与项目资料排版复核）
+
+- 用户指出日历仍出现浏览器原生日期面板，并报告项目详情“文档与资料”附件区排版错乱。
+- 真实 Chromium 已确认日历创建弹窗为 3 个原生 datetime-local、1 个原生 select、0 个 Semi DatePicker。
+- 静态扫描已列出全部原生 date/datetime-local/select 使用点；将优先消除所有业务日期原生弹层，并处理截图中的日历项目下拉。
+- 项目资料排版根因是共享 `FileAttachments` 样式寄居在知识库页面 Less，且附件内容没有项目卡片的 18px 水平内边距。
+- 新增统一 `DateTimePickerField`，将通知中心、多维表单、行业日报、问题、会议、非项目研发、合作方协议/沟通、资源负荷中的 17 组原生日期/时间控件全部迁移到 Semi DatePicker。
+- 日历创建弹窗的项目下拉迁移为 Semi Select；浏览器实测弹窗包含 3 个 Semi DatePicker、2 个 Semi Select，原生日期与原生下拉均为 0，Semi 日期弹层可正常展开。
+- `FileAttachments` 获得组件专属 Less；项目资料页浏览器实测四边 padding 均为 18px，标题、说明、上传按钮和空状态已对齐。
+- 新增生产源码静态控件契约测试，阻止后续重新引入浏览器原生日期/时间输入。
+- 验证通过：前端 83 files / 392 tests、typecheck、lint、production build、Chromium E2E 7/7、`git diff --check`；原生 select 余量为 53 处/18 文件，已记录为后续独立迁移范围。
+
+## 会话：2026-07-20（全项目弹窗底部操作区复核）
+
+- 用户报告项目详情“新建项目工作项”保存按钮贴弹窗底边，要求检查全部同类问题。
+- 静态检索已覆盖前端全部 Modal、footer 和内部 action 容器；确认大量业务弹窗采用 `footer={null}`。
+- 真实 Chromium 盒模型审计确认根因：Modal content 仅有左右 24px padding，body 无 padding；只有 footer 提供上下 24px margin。
+- 下一步按 TDD 增加无 footer 弹窗底部安全间距用例，再实施一处全局修复并复跑全量门禁。
+- 已先增加项目工作项真实浏览器用例并确认 RED：保存按钮底部间距实测仅 `1px`，期望至少 `24px`。
+- 在全局 workspace token 中为 `.semi-modal-content > .semi-modal-body:last-child` 增加 `24px` 底部安全区，避免逐页面补丁；同一用例转为 GREEN。
+- 浏览器端已同时验收标准 footer、无 footer 和旧 Radix Dialog 三类结构，6 个 smoke 场景全部通过；修复后的项目弹窗按钮右侧/底部均为 `25px`。
+- 最终门禁：前端 82 个测试文件 / 390 项测试全部通过；ESLint、TypeScript、生产构建通过。
+
 ## 会话：2026-07-18（飞书式全功能交付重新分期）
 
 - 用户确认以飞书式项目、任务日程、业务对象库、会议资料、知识库和自动化数据为本地单人产品方向，并要求前后端完整实现。
@@ -416,6 +439,25 @@
 - 完成 P1-02、P1-03、P1-04、P2-01、P2-02 五份设计规格；规格固定为本地单人、Semi/飞书式信息架构、外部能力默认关闭。
 - 完成两路只读代码审计：搜索/治理与合作方/非项目研发/情报；确认可复用边界、数据库声明漂移和高风险恢复约束。
 - 完成 P1-02、P1-03、P1-04、P2-01、P2-02 五份 TDD 实施计划；每份均固定精确文件、RED/GREEN 测试、验证命令和独立验收。下一步按用户授权直接进入 P1-02 生产代码。
+- P1-02 后端搜索已落地：SearchModule adapter registry 覆盖项目、任务、申报、会议、文档、附件、风险、问题、决策、合作方、沟通和 CUSTOM Base 记录；支持统一打分、Unicode 高亮、分类、稳定分页、部分失败和安全内部路径。
+- P1-02 快捷操作已复用 Tasks/Documents/Risks 服务完成任务、重新打开、切换文档收藏和确认关闭风险；focused backend 5 suites / 24 tests、真实 PostgreSQL 搜索 controller 3 tests 全绿。
+- P1-02 前端 typed API、运行时响应/路径校验、最近搜索 localStorage 与 SearchPage 已落盘；主线程另补 Base/Issue/Partner 精确 recordId 深链，正在执行最终前端构建与浏览器验收。
+- P1-02 搜索并发根因已定位并修复：顶层 adapter worker pool 限制为 2，Management 查询顺序化，不再超过本地 PostgreSQL 角色 10 连接上限；真实开发库全类型搜索返回 `partialFailures: []`。
+- P1-02 评分、候选公平性、长正文/协作者/历史附件命中、动作状态校验、服务端内部路径防护、前端防抖/即时分类/分页/URL 状态/Electron 链接/缓存失效均已补齐；focused 后端 35 unit + 3 integration、前端 44 tests、类型契约、lint/build 通过。
+- P1-02 真实浏览器已验证 `/search` 输入防抖与全类型查询，无部分失败；申报、沟通、附件补齐精确深链，其中附件进入所属文档/会议/项目资料区并高亮具体文件。
+- P1-04 Task 1 完成：恢复已应用但从 Prisma 丢失的 6 个 operations 模型与 6 个 enum，不创建冲突表；真实 catalog 与 Prisma delegate 测试通过。
+- P1-04 Task 2 完成：新增 PartnerProject、CommunicationRecord.taskId、NonProjectRdItem.taskId 及安全幂等前向迁移；迁移已部署到本地开发库，partner/operations catalog 共 4 tests 通过，后端重新以 4311 watch 模式启动。
+- P1-04 Task 3–4 完成：合作方后端补齐 partial/null 更新、项目关系、归档边界、联系人/协议/沟通完整生命周期，以及沟通转任务 advisory-lock 幂等；前端以 Semi 列表和 SideSheet 接通真实 CRUD、深链、项目上下文与任务入口。
+- P1-04 质量复核修复完成：Partner projectIds 改为差量同步并保护活动沟通引用；所有 Partner/child/link 写入共享 Partner 锁；跟进筛选使用精确 from/to，列表最近沟通与下次跟进改用数据库聚合。
+- 新增 `20260720021000_partner_files` 前向迁移，FileAsset 可真实关联 Partner；上传、列表、更新、恢复校验、知识库合作方资料入口和活动附件归档阻塞已接通。Partner/content unit、真实 PostgreSQL partner/files/catalog integration、前端相关测试、类型、lint/build 均通过；未提交，等待主线程统一收口。
+- P1-03 Task 3/4/6 完成：手动备份使用固定 `pg_dump --format=custom --schema=app`、临时目录、fsync/rename、SHA-256 manifest 二次校验、进程 mutex 与 PostgreSQL advisory lock；真实测试数据库已完成 custom dump 创建和再次验证。
+- 自动备份按本地时间调度，成功日期持久化、失败次数通过不可变审计跨重启限制为每日 3 次；保留策略保护最近成功备份和 PRE_RESTORE 快照。
+- 全局写请求审计只保存字段名和白名单元数据，治理设置变更与精确审计共享 Prisma transaction；健康检查以只读快速/深度模式覆盖迁移漂移、存储空间、附件 SHA、异常关联、失败作业、近期备份和逾期提醒。
+- 治理后端与现有前端契约已对齐：设置支持 PATCH 部分更新，备份 byteSize 返回 number，健康报告返回 HEALTHY/WARNING/UNHEALTHY 与 PASS/WARN/FAIL。治理目标 35 unit + 6 integration 全绿，后端 build/lint/diff-check 曾通过；随后共享全量门禁出现的恢复/情报并行半成品阻塞已分别通知对应代理处理。
+- P1-03 Task 5/7 生产代码完成：恢复预检逐文件校验 SHA-256、清单指纹、可用空间、migration head、应用版本、`pg_restore` 15+ 与 dump catalog，并签发 10 分钟一次性 confirmation token；消费时再次校验 manifest，拒绝过期、复用和 TOCTOU 变化。
+- 恢复引擎在目标恢复前创建 PRE_RESTORE 快照，使用 staging 与持久化 journal，固定 `pg_restore --single-transaction --exit-on-error --clean --if-exists --no-owner --no-privileges`；恢复后检查数据库连接、migration fingerprint、核心对象计数和附件 hash，目标失败自动回灌保护快照并恢复原文件，回滚失败保留证据并返回独立错误码。
+- Electron 只开放选择备份目录和已预检恢复两个 IPC；主进程生成随机维护令牌并通过 stdin 启动 maintenance CLI，renderer 无法读取令牌或注入 executable/path。编排严格执行停止后端→维护恢复→重启→健康等待，失败也重启并净化错误。
+- 本批 focused 验证：恢复 backend 2 suites / 13 tests、治理 HTTP integration 2 tests、backend build；desktop 全量 4 files / 9 tests 与 typecheck；DataGovernancePage 4 tests 通过。独立临时数据库的真实破坏性恢复演练仍保留在 Task 9，未在共享开发库执行。
 
 ## 2026-07-18：P0-A 飞书式工作台与项目空间完成
 
@@ -430,3 +472,77 @@
 - 真实浏览器检查 `http://127.0.0.1:4312/#/spaces/projects`、项目详情和新建工作项弹窗均正常。
 - 评审结果：应用壳质量、项目目录质量、项目空间规格均 APPROVED。
 - 下一批：P0-B 我的工作、日历、日程、提醒调度、WebSocket 通知中心与 Electron 系统通知。
+- 2026-07-20：P2-01 行业情报 Task 4–6 完成。新增稳定 URL/内容哈希、advisory-lock 去重、来源 occurrence、主题/项目关联、任务/风险/会议议题/知识页四种事务内幂等转换，以及日报/周报白名单快照；交付 `/library/intelligence` 四栏工作区和 `/library/intelligence/briefs` 人工编辑器。验证：后端 unit 3 suites/8 tests、真实 PostgreSQL intelligence integration 4/4、backend lint/build；前端 2 suites/3 tests、typecheck/contracts/lint/build，Chrome 本地路由烟测无 console error。
+## 2026-07-20 P2-01 资源负荷与统计报表
+
+- 完成资源档案、技能、13 周投入矩阵、引用校验、超载计算和非项目研发日历/搜索接入；独立复审后补齐负荷条目查看/更新/归档、技能等级更新、资源归档、搜索式项目/任务/非项目研发关联和错误反馈。
+- 资源负荷写入与活跃资源/引用校验现在处于同一 PostgreSQL transaction，并使用行锁消除归档检查竞态；零容量且有投入时返回 `percent: null` 和明确超载，不再伪造 100%。
+- 报表按规格拆为项目组合、任务完成趋势、风险趋势、资源负荷、行业情报五个独立 API 和五页签；补齐项目健康/阶段/里程碑/逾期/高风险、任务新建/完成、风险新建/关闭、情报主题/来源/优先级/转换统计。
+- CSV/XLSX 使用同一安全行模型，逐页签导出并写入不可变 `REPORT_EXPORT` 审计；浏览器实测 CSV 200、XLSX 200 且 PK 签名，审计返回成功记录。
+- 修复后验证：backend resources/reports 13 unit + 2 real PostgreSQL HTTP integration；frontend resources/reports 6 tests；backend lint/build、frontend 目标 lint/typecheck/build、`git diff --check` 通过。
+
+## 2026-07-20 P2-02 Electron 凭据桥与外部能力设置
+
+- Electron 新增基于 `safeStorage` 的原子 JSON 凭据保险箱：文件 0600、目录 0700、损坏文件拒绝、并发写入串行；renderer 只能 put/has/delete，密钥只能在主进程 provider 回调期间解密并立即清空临时对象。
+- preload 保留通知点击、备份目录和恢复 IPC，并新增固定凭据/扩展执行方法；无任意 ipcRenderer、fetch 或 secret read。ProviderRegistry 同时校验 kind/provider/operation、plain-object payload 与 1 MiB 上限。短信执行只在 SMS_SEND/SMS_PREVIEW 内二次解密收件人凭据。
+- Electron 新增 `/extensions` Socket broker：校验 profile/operation 和 canonical payload SHA-256，去重重投，执行结果使用一次性 completion token 回调；provider 异常只上报固定错误码，不记录 payload、密钥或错误原文。
+- 新增 `/settings/extensions` 外部能力工作区：短信、AI、CalDAV、WebDAV 四页签、专用字段表单、凭据可用性、真实外呼二次确认、服务启停和脱敏运行历史；浏览器模式明确降级但不影响本地功能。
+- 目标验证：desktop Task3 focused 5 suites / 18 tests 与 typecheck；frontend 外部设置/API/设置/路由 4 suites / 14 tests、typecheck、contracts、目标 lint、build 全绿；Chrome 实际页面四页签/降级/配置弹窗 smoke 且 0 console error。desktop 全量暂被并行 provider agent 新增的 RED `caldav.test.ts` 阻塞，真实 adapters 与会议/知识业务入口留待 Task 4–7 收口。
+## 2026-07-20 P1-03 真实非破坏性验收
+
+- 在当前本地服务创建并验证手动备份 `3650bb48-cff8-4957-b576-3a716ba399d7`：状态 VERIFIED、manifest/database SHA-256 均存在、249293 bytes。
+- 恢复预检通过，schemaVersion 为 `20260720040001_external_extensions_reminder_sms`，warnings 为空；审计日志包含 BACKUP_CREATE、BACKUP_VERIFY、RESTORE_PREFLIGHT。
+- 搜索与治理重点回归 9 suites / 58 tests 通过；未对共享开发库执行破坏性 restore。
+
+## 2026-07-20 P2-02 外部服务后端与 Provider 适配器
+
+- 完成扩展 Profile/Run、短信收件人/投递、外部对象链接数据目录与状态机；Run 仅保存哈希、字节数和白名单元数据，不保存短信、会议、文档或问答正文。
+- 完成短信重要提醒调度、`/extensions` Socket 投递、一次性完成令牌与阿里云 SendSms 适配；页面通知不等待短信，收件人仅持久化掩码，4xx 不重试，429/5xx/网络错误在 Provider 内有界重试。
+- 完成 OpenAI Responses 结构化摘要/问答、上下文上限、引用白名单和显式采纳；AI 结果未经采纳不会修改会议纪要、文档或知识页。
+- 完成 CalDAV/WebDAV 预检与提交、默认只拉取、版本/哈希冲突和三种显式冲突处理；跨主机重定向、路径穿越及 `//host/path` 网络路径在后端和 Electron 双重拒绝。
+- Electron 已注册 LOCAL_PREVIEW、LOCAL_MANUAL、ALIYUN_SMS、OPENAI_RESPONSES、CALDAV、WEBDAV 六类 Provider；主进程按 credentialRef 解密并为短信临时组合收件人号码，renderer 不可读取密钥。
+- 本批验证：后端 6 suites / 23 unit、2 suites / 5 integration、build、lint、Prisma validate；桌面 Provider 6 suites / 14 tests 与 typecheck 全绿。真实服务连接仍需用户在设置页录入个人凭据后手动执行。
+- 同步闭环复核后移除旧的客户端自报 hashes/items 契约，新增持久化 ExternalSyncSession：服务端从 Calendar 范围或 FileAsset/FileVersion 生成 Provider payload，Electron complete 输出通过 CalDAV/WebDAV 严格白名单后才签发权威 preflight。
+- commit 已真实落实 KEEP_LOCAL/KEEP_REMOTE/CREATE_COPY：普通 CalendarEvent 创建/更新与 ExternalObjectLink 同事务；WebDAV 上传仅在 Provider 成功后建链，下载先验证 Base64/SHA-256 并写安全存储，再同事务创建 FileVersion/副本和链接，数据库失败会删除暂存文件。派生日程仍不可写。
+- ExtensionRun completion 使用数据库条件抢占避免并发 token 重放重复执行副作用，并新增仅用于幂等回放验证的 completion receipt hash；完整 token hash 不返回 renderer。WebDAV JSON/Socket 桥明确限制单文件 750 KiB，HTTP/Socket 帧上限固定 2 MiB。
+
+## 2026-07-20 P2-02 业务入口与本机收件人保险箱
+
+- 会议纪要、文档摘要与知识问答已接入真实 AI 治理链：后端准备最小上下文并展示数据离机范围，用户确认后由 Electron provider 执行，结果先以建议预览，只有再次点击采纳才更新会议/文档或创建知识页。
+- CalDAV 日历和附件 WebDAV 已接入服务端权威同步会话：renderer 不再自报哈希、URL 或远端内容；确认后由 Electron socket broker 执行 provider，页面轮询 READY 预检并对每个 ADD/UPDATE/CONFLICT 项选择保留本地、保留远端或创建副本，再提交带 hash 的决策。
+- 短信收件人支持新增、编辑/安全换号、启停和归档。完整手机号只通过 preload allowlist 写入 `safeStorage`，PostgreSQL 仅保存 maskedPhone 与 credentialRef；浏览器无保险箱时禁止保存并明确说明。
+
+## 2026-07-20 P2-02 独立安全与完整性复核
+
+- AI 显式采纳已绑定成功完成的 ExtensionRun，并校验 operation、业务对象、引用 allowlist 与输出 SHA-256；renderer 不能用伪造或串用结果修改会议、文档或知识页。
+- 外部同步预检与提交增加数据库条件抢占，重复并发不会重复执行远端副作用；WebDAV 下载用 ETag/If-Match 与 SHA-256 锁定预检版本，上传和覆盖在最终写入前再次校验本地版本，数据库事务失败会删除暂存文件。
+- extensions Socket 只接受无 Origin 的 Electron 主进程握手或 `127.0.0.1:4312`/`localhost:4312` 开发源；CalDAV/WebDAV 拒绝跨主机 redirect、collection/root 逃逸、路径穿越及 baseUrl 内嵌凭据/query 密钥。
+- ExtensionRun 与 SmsDelivery 终态改为同事务，调度器逐条条件抢占防重复发送；手机号换号及收件人/provider 归档按可补偿顺序处理，避免数据库引用损坏或保险箱密钥静默遗留。
+- provider 响应采用流式有界读取；WebDAV 750 KiB 经 Base64 后仍统一落在 1 MiB run payload 与 2 MiB HTTP/Socket 帧上限内；单条凭据限制 64 KiB。
+- 复核验证：后端扩展目标 unit 10 suites / 38 tests、集成 3 suites / 9 tests 通过；前端扩展目标 7 suites / 31 tests 通过；Desktop 16 suites / 47 tests 通过。backend build/lint/Prisma validate/migrate status、frontend typecheck/lint/build、desktop typecheck/build/打包目录均通过。真实 OpenAI、阿里云、CalDAV、WebDAV 凭据未在自动测试中调用，需由用户在 Electron 设置页逐项确认连接测试。
+- 前端本批 focused 10 suites / 42 tests、typecheck、contracts、目标 lint、build 通过；桌面凭据/IPC/broker/provider 11 suites / 32 tests 与 typecheck 通过。
+
+## 2026-07-20 P1-01C/D 多维表格导入导出与业务模板
+
+- 新增 CSV/XLSX 两阶段导入：上传与工作表检查、字段映射、零写入全量预检、原子状态抢占、250 行分批提交、部分成功、错误行 CSV 下载、会话删除与过期清理；上传文件和错误文件只通过受控存储 key 访问，接口不返回内部路径。
+- 新增当前视图/完整表 CSV 与 XLSX 流式导出：复用服务端视图筛选排序与计算字段，CSV 防公式注入，XLSX 保留日期类型并冻结表头、启用筛选；修复了 ExcelJS streaming worksheet 直接赋值 `views` 导致的运行时崩溃。
+- 新增合作方台账、研发申报、风险台账、面试候选跟踪、非项目研发记录五个不可变模板；模板以事务和工作区 advisory lock 创建普通 `CUSTOM` 表，自动解析项目预置表关联，只创建字段和四类视图，不写示例记录。
+- 前端多维表格工作区已接入飞书式模板中心、CSV/XLSX 导入五阶段弹窗、字段映射/新字段、工作表切换、预检错误展示、错误文件下载及当前视图/完整表导出；预置系统表不显示导入入口。
+- 真实本地 API 验收创建五个模板，字段数分别为 12/13/13/12/12、每个 4 个视图且零记录；混合 CSV 预检保持零写入，提交结果为 1 条成功/1 条错误，错误 CSV、当前视图 CSV 和完整 XLSX 均返回 200；验收会话、记录、关系字段与五张临时表已删除，`imports/` 无遗留验收文件。
+- 可重复验证：P1-01C/D focused backend unit 6 suites / 17 tests、frontend focused 8 tests、Base backend 真实 PostgreSQL integration 29/29、frontend Base 全量 17 files / 152 tests；backend lint/build、frontend typecheck/contracts/lint/build、开发库和测试库 27 条迁移均通过。
+
+## 2026-07-20 P1/P2 统一交付收口
+
+- 后端完整门禁通过：71 suites / 383 unit、37 suites / 154 PostgreSQL integration、1 suite / 3 E2E；Prisma schema validate、27 条迁移状态、lint、build 全部通过。
+- 前端完整门禁通过：82 files / 388 tests，typecheck、API contracts、lint、production build 全部通过；修复外部同步测试中的最后一个未使用变量。
+- Electron 完整门禁通过：16 files / 47 tests、typecheck、前后端 production rebuild、electron-builder macOS 目录打包全部通过；产物位于 `desktop/release/mac`，未配置 Apple Developer ID，故本地目录包未签名。
+- 真实 API 复核 CSV/XLSX 导出均返回 200，产物分别识别为 UTF-8 CSV 与 Excel 2007+，后端持续健康；确认旧 `ERR_HTTP_HEADERS_SENT` 来自已修复的 ExcelJS 流式实现。
+- 真实浏览器复核搜索、数据治理、合作方、行业情报、非项目研发、统计报表、外部能力、多维表格 8 个路由，均无读取失败；模板中心展示 5 类模板，自定义表展示导入五阶段向导及当前视图/全表 CSV/XLSX 导出。验收临时表已删除。
+- 当前只保留外部验收边界：真实 OpenAI、阿里云短信、CalDAV、WebDAV 必须由用户在 Electron 中录入凭据并确认；共享开发库不执行破坏性恢复，完整恢复演练应使用独立验收库。
+
+## 2026-07-20 UI 日期控件动态漏检修复
+
+- AST 回归测试先稳定复现了 `TasksPage` 与 `FieldEditor` 两处动态日期类型；扩大 token 扫描后又复现 `ViewFilterBuilder` 的间接 `datetime-local`。
+- 已将任务调度弹窗、多维表格日期单元格编辑器、视图日期筛选器全部迁移到共享 Semi `DateTimePickerField`。
+- focused 验证通过：3 files / 28 tests、lint、typecheck；真实浏览器确认任务弹窗 0 个原生日期 input、1 个 Semi DatePicker、1 个可见 Semi 日期弹层。
+- 已新增 Chromium smoke 回归；完整门禁通过：83 files / 392 tests、lint、typecheck、production build、8/8 Chromium E2E，`git diff --check` 无错误。

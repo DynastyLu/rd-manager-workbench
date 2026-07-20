@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { NotificationsGateway } from '../notifications.gateway';
+import { SmsDeliveryService } from '../../extensions/application/sms-delivery.service';
 
 const SCAN_INTERVAL_MS = 30_000;
 const SCHEDULER_LOCK_KEY = 77_190_425;
@@ -21,10 +22,11 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnAppli
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly gateway: NotificationsGateway,
+    private readonly smsDelivery: SmsDeliveryService,
   ) {}
 
   onApplicationBootstrap() {
-    if (process.env.NODE_ENV === 'test') return;
+    if (process.env.NODE_ENV === 'test' || process.env.RD_MAINTENANCE_MODE === '1') return;
     void this.scanDue().catch((error: unknown) =>
       this.logger.error(
         'Initial reminder scan failed',
@@ -51,7 +53,14 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnAppli
       return { created, resurfaced };
     });
     const notifications = [...result.created, ...result.resurfaced];
-    for (const notification of notifications) this.gateway.publish(notification);
+    for (const notification of notifications) {
+      this.gateway.publish(notification);
+      void this.smsDelivery.queueForNotification(notification.id).catch((error: unknown) =>
+        this.logger.warn(
+          `SMS delivery queue failed for notification ${notification.id}: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    }
     return {
       created: result.created.length,
       resurfaced: result.resurfaced.length,

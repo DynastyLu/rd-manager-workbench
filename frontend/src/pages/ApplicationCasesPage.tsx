@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useSearchParams } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,9 +26,11 @@ import { ApplicationCaseForm } from '@/modules/workbench/components/ApplicationC
 import { ApplicationCaseWorkspace } from '@/modules/workbench/components/ApplicationCaseWorkspace'
 
 export default function ApplicationCasesPage() {
+  const [searchParams] = useSearchParams()
+  const deepLinkedCaseId = searchParams.get('caseId')?.trim() || null
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(deepLinkedCaseId)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const casesQuery = useQuery({
     queryKey: ['application-cases', { search }],
@@ -108,7 +111,7 @@ export default function ApplicationCasesPage() {
           <Card><CardHeader><CardTitle>无法读取申报案件</CardTitle><CardDescription>请确认本地服务已启动后重试。</CardDescription></CardHeader><CardContent><Button onClick={() => void casesQuery.refetch()}>重试</Button></CardContent></Card>
         ) : null}
         {casesQuery.data ? (
-          casesQuery.data.data.length ? (
+          casesQuery.data.data.length || selectedCaseId ? (
             <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
               <Card>
                 <CardHeader><CardTitle>案件列表</CardTitle></CardHeader>

@@ -131,3 +131,18 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   return payload.data
 }
+
+export async function download(
+  path: string,
+  init?: RequestInit,
+): Promise<{ blob: Blob; fileName: string }> {
+  const response = await fetch(`${getApiBaseUrl()}${path}`, init)
+  if (!response.ok) throw getHttpError(response)
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  const fallback = disposition.match(/filename="([^"]+)"/i)?.[1]
+  return {
+    blob: await response.blob(),
+    fileName: encoded ? decodeURIComponent(encoded) : fallback || 'download',
+  }
+}

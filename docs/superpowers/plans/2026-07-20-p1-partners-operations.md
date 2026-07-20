@@ -16,11 +16,11 @@
 - Modify: `backend/prisma/schema.prisma`
 - Create: `backend/test/integration/prisma/operations-catalog.spec.ts`
 
-- [ ] 先写真实 PostgreSQL catalog 测试，对照 `20260718050000_operations_p1/migration.sql` 断言六张表、枚举、FK、唯一键和 check constraint。
-- [ ] 运行 `pnpm --dir backend test:integration -- --runInBand operations-catalog.spec.ts`，确认 Prisma Client 当前无对应 delegate。
-- [ ] 只恢复既有 SQL 对应模型、enum 和反向关系；禁止新建同名迁移、表或清理已有数据。
-- [ ] 运行 prisma format/generate、catalog test、migrate status 和 build。
-- [ ] Commit: `fix(prisma): restore operations schema declarations`
+- [x] 先写真实 PostgreSQL catalog 测试，对照 `20260718050000_operations_p1/migration.sql` 断言六张表、枚举、FK、唯一键和 check constraint。
+- [x] 运行 `pnpm --dir backend test:integration -- --runInBand operations-catalog.spec.ts`，确认 Prisma Client 当前无对应 delegate。
+- [x] 只恢复既有 SQL 对应模型、enum 和反向关系；禁止新建同名迁移、表或清理已有数据。
+- [x] 运行 prisma format/generate、catalog test、migrate status 和 build。
+- [x] Commit checkpoint: `fix(prisma): restore operations schema declarations`
 
 ## Task 2: 合作方关联与沟通转任务幂等目录
 
@@ -29,11 +29,11 @@
 - Create: `backend/prisma/migrations/20260720010000_partner_operations_extensions/migration.sql`
 - Create: `backend/test/integration/prisma/partner-extensions-catalog.spec.ts`
 
-- [ ] 先写 PartnerProject 复合唯一/FK、CommunicationRecord.taskId 唯一和 NonProjectRdItem.taskId 唯一测试。
-- [ ] 运行目标测试确认 RED。
-- [ ] 用前向 migration 添加三项，不改历史 migration；补 Prisma 关系。
-- [ ] 运行 prisma generate、catalog test 和 build。
-- [ ] Commit: `feat(management): add partner and operations links`
+- [x] 先写 PartnerProject 复合唯一/FK、CommunicationRecord.taskId 唯一和 NonProjectRdItem.taskId 唯一测试。
+- [x] 运行目标测试确认 RED。
+- [x] 用前向 migration 添加三项，不改历史 migration；补 Prisma 关系。
+- [x] 运行 prisma generate、catalog test 和 build。
+- [x] Commit checkpoint: `feat(management): add partner and operations links`
 
 ## Task 3: 合作方后端完整性
 
@@ -44,12 +44,12 @@
 - Create: `backend/test/unit/modules/workbench/partners.service.spec.ts`
 - Modify: `backend/test/integration/modules/workbench/management.controller.spec.ts`
 
-- [ ] 先写真正 partial PATCH、nullable 清空、联系人必须属于 Partner、项目必须 active、按 q/project/followUp 过滤、聚合计数和归档边界测试。
-- [ ] 先写重复沟通转任务返回 `{task, alreadyExists:true}`、并发只创建一条来源任务测试。
-- [ ] 运行目标测试确认 RED。
-- [ ] 拆开当前压缩单行/`any` helper，使用类型安全方法；Partner create/update 原子维护 projectIds，communication update 复用 create 的引用校验。
-- [ ] 实现 advisory lock + taskId 唯一幂等转换，复用 `TasksService.createTaskInTransaction`。
-- [ ] 运行目标测试、lint 和 build。
+- [x] 先写真正 partial PATCH、nullable 清空、联系人必须属于 Partner、项目必须 active、按 q/project/followUp 过滤、聚合计数和归档边界测试。
+- [x] 先写重复沟通转任务返回 `{task, alreadyExists:true}`、并发只创建一条来源任务测试。
+- [x] 运行目标测试确认 RED。
+- [x] 拆开当前压缩单行/`any` helper，使用类型安全方法；Partner create/update 原子维护 projectIds，communication update 复用 create 的引用校验。
+- [x] 实现 advisory lock + taskId 唯一幂等转换，复用 `TasksService.createTaskInTransaction`。
+- [x] 运行目标测试、lint 和 build。
 - [ ] Commit: `feat(management): complete partner lifecycle`
 
 ## Task 4: 飞书式合作方详情工作区
@@ -62,10 +62,10 @@
 - Modify: `frontend/src/pages/ProjectWorkspacePage.tsx`
 - Modify: `frontend/src/pages/__tests__/ProjectWorkspacePage.test.tsx`
 
-- [ ] 先写搜索/筛选、SideSheet 深链、编辑/归档、联系人/协议/沟通 CRUD、跟进、转任务幂等反馈与项目关联测试。
-- [ ] 运行目标 Vitest 确认 RED。
-- [ ] 用 Semi Design 重做 `/library/governance/partners?recordId=&projectId=`，补齐 child update/archive clients；项目页增加关联合作方区。
-- [ ] 运行 target tests、typecheck、contracts、lint 和 build。
+- [x] 先写搜索/筛选、SideSheet 深链、编辑/归档、联系人/协议/沟通 CRUD、跟进、转任务幂等反馈与项目关联测试。
+- [x] 运行目标 Vitest 确认 RED。
+- [x] 用 Semi Design 重做 `/library/governance/partners?recordId=&projectId=`，补齐 child update/archive clients；项目页增加关联合作方区。
+- [x] 运行 target tests、typecheck、contracts、lint 和 build。
 - [ ] Commit: `feat(frontend): add partner relationship workspace`
 
 ## Task 5: 非项目研发领域服务
@@ -79,11 +79,11 @@
 - Create: `backend/test/unit/modules/workbench/non-project-rd.service.spec.ts`
 - Create: `backend/test/integration/modules/workbench/operations.controller.spec.ts`
 
-- [ ] 先写 LEARNING/INTERVIEW/RESEARCH/IMPROVEMENT/OTHER 类型、时间边界、outcome CRUD、项目建议和软归档约束测试。
-- [ ] 先写“加入我的工作”重复/并发幂等、来源 task 可回到原对象测试。
-- [ ] 运行目标测试确认 RED。
-- [ ] 实现 `/api/non-project-rd` 生命周期、outcomes、project-suggestion 与 task 转换；不引入第二个 Calendar service。
-- [ ] 运行目标测试、lint 和 build。
+- [x] 先写 TECH_EXPLORATION/NEW_DIRECTION/PLATFORM_TOOL/TECH_DEBT/PATENT/STANDARD_METHOD/TRAINING/TEMPORARY_SUPPORT 固定类型、时间边界、outcome CRUD、项目建议和软归档约束测试。
+- [x] 先写“加入我的工作”重复/并发幂等、来源 task 可回到原对象测试。
+- [x] 运行目标测试确认 RED。
+- [x] 实现 `/api/non-project-rd` 生命周期、outcomes、project-suggestion 与 task 转换；不引入第二个 Calendar service。
+- [x] 运行目标测试、lint 和 build。
 - [ ] Commit: `feat(operations): add non-project rd lifecycle`
 
 ## Task 6: 接入统一日历、我的工作与搜索
@@ -125,4 +125,3 @@
 - [ ] 真实浏览器完成合作方→联系人/协议/沟通→任务与非项目事项→成果→任务→日历全链路，并刷新验证深链。
 - [ ] 请求规格复核和质量复核，修复后提交。
 - [ ] Commit: `test(operations): verify partner and rd acceptance`
-
