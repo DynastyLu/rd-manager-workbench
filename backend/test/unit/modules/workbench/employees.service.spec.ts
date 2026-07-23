@@ -2,6 +2,10 @@ import { HttpStatus } from '@nestjs/common';
 import { EmploymentStatus, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
 import { EmployeesService } from '../../../../src/modules/workbench/employees/application/employees.service';
+import {
+  MAX_EMPLOYEE_PAGE,
+  MAX_EMPLOYEE_PAGE_SIZE,
+} from '../../../../src/modules/workbench/employees/interface/http/dto/employees.dto';
 
 describe('EmployeesService', () => {
   afterEach(() => {
@@ -67,22 +71,77 @@ describe('EmployeesService', () => {
     });
   });
 
-  it('caps page size defensively when called outside the HTTP validation boundary', async () => {
-    const findMany = jest.fn().mockResolvedValue([]);
-    const prisma = {
-      resourceProfile: {
-        findMany,
-        count: jest.fn().mockResolvedValue(0),
-      },
-      $transaction: jest.fn(async (operations: unknown[]) => Promise.all(operations)),
-    } as unknown as PlatformPrismaService;
-    const service = new EmployeesService(prisma);
+  it.each([
+    {
+      label: 'an oversized page',
+      page: MAX_EMPLOYEE_PAGE + 1,
+      expectedPage: MAX_EMPLOYEE_PAGE,
+      expectedSkip: (MAX_EMPLOYEE_PAGE - 1) * 2,
+    },
+    { label: 'a negative page', page: -1, expectedPage: 1, expectedSkip: 0 },
+    { label: 'a NaN page', page: Number.NaN, expectedPage: 1, expectedSkip: 0 },
+    { label: 'an infinite page', page: Number.POSITIVE_INFINITY, expectedPage: 1, expectedSkip: 0 },
+    { label: 'a fractional page', page: 1.5, expectedPage: 1, expectedSkip: 0 },
+  ])(
+    'normalizes $label when service.list bypasses HTTP validation',
+    async ({ page, expectedPage, expectedSkip }) => {
+      const findMany = jest.fn().mockResolvedValue([]);
+      const prisma = {
+        resourceProfile: {
+          findMany,
+          count: jest.fn().mockResolvedValue(0),
+        },
+        $transaction: jest.fn(async (operations: unknown[]) => Promise.all(operations)),
+      } as unknown as PlatformPrismaService;
+      const service = new EmployeesService(prisma);
 
-    await expect(service.list({ page: 2, pageSize: 101 })).resolves.toMatchObject({
-      meta: { page: 2, pageSize: 100, total: 0 },
-    });
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 100, take: 100 }));
-  });
+      await expect(service.list({ page, pageSize: 2 })).resolves.toMatchObject({
+        meta: { page: expectedPage, pageSize: 2, total: 0 },
+      });
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: expectedSkip, take: 2 }),
+      );
+    },
+  );
+
+  it.each([
+    { label: 'zero page size', pageSize: 0, expectedPageSize: 1, expectedSkip: 1 },
+    { label: 'a negative page size', pageSize: -1, expectedPageSize: 1, expectedSkip: 1 },
+    {
+      label: 'an oversized page size',
+      pageSize: MAX_EMPLOYEE_PAGE_SIZE + 1,
+      expectedPageSize: MAX_EMPLOYEE_PAGE_SIZE,
+      expectedSkip: MAX_EMPLOYEE_PAGE_SIZE,
+    },
+    { label: 'a NaN page size', pageSize: Number.NaN, expectedPageSize: 20, expectedSkip: 20 },
+    {
+      label: 'an infinite page size',
+      pageSize: Number.POSITIVE_INFINITY,
+      expectedPageSize: 20,
+      expectedSkip: 20,
+    },
+    { label: 'a fractional page size', pageSize: 1.5, expectedPageSize: 20, expectedSkip: 20 },
+  ])(
+    'normalizes $label when service.list bypasses HTTP validation',
+    async ({ pageSize, expectedPageSize, expectedSkip }) => {
+      const findMany = jest.fn().mockResolvedValue([]);
+      const prisma = {
+        resourceProfile: {
+          findMany,
+          count: jest.fn().mockResolvedValue(0),
+        },
+        $transaction: jest.fn(async (operations: unknown[]) => Promise.all(operations)),
+      } as unknown as PlatformPrismaService;
+      const service = new EmployeesService(prisma);
+
+      await expect(service.list({ page: 2, pageSize })).resolves.toMatchObject({
+        meta: { page: 2, pageSize: expectedPageSize, total: 0 },
+      });
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: expectedSkip, take: expectedPageSize }),
+      );
+    },
+  );
 
   it('translates duplicate display names into RESOURCE_NAME_EXISTS', async () => {
     const duplicate = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
@@ -192,6 +251,7 @@ describe('EmployeesService', () => {
 
     await expect(service.archive('employee-1')).rejects.toMatchObject({
       code: 'RESOURCE_LOAD_REFERENCE_INVALID',
+      message: 'Archive load entries before archiving employee',
       statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
     });
     expect(transactionClient.resourceProfile.update).not.toHaveBeenCalled();

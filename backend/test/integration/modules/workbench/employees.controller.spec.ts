@@ -231,9 +231,7 @@ describe('Employees API', () => {
         .post('/api/employees')
         .send({ displayName: `${prefix}-NULL-STATUS`, employmentStatus: null }),
     ]);
-    expect([nullCapacity.status, blankCapacity.status, nullStatus.status]).toEqual([
-      400, 400, 400,
-    ]);
+    expect([nullCapacity.status, blankCapacity.status, nullStatus.status]).toEqual([400, 400, 400]);
     for (const response of [nullCapacity, blankCapacity, nullStatus]) {
       expect(response.body).toMatchObject({
         success: false,
@@ -309,7 +307,10 @@ describe('Employees API', () => {
       .expect(422);
     expect(blocked.body).toMatchObject({
       success: false,
-      error: { code: 'RESOURCE_LOAD_REFERENCE_INVALID' },
+      error: {
+        code: 'RESOURCE_LOAD_REFERENCE_INVALID',
+        message: 'Archive load entries before archiving employee',
+      },
     });
     await request(app.getHttpServer()).get(`/api/employees/${employeeId}`).expect(200);
 

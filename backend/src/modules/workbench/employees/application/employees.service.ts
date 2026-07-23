@@ -6,6 +6,7 @@ import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import {
   CreateEmployeeDto,
   ListEmployeesQueryDto,
+  MAX_EMPLOYEE_PAGE,
   MAX_EMPLOYEE_PAGE_SIZE,
   UpdateEmployeeDto,
 } from '../interface/http/dto/employees.dto';
@@ -17,8 +18,8 @@ export class EmployeesService {
   constructor(private readonly prisma: PlatformPrismaService) {}
 
   async list(query: ListEmployeesQueryDto) {
-    const page = query.page ?? 1;
-    const pageSize = Math.min(query.pageSize ?? 20, MAX_EMPLOYEE_PAGE_SIZE);
+    const page = this.normalizePaginationValue(query.page, 1, MAX_EMPLOYEE_PAGE);
+    const pageSize = this.normalizePaginationValue(query.pageSize, 20, MAX_EMPLOYEE_PAGE_SIZE);
     const where: Prisma.ResourceProfileWhereInput = {
       archivedAt: null,
       ...(query.department ? { department: query.department } : {}),
@@ -100,7 +101,7 @@ export class EmployeesService {
       if (activeLoadEntryCount > 0) {
         throw new AppError({
           code: ErrorCodes.RESOURCE_LOAD_REFERENCE_INVALID,
-          message: 'Archive load entries before archiving resource',
+          message: 'Archive load entries before archiving employee',
           statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
         });
       }
@@ -109,6 +110,13 @@ export class EmployeesService {
         data: { archivedAt: new Date() },
       });
     });
+  }
+
+  private normalizePaginationValue(value: number | undefined, fallback: number, maximum: number) {
+    if (value === undefined || !Number.isFinite(value) || !Number.isInteger(value)) {
+      return fallback;
+    }
+    return Math.min(Math.max(value, 1), maximum);
   }
 
   private async lockActiveEmployee(transaction: Prisma.TransactionClient, id: string) {
