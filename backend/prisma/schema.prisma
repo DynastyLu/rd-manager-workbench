@@ -508,44 +508,110 @@ enum DataImportStatus {
   @@schema("app")
 }
 
+enum EmploymentStatus {
+  ACTIVE
+  ON_LEAVE
+  LEFT
+
+  @@schema("app")
+}
+
+enum EmployeeWorkImportStatus {
+  UPLOADED
+  PREVIEWED
+  RESOLVING
+  READY
+  IMPORTING
+  COMPLETED
+  FAILED
+  SUPERSEDED
+  EXPIRED
+
+  @@schema("app")
+}
+
+enum EmployeeSnapshotStatus {
+  NOT_STARTED
+  GENERATING
+  READY
+  FAILED
+
+  @@schema("app")
+}
+
+enum EmployeeWorkStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  AT_RISK
+  BLOCKED
+
+  @@schema("app")
+}
+
+enum EmployeeProgressScope {
+  TEAM
+  EMPLOYEE
+  PROJECT
+
+  @@schema("app")
+}
+
+enum EmployeeProgressPeriod {
+  WEEK
+  MONTH
+
+  @@schema("app")
+}
+
+enum EmployeeImportRowStatus {
+  VALID
+  ERROR
+  UNRESOLVED
+
+  @@schema("app")
+}
+
 model Project {
-  id                  String                     @id @default(cuid())
-  code                String                     @unique
-  name                String
-  type                String?
-  researchDirection   String?                    @map("research_direction")
-  objective           String?
-  expectedOutcome     String?                    @map("expected_outcome")
-  leadName            String?                    @map("lead_name")
-  participantNames    String[]                   @default([]) @map("participant_names")
-  plannedStartAt      DateTime?                  @map("planned_start_at") @db.Timestamptz(6)
-  plannedEndAt        DateTime?                  @map("planned_end_at") @db.Timestamptz(6)
-  actualStartAt       DateTime?                  @map("actual_start_at") @db.Timestamptz(6)
-  actualEndAt         DateTime?                  @map("actual_end_at") @db.Timestamptz(6)
-  phase               ProjectPhase               @default(PLANNING)
-  status              ProjectStatus              @default(DRAFT)
-  healthOverride      ProjectHealth?              @map("health_override")
-  archivedAt          DateTime?                  @map("archived_at") @db.Timestamptz(6)
-  createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
-  milestones          Milestone[]
-  tasks               WorkTask[]
-  progressReports     ProgressReport[]
-  healthSnapshots     ProjectHealthSnapshot[]
-  applicationCases    ApplicationCase[]
-  risks               Risk[]
-  issues              Issue[]
-  decisions           Decision[]
-  communications      CommunicationRecord[]
-  partnerProjects     PartnerProject[]
-  meetings            Meeting[]
-  calendarEvents      CalendarEvent[]
-  contentDocuments    ContentDocument[]
-  fileAssets          FileAsset[]
-  nonProjectRdItems   NonProjectRdItem[]
-  resourceLoadEntries ResourceLoadEntry[]
-  intelligenceTopics  IntelligenceTopicProject[]
-  intelligenceItems   IntelligenceItemProject[]
+  id                         String                     @id @default(cuid())
+  code                       String                     @unique
+  name                       String
+  type                       String?
+  researchDirection          String?                    @map("research_direction")
+  objective                  String?
+  expectedOutcome            String?                    @map("expected_outcome")
+  leadName                   String?                    @map("lead_name")
+  participantNames           String[]                   @default([]) @map("participant_names")
+  plannedStartAt             DateTime?                  @map("planned_start_at") @db.Timestamptz(6)
+  plannedEndAt               DateTime?                  @map("planned_end_at") @db.Timestamptz(6)
+  actualStartAt              DateTime?                  @map("actual_start_at") @db.Timestamptz(6)
+  actualEndAt                DateTime?                  @map("actual_end_at") @db.Timestamptz(6)
+  phase                      ProjectPhase               @default(PLANNING)
+  status                     ProjectStatus              @default(DRAFT)
+  healthOverride             ProjectHealth?             @map("health_override")
+  archivedAt                 DateTime?                  @map("archived_at") @db.Timestamptz(6)
+  createdAt                  DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  milestones                 Milestone[]
+  tasks                      WorkTask[]
+  progressReports            ProgressReport[]
+  healthSnapshots            ProjectHealthSnapshot[]
+  applicationCases           ApplicationCase[]
+  risks                      Risk[]
+  issues                     Issue[]
+  decisions                  Decision[]
+  communications             CommunicationRecord[]
+  partnerProjects            PartnerProject[]
+  meetings                   Meeting[]
+  calendarEvents             CalendarEvent[]
+  contentDocuments           ContentDocument[]
+  fileAssets                 FileAsset[]
+  nonProjectRdItems          NonProjectRdItem[]
+  resourceLoadEntries        ResourceLoadEntry[]
+  intelligenceTopics         IntelligenceTopicProject[]
+  intelligenceItems          IntelligenceItemProject[]
+  employeeWorkItems          EmployeeWorkItem[]
+  resolvedEmployeeImportRows EmployeeWorkImportRow[]
 
   @@index([status, archivedAt])
   @@index([plannedEndAt])
@@ -577,38 +643,41 @@ model Milestone {
 }
 
 model WorkTask {
-  id                  String               @id @default(cuid())
-  projectId           String?              @map("project_id")
-  milestoneId         String?              @map("milestone_id")
-  parentId            String?              @map("parent_id")
-  title               String
-  description         String?
-  assigneeName        String?              @map("assignee_name")
-  collaboratorNames   String[]             @default([]) @map("collaborator_names")
-  priority            TaskPriority         @default(MEDIUM)
-  status              TaskStatus           @default(TODO)
-  completionPercent   Int                  @default(0) @map("completion_percent")
-  dueAt               DateTime?            @map("due_at") @db.Timestamptz(6)
-  completedAt         DateTime?            @map("completed_at") @db.Timestamptz(6)
-  sourceType          String?              @map("source_type")
-  sourceId            String?              @map("source_id")
-  archivedAt          DateTime?            @map("archived_at") @db.Timestamptz(6)
-  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
-  project             Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  milestone           Milestone?           @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
-  parent              WorkTask?            @relation("TaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children            WorkTask[]           @relation("TaskHierarchy")
-  dependencies        TaskDependency[]     @relation("DependencyTask")
-  dependents          TaskDependency[]     @relation("DependencyDependsOn")
-  risks               Risk[]
-  issues              Issue[]
-  decisions           Decision[]
-  communicationRecord CommunicationRecord?
-  nonProjectRdItem    NonProjectRdItem?
-  reminder            TaskReminder?
-  later               TaskLater?
-  resourceLoadEntries ResourceLoadEntry[]
+  id                         String                  @id @default(cuid())
+  code                       String                  @unique @default(dbgenerated("app.generate_task_code()"))
+  projectId                  String?                 @map("project_id")
+  milestoneId                String?                 @map("milestone_id")
+  parentId                   String?                 @map("parent_id")
+  title                      String
+  description                String?
+  assigneeName               String?                 @map("assignee_name")
+  collaboratorNames          String[]                @default([]) @map("collaborator_names")
+  priority                   TaskPriority            @default(MEDIUM)
+  status                     TaskStatus              @default(TODO)
+  completionPercent          Int                     @default(0) @map("completion_percent")
+  dueAt                      DateTime?               @map("due_at") @db.Timestamptz(6)
+  completedAt                DateTime?               @map("completed_at") @db.Timestamptz(6)
+  sourceType                 String?                 @map("source_type")
+  sourceId                   String?                 @map("source_id")
+  archivedAt                 DateTime?               @map("archived_at") @db.Timestamptz(6)
+  createdAt                  DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project                    Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  milestone                  Milestone?              @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  parent                     WorkTask?               @relation("TaskHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children                   WorkTask[]              @relation("TaskHierarchy")
+  dependencies               TaskDependency[]        @relation("DependencyTask")
+  dependents                 TaskDependency[]        @relation("DependencyDependsOn")
+  risks                      Risk[]
+  issues                     Issue[]
+  decisions                  Decision[]
+  communicationRecord        CommunicationRecord?
+  nonProjectRdItem           NonProjectRdItem?
+  reminder                   TaskReminder?
+  later                      TaskLater?
+  resourceLoadEntries        ResourceLoadEntry[]
+  employeeWorkItems          EmployeeWorkItem[]
+  resolvedEmployeeImportRows EmployeeWorkImportRow[]
 
   @@index([projectId, status, dueAt])
   @@index([milestoneId])
@@ -1126,25 +1195,26 @@ model SubmissionMaterialVersion {
 }
 
 model Risk {
-  id          String         @id @default(cuid())
-  projectId   String?        @map("project_id")
-  milestoneId String?        @map("milestone_id")
-  taskId      String?        @map("task_id")
-  title       String
-  description String?
-  likelihood  RiskLikelihood
-  impact      RiskImpact
-  level       RiskLevel
-  mitigation  String?
-  ownerName   String?        @map("owner_name")
-  status      RiskStatus     @default(OPEN)
-  closedAt    DateTime?      @map("closed_at") @db.Timestamptz(6)
-  archivedAt  DateTime?      @map("archived_at") @db.Timestamptz(6)
-  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
-  project     Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  milestone   Milestone?     @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
-  task        WorkTask?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  id               String            @id @default(cuid())
+  projectId        String?           @map("project_id")
+  milestoneId      String?           @map("milestone_id")
+  taskId           String?           @map("task_id")
+  title            String
+  description      String?
+  likelihood       RiskLikelihood
+  impact           RiskImpact
+  level            RiskLevel
+  mitigation       String?
+  ownerName        String?           @map("owner_name")
+  status           RiskStatus        @default(OPEN)
+  closedAt         DateTime?         @map("closed_at") @db.Timestamptz(6)
+  archivedAt       DateTime?         @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project          Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  milestone        Milestone?        @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  task             WorkTask?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  employeeWorkItem EmployeeWorkItem?
 
   @@index([projectId, archivedAt, status])
   @@index([taskId])
@@ -1561,19 +1631,25 @@ model NonProjectRdOutcome {
 }
 
 model ResourceProfile {
-  id                  String              @id @default(cuid())
-  displayName         String              @unique @map("display_name")
-  roleTitle           String?             @map("role_title")
-  weeklyCapacityHours Int                 @default(40) @map("weekly_capacity_hours")
-  developmentGoal     String?             @map("development_goal")
-  notes               String?
-  archivedAt          DateTime?           @map("archived_at") @db.Timestamptz(6)
-  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
-  skills              ResourceSkill[]
-  loadEntries         ResourceLoadEntry[]
+  id                         String                  @id @default(cuid())
+  displayName                String                  @unique @map("display_name")
+  roleTitle                  String?                 @map("role_title")
+  department                 String?
+  managerName                String?                 @map("manager_name")
+  employmentStatus           EmploymentStatus        @default(ACTIVE) @map("employment_status")
+  weeklyCapacityHours        Int                     @default(40) @map("weekly_capacity_hours")
+  developmentGoal            String?                 @map("development_goal")
+  notes                      String?
+  archivedAt                 DateTime?               @map("archived_at") @db.Timestamptz(6)
+  createdAt                  DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  skills                     ResourceSkill[]
+  loadEntries                ResourceLoadEntry[]
+  employeeWorkItems          EmployeeWorkItem[]
+  resolvedEmployeeImportRows EmployeeWorkImportRow[]
 
   @@index([archivedAt, displayName])
+  @@index([employmentStatus, archivedAt, displayName], map: "resource_profiles_employment_status_archived_at_display_name_id")
   @@map("resource_profiles")
   @@schema("app")
 }
@@ -1595,25 +1671,159 @@ model ResourceSkill {
 }
 
 model ResourceLoadEntry {
-  id                 String            @id @default(cuid())
-  resourceId         String            @map("resource_id")
-  weekStartAt        DateTime          @map("week_start_at") @db.Date
-  kind               LoadEntryKind
-  nonProjectRdItemId String?           @map("non_project_rd_item_id")
-  projectId          String?           @map("project_id")
-  taskId             String?           @map("task_id")
-  plannedHours       Decimal           @map("planned_hours") @db.Decimal(6, 2)
-  note               String?
-  archivedAt         DateTime?         @map("archived_at") @db.Timestamptz(6)
-  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
-  resource           ResourceProfile   @relation(fields: [resourceId], references: [id], onDelete: Restrict)
-  nonProjectRdItem   NonProjectRdItem? @relation(fields: [nonProjectRdItemId], references: [id], onDelete: SetNull)
-  project            Project?          @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  task               WorkTask?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  id                        String                   @id @default(cuid())
+  resourceId                String                   @map("resource_id")
+  weekStartAt               DateTime                 @map("week_start_at") @db.Date
+  kind                      LoadEntryKind
+  nonProjectRdItemId        String?                  @map("non_project_rd_item_id")
+  projectId                 String?                  @map("project_id")
+  taskId                    String?                  @map("task_id")
+  employeeWorkItemId        String?                  @unique @map("employee_work_item_id")
+  employeeWorkImportBatchId String?                  @map("employee_work_import_batch_id")
+  plannedHours              Decimal                  @map("planned_hours") @db.Decimal(6, 2)
+  note                      String?
+  archivedAt                DateTime?                @map("archived_at") @db.Timestamptz(6)
+  createdAt                 DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  resource                  ResourceProfile          @relation(fields: [resourceId], references: [id], onDelete: Restrict)
+  nonProjectRdItem          NonProjectRdItem?        @relation(fields: [nonProjectRdItemId], references: [id], onDelete: SetNull)
+  project                   Project?                 @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task                      WorkTask?                @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  employeeWorkItem          EmployeeWorkItem?        @relation(fields: [employeeWorkItemId], references: [id], onDelete: SetNull)
+  employeeWorkImportBatch   EmployeeWorkImportBatch? @relation(fields: [employeeWorkImportBatchId], references: [id], onDelete: SetNull)
 
   @@index([resourceId, archivedAt, weekStartAt])
   @@map("resource_load_entries")
+  @@schema("app")
+}
+
+model EmployeeWorkImportBatch {
+  id                  String                    @id @default(cuid())
+  periodType          EmployeeProgressPeriod    @default(WEEK) @map("period_type")
+  periodStartAt       DateTime                  @map("period_start_at") @db.Date
+  periodEndAt         DateTime                  @map("period_end_at") @db.Date
+  version             Int?
+  status              EmployeeWorkImportStatus  @default(UPLOADED)
+  snapshotStatus      EmployeeSnapshotStatus    @default(NOT_STARTED) @map("snapshot_status")
+  snapshotError       String?                   @map("snapshot_error")
+  originalName        String                    @map("original_name")
+  fileHash            String                    @map("file_hash")
+  sourceStorageKey    String                    @map("source_storage_key")
+  errorStorageKey     String?                   @map("error_storage_key")
+  templateVersion     Int                       @map("template_version")
+  previewFingerprint  String?                   @map("preview_fingerprint")
+  totalRows           Int                       @default(0) @map("total_rows")
+  validRows           Int                       @default(0) @map("valid_rows")
+  errorRows           Int                       @default(0) @map("error_rows")
+  unresolvedRows      Int                       @default(0) @map("unresolved_rows")
+  importedRows        Int                       @default(0) @map("imported_rows")
+  supersedesBatchId   String?                   @map("supersedes_batch_id")
+  restoredFromBatchId String?                   @map("restored_from_batch_id")
+  committedAt         DateTime?                 @map("committed_at") @db.Timestamptz(6)
+  expiresAt           DateTime                  @map("expires_at") @db.Timestamptz(6)
+  archivedAt          DateTime?                 @map("archived_at") @db.Timestamptz(6)
+  createdAt           DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  supersedes          EmployeeWorkImportBatch?  @relation("EmployeeImportSupersedes", fields: [supersedesBatchId], references: [id], onDelete: SetNull)
+  supersededBy        EmployeeWorkImportBatch[] @relation("EmployeeImportSupersedes")
+  restoredFrom        EmployeeWorkImportBatch?  @relation("EmployeeImportRestores", fields: [restoredFromBatchId], references: [id], onDelete: SetNull)
+  restoredBy          EmployeeWorkImportBatch[] @relation("EmployeeImportRestores")
+  rows                EmployeeWorkImportRow[]
+  workItems           EmployeeWorkItem[]
+  loadEntries         ResourceLoadEntry[]
+
+  @@unique([periodType, periodStartAt, version])
+  @@index([periodType, periodStartAt, status])
+  @@index([fileHash, periodType, periodStartAt])
+  @@map("employee_work_import_batches")
+  @@schema("app")
+}
+
+model EmployeeWorkImportRow {
+  id                 String                  @id @default(cuid())
+  batchId            String                  @map("batch_id")
+  rowNumber          Int                     @map("row_number")
+  rawValues          Json                    @map("raw_values")
+  normalizedValues   Json                    @map("normalized_values")
+  status             EmployeeImportRowStatus
+  errors             Json
+  resolvedEmployeeId String?                 @map("resolved_employee_id")
+  resolvedProjectId  String?                 @map("resolved_project_id")
+  resolvedTaskId     String?                 @map("resolved_task_id")
+  keepUnlinked       Boolean                 @default(false) @map("keep_unlinked")
+  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  batch              EmployeeWorkImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  resolvedEmployee   ResourceProfile?        @relation(fields: [resolvedEmployeeId], references: [id], onDelete: SetNull)
+  resolvedProject    Project?                @relation(fields: [resolvedProjectId], references: [id], onDelete: SetNull)
+  resolvedTask       WorkTask?               @relation(fields: [resolvedTaskId], references: [id], onDelete: SetNull)
+  workItem           EmployeeWorkItem?
+
+  @@unique([batchId, rowNumber])
+  @@index([batchId, status])
+  @@map("employee_work_import_rows")
+  @@schema("app")
+}
+
+model EmployeeWorkItem {
+  id             String                  @id @default(cuid())
+  employeeId     String                  @map("employee_id")
+  importBatchId  String                  @map("import_batch_id")
+  sourceRowId    String                  @unique @map("source_row_id")
+  periodStartAt  DateTime                @map("period_start_at") @db.Date
+  periodEndAt    DateTime                @map("period_end_at") @db.Date
+  title          String
+  planText       String?                 @map("plan_text")
+  summaryText    String?                 @map("summary_text")
+  completionRate Int?                    @map("completion_rate")
+  status         EmployeeWorkStatus
+  nextPlanText   String?                 @map("next_plan_text")
+  riskText       String?                 @map("risk_text")
+  plannedHours   Decimal?                @map("planned_hours") @db.Decimal(6, 2)
+  actualHours    Decimal?                @map("actual_hours") @db.Decimal(6, 2)
+  projectId      String?                 @map("project_id")
+  taskId         String?                 @map("task_id")
+  riskId         String?                 @unique @map("risk_id")
+  note           String?
+  rawRow         Json                    @map("raw_row")
+  archivedAt     DateTime?               @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  employee       ResourceProfile         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  importBatch    EmployeeWorkImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  sourceRow      EmployeeWorkImportRow   @relation(fields: [sourceRowId], references: [id], onDelete: Restrict)
+  project        Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task           WorkTask?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  risk           Risk?                   @relation(fields: [riskId], references: [id], onDelete: SetNull)
+  loadEntry      ResourceLoadEntry?
+
+  @@index([employeeId, periodStartAt, archivedAt])
+  @@index([projectId, periodStartAt, archivedAt])
+  @@index([importBatchId, archivedAt])
+  @@map("employee_work_items")
+  @@schema("app")
+}
+
+model EmployeeProgressSnapshot {
+  id             String                 @id @default(cuid())
+  scopeType      EmployeeProgressScope  @map("scope_type")
+  scopeKey       String                 @map("scope_key")
+  scopeId        String?                @map("scope_id")
+  periodType     EmployeeProgressPeriod @map("period_type")
+  periodStartAt  DateTime               @map("period_start_at") @db.Date
+  periodEndAt    DateTime               @map("period_end_at") @db.Date
+  version        Int
+  metrics        Json
+  highlights     Json
+  risks          Json
+  sourceBatchIds String[]               @map("source_batch_ids")
+  generatedAt    DateTime               @default(now()) @map("generated_at") @db.Timestamptz(6)
+  archivedAt     DateTime?              @map("archived_at") @db.Timestamptz(6)
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([scopeKey, periodType, periodStartAt, version])
+  @@index([scopeType, scopeId, periodType, periodStartAt])
+  @@map("employee_progress_snapshots")
   @@schema("app")
 }
 

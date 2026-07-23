@@ -171,6 +171,30 @@ describe('Tasks API', () => {
       .expect(400);
   });
 
+  it('generates and persists an immutable task code', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} generated code` })
+      .expect(201);
+
+    expect(created.body.data.code).toMatch(/^TASK-[A-F0-9]{10}$/);
+
+    const persisted = await prisma.workTask.findUnique({
+      where: { id: created.body.data.id },
+      select: { code: true },
+    });
+    expect(persisted?.code).toBe(created.body.data.code);
+
+    await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} explicit code`, code: 'TASK-AAAAAAAAAA' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .patch(`/api/tasks/${created.body.data.id}`)
+      .send({ code: 'TASK-BBBBBBBBBB' })
+      .expect(400);
+  });
+
   it('rejects a milestone from another project', async () => {
     const milestone = await prisma.milestone.create({
       data: { projectId: otherProjectId, name: `${prefix} foreign milestone` },
