@@ -1,38 +1,48 @@
 import { EmploymentStatus } from '@prisma/client';
 import { PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsString, Max, Min, ValidateIf } from 'class-validator';
 
 const trimString = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
-const toNumber = ({ value }: { value: unknown }) => Number(value);
+const toNumber = ({ value }: { value: unknown }) =>
+  value === null || (typeof value === 'string' && value.trim() === '')
+    ? value
+    : Number(value);
+
+const isDefined = (_object: object, value: unknown) => value !== undefined;
+
+export const MAX_EMPLOYEE_PAGE = 1_000_000;
+export const MAX_EMPLOYEE_PAGE_SIZE = 100;
 
 export class ListEmployeesQueryDto {
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   q?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   department?: string;
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsEnum(EmploymentStatus)
   employmentStatus?: EmploymentStatus;
 
   @Transform(toNumber)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsInt()
   @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE)
   page?: number;
 
   @Transform(toNumber)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsInt()
   @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE_SIZE)
   pageSize?: number;
 }
 
@@ -43,40 +53,42 @@ export class CreateEmployeeDto {
   displayName!: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   department?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   roleTitle?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   managerName?: string;
 
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsEnum(EmploymentStatus)
   employmentStatus?: EmploymentStatus;
 
   @Transform(toNumber)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsInt()
   @Min(0)
   @Max(168)
   weeklyCapacityHours?: number;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   developmentGoal?: string;
 
   @Transform(trimString)
-  @IsOptional()
+  @ValidateIf(isDefined)
   @IsString()
   notes?: string;
 }
 
-export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {}
+export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto, {
+  skipNullProperties: false,
+}) {}

@@ -1,6 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { EmploymentStatus, PrismaClient } from '@prisma/client';
+import { EmploymentStatus, LoadEntryKind, PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
@@ -28,11 +28,27 @@ describe('Employees API', () => {
   });
 
   afterAll(async () => {
-    await prisma.resourceProfile.deleteMany({
-      where: { displayName: { startsWith: prefix } },
-    });
-    await prisma.$disconnect();
-    await app?.close();
+    try {
+      const employees = await prisma.resourceProfile.findMany({
+        where: { displayName: { startsWith: prefix } },
+        select: { id: true },
+      });
+      const employeeIds = employees.map(({ id }) => id);
+      if (employeeIds.length > 0) {
+        await prisma.resourceLoadEntry.deleteMany({
+          where: { resourceId: { in: employeeIds } },
+        });
+        await prisma.resourceProfile.deleteMany({
+          where: { id: { in: employeeIds } },
+        });
+      }
+    } finally {
+      try {
+        await prisma.$disconnect();
+      } finally {
+        await app?.close();
+      }
+    }
   });
 
   it('creates, filters, searches, retrieves, updates, and archives employee profiles', async () => {
@@ -151,7 +167,7 @@ describe('Employees API', () => {
       .expect(404);
     expect(archived.body).toMatchObject({
       success: false,
-      error: { code: 'RESOURCE_NOT_FOUND' },
+      error: { code: 'RESOURCE_NOT_FOUND', message: 'Employee not found' },
     });
     const archivedUpdate = await request(app.getHttpServer())
       .patch(`/api/employees/${employeeId}`)
@@ -183,9 +199,65 @@ describe('Employees API', () => {
     });
   });
 
-  it('returns RESOURCE_NAME_EXISTS for duplicate display names', async () => {
+  it('rejects unsafe employee pagination values', async () => {
+    const oversizedPage = await request(app.getHttpServer())
+      .get('/api/employees')
+      .query({ page: 1_000_001 })
+      .expect(400);
+    expect(oversizedPage.body).toMatchObject({
+      success: false,
+      error: { code: 'HTTP_ERROR' },
+    });
+
+    const oversizedPageSize = await request(app.getHttpServer())
+      .get('/api/employees')
+      .query({ pageSize: 101 })
+      .expect(400);
+    expect(oversizedPageSize.body).toMatchObject({
+      success: false,
+      error: { code: 'HTTP_ERROR' },
+    });
+  });
+
+  it('rejects null or blank numeric, enum, and required employee values', async () => {
+    const [nullCapacity, blankCapacity, nullStatus] = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/employees')
+        .send({ displayName: `${prefix}-NULL-CAPACITY`, weeklyCapacityHours: null }),
+      request(app.getHttpServer())
+        .post('/api/employees')
+        .send({ displayName: `${prefix}-BLANK-CAPACITY`, weeklyCapacityHours: '' }),
+      request(app.getHttpServer())
+        .post('/api/employees')
+        .send({ displayName: `${prefix}-NULL-STATUS`, employmentStatus: null }),
+    ]);
+    expect([nullCapacity.status, blankCapacity.status, nullStatus.status]).toEqual([
+      400, 400, 400,
+    ]);
+    for (const response of [nullCapacity, blankCapacity, nullStatus]) {
+      expect(response.body).toMatchObject({
+        success: false,
+        error: { code: 'HTTP_ERROR' },
+      });
+    }
+
+    const employee = await request(app.getHttpServer())
+      .post('/api/employees')
+      .send({ displayName: `${prefix}-NULL-NAME-TARGET` })
+      .expect(201);
+    const nullName = await request(app.getHttpServer())
+      .patch(`/api/employees/${employee.body.data.id}`)
+      .send({ displayName: null })
+      .expect(400);
+    expect(nullName.body).toMatchObject({
+      success: false,
+      error: { code: 'HTTP_ERROR' },
+    });
+  });
+
+  it('returns RESOURCE_NAME_EXISTS for duplicate display names on create and update', async () => {
     const duplicateName = `${prefix}-DUPLICATE`;
-    await request(app.getHttpServer())
+    const first = await request(app.getHttpServer())
       .post('/api/employees')
       .send({ displayName: duplicateName })
       .expect(201);
@@ -196,8 +268,55 @@ describe('Employees API', () => {
       .expect(409);
     expect(duplicate.body).toMatchObject({
       success: false,
-      error: { code: 'RESOURCE_NAME_EXISTS' },
+      error: { code: 'RESOURCE_NAME_EXISTS', message: 'Employee name already exists' },
     });
+
+    const second = await request(app.getHttpServer())
+      .post('/api/employees')
+      .send({ displayName: `${prefix}-DUPLICATE-UPDATE` })
+      .expect(201);
+    const duplicateUpdate = await request(app.getHttpServer())
+      .patch(`/api/employees/${second.body.data.id}`)
+      .send({ displayName: first.body.data.displayName })
+      .expect(409);
+    expect(duplicateUpdate.body).toMatchObject({
+      success: false,
+      error: { code: 'RESOURCE_NAME_EXISTS', message: 'Employee name already exists' },
+    });
+    const unchanged = await request(app.getHttpServer())
+      .get(`/api/employees/${second.body.data.id}`)
+      .expect(200);
+    expect(unchanged.body.data.displayName).toBe(`${prefix}-DUPLICATE-UPDATE`);
+  });
+
+  it('blocks employee archival until active resource load entries are archived', async () => {
+    const employee = await request(app.getHttpServer())
+      .post('/api/employees')
+      .send({ displayName: `${prefix}-ACTIVE-LOAD` })
+      .expect(201);
+    const employeeId = employee.body.data.id as string;
+    const loadEntry = await request(app.getHttpServer())
+      .post(`/api/resources/${employeeId}/load-entries`)
+      .send({
+        weekStartAt: '2026-07-20',
+        kind: LoadEntryKind.OTHER,
+        plannedHours: 8,
+      })
+      .expect(201);
+
+    const blocked = await request(app.getHttpServer())
+      .delete(`/api/employees/${employeeId}`)
+      .expect(422);
+    expect(blocked.body).toMatchObject({
+      success: false,
+      error: { code: 'RESOURCE_LOAD_REFERENCE_INVALID' },
+    });
+    await request(app.getHttpServer()).get(`/api/employees/${employeeId}`).expect(200);
+
+    await request(app.getHttpServer())
+      .delete(`/api/resources/${employeeId}/load-entries/${loadEntry.body.data.id}`)
+      .expect(204);
+    await request(app.getHttpServer()).delete(`/api/employees/${employeeId}`).expect(204);
   });
 
   it('returns RESOURCE_NOT_FOUND for unknown employee IDs', async () => {
@@ -215,6 +334,14 @@ describe('Employees API', () => {
       .send({ roleTitle: '不存在' })
       .expect(404);
     expect(updated.body).toMatchObject({
+      success: false,
+      error: { code: 'RESOURCE_NOT_FOUND' },
+    });
+
+    const deleted = await request(app.getHttpServer())
+      .delete(`/api/employees/${missingId}`)
+      .expect(404);
+    expect(deleted.body).toMatchObject({
       success: false,
       error: { code: 'RESOURCE_NOT_FOUND' },
     });

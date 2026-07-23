@@ -4,6 +4,10 @@ import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/pla
 import { EmployeesService } from '../../../../src/modules/workbench/employees/application/employees.service';
 
 describe('EmployeesService', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('lists active employees with search, department filters, and pagination', async () => {
     const employee = {
       id: 'employee-1',
@@ -63,6 +67,23 @@ describe('EmployeesService', () => {
     });
   });
 
+  it('caps page size defensively when called outside the HTTP validation boundary', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const prisma = {
+      resourceProfile: {
+        findMany,
+        count: jest.fn().mockResolvedValue(0),
+      },
+      $transaction: jest.fn(async (operations: unknown[]) => Promise.all(operations)),
+    } as unknown as PlatformPrismaService;
+    const service = new EmployeesService(prisma);
+
+    await expect(service.list({ page: 2, pageSize: 101 })).resolves.toMatchObject({
+      meta: { page: 2, pageSize: 100, total: 0 },
+    });
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 100, take: 100 }));
+  });
+
   it('translates duplicate display names into RESOURCE_NAME_EXISTS', async () => {
     const duplicate = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
       code: 'P2002',
@@ -80,16 +101,35 @@ describe('EmployeesService', () => {
     });
   });
 
-  it('updates an active employee profile', async () => {
+  it('does not translate P2002 errors for constraints other than displayName', async () => {
+    const duplicate = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: '6.6.0',
+      meta: { target: ['other_unique_field'] },
+    });
+    const prisma = {
+      resourceProfile: { create: jest.fn().mockRejectedValue(duplicate) },
+    } as unknown as PlatformPrismaService;
+    const service = new EmployeesService(prisma);
+
+    await expect(service.create({ displayName: '员工' })).rejects.toBe(duplicate);
+  });
+
+  it('locks and updates an active employee in the same transaction', async () => {
     const updated = {
       id: 'employee-1',
       displayName: '更新后的员工',
       employmentStatus: EmploymentStatus.ON_LEAVE,
     };
-    const findFirst = jest.fn().mockResolvedValue({ id: 'employee-1', skills: [] });
     const update = jest.fn().mockResolvedValue(updated);
+    const transactionClient = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'employee-1' }]),
+      resourceProfile: { update },
+    };
     const prisma = {
-      resourceProfile: { findFirst, update },
+      $transaction: jest.fn((work: (client: typeof transactionClient) => unknown) =>
+        work(transactionClient),
+      ),
     } as unknown as PlatformPrismaService;
     const service = new EmployeesService(prisma);
 
@@ -99,8 +139,10 @@ describe('EmployeesService', () => {
         employmentStatus: EmploymentStatus.ON_LEAVE,
       }),
     ).resolves.toEqual(updated);
-    expect(findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'employee-1', archivedAt: null } }),
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(transactionClient.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(transactionClient.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      update.mock.invocationCallOrder[0],
     );
     expect(update).toHaveBeenCalledWith({
       where: { id: 'employee-1' },
@@ -133,7 +175,6 @@ describe('EmployeesService', () => {
       where: { id: 'employee-1' },
       data: { archivedAt },
     });
-    jest.useRealTimers();
   });
 
   it('blocks archiving an employee with active resource load entries', async () => {

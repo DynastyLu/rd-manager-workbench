@@ -6,6 +6,7 @@ import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import {
   CreateEmployeeDto,
   ListEmployeesQueryDto,
+  MAX_EMPLOYEE_PAGE_SIZE,
   UpdateEmployeeDto,
 } from '../interface/http/dto/employees.dto';
 
@@ -17,7 +18,7 @@ export class EmployeesService {
 
   async list(query: ListEmployeesQueryDto) {
     const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
+    const pageSize = Math.min(query.pageSize ?? 20, MAX_EMPLOYEE_PAGE_SIZE);
     const where: Prisma.ResourceProfileWhereInput = {
       archivedAt: null,
       ...(query.department ? { department: query.department } : {}),
@@ -75,12 +76,14 @@ export class EmployeesService {
   }
 
   async update(id: string, dto: UpdateEmployeeDto) {
-    await this.get(id);
     try {
-      return await this.prisma.resourceProfile.update({
-        where: { id },
-        data: dto,
-        include: orderedSkills,
+      return await this.prisma.$transaction(async (transaction) => {
+        await this.lockActiveEmployee(transaction, id);
+        return transaction.resourceProfile.update({
+          where: { id },
+          data: dto,
+          include: orderedSkills,
+        });
       });
     } catch (error) {
       this.throwDuplicateName(error);
@@ -118,19 +121,28 @@ export class EmployeesService {
   }
 
   private throwDuplicateName(error: unknown) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002' &&
+      this.isDisplayNameTarget(error.meta?.target)
+    ) {
       throw new AppError({
         code: ErrorCodes.RESOURCE_NAME_EXISTS,
-        message: 'Resource name already exists',
+        message: 'Employee name already exists',
         statusCode: HttpStatus.CONFLICT,
       });
     }
   }
 
+  private isDisplayNameTarget(target: unknown) {
+    const fields = Array.isArray(target) ? target : [target];
+    return fields.some((field) => field === 'display_name' || field === 'displayName');
+  }
+
   private notFound() {
     return new AppError({
       code: ErrorCodes.RESOURCE_NOT_FOUND,
-      message: 'Resource not found',
+      message: 'Employee not found',
       statusCode: HttpStatus.NOT_FOUND,
     });
   }
