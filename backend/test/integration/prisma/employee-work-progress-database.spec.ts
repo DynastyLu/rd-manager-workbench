@@ -547,25 +547,44 @@ describe('employee task-code migration behavior', () => {
         `SELECT "id", "code" FROM "app"."tasks" ORDER BY "id"`,
       );
 
-      for (const migrationName of TASK_ONE_MIGRATIONS.slice(1)) {
-        cpSync(
-          resolve(sourcePrismaDir, 'migrations', migrationName),
-          resolve(temporaryMigrationsDir, migrationName),
-          { recursive: true },
-        );
-      }
+      cpSync(
+        resolve(sourcePrismaDir, 'migrations', TASK_ONE_MIGRATIONS[1]),
+        resolve(temporaryMigrationsDir, TASK_ONE_MIGRATIONS[1]),
+        { recursive: true },
+      );
+      deploy(schemaPath, url);
+
+      const afterFirstCompatibility = await client.$queryRawUnsafe<
+        Array<{ id: string; code: string }>
+      >(`SELECT "id", "code" FROM "app"."tasks" ORDER BY "id"`);
+      expect(afterFirstCompatibility).toEqual(beforeUpgrade);
+      const insertedAfterFirstCompatibility = await client.$queryRawUnsafe<Array<{ code: string }>>(
+        `INSERT INTO "app"."tasks" ("id", "title", "updated_at")
+         VALUES ('after-first-compatibility', 'after first compatibility', CURRENT_TIMESTAMP)
+         RETURNING "code"`,
+      );
+      expect(insertedAfterFirstCompatibility).toEqual([{ code: 'TASK-0000000005' }]);
+
+      cpSync(
+        resolve(sourcePrismaDir, 'migrations', TASK_ONE_MIGRATIONS[2]),
+        resolve(temporaryMigrationsDir, TASK_ONE_MIGRATIONS[2]),
+        { recursive: true },
+      );
       deploy(schemaPath, url);
 
       const afterUpgrade = await client.$queryRawUnsafe<Array<{ id: string; code: string }>>(
         `SELECT "id", "code" FROM "app"."tasks" ORDER BY "id"`,
       );
-      expect(afterUpgrade).toEqual(beforeUpgrade);
+      expect(afterUpgrade).toEqual([
+        { id: 'after-first-compatibility', code: 'TASK-0000000005' },
+        ...beforeUpgrade,
+      ]);
       const inserted = await client.$queryRawUnsafe<Array<{ code: string }>>(
         `INSERT INTO "app"."tasks" ("id", "title", "updated_at")
          VALUES ('after-upgrade', 'after upgrade', CURRENT_TIMESTAMP)
          RETURNING "code"`,
       );
-      expect(inserted).toEqual([{ code: 'TASK-0000000005' }]);
+      expect(inserted).toEqual([{ code: 'TASK-0000000006' }]);
       expectNoDrift(schemaPath, url);
     } finally {
       try {

@@ -68,7 +68,7 @@ describe('employee work progress Prisma catalog contract', () => {
     );
 
     expect(migration).toMatch(
-      /BEGIN;\s+LOCK TABLE "app"\."tasks" IN ACCESS EXCLUSIVE MODE;[\s\S]*ALTER COLUMN "code" SET NOT NULL;\s+COMMIT;\s+CREATE TABLE "app"\."employee_work_import_batches"/,
+      /BEGIN;\s+LOCK TABLE "app"\."tasks" IN ACCESS EXCLUSIVE MODE;[\s\S]*ALTER COLUMN "code" SET NOT NULL;[\s\S]*CREATE UNIQUE INDEX "tasks_code_key" ON "app"\."tasks"\("code"\);\s+COMMIT;\s+CREATE TABLE "app"\."employee_work_import_batches"/,
     );
     expect(migration).toMatch(
       /CREATE OR REPLACE FUNCTION "app"\."generate_task_code"\(\)[\s\S]*LANGUAGE SQL[\s\S]*VOLATILE/,
@@ -87,8 +87,13 @@ describe('employee work progress Prisma catalog contract', () => {
     );
     expect(compatibilityMigration).toContain('CREATE SEQUENCE IF NOT EXISTS "app"."task_code_seq"');
     expect(compatibilityMigration).toContain(`NEXTVAL('app.task_code_seq')`);
+    expect(compatibilityMigration).not.toContain('"max_code_number"');
+    expect(compatibilityMigration).toContain('WHERE "tasks"."code" = "candidates"."code"');
     expect(compatibilityMigration).toContain(
       'ALTER COLUMN "code" SET DEFAULT "app"."generate_task_code"()',
+    );
+    expect(compatibilityMigration).toMatch(
+      /ALTER COLUMN "code" SET DEFAULT "app"\."generate_task_code"\(\);\s+COMMIT;\s+CREATE INDEX IF NOT EXISTS "resource_load_entries_employee_work_import_batch_id_archive_idx"/,
     );
     expect(collisionSafeCompatibilityMigration).toContain(
       'LOCK TABLE "app"."tasks" IN ACCESS EXCLUSIVE MODE',
@@ -96,6 +101,9 @@ describe('employee work progress Prisma catalog contract', () => {
     expect(collisionSafeCompatibilityMigration).toContain('EXISTS(SELECT 1 FROM "app"."tasks")');
     expect(collisionSafeCompatibilityMigration).toContain(
       'WHERE "tasks"."code" = "candidates"."code"',
+    );
+    expect(collisionSafeCompatibilityMigration).toMatch(
+      /ALTER COLUMN "code" SET DEFAULT "app"\."generate_task_code"\(\);\s+COMMIT;\s+CREATE INDEX IF NOT EXISTS "resource_load_entries_employee_work_import_batch_id_archive_idx"/,
     );
     expect(migration).toMatch(/employee_work_items_employee_id_fkey"[^;]*ON DELETE RESTRICT/);
     expect(migration).toMatch(/employee_work_items_import_batch_id_fkey"[^;]*ON DELETE RESTRICT/);

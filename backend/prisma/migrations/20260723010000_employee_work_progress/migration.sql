@@ -74,6 +74,8 @@ ALTER TABLE "app"."tasks"
 ALTER COLUMN "code" SET DEFAULT "app"."generate_task_code"(),
 ALTER COLUMN "code" SET NOT NULL;
 
+CREATE UNIQUE INDEX "tasks_code_key" ON "app"."tasks"("code");
+
 COMMIT;
 
 CREATE TABLE "app"."employee_work_import_batches" (
@@ -175,7 +177,6 @@ ADD COLUMN "employee_work_import_batch_id" TEXT;
 
 CREATE INDEX "resource_profiles_employment_status_archived_at_display_name_id"
 ON "app"."resource_profiles"("employment_status", "archived_at", "display_name");
-CREATE UNIQUE INDEX "tasks_code_key" ON "app"."tasks"("code");
 CREATE UNIQUE INDEX "employee_work_import_batches_period_type_period_start_at_ve_key"
 ON "app"."employee_work_import_batches"("period_type", "period_start_at", "version");
 CREATE INDEX "employee_work_import_batches_period_type_period_start_at_st_idx"

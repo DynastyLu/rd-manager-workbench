@@ -45,7 +45,7 @@ $$;
 ALTER TABLE "app"."tasks"
 ALTER COLUMN "code" SET DEFAULT "app"."generate_task_code"();
 
+COMMIT;
+
 CREATE INDEX IF NOT EXISTS "resource_load_entries_employee_work_import_batch_id_archive_idx"
 ON "app"."resource_load_entries"("employee_work_import_batch_id", "archived_at");
-
-COMMIT;
