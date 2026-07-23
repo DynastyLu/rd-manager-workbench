@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Banner, Button, Modal, Progress, Skeleton, Tag } from '@douyinfe/semi-ui'
 import {
   IconCalendarStroked,
@@ -8,8 +8,14 @@ import {
   IconPlus,
 } from '@douyinfe/semi-icons'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { getProject } from '@/modules/workbench/api/projects'
-import { listMeetings, listPartners } from '@/modules/workbench/api/management'
+import {
+  archiveMilestone,
+  archiveProgressReport,
+  archiveProject,
+  getProject,
+} from '@/modules/workbench/api/projects'
+import { listMeetings, listPartners, listRisks } from '@/modules/workbench/api/management'
+import { archiveTask } from '@/modules/workbench/api/tasks'
 import { listNonProjectRd } from '@/modules/workbench/api/operations'
 import { request } from '@/lib/http'
 import type {
@@ -17,12 +23,18 @@ import type {
   ProjectDetail,
   ProjectHealth,
   ProjectStatus,
+  Milestone,
+  ProgressReport,
   TaskStatus,
+  WorkTask,
 } from '@/modules/workbench/types'
 import { ROUTES } from '@/constants/routes'
 import { ProgressReportForm } from '@/modules/workbench/components/ProgressReportForm'
 import { TaskForm } from '@/modules/workbench/components/TaskForm'
+import { MilestoneForm } from '@/modules/workbench/components/MilestoneForm'
+import { ProjectDetailsForm } from '@/modules/workbench/components/ProjectDetailsForm'
 import { FileAttachments } from '@/modules/content/components/FileAttachments'
+import { toast } from 'sonner'
 import './ProjectWorkspacePage.less'
 
 const SECTIONS = [
@@ -41,7 +53,15 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
   ACTIVE: '进行中',
   ON_HOLD: '已暂停',
   COMPLETED: '已完成',
-  CANCELLED: '已取消',
+  CANCELLED: '已终止',
+}
+
+const STATUS_COLORS: Record<ProjectStatus, 'grey' | 'green' | 'amber' | 'blue' | 'red'> = {
+  DRAFT: 'grey',
+  ACTIVE: 'green',
+  ON_HOLD: 'amber',
+  COMPLETED: 'blue',
+  CANCELLED: 'red',
 }
 
 const TASK_LABELS: Record<TaskStatus, string> = {
@@ -194,12 +214,28 @@ function ProjectNonProjectRdSection({ projectId }: { projectId: string }) {
   )
 }
 
-function OverviewSection({ project }: { project: ProjectDetail }) {
+function OverviewSection({
+  project,
+  onEditProject,
+  onCreateMilestone,
+  onEditMilestone,
+  onDeleteMilestone,
+}: {
+  project: ProjectDetail
+  onEditProject: () => void
+  onCreateMilestone: () => void
+  onEditMilestone: (milestone: Milestone) => void
+  onDeleteMilestone: (milestone: Milestone) => void
+}) {
   const openTasks = project.tasks.filter(
     (task) => task.status !== 'DONE' && task.status !== 'CANCELLED'
   )
   const latestProgress = project.progressReports[0]
-  const health = project.latestHealthSnapshot?.health
+  const health = project.effectiveHealth ?? project.healthOverride ?? project.latestHealthSnapshot?.health
+  const completedMilestones = project.milestones.filter((item) => item.status === 'COMPLETED').length
+  const milestonePercent = project.milestones.length
+    ? Math.round((completedMilestones / project.milestones.length) * 100)
+    : 0
 
   return (
     <div className="project-workspace__overview">
@@ -222,15 +258,13 @@ function OverviewSection({ project }: { project: ProjectDetail }) {
         <div>
           <span>项目健康度</span>
           <strong>{health ? HEALTH_LABELS[health] : '待评估'}</strong>
-          <small>根据任务与里程碑计算</small>
+          <small>{project.healthOverride ? '人工设置' : '根据任务与里程碑自动评估'}</small>
         </div>
       </section>
 
       <div className="project-workspace__overview-grid">
         <section className="project-workspace__panel">
-          <header>
-            <h2>项目目标</h2>
-          </header>
+          <header><h2>项目目标</h2><Button size="small" theme="borderless" onClick={onEditProject}>编辑</Button></header>
           <p className="project-workspace__objective">{project.objective || '尚未填写项目目标。'}</p>
           <dl className="project-workspace__facts">
             <div><dt>预期成果</dt><dd>{project.expectedOutcome || '未设置'}</dd></div>
@@ -250,15 +284,25 @@ function OverviewSection({ project }: { project: ProjectDetail }) {
           ) : <p className="project-workspace__muted">尚未提交项目进展。</p>}
         </section>
 
-        <section className="project-workspace__panel">
-          <header><h2>里程碑</h2><span>{project.milestones.length}</span></header>
+        <section className="project-workspace__panel project-workspace__panel--wide">
+          <header>
+            <div><h2>里程碑</h2><span>{completedMilestones}/{project.milestones.length} 已完成</span></div>
+            <Button size="small" theme="borderless" icon={<IconPlus />} aria-label="新建里程碑" onClick={onCreateMilestone}>新建</Button>
+          </header>
+          <div className="project-workspace__milestone-progress">
+            <Progress percent={milestonePercent} showInfo={false} aria-label="里程碑完成进度" />
+          </div>
           {project.milestones.length ? (
-            <ul className="project-workspace__list">
-              {project.milestones.slice(0, 4).map((milestone) => (
+            <ul className="project-workspace__list project-workspace__milestones">
+              {project.milestones.map((milestone) => (
                 <li key={milestone.id}>
                   <span className={`project-workspace__dot project-workspace__dot--${milestone.status.toLowerCase()}`} />
                   <div><strong>{milestone.name}</strong><span>{formatDate(milestone.plannedAt)}</span></div>
-                  <Tag size="small">{MILESTONE_LABELS[milestone.status]}</Tag>
+                  <Tag size="small" color={milestone.status === 'COMPLETED' ? 'blue' : milestone.status === 'IN_PROGRESS' ? 'green' : milestone.status === 'MISSED' ? 'red' : 'grey'}>{MILESTONE_LABELS[milestone.status]}</Tag>
+                  <div className="project-workspace__row-actions">
+                    <Button size="small" theme="borderless" onClick={() => onEditMilestone(milestone)}>编辑</Button>
+                    <Button size="small" theme="borderless" type="danger" onClick={() => onDeleteMilestone(milestone)}>删除</Button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -292,21 +336,27 @@ function OverviewSection({ project }: { project: ProjectDetail }) {
 function WorkItemsSection({
   project,
   onCreate,
+  onEdit,
+  onDelete,
 }: {
   project: ProjectDetail
   onCreate: () => void
+  onEdit: (task: WorkTask) => void
+  onDelete: (task: WorkTask) => void
 }) {
   return project.tasks.length ? (
     <section className="project-workspace__panel project-workspace__panel--section">
-      <header><h2>全部工作项</h2><span>{project.tasks.length}</span></header>
+      <header><div><h2>全部工作项</h2><span>{project.tasks.length}</span></div><Button size="small" theme="borderless" icon={<IconPlus />} aria-label="新建工作项" onClick={onCreate}>新建工作项</Button></header>
       <ul className="project-workspace__task-list">
         {project.tasks.map((task) => (
           <li key={task.id}>
             <span className={`project-workspace__priority project-workspace__priority--${task.priority.toLowerCase()}`} />
-            <strong>{task.title}</strong>
+            <div className="project-workspace__task-title"><strong>{task.title}</strong><Progress percent={task.completionPercent ?? 0} showInfo={false} aria-label={`${task.title}完成进度`} /></div>
             <span>{task.assigneeName || '未指定负责人'}</span>
             <time>{formatDate(task.dueAt)}</time>
-            <Tag size="small">{TASK_LABELS[task.status]}</Tag>
+            <span className="project-workspace__task-percent">{task.completionPercent ?? 0}%</span>
+            <Tag size="small" color={task.status === 'DONE' ? 'blue' : task.status === 'IN_PROGRESS' ? 'green' : task.status === 'BLOCKED' ? 'red' : 'grey'}>{TASK_LABELS[task.status]}</Tag>
+            <div className="project-workspace__row-actions"><Button size="small" theme="borderless" onClick={() => onEdit(task)}>编辑</Button><Button size="small" theme="borderless" type="danger" onClick={() => onDelete(task)}>删除</Button></div>
           </li>
         ))}
       </ul>
@@ -319,18 +369,23 @@ function WorkItemsSection({
 function ProgressSection({
   project,
   onCreate,
+  onEdit,
+  onDelete,
 }: {
   project: ProjectDetail
   onCreate: () => void
+  onEdit: (report: ProgressReport) => void
+  onDelete: (report: ProgressReport) => void
 }) {
   return project.progressReports.length ? (
     <section className="project-workspace__panel project-workspace__panel--section">
-      <header><h2>进展记录</h2><span>{project.progressReports.length}</span></header>
+      <header><div><h2>进展记录</h2><span>{project.progressReports.length}</span></div><Button theme="solid" type="primary" size="small" icon={<IconPlus />} aria-label="提交进展" onClick={onCreate}>提交进展</Button></header>
       <ol className="project-workspace__timeline">
         {project.progressReports.map((report) => (
           <li key={report.id}>
             <span>{report.completionPercent}%</span>
-            <div><strong>{report.summary}</strong><time>{formatDate(report.reportedAt)}</time>{report.blockers ? <p>阻塞：{report.blockers}</p> : null}</div>
+            <div><strong>{report.summary}</strong><Progress percent={report.completionPercent} showInfo={false} aria-label={`${report.summary}项目进度`} /><time>{formatDate(report.reportedAt)}</time>{report.blockers ? <p>阻塞：{report.blockers}</p> : null}</div>
+            <div className="project-workspace__row-actions"><Button size="small" theme="borderless" onClick={() => onEdit(report)}>编辑</Button><Button size="small" theme="borderless" type="danger" onClick={() => onDelete(report)}>删除</Button></div>
           </li>
         ))}
       </ol>
@@ -456,23 +511,70 @@ function ProjectDocumentsSection({
   )
 }
 
+const RISK_LABELS = { LOW: '低', MEDIUM: '中', HIGH: '高', CRITICAL: '严重' } as const
+
+function ProjectRisksSection({ projectId }: { projectId: string }) {
+  const risksQuery = useQuery({
+    queryKey: ['risks', { projectId, pageSize: 100 }],
+    queryFn: () => listRisks({ projectId, pageSize: 100 }),
+  })
+
+  if (risksQuery.isPending) return <Skeleton.Paragraph rows={4} />
+  if (risksQuery.isError) {
+    return <EmptySection title="无法读取项目风险" description="本地服务暂时没有返回风险记录。" action={<Button onClick={() => void risksQuery.refetch()}>重试</Button>} />
+  }
+
+  return (
+    <section className="project-workspace__panel project-workspace__panel--section">
+      <header><div><h2>风险与问题</h2><span>{risksQuery.data.data.length}</span></div><Link to={`${ROUTES.governance('risks')}?projectId=${projectId}`}>管理风险</Link></header>
+      {risksQuery.data.data.length ? (
+        <ul className="project-workspace__risk-list">
+          {risksQuery.data.data.map((risk) => (
+            <li key={risk.id}>
+              <Tag className={`project-workspace__risk-level project-workspace__risk-level--${risk.level.toLowerCase()}`} color={risk.level === 'LOW' ? 'green' : risk.level === 'MEDIUM' ? 'amber' : 'red'}>{RISK_LABELS[risk.level]}风险</Tag>
+              <div><strong>{risk.title}</strong><span>{risk.ownerName || '未指定负责人'} · {risk.status === 'CLOSED' ? '已关闭' : risk.status === 'MITIGATING' ? '处理中' : '待处理'}</span></div>
+              <Link to={`${ROUTES.governance('risks')}?projectId=${projectId}&recordId=${risk.id}`}>查看</Link>
+            </li>
+          ))}
+        </ul>
+      ) : <p className="project-workspace__muted">当前项目没有风险记录。</p>}
+    </section>
+  )
+}
+
 function ProjectSectionContent({
   section,
   project,
   onCreateProgress,
   onCreateTask,
+  onEditProject,
+  onCreateMilestone,
+  onEditMilestone,
+  onDeleteMilestone,
+  onEditTask,
+  onDeleteTask,
+  onEditProgress,
+  onDeleteProgress,
   focusedFileId,
 }: {
   section: ProjectSection
   project: ProjectDetail
   onCreateProgress: () => void
   onCreateTask: () => void
+  onEditProject: () => void
+  onCreateMilestone: () => void
+  onEditMilestone: (milestone: Milestone) => void
+  onDeleteMilestone: (milestone: Milestone) => void
+  onEditTask: (task: WorkTask) => void
+  onDeleteTask: (task: WorkTask) => void
+  onEditProgress: (report: ProgressReport) => void
+  onDeleteProgress: (report: ProgressReport) => void
   focusedFileId?: string
 }) {
-  if (section === 'work-items') return <WorkItemsSection project={project} onCreate={onCreateTask} />
-  if (section === 'progress') return <ProgressSection project={project} onCreate={onCreateProgress} />
+  if (section === 'work-items') return <WorkItemsSection project={project} onCreate={onCreateTask} onEdit={onEditTask} onDelete={onDeleteTask} />
+  if (section === 'progress') return <ProgressSection project={project} onCreate={onCreateProgress} onEdit={onEditProgress} onDelete={onDeleteProgress} />
   if (section === 'risks') {
-    return <EmptySection title="集中管理风险、问题与决策" description="现有风险、问题和决策记录将按当前项目筛选。" action={<Link to={`${ROUTES.governance('risks')}?projectId=${project.id}`}>打开风险与问题</Link>} />
+    return <ProjectRisksSection projectId={project.id} />
   }
   if (section === 'meetings') {
     return <ProjectMeetingsSection project={project} />
@@ -480,8 +582,14 @@ function ProjectSectionContent({
   if (section === 'docs') {
     return <ProjectDocumentsSection project={project} focusedFileId={focusedFileId} />
   }
-  return <OverviewSection project={project} />
+  return <OverviewSection project={project} onEditProject={onEditProject} onCreateMilestone={onCreateMilestone} onEditMilestone={onEditMilestone} onDeleteMilestone={onDeleteMilestone} />
 }
+
+type ProjectDialog =
+  | { type: 'project' }
+  | { type: 'task'; task?: WorkTask }
+  | { type: 'progress'; report?: ProgressReport }
+  | { type: 'milestone'; milestone?: Milestone }
 
 export default function ProjectWorkspacePage() {
   const { projectId = '', section: requestedSection = 'overview' } = useParams<{
@@ -489,9 +597,10 @@ export default function ProjectWorkspacePage() {
     section: string
   }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const focusedFileId = searchParams.get('fileId')?.trim() || undefined
-  const [createTarget, setCreateTarget] = useState<'task' | 'progress' | null>(null)
+  const [dialog, setDialog] = useState<ProjectDialog | null>(null)
   const section = SECTIONS.some((item) => item.key === requestedSection)
     ? (requestedSection as ProjectSection)
     : 'overview'
@@ -504,6 +613,36 @@ export default function ProjectWorkspacePage() {
   useEffect(() => {
     if (projectQuery.data) rememberProjectVisit(projectQuery.data.id)
   }, [projectQuery.data])
+
+  async function refreshProject() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['project', projectId] }),
+      queryClient.invalidateQueries({ queryKey: ['projects'] }),
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+      queryClient.invalidateQueries({ queryKey: ['my-work'] }),
+    ])
+  }
+
+  function confirmDelete(title: string, content: string, action: () => Promise<void>) {
+    Modal.confirm({
+      title,
+      content,
+      okText: '确认删除',
+      cancelText: '取消',
+      okButtonProps: { type: 'danger' },
+      onOk: async () => {
+        try {
+          await action()
+          await refreshProject()
+          toast.success('已删除')
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : '删除失败，请重试。')
+          throw error
+        }
+      },
+    })
+  }
 
   if (projectQuery.isPending) return <ProjectWorkspaceSkeleton />
 
@@ -524,7 +663,7 @@ export default function ProjectWorkspacePage() {
   }
 
   const project = projectQuery.data
-  const health = project.latestHealthSnapshot?.health
+  const health = project.effectiveHealth ?? project.healthOverride ?? project.latestHealthSnapshot?.health
 
   return (
     <div className="project-workspace">
@@ -534,18 +673,14 @@ export default function ProjectWorkspacePage() {
       <header className="project-workspace__header">
         <div className="project-workspace__project-mark">{project.name.slice(0, 1)}</div>
         <div className="project-workspace__heading">
-          <div><h1>{project.name}</h1><Tag color="blue">{STATUS_LABELS[project.status]}</Tag>{health ? <Tag color={health === 'GREEN' ? 'green' : health === 'YELLOW' ? 'amber' : 'red'}>{HEALTH_LABELS[health]}</Tag> : null}</div>
+          <div><h1>{project.name}</h1><Tag className={`project-workspace__status project-workspace__status--${project.status.toLowerCase()}`} color={STATUS_COLORS[project.status]}>{STATUS_LABELS[project.status]}</Tag>{health ? <Tag color={health === 'GREEN' ? 'green' : health === 'YELLOW' ? 'amber' : 'red'}>{HEALTH_LABELS[health]}</Tag> : null}</div>
           <p><span>{project.code}</span><span>负责人：{project.leadName || '未指定'}</span><span>{formatDate(project.plannedStartAt)} — {formatDate(project.plannedEndAt)}</span></p>
         </div>
-        <Button
-          theme="solid"
-          type="primary"
-          icon={<IconPlus />}
-          aria-label="新建工作项"
-          onClick={() => setCreateTarget('task')}
-        >
-          新建工作项
-        </Button>
+        <div className="project-workspace__header-actions">
+          <Button onClick={() => setDialog({ type: 'project' })}>编辑项目</Button>
+          <Button theme="solid" type="primary" icon={<IconPlus />} aria-label="新建工作项" onClick={() => setDialog({ type: 'task' })}>新建工作项</Button>
+          <Button type="danger" onClick={() => Modal.confirm({ title: '删除项目？', content: '项目将从工作区归档，关联记录不会被物理删除。', okText: '确认删除', cancelText: '取消', okButtonProps: { type: 'danger' }, onOk: async () => { await archiveProject(project.id); toast.success('项目已删除'); void navigate(ROUTES.PROJECT_SPACES) } })}>删除项目</Button>
+        </div>
       </header>
 
       <div className="project-workspace__tabs" aria-label="项目空间页签" role="tablist">
@@ -568,26 +703,36 @@ export default function ProjectWorkspacePage() {
         <ProjectSectionContent
           section={section}
           project={project}
-          onCreateProgress={() => setCreateTarget('progress')}
-          onCreateTask={() => setCreateTarget('task')}
+          onCreateProgress={() => setDialog({ type: 'progress' })}
+          onCreateTask={() => setDialog({ type: 'task' })}
+          onEditProject={() => setDialog({ type: 'project' })}
+          onCreateMilestone={() => setDialog({ type: 'milestone' })}
+          onEditMilestone={(milestone) => setDialog({ type: 'milestone', milestone })}
+          onDeleteMilestone={(milestone) => confirmDelete('删除里程碑？', `“${milestone.name}”将被删除，关联工作项会保留。`, () => archiveMilestone(project.id, milestone.id))}
+          onEditTask={(task) => setDialog({ type: 'task', task })}
+          onDeleteTask={(task) => confirmDelete('删除工作项？', `“${task.title}”将从当前项目归档。`, () => archiveTask(task.id))}
+          onEditProgress={(report) => setDialog({ type: 'progress', report })}
+          onDeleteProgress={(report) => confirmDelete('删除进展记录？', `“${report.summary}”将被永久删除。`, () => archiveProgressReport(project.id, report.id))}
           focusedFileId={focusedFileId}
         />
       </section>
 
-      <Modal
-        title={createTarget === 'progress' ? '提交项目进展' : '新建项目工作项'}
-        visible={createTarget !== null}
-        onCancel={() => setCreateTarget(null)}
+      {dialog ? <Modal
+        title={dialog?.type === 'project' ? '编辑项目' : dialog?.type === 'task' ? (dialog.task ? '编辑工作项' : '新建项目工作项') : dialog?.type === 'progress' ? (dialog.report ? '编辑项目进展' : '提交项目进展') : dialog?.type === 'milestone' ? (dialog.milestone ? '编辑里程碑' : '新建里程碑') : ''}
+        visible
+        onCancel={() => setDialog(null)}
         footer={null}
-        width={520}
+        width={dialog?.type === 'project' ? 720 : 560}
       >
-        {createTarget === 'task' ? (
-          <TaskForm projectId={project.id} onSuccess={() => setCreateTarget(null)} />
+        {dialog?.type === 'project' ? <ProjectDetailsForm project={project} onSuccess={() => setDialog(null)} /> : null}
+        {dialog?.type === 'task' ? (
+          <TaskForm projectId={project.id} task={dialog.task} onSuccess={() => setDialog(null)} />
         ) : null}
-        {createTarget === 'progress' ? (
-          <ProgressReportForm projectId={project.id} onSuccess={() => setCreateTarget(null)} />
+        {dialog?.type === 'progress' ? (
+          <ProgressReportForm projectId={project.id} report={dialog.report} onSuccess={() => setDialog(null)} />
         ) : null}
-      </Modal>
+        {dialog?.type === 'milestone' ? <MilestoneForm projectId={project.id} milestone={dialog.milestone} onSuccess={() => setDialog(null)} /> : null}
+      </Modal> : null}
     </div>
   )
 }

@@ -26,6 +26,7 @@ export interface Project {
   actualEndAt: string | null
   status: ProjectStatus
   phase: ProjectPhase
+  healthOverride: ProjectHealth | null
   health: ProjectHealth | null
   archivedAt: string | null
   createdAt: string
@@ -45,6 +46,7 @@ export interface ProjectDetail extends Omit<Project, 'health'> {
   tasks: Array<WorkTask & { dependencyIds: string[] }>
   progressReports: ProgressReport[]
   latestHealthSnapshot: ProjectHealthSnapshot | null
+  effectiveHealth: ProjectHealth | null
 }
 
 export type MilestoneStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'MISSED'
@@ -94,6 +96,7 @@ export interface WorkTask {
   collaboratorNames: string[]
   status: TaskStatus
   priority: TaskPriority
+  completionPercent: number
   dueAt: string | null
   completedAt: string | null
   sourceType: string | null

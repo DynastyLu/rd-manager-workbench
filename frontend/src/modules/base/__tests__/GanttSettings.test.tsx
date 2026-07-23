@@ -1,6 +1,6 @@
-import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 
 import { ViewSettingsDrawer } from '../components/ViewSettingsDrawer'
 import type { DataField, DataView, DataViewConfig } from '../types'
@@ -92,7 +92,6 @@ function drawer(view: DataView, onConfigChange = vi.fn()) {
 describe('Gantt view settings', () => {
   it('changes configured start and end fields and allows the same datetime field', async () => {
     const onConfigChange = vi.fn()
-    const user = userEvent.setup()
     render(drawer(ganttView('gantt-a', {
       titleFieldKey: 'title',
       startFieldKey: 'startAt',
@@ -103,12 +102,11 @@ describe('Gantt view settings', () => {
 
     const startSelect = screen.getByRole('combobox', { name: '甘特开始字段' })
     const endSelect = screen.getByRole('combobox', { name: '甘特结束字段' })
-    expect(startSelect).toHaveValue('startAt')
-    expect(endSelect).toHaveValue('endAt')
-    expect(within(startSelect).queryByRole('option', { name: '创建时间' })).not.toBeInTheDocument()
+    expect(startSelect).toHaveTextContent('开始时间')
+    expect(endSelect).toHaveTextContent('结束时间')
 
-    await user.selectOptions(startSelect, 'plannedAt')
-    await user.selectOptions(endSelect, 'plannedAt')
+    await selectSemiOption(startSelect, 'plannedAt')
+    await selectSemiOption(endSelect, 'plannedAt')
 
     expect(onConfigChange).toHaveBeenLastCalledWith(expect.objectContaining({
       startFieldKey: 'plannedAt',
@@ -118,7 +116,6 @@ describe('Gantt view settings', () => {
 
   it('saves title, scale, and row density and restores each view configuration', async () => {
     const onConfigChange = vi.fn()
-    const user = userEvent.setup()
     const originalA = {
       titleFieldKey: 'title',
       startFieldKey: 'startAt',
@@ -129,10 +126,10 @@ describe('Gantt view settings', () => {
     const { rerender } = render(drawer(ganttView('gantt-a', originalA), onConfigChange))
 
     const titleSelect = screen.getByRole('combobox', { name: '甘特标题字段' })
-    expect(within(titleSelect).getByRole('option', { name: /事项.*主字段/ })).toBeInTheDocument()
-    await user.selectOptions(titleSelect, 'summary')
-    await user.selectOptions(screen.getByRole('combobox', { name: '甘特缩放' }), 'MONTH')
-    await user.selectOptions(screen.getByRole('combobox', { name: '甘特行高' }), 'COMPACT')
+    expect(titleSelect).toHaveTextContent(/事项.*主字段/)
+    await selectSemiOption(titleSelect, 'summary')
+    await selectSemiOption(screen.getByRole('combobox', { name: '时间缩放' }), 'MONTH')
+    await selectSemiOption(screen.getByRole('combobox', { name: '行高' }), 'COMPACT')
 
     const savedA = onConfigChange.mock.calls.at(-1)?.[0] as DataViewConfig
     expect(savedA).toEqual(expect.objectContaining({
@@ -148,21 +145,21 @@ describe('Gantt view settings', () => {
       scale: 'DAY',
       rowHeight: 'STANDARD',
     }), onConfigChange))
-    expect(screen.getByRole('combobox', { name: '甘特标题字段' })).toHaveValue('title')
-    expect(screen.getByRole('combobox', { name: '甘特开始字段' })).toHaveValue('plannedAt')
-    expect(screen.getByRole('combobox', { name: '甘特结束字段' })).toHaveValue('plannedAt')
-    expect(screen.getByRole('combobox', { name: '甘特缩放' })).toHaveValue('DAY')
-    expect(screen.getByRole('combobox', { name: '甘特行高' })).toHaveValue('STANDARD')
+    expect(screen.getByRole('combobox', { name: '甘特标题字段' })).toHaveTextContent('事项')
+    expect(screen.getByRole('combobox', { name: '甘特开始字段' })).toHaveTextContent('计划时间')
+    expect(screen.getByRole('combobox', { name: '甘特结束字段' })).toHaveTextContent('计划时间')
+    expect(screen.getByRole('combobox', { name: '时间缩放' })).toHaveTextContent('日')
+    expect(screen.getByRole('combobox', { name: '行高' })).toHaveTextContent('标准')
 
     rerender(drawer(ganttView('gantt-a', savedA), onConfigChange))
-    expect(screen.getByRole('combobox', { name: '甘特标题字段' })).toHaveValue('summary')
-    expect(screen.getByRole('combobox', { name: '甘特缩放' })).toHaveValue('MONTH')
-    expect(screen.getByRole('combobox', { name: '甘特行高' })).toHaveValue('COMPACT')
+    expect(screen.getByRole('combobox', { name: '甘特标题字段' })).toHaveTextContent('摘要')
+    expect(screen.getByRole('combobox', { name: '时间缩放' })).toHaveTextContent('月')
+    expect(screen.getByRole('combobox', { name: '行高' })).toHaveTextContent('紧凑')
 
     // A rejected optimistic save is supplied back through view.config by LibraryHomePage.
     rerender(drawer(ganttView('gantt-a', { ...originalA }), onConfigChange))
-    expect(screen.getByRole('combobox', { name: '甘特标题字段' })).toHaveValue('title')
-    expect(screen.getByRole('combobox', { name: '甘特缩放' })).toHaveValue('WEEK')
-    expect(screen.getByRole('combobox', { name: '甘特行高' })).toHaveValue('STANDARD')
+    expect(screen.getByRole('combobox', { name: '甘特标题字段' })).toHaveTextContent('事项')
+    expect(screen.getByRole('combobox', { name: '时间缩放' })).toHaveTextContent('周')
+    expect(screen.getByRole('combobox', { name: '行高' })).toHaveTextContent('标准')
   })
 })

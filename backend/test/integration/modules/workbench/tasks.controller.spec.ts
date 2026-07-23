@@ -99,6 +99,78 @@ describe('Tasks API', () => {
       .expect(400);
   });
 
+  it('updates and deletes progress reports within their project scope', async () => {
+    const created = await request(app.getHttpServer())
+      .post(`/api/projects/${projectId}/progress-reports`)
+      .send({
+        summary: `${prefix} editable progress`,
+        completionPercent: 35,
+        reportedAt: '2026-07-20T00:00:00.000Z',
+      })
+      .expect(201);
+
+    const reportId = created.body.data.id;
+    const updated = await request(app.getHttpServer())
+      .patch(`/api/projects/${projectId}/progress-reports/${reportId}`)
+      .send({ summary: `${prefix} updated progress`, completionPercent: 70 })
+      .expect(200);
+
+    expect(updated.body.data).toMatchObject({
+      id: reportId,
+      summary: `${prefix} updated progress`,
+      completionPercent: 70,
+    });
+    await request(app.getHttpServer())
+      .patch(`/api/projects/${otherProjectId}/progress-reports/${reportId}`)
+      .send({ completionPercent: 90 })
+      .expect(404);
+    await request(app.getHttpServer())
+      .delete(`/api/projects/${projectId}/progress-reports/${reportId}`)
+      .expect(204);
+    expect(await prisma.progressReport.findUnique({ where: { id: reportId } })).toBeNull();
+  });
+
+  it('deletes milestones without deleting their work items', async () => {
+    const milestone = await request(app.getHttpServer())
+      .post(`/api/projects/${projectId}/milestones`)
+      .send({ name: `${prefix} removable milestone` })
+      .expect(201);
+    const task = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({
+        title: `${prefix} milestone child`,
+        projectId,
+        milestoneId: milestone.body.data.id,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .delete(`/api/projects/${projectId}/milestones/${milestone.body.data.id}`)
+      .expect(204);
+
+    const persistedTask = await prisma.workTask.findUnique({ where: { id: task.body.data.id } });
+    expect(persistedTask).toMatchObject({ id: task.body.data.id, milestoneId: null });
+  });
+
+  it('persists and validates explicit work-item completion percentages', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} measurable task`, projectId, completionPercent: 25 })
+      .expect(201);
+    expect(created.body.data.completionPercent).toBe(25);
+
+    const completed = await request(app.getHttpServer())
+      .patch(`/api/tasks/${created.body.data.id}`)
+      .send({ status: 'DONE', completionPercent: 90 })
+      .expect(200);
+    expect(completed.body.data.completionPercent).toBe(100);
+
+    await request(app.getHttpServer())
+      .post('/api/tasks')
+      .send({ title: `${prefix} invalid percentage`, completionPercent: 101 })
+      .expect(400);
+  });
+
   it('rejects a milestone from another project', async () => {
     const milestone = await prisma.milestone.create({
       data: { projectId: otherProjectId, name: `${prefix} foreign milestone` },

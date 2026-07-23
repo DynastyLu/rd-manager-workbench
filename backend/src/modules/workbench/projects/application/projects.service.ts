@@ -27,6 +27,7 @@ type ProjectFields = Partial<
     | 'actualEndAt'
     | 'phase'
     | 'status'
+    | 'healthOverride'
   >
 >;
 
@@ -81,7 +82,7 @@ export class ProjectsService {
     return {
       data: data.map(({ healthSnapshots, ...project }) => ({
         ...project,
-        health: healthSnapshots[0]?.health ?? null,
+        health: project.healthOverride ?? healthSnapshots[0]?.health ?? null,
       })),
       meta: { page, pageSize, total },
     };
@@ -119,6 +120,7 @@ export class ProjectsService {
         dependencyIds: dependencies.map(({ dependsOnTaskId }) => dependsOnTaskId),
       })),
       latestHealthSnapshot: healthSnapshots[0] ?? null,
+      effectiveHealth: projectDetails.healthOverride ?? healthSnapshots[0]?.health ?? null,
     };
   }
 
@@ -182,6 +184,7 @@ export class ProjectsService {
       ...(typeof dto.actualEndAt === 'string' ? { actualEndAt: new Date(dto.actualEndAt) } : {}),
       ...(dto.phase !== undefined ? { phase: dto.phase } : {}),
       ...(dto.status !== undefined ? { status: dto.status } : {}),
+      ...(dto.healthOverride !== undefined ? { healthOverride: dto.healthOverride } : {}),
     };
   }
 

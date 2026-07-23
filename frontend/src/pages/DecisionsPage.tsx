@@ -2,10 +2,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import { Button } from '@/components/workspace/SemiCompat'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/workspace/SemiCompat'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/workspace/SemiCompat'
+import { Input } from '@/components/workspace/SemiCompat'
 import { createDecision, getDecision, listDecisions } from '@/modules/workbench/api/management'
 import { ManagementEmpty, ManagementError, ManagementLoading } from '@/modules/workbench/components/management/ManagementState'
 
@@ -50,7 +50,7 @@ export default function DecisionsPage() {
               <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); createMutation.mutate(event.currentTarget) }}>
                 <Input name="title" required placeholder="决策标题" />
                 <textarea name="alternatives" required className="min-h-24 rounded-md border bg-transparent p-2 text-sm" placeholder="每行一项备选方案" />
-                <Button disabled={createMutation.isPending}>保存决策</Button>
+                <Button type="submit" disabled={createMutation.isPending}>保存决策</Button>
               </form>
             </DialogContent>
           </Dialog>

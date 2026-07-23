@@ -50,6 +50,7 @@ export interface CreateTaskInput {
   collaboratorNames?: string[]
   status?: TaskStatus
   priority?: TaskPriority
+  completionPercent?: number
   dueAt?: string
   sourceType?: string
   sourceId?: string
@@ -66,6 +67,7 @@ export interface UpdateTaskInput {
   collaboratorNames?: string[]
   status?: TaskStatus
   priority?: TaskPriority
+  completionPercent?: number
   dueAt?: string | null
   sourceType?: string | null
   sourceId?: string | null

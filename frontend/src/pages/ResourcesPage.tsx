@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Banner, Button, Empty, Input, Modal, Progress, SideSheet, Skeleton, Tag } from '@douyinfe/semi-ui'
@@ -203,7 +204,7 @@ export default function ResourcesPage() {
         {loadEditor?.resource.weeks.find((week) => week.weekStartAt === loadEditor.weekStartAt)?.entries.length ? <section className="resource-load-entries"><h3>本周已登记</h3>{loadEditor.resource.weeks.find((week) => week.weekStartAt === loadEditor.weekStartAt)?.entries.map((entry) => <article key={entry.id}><div><strong>{entry.note || LOAD_KIND_LABEL[entry.kind]}</strong><span>{LOAD_KIND_LABEL[entry.kind]} · {entry.plannedHours}h</span></div><Button aria-label="编辑负荷" size="small" onClick={() => openLoadEditor(loadEditor.resource, loadEditor.weekStartAt, entry)}>编辑</Button><Button aria-label="归档负荷" size="small" type="danger" theme="borderless" onClick={() => loadArchive.mutate({ resourceId: loadEditor.resource.id, entryId: entry.id })}>归档</Button></article>)}</section> : null}
         <form key={loadEditor?.entry?.id ?? `${loadEditor?.resource.id}-${loadEditor?.weekStartAt}`} className="resources-editor" onSubmit={submitLoad}>
           <label htmlFor="load-week">周一</label><DateTimePickerField id="load-week" aria-label="负荷周一日期" name="weekStartAt" mode="date" defaultValue={loadEditor?.weekStartAt} required />
-          <label htmlFor="load-kind">投入类型</label><select id="load-kind" name="kind" value={loadKind} onChange={(event) => { setLoadKind(event.target.value as ResourceLoadKind); setReferenceId(''); setReferenceSearch('') }}>{Object.entries(LOAD_KIND_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          <span id="load-kind-label">投入类型</span><WorkspaceFormSelect id="load-kind" aria-labelledby="load-kind-label" name="kind" value={loadKind} onChange={(event) => { setLoadKind(event.target.value as ResourceLoadKind); setReferenceId(''); setReferenceSearch('') }}>{Object.entries(LOAD_KIND_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</WorkspaceFormSelect>
           {loadKind !== 'OTHER' ? <><label htmlFor="load-reference-search">搜索关联对象</label><Input id="load-reference-search" value={referenceSearch} onChange={setReferenceSearch} placeholder="输入名称、编号或标题" />{references.data?.length ? <div className="resource-reference-results">{references.data.map((item) => <button type="button" key={item.id} className={referenceId === item.id ? 'is-selected' : ''} onClick={() => setReferenceId(item.id)}>{item.label}</button>)}</div> : null}{referenceId ? <Tag color="blue">已选择关联对象</Tag> : null}</> : null}
           <label htmlFor="load-hours">计划小时</label><Input id="load-hours" name="plannedHours" type="number" step="0.25" min={0} max={9999} defaultValue={String(loadEditor?.entry?.plannedHours ?? 8)} required />
           <label htmlFor="load-note">说明</label><Input id="load-note" name="note" defaultValue={loadEditor?.entry?.note ?? ''} />
@@ -230,7 +231,7 @@ export default function ResourcesPage() {
             <footer><Button htmlType="submit" theme="solid" type="primary" loading={profileUpdate.isPending}>保存档案</Button></footer>
           </form>
           <section className="resource-profile__skills"><h2>技能档案</h2>
-            <div>{selectedResource.skills.map((skill) => <article key={skill.id}><div><strong>{skill.name}</strong><select aria-label={`编辑${skill.name}等级`} value={skill.level} onChange={(event) => skillUpdate.mutate({ resourceId: selectedResource.id, skillId: skill.id, level: event.target.value as 'AWARE' | 'PRACTICING' | 'PROFICIENT' | 'EXPERT' })}><option value="AWARE">了解</option><option value="PRACTICING">实践中</option><option value="PROFICIENT">熟练</option><option value="EXPERT">专家</option></select></div><Button size="small" type="danger" theme="borderless" onClick={() => skillDelete.mutate({ resourceId: selectedResource.id, skillId: skill.id })}>删除</Button></article>)}</div>
+            <div>{selectedResource.skills.map((skill) => <article key={skill.id}><div><strong>{skill.name}</strong><WorkspaceFormSelect aria-label={`编辑${skill.name}等级`} value={skill.level} onChange={(event) => skillUpdate.mutate({ resourceId: selectedResource.id, skillId: skill.id, level: event.target.value as 'AWARE' | 'PRACTICING' | 'PROFICIENT' | 'EXPERT' })}><option value="AWARE">了解</option><option value="PRACTICING">实践中</option><option value="PROFICIENT">熟练</option><option value="EXPERT">专家</option></WorkspaceFormSelect></div><Button size="small" type="danger" theme="borderless" onClick={() => skillDelete.mutate({ resourceId: selectedResource.id, skillId: skill.id })}>删除</Button></article>)}</div>
             <form onSubmit={(event) => {
               event.preventDefault()
               const data = new FormData(event.currentTarget)
@@ -238,7 +239,7 @@ export default function ResourcesPage() {
               if (name) skillCreate.mutate({ resourceId: selectedResource.id, name, level: (formText(data, 'skillLevel') || 'PRACTICING') as 'AWARE' | 'PRACTICING' | 'PROFICIENT' | 'EXPERT' })
             }}>
               <Input aria-label="技能名称" name="skillName" placeholder="例如：TypeScript" />
-              <select aria-label="技能等级" name="skillLevel" defaultValue="PRACTICING"><option value="AWARE">了解</option><option value="PRACTICING">实践中</option><option value="PROFICIENT">熟练</option><option value="EXPERT">专家</option></select>
+              <WorkspaceFormSelect aria-label="技能等级" name="skillLevel" defaultValue="PRACTICING"><option value="AWARE">了解</option><option value="PRACTICING">实践中</option><option value="PROFICIENT">熟练</option><option value="EXPERT">专家</option></WorkspaceFormSelect>
               <Button htmlType="submit" loading={skillCreate.isPending}>添加技能</Button>
             </form>
           </section><footer className="resource-profile__danger"><Button type="danger" theme="borderless" onClick={() => resourceArchive.mutate(selectedResource.id)} loading={resourceArchive.isPending}>归档资源</Button><span>归档前需先归档全部负荷条目。</span></footer>

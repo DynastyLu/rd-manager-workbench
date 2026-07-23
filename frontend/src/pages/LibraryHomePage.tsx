@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Banner, Button, Empty, SideSheet, Skeleton, Toast } from '@douyinfe/semi-ui'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { ROUTES } from '@/constants/routes'
+import { SaveStatus } from '@/components/workspace/SaveStatus'
+import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import { BaseSidebar } from '@/modules/base/components/BaseSidebar'
 import { BaseToolbar } from '@/modules/base/components/BaseToolbar'
 import { FieldManager } from '@/modules/base/components/FieldManager'
@@ -112,22 +114,30 @@ function RecordDetailValue({
 }
 
 export default function LibraryHomePage() {
-  const [searchParams] = useSearchParams()
+  const urlState = useWorkspaceSearchParams()
+  const { searchParams } = urlState
   const requestedTableId = searchParams.get('tableId')?.trim() || null
   const requestedRecordId = searchParams.get('recordId')?.trim() || null
   const workspacesQuery = useBaseWorkspaces()
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(() => requestedTableId)
-  const [selectedViewId, setSelectedViewId] = useState<string | null>(null)
+  const selectedTableId = urlState.getString('tableId') || null
+  const selectedViewId = urlState.getString('viewId') || null
+  const setSelectedViewId = (value: string | null) => urlState.update(
+    { viewId: value, page: 1 },
+    { defaults: { page: 1 } },
+  )
   const [viewOverrides, setViewOverrides] = useState<Record<string, DataViewConfig>>({})
-  const [temporaryQuery, setTemporaryQuery] = useState('')
+  const temporaryQuery = urlState.getString('query')
+  const setTemporaryQuery = (value: string) => urlState.update(
+    { query: value, page: 1 },
+    { defaults: { page: 1 } },
+  )
   const [isCreateTableOpen, setIsCreateTableOpen] = useState(false)
   const [isImportOpen, setIsImportOpen] = useState(false)
   const [isExportOpen, setIsExportOpen] = useState(false)
   const [isFieldManagerOpen, setIsFieldManagerOpen] = useState(false)
   const [isViewSaving, setIsViewSaving] = useState(false)
   const [configSaveCount, setConfigSaveCount] = useState(0)
-  const [galleryPagination, setGalleryPagination] = useState({ key: '', page: 1 })
-  const [selectedRecord, setSelectedRecord] = useState<BaseRecord | null>(null)
+  const [selectedRecord, setSelectedRecordState] = useState<BaseRecord | null>(null)
   const openedDeepLinkRef = useRef('')
   const serverViewConfigs = useRef(new Map<string, DataViewConfig>())
   const latestDraftConfigs = useRef(new Map<string, DataViewConfig>())
@@ -141,11 +151,6 @@ export default function LibraryHomePage() {
   const workspace = workspacesQuery.data?.[0]
   const tables = useMemo(() => workspace?.tables ?? [], [workspace?.tables])
   const selectedTable = tables.find((table) => table.id === selectedTableId) ?? tables[0] ?? null
-  useEffect(() => {
-    if (requestedTableId && tables.some((table) => table.id === requestedTableId)) {
-      setSelectedTableId(requestedTableId)
-    }
-  }, [requestedTableId, tables])
   const views = useMemo(() => selectedTable?.views ?? [], [selectedTable?.views])
   useEffect(() => {
     serverViewConfigs.current = new Map(views.map((view) => [view.id, view.config]))
@@ -169,15 +174,7 @@ export default function LibraryHomePage() {
     () => views.map((view) => (view.id === resolvedView?.id ? resolvedView : view)),
     [resolvedView, views]
   )
-  const galleryResultConfig = resolvedView?.type === 'GALLERY'
-    ? JSON.stringify({
-        query: resolvedView.config.query,
-        filters: resolvedView.config.filters,
-        sorts: resolvedView.config.sorts,
-      })
-    : ''
-  const galleryPageKey = `${selectedTable?.id ?? ''}:${resolvedView?.id ?? ''}:${temporaryQuery}:${galleryResultConfig}`
-  const galleryPage = galleryPagination.key === galleryPageKey ? galleryPagination.page : 1
+  const galleryPage = urlState.getPositiveInt('page', 1)
   const recordQuery = useMemo(
     () =>
       viewQuery(
@@ -232,13 +229,23 @@ export default function LibraryHomePage() {
     }
   }, VIEW_SAVE_DELAY_MS)
   const fields = selectedTable?.fields ?? []
+  const isViewDirty = resolvedView
+    ? JSON.stringify(resolvedView.config) !== JSON.stringify(
+        serverViewConfigs.current.get(resolvedView.id) ?? resolvedView.config,
+      )
+    : false
   const records = useMemo(() => recordsQuery.data?.data ?? [], [recordsQuery.data?.data])
   useEffect(() => {
+    if (!requestedRecordId) {
+      openedDeepLinkRef.current = ''
+      setSelectedRecordState(null)
+      return
+    }
     if (!requestedTableId || !requestedRecordId || selectedTable?.id !== requestedTableId) return
     const key = `${requestedTableId}:${requestedRecordId}`
     if (openedDeepLinkRef.current === key || recordsQuery.isPending) return
     openedDeepLinkRef.current = key
-    setSelectedRecord(records.find((record) => record.id === requestedRecordId) ?? null)
+    setSelectedRecordState(records.find((record) => record.id === requestedRecordId) ?? null)
   }, [records, recordsQuery.isPending, requestedRecordId, requestedTableId, selectedTable?.id])
   const relationLookups = useGridRelationRecords(
     fields,
@@ -246,16 +253,24 @@ export default function LibraryHomePage() {
   )
 
   function selectTable(table: DataTable) {
-    setSelectedTableId(table.id)
-    setSelectedViewId(
-      table.views?.find((view) => view.isDefault)?.id ?? table.views?.[0]?.id ?? null
-    )
-    setSelectedRecord(null)
-    setTemporaryQuery('')
+    urlState.update({
+      tableId: table.id,
+      viewId: table.views?.find((view) => view.isDefault)?.id ?? table.views?.[0]?.id,
+      query: undefined,
+      page: 1,
+      recordId: undefined,
+    }, { defaults: { page: 1 } })
+    setSelectedRecordState(null)
+  }
+
+  function openSelectedRecord(record: BaseRecord | null) {
+    setSelectedRecordState(record)
+    urlState.update({ recordId: record?.id })
   }
 
   function saveViewConfig(config: DataViewConfig) {
     if (!resolvedView) return
+    urlState.update({ page: 1 }, { defaults: { page: 1 } })
     latestDraftConfigs.current.set(resolvedView.id, config)
     setViewOverrides((current) => ({ ...current, [resolvedView.id]: config }))
     viewConfigSave.schedule(resolvedView.id, config)
@@ -337,7 +352,7 @@ export default function LibraryHomePage() {
         onSelectTable={selectTable}
         onCreateTable={() => setIsCreateTableOpen(true)}
       />
-      <main className="base-page__main">
+      <section className="base-page__main" aria-label="多维表格工作区">
         {selectedTable ? (
           <>
             <nav className="base-business-links" aria-label="业务库快捷入口">
@@ -354,14 +369,27 @@ export default function LibraryHomePage() {
               onImport={() => setIsImportOpen(true)}
               onExport={() => setIsExportOpen(true)}
             />
+            <div className="base-page__save-status">
+              <SaveStatus
+                state={
+                  isViewSaving || configSaveCount > 0
+                    ? 'saving'
+                    : isViewDirty
+                      ? 'dirty'
+                      : 'saved'
+                }
+              />
+            </div>
             <ViewManager
               views={resolvedViews}
               fields={fields}
               activeViewId={resolvedView?.id}
               isSaving={isViewSaving || configSaveCount > 0}
               onSelect={(id) => {
-                setSelectedViewId(id)
-                setTemporaryQuery('')
+                urlState.update(
+                  { viewId: id, query: undefined, page: 1 },
+                  { defaults: { page: 1 } },
+                )
               }}
               onCreate={async ({
                 name,
@@ -428,7 +456,7 @@ export default function LibraryHomePage() {
                     temporaryQuery={temporaryQuery}
                     onTemporaryQueryChange={setTemporaryQuery}
                     isSaving={updateRecordMutation.isPending}
-                    onRecordSelect={setSelectedRecord}
+                    onRecordSelect={openSelectedRecord}
                     onRecordChange={(recordId, values) =>
                       updateRecordMutation.mutate({ tableId: selectedTable.id, recordId, values })
                     }
@@ -450,7 +478,7 @@ export default function LibraryHomePage() {
                         values: input.values,
                       })
                     }
-                    onOpenRecord={setSelectedRecord}
+                    onOpenRecord={openSelectedRecord}
                   />
                 ) : resolvedView.type === 'CALENDAR' ? (
                   <CalendarView
@@ -460,7 +488,7 @@ export default function LibraryHomePage() {
                     onDateFieldChange={(dateField) =>
                       saveViewConfig({ ...resolvedView.config, dateField })
                     }
-                    onOpenRecord={setSelectedRecord}
+                    onOpenRecord={openSelectedRecord}
                   />
                 ) : resolvedView.type === 'GANTT' ? (
                   <GanttView
@@ -477,18 +505,21 @@ export default function LibraryHomePage() {
                         values,
                       })
                     }
-                    onOpenRecord={setSelectedRecord}
+                    onOpenRecord={openSelectedRecord}
                   />
                 ) : resolvedView.type === 'GALLERY' ? (
                   <GalleryView
                     fields={fields}
                     records={records}
                     config={resolvedView.config}
-                    onOpenRecord={setSelectedRecord}
+                    onOpenRecord={openSelectedRecord}
                     totalRecords={recordsQuery.data.meta.total}
                     page={galleryPage}
                     pageSize={recordQuery.pageSize ?? 100}
-                    onPageChange={(page) => setGalleryPagination({ key: galleryPageKey, page })}
+                    onPageChange={(page) => urlState.update(
+                      { page },
+                      { defaults: { page: 1 } },
+                    )}
                   />
                 ) : (
                   <FormView
@@ -510,7 +541,7 @@ export default function LibraryHomePage() {
         ) : (
           <Empty title="还没有数据表" description="从左侧新建一张自定义数据表。" />
         )}
-      </main>
+      </section>
 
       <TemplateCenter
         visible={isCreateTableOpen}
@@ -518,8 +549,11 @@ export default function LibraryHomePage() {
         onClose={() => setIsCreateTableOpen(false)}
         onCreateBlank={(name) => createTableMutation.mutateAsync({ workspaceId: workspace.id, name })}
         onCreated={(created) => {
-          setSelectedTableId(created.id)
-          setSelectedViewId(created.views?.find((view) => view.isDefault)?.id ?? created.views?.[0]?.id ?? null)
+          urlState.update({
+            tableId: created.id,
+            viewId: created.views?.find((view) => view.isDefault)?.id ?? created.views?.[0]?.id,
+            page: 1,
+          }, { defaults: { page: 1 } })
           void workspacesQuery.refetch()
         }}
       />
@@ -563,7 +597,7 @@ export default function LibraryHomePage() {
       <SideSheet
         title="记录详情"
         visible={Boolean(selectedRecord)}
-        onCancel={() => setSelectedRecord(null)}
+        onCancel={() => openSelectedRecord(null)}
         width={460}
       >
         {selectedRecord && selectedTable ? (

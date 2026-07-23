@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge'
+import { Tag } from '@douyinfe/semi-ui'
 import type { ProjectHealth } from '@/modules/workbench/types'
 
 const HEALTH_LABELS: Record<ProjectHealth, string> = {
@@ -7,19 +7,19 @@ const HEALTH_LABELS: Record<ProjectHealth, string> = {
   RED: '风险',
 }
 
-const HEALTH_VARIANTS = {
-  GREEN: 'default',
-  YELLOW: 'secondary',
-  RED: 'destructive',
+const HEALTH_COLORS = {
+  GREEN: 'green',
+  YELLOW: 'amber',
+  RED: 'red',
 } as const
 
 export function HealthBadge({ health }: { health: ProjectHealth }) {
   return (
-    <Badge
+    <Tag
       className={`health-badge health-badge--${health.toLowerCase()}`}
-      variant={HEALTH_VARIANTS[health]}
+      color={HEALTH_COLORS[health]}
     >
       {HEALTH_LABELS[health]}
-    </Badge>
+    </Tag>
   )
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
@@ -8,7 +8,6 @@ import zhCnLocale from '@fullcalendar/core/locales/zh-cn'
 import { Banner, Button, ButtonGroup, Checkbox, DatePicker, Input, Modal, Select, TextArea } from '@douyinfe/semi-ui'
 import { IconCalendar, IconPlus } from '@douyinfe/semi-icons'
 import { toast } from 'sonner'
-import { useSearchParams } from 'react-router-dom'
 
 import {
   archiveCalendarEvent,
@@ -26,6 +25,7 @@ import {
   listReminderRules,
 } from '@/modules/workbench/api/notifications'
 import { updateTask } from '@/modules/workbench/api/tasks'
+import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import { SyncBusinessAction } from '@/modules/workbench/components/extensions/SyncBusinessAction'
 import { MeetingsWorkspace } from './MeetingsPage'
 import './CalendarPage.less'
@@ -72,10 +72,18 @@ function fromDatePicker(value: unknown) {
 
 export default function CalendarPage() {
   const queryClient = useQueryClient()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const urlState = useWorkspaceSearchParams()
+  const { searchParams, setSearchParams } = urlState
   const isMeetingWorkspace =
     searchParams.get('view') === 'meetings' || Boolean(searchParams.get('meetingId'))
-  const [view, setView] = useState<CalendarView>('dayGridMonth')
+  const view = urlState.getEnum(
+    'calendarView',
+    VIEW_OPTIONS.map((option) => option.value),
+    'dayGridMonth',
+  )
+  const requestedDate = urlState.getString('date')
+  const calendarRef = useRef<FullCalendar | null>(null)
+  const pendingDateUrlSync = useRef<number | null>(null)
   const [range, setRange] = useState(initialRange)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -83,6 +91,23 @@ export default function CalendarPage() {
   const [referenceEntry, setReferenceEntry] = useState<CalendarEntry | null>(null)
   const [title, setTitle] = useState('')
   const [type, setType] = useState<CalendarEventType>('INTERVIEW')
+
+  useEffect(() => {
+    if (!requestedDate) return
+    const calendarApi = calendarRef.current?.getApi()
+    if (!calendarApi) return
+    const currentDate = calendarApi.getDate().toISOString().slice(0, 10)
+    if (currentDate !== requestedDate) calendarApi.gotoDate(requestedDate)
+  }, [requestedDate])
+
+  useEffect(
+    () => () => {
+      if (pendingDateUrlSync.current !== null) {
+        window.clearTimeout(pendingDateUrlSync.current)
+      }
+    },
+    [],
+  )
   const [startAt, setStartAt] = useState('')
   const [endAt, setEndAt] = useState('')
   const [location, setLocation] = useState('')
@@ -388,7 +413,10 @@ export default function CalendarPage() {
                     theme={view === option.value ? 'solid' : 'light'}
                     type={view === option.value ? 'primary' : 'tertiary'}
                     aria-pressed={view === option.value}
-                    onClick={() => setView(option.value)}
+                    onClick={() => urlState.update(
+                      { calendarView: option.value },
+                      { defaults: { calendarView: 'dayGridMonth' } },
+                    )}
                   >
                     {option.label}
                   </Button>
@@ -434,9 +462,11 @@ export default function CalendarPage() {
       ) : (
       <section className="calendar-page__surface" aria-label="工作日历">
         <FullCalendar
+          ref={calendarRef}
           key={view}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView={view}
+          initialDate={requestedDate || undefined}
           locale={zhCnLocale}
           headerToolbar={{ left: 'prev,next today', center: 'title', right: '' }}
           buttonText={{ today: '今天' }}
@@ -445,11 +475,19 @@ export default function CalendarPage() {
           nowIndicator
           editable
           events={events}
-          datesSet={({ start, end }) => {
+          datesSet={({ start, end, view: calendarView }) => {
             const next = { from: start.toISOString(), to: end.toISOString() }
             setRange((current) =>
               current.from === next.from && current.to === next.to ? current : next
             )
+            if (pendingDateUrlSync.current !== null) {
+              window.clearTimeout(pendingDateUrlSync.current)
+            }
+            const visibleDate = calendarView.calendar.getDate().toISOString().slice(0, 10)
+            pendingDateUrlSync.current = window.setTimeout(() => {
+              urlState.update({ date: visibleDate })
+              pendingDateUrlSync.current = null
+            }, 0)
           }}
           eventDrop={({ event, revert }) => {
             if (!event.start) return revert()

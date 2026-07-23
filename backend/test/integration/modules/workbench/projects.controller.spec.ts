@@ -100,10 +100,28 @@ describe('Projects API', () => {
 
     const updated = await request(app.getHttpServer())
       .patch(`/api/projects/${projectId}`)
-      .send({ name: '更新后的项目', status: 'ON_HOLD' })
+      .send({ name: '更新后的项目', status: 'ON_HOLD', healthOverride: 'RED' })
       .expect(200);
 
-    expect(updated.body.data).toMatchObject({ name: '更新后的项目', status: 'ON_HOLD' });
+    expect(updated.body.data).toMatchObject({
+      name: '更新后的项目',
+      status: 'ON_HOLD',
+      healthOverride: 'RED',
+    });
+
+    const manuallyAssessed = await request(app.getHttpServer())
+      .get(`/api/projects/${projectId}`)
+      .expect(200);
+    expect(manuallyAssessed.body.data).toMatchObject({
+      effectiveHealth: 'RED',
+      healthOverride: 'RED',
+    });
+
+    const automatic = await request(app.getHttpServer())
+      .patch(`/api/projects/${projectId}`)
+      .send({ healthOverride: null })
+      .expect(200);
+    expect(automatic.body.data.healthOverride).toBeNull();
 
     await request(app.getHttpServer()).delete(`/api/projects/${projectId}`).expect(204);
 

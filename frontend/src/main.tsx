@@ -1,3 +1,5 @@
+import '@douyinfe/semi-ui/lib/es/react19-adapter'
+
 // 读完运行时配置后清除 window 引用，防止外部脚本篡改
 delete window.__APP_CONFIG__
 
@@ -26,7 +28,7 @@ import { useThemeStore } from '@/stores/theme'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary'
 import { AppShell } from '@/components/AppShell/AppShell'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@/components/workspace/SemiCompat'
 
 import { Toaster } from 'sonner'
 

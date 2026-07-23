@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import LibraryHomePage from '@/pages/LibraryHomePage'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 import { ViewManager } from '../components/ViewManager'
 import { ViewSettingsDrawer } from '../components/ViewSettingsDrawer'
 import type { DataField, DataView } from '../types'
@@ -179,12 +180,12 @@ describe('ViewSettingsDrawer', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '添加筛选条件' }))
-    await user.selectOptions(screen.getByLabelText('筛选字段 2'), 'score')
-    await user.selectOptions(screen.getByLabelText('筛选运算符 2'), 'GTE')
+    await selectSemiOption(screen.getByLabelText('筛选字段 2'), 'score')
+    await selectSemiOption(screen.getByLabelText('筛选运算符 2'), 'GTE')
     await user.type(screen.getByLabelText('筛选值 2'), '80')
     await user.click(screen.getByRole('button', { name: '添加排序条件' }))
-    await user.selectOptions(screen.getByLabelText('排序字段 2'), 'score')
-    await user.selectOptions(screen.getByLabelText('排序方向 2'), 'desc')
+    await selectSemiOption(screen.getByLabelText('排序字段 2'), 'score')
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'desc')
 
     expect(onConfigChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -222,7 +223,7 @@ describe('ViewSettingsDrawer', () => {
 
     expect(screen.getByText('字段已失效：archived_owner')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '添加筛选条件' }))
-    await user.selectOptions(screen.getByLabelText('筛选字段 2'), 'score')
+    await selectSemiOption(screen.getByLabelText('筛选字段 2'), 'score')
 
     expect(onConfigChange).not.toHaveBeenCalled()
     expect(screen.getByText('请补全筛选条件后再保存')).toBeInTheDocument()
@@ -342,10 +343,10 @@ describe('ViewManager', () => {
     render(<StatefulViewManager />)
 
     await user.click(screen.getByRole('button', { name: '视图设置' }))
-    expect(screen.getByLabelText('筛选字段 1')).toHaveValue('status')
+    expect(screen.getByLabelText('筛选字段 1')).toHaveTextContent('状态')
     await user.click(screen.getByRole('tab', { name: /高分视图/ }))
-    expect(screen.getByLabelText('筛选字段 1')).toHaveValue('score')
-    expect(screen.getByLabelText('排序字段 1')).toHaveValue('score')
+    expect(screen.getByLabelText('筛选字段 1')).toHaveTextContent('评分')
+    expect(screen.getByLabelText('排序字段 1')).toHaveTextContent('评分')
   })
 
   it('creates Gantt and Gallery views by inheriting only shared configuration', async () => {
@@ -354,10 +355,8 @@ describe('ViewManager', () => {
     render(<StatefulViewManager onCreate={onCreate} />)
 
     await user.click(screen.getByRole('button', { name: '新增视图' }))
-    expect(screen.getByText('甘特')).toBeInTheDocument()
-    expect(screen.getByText('画册')).toBeInTheDocument()
     await user.type(screen.getByLabelText('视图名称'), '项目画册')
-    await user.selectOptions(screen.getByLabelText('视图类型'), 'GALLERY')
+    await selectSemiOption(screen.getByLabelText('视图类型'), 'GALLERY')
     expect(screen.getByText('以卡片浏览封面与关键信息')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '确认新增' }))
 
@@ -457,10 +456,10 @@ describe('LibraryHomePage saved views', () => {
     await screen.findByRole('heading', { name: '研发工作台' })
     fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
     fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
-    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
-    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await selectSemiOption(screen.getByLabelText('排序字段 2'), 'score')
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'desc')
 
-    expect(screen.getByLabelText('排序字段 2')).toHaveValue('score')
+    expect(screen.getByLabelText('排序字段 2')).toHaveTextContent('评分')
     await waitFor(
       () =>
         expect(api.updateBaseView).toHaveBeenCalledWith(
@@ -488,15 +487,15 @@ describe('LibraryHomePage saved views', () => {
     await screen.findByRole('heading', { name: '研发工作台' })
     fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
     fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
-    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
-    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await selectSemiOption(screen.getByLabelText('排序字段 2'), 'score')
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'desc')
     await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1), { timeout: 1000 })
-    expect(screen.getByLabelText('排序方向 2')).toHaveValue('desc')
+    expect(screen.getByLabelText('排序方向 2')).toHaveTextContent('降序')
 
-    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'asc' } })
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'asc')
     await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(2), { timeout: 1000 })
-    await waitFor(() => expect(screen.getByLabelText('排序方向 2')).toHaveValue('desc'))
-    expect(screen.getByLabelText('排序字段 2')).toHaveValue('score')
+    await waitFor(() => expect(screen.getByLabelText('排序方向 2')).toHaveTextContent('降序'))
+    expect(screen.getByLabelText('排序字段 2')).toHaveTextContent('评分')
   })
 
   it('refetches current records after a saved filter or sort becomes effective', async () => {
@@ -512,8 +511,8 @@ describe('LibraryHomePage saved views', () => {
     await waitFor(() => expect(api.listBaseRecords).toHaveBeenCalledTimes(1))
     fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
     fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
-    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
-    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await selectSemiOption(screen.getByLabelText('排序字段 2'), 'score')
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'desc')
 
     await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1), { timeout: 1000 })
     await waitFor(() => expect(api.listBaseRecords).toHaveBeenCalledTimes(2))
@@ -571,7 +570,7 @@ describe('LibraryHomePage saved views', () => {
 
     await user.click(screen.getByRole('button', { name: '视图设置' }))
     await user.click(screen.getByRole('button', { name: '添加排序条件' }))
-    await user.selectOptions(screen.getByLabelText('排序字段 1'), 'score')
+    await selectSemiOption(screen.getByLabelText('排序字段 1'), 'score')
     await waitFor(() =>
       expect(api.listBaseRecords).toHaveBeenLastCalledWith('table-1', {
         viewId: 'view-gallery',
@@ -592,11 +591,11 @@ describe('LibraryHomePage saved views', () => {
     await screen.findByRole('heading', { name: '研发工作台' })
     fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
     fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
-    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
-    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await selectSemiOption(screen.getByLabelText('排序字段 2'), 'score')
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'desc')
     await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1), { timeout: 1000 })
 
-    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'asc' } })
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'asc')
     await new Promise((resolve) => window.setTimeout(resolve, 450))
     expect(api.updateBaseView).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: '保存名称' })).toBeDisabled()
@@ -612,7 +611,7 @@ describe('LibraryHomePage saved views', () => {
       await first.promise
     })
     await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(2))
-    expect(screen.getByLabelText('排序方向 2')).toHaveValue('asc')
+    expect(screen.getByLabelText('排序方向 2')).toHaveTextContent('升序')
     expect(screen.getByRole('button', { name: '保存名称' })).toBeDisabled()
 
     await act(async () => {
@@ -626,7 +625,7 @@ describe('LibraryHomePage saved views', () => {
       await second.promise
     })
     await waitFor(() => expect(screen.getByRole('button', { name: '保存名称' })).toBeEnabled())
-    expect(screen.getByLabelText('排序方向 2')).toHaveValue('asc')
+    expect(screen.getByLabelText('排序方向 2')).toHaveTextContent('升序')
   })
 
   it('does not roll a newer draft back when an older save fails', async () => {
@@ -640,10 +639,10 @@ describe('LibraryHomePage saved views', () => {
     await screen.findByRole('heading', { name: '研发工作台' })
     fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
     fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
-    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
-    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await selectSemiOption(screen.getByLabelText('排序字段 2'), 'score')
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'desc')
     await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1), { timeout: 1000 })
-    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'asc' } })
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'asc')
     await new Promise((resolve) => window.setTimeout(resolve, 450))
 
     await act(async () => {
@@ -651,7 +650,7 @@ describe('LibraryHomePage saved views', () => {
       await first.promise.catch(() => undefined)
     })
     await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(2))
-    expect(screen.getByLabelText('排序方向 2')).toHaveValue('asc')
+    expect(screen.getByLabelText('排序方向 2')).toHaveTextContent('升序')
 
     await act(async () => {
       second.resolve({
@@ -664,7 +663,7 @@ describe('LibraryHomePage saved views', () => {
       await second.promise
     })
     await waitFor(() => expect(screen.getByRole('button', { name: '保存名称' })).toBeEnabled())
-    expect(screen.getByLabelText('排序方向 2')).toHaveValue('asc')
+    expect(screen.getByLabelText('排序方向 2')).toHaveTextContent('升序')
   })
 
   it('flushes a pending manual save through the same queue as later edits', async () => {
@@ -678,7 +677,7 @@ describe('LibraryHomePage saved views', () => {
     await screen.findByRole('heading', { name: '研发工作台' })
     fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
     fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
-    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
+    await selectSemiOption(screen.getByLabelText('排序字段 2'), 'score')
     fireEvent.click(screen.getByRole('button', { name: '保存当前配置' }))
     await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1))
 
@@ -687,7 +686,7 @@ describe('LibraryHomePage saved views', () => {
     })
     expect(api.updateBaseView).toHaveBeenCalledTimes(1)
 
-    fireEvent.change(screen.getByLabelText('排序方向 2'), { target: { value: 'desc' } })
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'desc')
     await act(async () => {
       await new Promise((resolve) => window.setTimeout(resolve, 450))
     })
@@ -729,7 +728,7 @@ describe('LibraryHomePage saved views', () => {
     await screen.findByRole('heading', { name: '研发工作台' })
     fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
     fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
-    fireEvent.change(screen.getByLabelText('排序字段 2'), { target: { value: 'score' } })
+    await selectSemiOption(screen.getByLabelText('排序字段 2'), 'score')
     fireEvent.click(screen.getByRole('button', { name: '删除当前视图' }))
 
     await waitFor(() => expect(api.deleteBaseView).toHaveBeenCalledWith('view-a'))

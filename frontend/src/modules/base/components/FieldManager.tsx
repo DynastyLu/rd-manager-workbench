@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useMemo, useState } from 'react'
 import { Button, Input, Modal, SideSheet, Tag } from '@douyinfe/semi-ui'
 import { IconPlus } from '@douyinfe/semi-icons'
@@ -137,7 +138,7 @@ function FieldConfigControls({
       <div className="field-manager__config-grid">
         <label htmlFor={`${isCreate ? 'create' : 'edit'}-relation-table`}>
           <span>目标数据表</span>
-          <select
+          <WorkspaceFormSelect
             id={`${isCreate ? 'create' : 'edit'}-relation-table`}
             aria-label="目标数据表"
             value={typeof config.targetTableId === 'string' ? config.targetTableId : ''}
@@ -152,11 +153,11 @@ function FieldConfigControls({
                 {item.name}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
         </label>
         <label htmlFor={`${isCreate ? 'create' : 'edit'}-relation-count`}>
           <span>关联数量</span>
-          <select
+          <WorkspaceFormSelect
             id={`${isCreate ? 'create' : 'edit'}-relation-count`}
             aria-label="关联数量"
             value={config.multiple === true ? 'multiple' : 'single'}
@@ -164,11 +165,11 @@ function FieldConfigControls({
           >
             <option value="single">单条记录</option>
             <option value="multiple">多条记录</option>
-          </select>
+          </WorkspaceFormSelect>
         </label>
         <label htmlFor={`${isCreate ? 'create' : 'edit'}-relation-mode`}>
           <span>关联方向</span>
-          <select
+          <WorkspaceFormSelect
             id={`${isCreate ? 'create' : 'edit'}-relation-mode`}
             aria-label="关联方向"
             value={relationMode}
@@ -190,7 +191,7 @@ function FieldConfigControls({
             >
               双向关联
             </option>
-          </select>
+          </WorkspaceFormSelect>
         </label>
         {isCreate && relationMode === 'TWO_WAY' ? (
           <>
@@ -205,7 +206,7 @@ function FieldConfigControls({
             </label>
             <label htmlFor="create-inverse-count">
               <span>反向关联数量</span>
-              <select
+              <WorkspaceFormSelect
                 id="create-inverse-count"
                 aria-label="反向关联数量"
                 value={inverseMultiple ? 'multiple' : 'single'}
@@ -213,7 +214,7 @@ function FieldConfigControls({
               >
                 <option value="single">单条记录</option>
                 <option value="multiple">多条记录</option>
-              </select>
+              </WorkspaceFormSelect>
             </label>
           </>
         ) : null}
@@ -235,7 +236,7 @@ function FieldConfigControls({
       <div className="field-manager__config-grid">
         <label htmlFor={`${isCreate ? 'create' : 'edit'}-relation-field`}>
           <span>关联字段</span>
-          <select
+          <WorkspaceFormSelect
             id={`${isCreate ? 'create' : 'edit'}-relation-field`}
             aria-label="关联字段"
             value={relationFieldId}
@@ -253,12 +254,12 @@ function FieldConfigControls({
                 {field.name}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
         </label>
         {type === 'ROLLUP' ? (
           <label htmlFor={`${isCreate ? 'create' : 'edit'}-aggregation`}>
             <span>汇总方式</span>
-            <select
+            <WorkspaceFormSelect
               id={`${isCreate ? 'create' : 'edit'}-aggregation`}
               aria-label="汇总方式"
               value={aggregation}
@@ -275,13 +276,13 @@ function FieldConfigControls({
               <option value="AVG">平均值</option>
               <option value="MIN">最小值</option>
               <option value="MAX">最大值</option>
-            </select>
+            </WorkspaceFormSelect>
           </label>
         ) : null}
         {type === 'LOOKUP' || aggregation !== 'COUNT' ? (
           <label htmlFor={`${isCreate ? 'create' : 'edit'}-target-field`}>
             <span>目标字段</span>
-            <select
+            <WorkspaceFormSelect
               id={`${isCreate ? 'create' : 'edit'}-target-field`}
               aria-label="目标字段"
               value={typeof config.targetFieldId === 'string' ? config.targetFieldId : ''}
@@ -293,7 +294,7 @@ function FieldConfigControls({
                   {field.name}
                 </option>
               ))}
-            </select>
+            </WorkspaceFormSelect>
           </label>
         ) : null}
       </div>
@@ -545,7 +546,7 @@ export function FieldManager({
           </label>
           <label htmlFor="base-field-type">
             <span>字段类型</span>
-            <select
+            <WorkspaceFormSelect
               id="base-field-type"
               aria-label="字段类型"
               value={type}
@@ -565,7 +566,7 @@ export function FieldManager({
                   {item.label}
                 </option>
               ))}
-            </select>
+            </WorkspaceFormSelect>
           </label>
           {type === 'SINGLE_SELECT' || type === 'MULTI_SELECT' ? (
             <label htmlFor="base-field-options">

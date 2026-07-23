@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 
 import { GridView } from '../components/GridView'
 import type { BaseRecord, DataField, DataView } from '../types'
@@ -149,10 +150,10 @@ describe('GridView', () => {
     )
 
     await user.type(screen.getByLabelText('搜索当前表'), '北斗')
-    await user.selectOptions(screen.getByLabelText('排序字段'), 'budget')
-    await user.selectOptions(screen.getByLabelText('筛选字段'), 'active')
+    await selectSemiOption(screen.getByLabelText('排序字段'), 'budget')
+    await selectSemiOption(screen.getByLabelText('筛选字段'), 'active')
     await user.type(screen.getByLabelText('筛选值'), 'true')
-    await user.selectOptions(screen.getByLabelText('分组字段'), 'active')
+    await selectSemiOption(screen.getByLabelText('分组字段'), 'active')
 
     await waitFor(() =>
       expect(onViewChange).toHaveBeenLastCalledWith(
@@ -168,7 +169,6 @@ describe('GridView', () => {
 
   it('updates only the quick sort while preserving additional sort conditions', async () => {
     const onViewChange = vi.fn()
-    const user = userEvent.setup()
     const multiSortView: DataView = {
       ...view,
       config: {
@@ -190,7 +190,7 @@ describe('GridView', () => {
       </MemoryRouter>
     )
 
-    await user.selectOptions(screen.getByLabelText('排序字段'), 'budget')
+    await selectSemiOption(screen.getByLabelText('排序字段'), 'budget')
 
     expect(onViewChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -226,7 +226,7 @@ describe('GridView', () => {
       </MemoryRouter>
     )
 
-    await user.selectOptions(screen.getByLabelText('筛选字段'), 'budget')
+    await selectSemiOption(screen.getByLabelText('筛选字段'), 'budget')
     expect(onViewChange).not.toHaveBeenCalled()
     expect(screen.getByLabelText('筛选值')).toHaveValue('')
 
@@ -243,7 +243,6 @@ describe('GridView', () => {
 
   it('clears only the quick filter and keeps the remaining conditions', async () => {
     const onViewChange = vi.fn()
-    const user = userEvent.setup()
     const multiFilterView: DataView = {
       ...view,
       config: {
@@ -265,7 +264,7 @@ describe('GridView', () => {
       </MemoryRouter>
     )
 
-    await user.selectOptions(screen.getByLabelText('筛选字段'), '')
+    await selectSemiOption(screen.getByLabelText('筛选字段'), '')
 
     expect(onViewChange).toHaveBeenLastCalledWith(
       expect.objectContaining({

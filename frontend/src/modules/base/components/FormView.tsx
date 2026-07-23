@@ -1,4 +1,6 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useState, type FormEvent } from 'react'
+import { Select } from '@douyinfe/semi-ui'
 
 import type { DataField, DataTable, DataTableSource } from '../types'
 import { RelationPicker } from './RelationPicker'
@@ -147,7 +149,7 @@ function FieldControl({
       )
     case 'SINGLE_SELECT':
       return (
-        <select
+        <WorkspaceFormSelect
           id={`base-form-${field.id}`}
           aria-label={field.name}
           required={required}
@@ -161,27 +163,25 @@ function FieldControl({
               {option.label}
             </option>
           ))}
-        </select>
+        </WorkspaceFormSelect>
       )
     case 'MULTI_SELECT':
       return (
-        <select
-          id={`base-form-${field.id}`}
-          aria-label={field.name}
-          required={required}
-          multiple
-          value={Array.isArray(value) ? value.map(String) : []}
-          onChange={(event) =>
-            onChange(Array.from(event.target.selectedOptions, (option) => option.value))
-          }
-          style={{ ...commonStyle, minHeight: 80, padding: 8 }}
-        >
-          {getOptions(field).map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <>
+          <span id={`base-form-${field.id}-label`} className="workspace-visually-hidden">
+            {field.name}
+          </span>
+          <Select<string>
+            id={`base-form-${field.id}`}
+            aria-labelledby={`base-form-${field.id}-label`}
+            aria-required={required}
+            multiple
+            value={Array.isArray(value) ? value.map(String) : []}
+            onChange={(nextValue) => onChange(Array.isArray(nextValue) ? nextValue : [])}
+            optionList={getOptions(field)}
+            style={{ ...commonStyle, minHeight: 80 }}
+          />
+        </>
       )
     case 'CHECKBOX':
       return (

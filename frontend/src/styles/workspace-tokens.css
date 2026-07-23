@@ -11,6 +11,12 @@
   --workspace-sidebar-width: 208px;
   --workspace-header-height: 56px;
   --workspace-page-padding: 24px 28px 40px;
+  --workspace-control-height: 32px;
+  --workspace-control-height-lg: 36px;
+  --workspace-form-gap: 16px;
+  --workspace-field-gap: 6px;
+  --workspace-modal-padding: 24px;
+  --workspace-modal-footer-gap: 8px;
   --workspace-brand: #3370ff;
   --workspace-brand-hover: #245bdb;
   --workspace-brand-soft: #e8f0ff;
@@ -25,6 +31,9 @@
   --workspace-success: #2f9b65;
   --workspace-warning: #d98909;
   --workspace-danger: #d83931;
+  --workspace-info: #3370ff;
+  --workspace-overlay: rgb(31 35 41 / 46%);
+  --workspace-focus-ring: 0 0 0 2px rgb(51 112 255 / 22%);
   --workspace-radius-sm: 6px;
   --workspace-radius: 8px;
   --workspace-radius-lg: 12px;
@@ -107,6 +116,21 @@ body::after {
 ::selection {
   background: #cbdcff;
   color: var(--workspace-text);
+}
+
+.workspace-select-field {
+  position: relative;
+}
+
+.workspace-select-field__validation {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Stable light page surfaces. These intentionally override the retired skins. */
@@ -206,6 +230,16 @@ body::after {
   box-shadow: 0 16px 48px rgb(31 35 41 / 18%);
 }
 
+.semi-modal-mask,
+.semi-sidesheet-mask {
+  background: var(--workspace-overlay);
+}
+
+.semi-modal-body,
+.semi-sidesheet-body {
+  overscroll-behavior: contain;
+}
+
 /*
  * Semi keeps horizontal spacing on modal-content and vertical spacing on
  * header/footer margins. A footerless modal therefore needs an explicit
@@ -218,13 +252,13 @@ body::after {
 
 .workspace-modal-form {
   display: grid;
-  gap: 16px;
+  gap: var(--workspace-form-gap);
 }
 
 .workspace-modal-form label,
 .workspace-modal-form__field {
   display: grid;
-  gap: 6px;
+  gap: var(--workspace-field-gap);
   color: var(--workspace-text);
   font-size: 13px;
   font-weight: 520;
@@ -236,12 +270,17 @@ body::after {
   gap: 12px;
 }
 
+.workspace-modal-form__grid--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .workspace-modal-form__actions,
 .workspace-modal-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--workspace-modal-footer-gap);
+  min-height: 32px;
 }
 
 .workspace-modal-form__error {
@@ -256,7 +295,64 @@ body::after {
   width: 100%;
 }
 
+.workspace-select-field {
+  display: inline-block;
+  width: 100%;
+  min-width: 0;
+}
+
+.workspace-select-field .semi-select {
+  min-height: var(--workspace-control-height);
+}
+
+.workspace-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.workspace-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--workspace-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.workspace-save-status--saved {
+  color: var(--workspace-success, #2ea121);
+}
+
+.workspace-save-status--error {
+  color: var(--workspace-danger, #d83931);
+}
+
+:where(button, a, input, textarea, [role='button'], [role='combobox']):focus-visible {
+  outline: 2px solid var(--workspace-brand);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @media (max-width: 720px) {
   :root { --workspace-page-padding: 18px 16px 32px; }
-  .workspace-modal-form__grid { grid-template-columns: 1fr; }
+  .workspace-modal-form__grid,
+  .workspace-modal-form__grid--three { grid-template-columns: 1fr; }
 }

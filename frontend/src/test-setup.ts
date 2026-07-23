@@ -1,3 +1,4 @@
+import '@douyinfe/semi-ui/lib/es/react19-adapter'
 import '@testing-library/jest-dom'
 import { configure } from '@testing-library/react'
 

@@ -3,21 +3,50 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Modal } from '@douyinfe/semi-ui'
 import ProjectWorkspacePage from '../ProjectWorkspacePage'
 
-const { createProgressReport, createTask, getProject, listMeetings, listNonProjectRd, listPartners, request } = vi.hoisted(() => ({
+const {
+  archiveMilestone,
+  archiveProgressReport,
+  archiveProject,
+  archiveTask,
+  createMilestone,
+  createProgressReport,
+  createTask,
+  getProject,
+  listMeetings,
+  listNonProjectRd,
+  listPartners,
+  listRisks,
+  request,
+  updateMilestone,
+  updateProgressReport,
+  updateProject,
+  updateTask,
+} = vi.hoisted(() => ({
+  archiveMilestone: vi.fn(),
+  archiveProgressReport: vi.fn(),
+  archiveProject: vi.fn(),
+  archiveTask: vi.fn(),
+  createMilestone: vi.fn(),
   createProgressReport: vi.fn(),
   createTask: vi.fn(),
   getProject: vi.fn(),
   listMeetings: vi.fn(),
   listNonProjectRd: vi.fn(),
   listPartners: vi.fn(),
+  listRisks: vi.fn(),
   request: vi.fn(),
+  updateMilestone: vi.fn(),
+  updateProgressReport: vi.fn(),
+  updateProject: vi.fn(),
+  updateTask: vi.fn(),
 }))
 
-vi.mock('@/modules/workbench/api/projects', () => ({ createProgressReport, getProject }))
-vi.mock('@/modules/workbench/api/tasks', () => ({ createTask }))
-vi.mock('@/modules/workbench/api/management', () => ({ listMeetings, listPartners }))
+vi.mock('@/modules/workbench/api/projects', () => ({ archiveMilestone, archiveProgressReport, archiveProject, createMilestone, createProgressReport, getProject, updateMilestone, updateProgressReport, updateProject }))
+vi.mock('@/modules/workbench/api/tasks', () => ({ archiveTask, createTask, updateTask }))
+vi.mock('@/modules/workbench/api/management', () => ({ listMeetings, listPartners, listRisks }))
 vi.mock('@/modules/workbench/api/operations', () => ({ listNonProjectRd }))
 vi.mock('@/lib/http', () => ({ request }))
 
@@ -63,6 +92,7 @@ const project = {
   actualEndAt: null,
   status: 'ACTIVE',
   phase: 'RESEARCH',
+  healthOverride: null,
   archivedAt: null,
   createdAt: '2026-07-01T00:00:00.000Z',
   updatedAt: '2026-07-18T00:00:00.000Z',
@@ -92,6 +122,7 @@ const project = {
       collaboratorNames: [],
       status: 'IN_PROGRESS',
       priority: 'HIGH',
+      completionPercent: 45,
       dueAt: '2026-07-25T00:00:00.000Z',
       completedAt: null,
       sourceType: null,
@@ -121,22 +152,36 @@ const project = {
     reasons: ['存在临近任务'],
     calculatedAt: '2026-07-18T00:00:00.000Z',
   },
+  effectiveHealth: 'YELLOW',
 } as const
 
 describe('ProjectWorkspacePage', () => {
   beforeEach(() => {
+    archiveMilestone.mockReset()
+    archiveProgressReport.mockReset()
+    archiveProject.mockReset()
+    archiveTask.mockReset()
+    createMilestone.mockReset()
     createProgressReport.mockReset()
     createTask.mockReset()
     getProject.mockReset()
     listMeetings.mockReset()
     listNonProjectRd.mockReset()
     listPartners.mockReset()
+    listRisks.mockReset()
     request.mockReset()
+    updateMilestone.mockReset()
+    updateProgressReport.mockReset()
+    updateProject.mockReset()
+    updateTask.mockReset()
     getProject.mockResolvedValue(project)
     listMeetings.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
     listNonProjectRd.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
     listPartners.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
+    listRisks.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 100, total: 0 } })
     request.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
+    updateProject.mockResolvedValue(project)
+    updateTask.mockResolvedValue(project.tasks[0])
   })
 
   it('renders the fixed project context and six connected sections', async () => {
@@ -157,6 +202,7 @@ describe('ProjectWorkspacePage', () => {
     expect(screen.getByText('整理实验样本')).toBeInTheDocument()
     expect(screen.getByText('已完成样本准备')).toBeInTheDocument()
     expect(screen.getByText('2026/7/18')).toBeInTheDocument()
+    expect(document.querySelector('.project-workspace__status')).toHaveClass('project-workspace__status--active')
   })
 
   it('updates the URL when the user changes project sections', async () => {
@@ -170,6 +216,7 @@ describe('ProjectWorkspacePage', () => {
       '/spaces/projects/project-1/progress'
     )
     expect(screen.getByText('已完成样本准备')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '提交进展' })).toBeInTheDocument()
   })
 
   it('shows a retry action when the project cannot be loaded', async () => {
@@ -193,6 +240,7 @@ describe('ProjectWorkspacePage', () => {
       expect(createTask).toHaveBeenCalledWith({
         title: '验证候选材料',
         projectId: 'project-1',
+        completionPercent: 0,
       })
     })
   })
@@ -239,6 +287,61 @@ describe('ProjectWorkspacePage', () => {
       'href',
       '/calendar?meetingId=meeting-1'
     )
+  })
+
+  it('edits the project objective and manual health from the project workspace', async () => {
+    const user = userEvent.setup()
+    renderWorkspace()
+
+    await user.click(await screen.findByRole('button', { name: '编辑项目' }))
+    await user.clear(screen.getByLabelText('项目目标'))
+    await user.type(screen.getByLabelText('项目目标'), '完成耐盐材料量产验证')
+    await user.click(screen.getByRole('button', { name: '保存项目' }))
+
+    await waitFor(() => expect(updateProject).toHaveBeenCalledWith(
+      'project-1',
+      expect.objectContaining({
+        objective: '完成耐盐材料量产验证',
+        status: 'ACTIVE',
+        healthOverride: null,
+      })
+    ))
+  })
+
+  it('shows persisted work-item progress and archives a work item after confirmation', async () => {
+    archiveTask.mockResolvedValue(undefined)
+    const confirmSpy = vi.spyOn(Modal, 'confirm').mockImplementation((options) => {
+      void options.onOk?.()
+      return { destroy: vi.fn(), update: vi.fn() }
+    })
+    const user = userEvent.setup()
+    renderWorkspace('/spaces/projects/project-1/work-items')
+
+    expect(await screen.findByLabelText('整理实验样本完成进度')).toBeInTheDocument()
+    expect(screen.getByText('45%')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '删除' }))
+
+    expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ title: '删除工作项？' }))
+    await waitFor(() => expect(archiveTask).toHaveBeenCalledWith('task-1'))
+  })
+
+  it('uses distinct semantic colors for project risk levels', async () => {
+    listRisks.mockResolvedValue({
+      data: [
+        { id: 'risk-low', title: '低风险', level: 'LOW', status: 'OPEN', ownerName: null },
+        { id: 'risk-medium', title: '中风险', level: 'MEDIUM', status: 'MITIGATING', ownerName: null },
+        { id: 'risk-high', title: '高风险', level: 'HIGH', status: 'OPEN', ownerName: null },
+      ],
+      meta: { page: 1, pageSize: 100, total: 3 },
+    })
+    renderWorkspace('/spaces/projects/project-1/risks')
+
+    expect(await screen.findByText('低风险', { selector: '.semi-tag-content' })).toBeInTheDocument()
+    expect(screen.getByText('中风险', { selector: '.semi-tag-content' })).toBeInTheDocument()
+    expect(screen.getByText('高风险', { selector: '.semi-tag-content' })).toBeInTheDocument()
+    expect(screen.getByText('低风险', { selector: '.semi-tag-content' }).closest('.semi-tag')).toHaveClass('semi-tag-green-light')
+    expect(screen.getByText('中风险', { selector: '.semi-tag-content' }).closest('.semi-tag')).toHaveClass('semi-tag-amber-light')
+    expect(screen.getByText('高风险', { selector: '.semi-tag-content' }).closest('.semi-tag')).toHaveClass('semi-tag-red-light')
   })
 
   it('shows project documents and opens the same document in the knowledge workspace', async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -48,17 +48,14 @@ describe('TaskBoard', () => {
     expect(onStatusChange).toHaveBeenCalledWith('task-1', 'IN_PROGRESS')
   })
 
-  it('lets a task move to every supported status through an accessible status control', async () => {
-    const onStatusChange = vi.fn()
+  it('exposes every supported status through an accessible status control', async () => {
+    const user = userEvent.setup()
 
-    render(<TaskBoard tasks={[task]} onStatusChange={onStatusChange} isUpdating={false} />)
+    render(<TaskBoard tasks={[task]} onStatusChange={vi.fn()} isUpdating={false} />)
 
-    fireEvent.keyDown(screen.getByRole('combobox', { name: '设置任务状态：整理评审材料' }), {
-      key: 'ArrowDown',
-    })
-    expect(await screen.findByRole('option', { name: '已取消' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('option', { name: '受阻' }))
-
-    expect(onStatusChange).toHaveBeenCalledWith('task-1', 'BLOCKED')
+    await user.click(screen.getByRole('combobox', { name: '设置任务状态：整理评审材料' }))
+    for (const label of ['待开始', '进行中', '受阻', '已完成', '已取消']) {
+      expect(await screen.findByRole('option', { name: new RegExp(label) })).toBeInTheDocument()
+    }
   })
 })

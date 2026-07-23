@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/lib/http'
+import { getSemiOptionValues, isSemiOptionDisabled, selectSemiOption } from '@/test-utils/selectSemiOption'
 import { FieldManager } from '../components/FieldManager'
 import { FormView } from '../components/FormView'
 import { FormulaEditor } from '../components/FormulaEditor'
@@ -178,17 +179,17 @@ describe('computed and relational fields', () => {
 
     await user.click(screen.getByRole('button', { name: '新增字段' }))
     const typeSelect = screen.getByLabelText('字段类型')
-    expect(within(typeSelect).getByRole('option', { name: '关联记录' })).toBeInTheDocument()
-    expect(within(typeSelect).getByRole('option', { name: '查找引用' })).toBeInTheDocument()
-    expect(within(typeSelect).getByRole('option', { name: '关联汇总' })).toBeInTheDocument()
-    expect(within(typeSelect).getByRole('option', { name: '公式' })).toBeInTheDocument()
+    await expect(getSemiOptionValues(typeSelect)).resolves.toEqual(
+      expect.arrayContaining(['RELATION', 'LOOKUP', 'ROLLUP', 'FORMULA']),
+    )
 
-    await user.selectOptions(typeSelect, 'LOOKUP')
-    await user.selectOptions(screen.getByLabelText('关联字段'), relationField.id)
+    await selectSemiOption(typeSelect, 'LOOKUP')
+    await selectSemiOption(screen.getByLabelText('关联字段'), relationField.id)
     const targetField = screen.getByLabelText('目标字段')
-    expect(within(targetField).getByRole('option', { name: '岗位名称' })).toBeInTheDocument()
-    expect(within(targetField).getByRole('option', { name: '评分' })).toBeInTheDocument()
-    expect(within(targetField).queryByRole('option', { name: '计算结果' })).not.toBeInTheDocument()
+    await expect(getSemiOptionValues(targetField)).resolves.toEqual(
+      expect.arrayContaining(['field-position-title', 'field-position-score']),
+    )
+    await expect(getSemiOptionValues(targetField)).resolves.not.toContain('field-position-computed')
   })
 
   it('only asks for numeric rollup targets when the aggregation needs one', async () => {
@@ -204,16 +205,16 @@ describe('computed and relational fields', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '新增字段' }))
-    await user.selectOptions(screen.getByLabelText('字段类型'), 'ROLLUP')
-    await user.selectOptions(screen.getByLabelText('关联字段'), relationField.id)
-    expect(screen.getByLabelText('汇总方式')).toHaveValue('COUNT')
+    await selectSemiOption(screen.getByLabelText('字段类型'), 'ROLLUP')
+    await selectSemiOption(screen.getByLabelText('关联字段'), relationField.id)
+    expect(screen.getByLabelText('汇总方式')).toHaveTextContent('计数')
     expect(screen.queryByLabelText('目标字段')).not.toBeInTheDocument()
 
-    await user.selectOptions(screen.getByLabelText('汇总方式'), 'SUM')
+    await selectSemiOption(screen.getByLabelText('汇总方式'), 'SUM')
     const targetField = screen.getByLabelText('目标字段')
-    expect(within(targetField).getByRole('option', { name: '评分' })).toBeInTheDocument()
-    expect(within(targetField).queryByRole('option', { name: '岗位名称' })).not.toBeInTheDocument()
-    expect(within(targetField).queryByRole('option', { name: '计算结果' })).not.toBeInTheDocument()
+    await expect(getSemiOptionValues(targetField)).resolves.toContain('field-position-score')
+    await expect(getSemiOptionValues(targetField)).resolves.not.toContain('field-position-title')
+    await expect(getSemiOptionValues(targetField)).resolves.not.toContain('field-position-computed')
   })
 
   it('configures bidirectional relation cardinality without exposing an inverse id', async () => {
@@ -231,12 +232,12 @@ describe('computed and relational fields', () => {
 
     await user.click(screen.getByRole('button', { name: '新增字段' }))
     await user.type(screen.getByLabelText('字段名称'), '目标岗位')
-    await user.selectOptions(screen.getByLabelText('字段类型'), 'RELATION')
-    await user.selectOptions(screen.getByLabelText('目标数据表'), positionTable.id)
-    await user.selectOptions(screen.getByLabelText('关联数量'), 'multiple')
-    await user.selectOptions(screen.getByLabelText('关联方向'), 'TWO_WAY')
+    await selectSemiOption(screen.getByLabelText('字段类型'), 'RELATION')
+    await selectSemiOption(screen.getByLabelText('目标数据表'), positionTable.id)
+    await selectSemiOption(screen.getByLabelText('关联数量'), 'multiple')
+    await selectSemiOption(screen.getByLabelText('关联方向'), 'TWO_WAY')
     await user.type(screen.getByLabelText('反向字段名称'), '候选人')
-    await user.selectOptions(screen.getByLabelText('反向关联数量'), 'single')
+    await selectSemiOption(screen.getByLabelText('反向关联数量'), 'single')
 
     expect(screen.queryByLabelText('反向字段 ID')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '保存字段' }))
@@ -267,13 +268,13 @@ describe('computed and relational fields', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '新增字段' }))
-    await user.selectOptions(screen.getByLabelText('字段类型'), 'RELATION')
-    await user.selectOptions(screen.getByLabelText('目标数据表'), systemProjectTable.id)
-    await user.selectOptions(screen.getByLabelText('关联方向'), 'TWO_WAY')
-    expect(screen.getByLabelText('目标数据表')).toHaveValue('')
-    expect(
-      within(screen.getByLabelText('目标数据表')).queryByRole('option', { name: '项目总表' })
-    ).not.toBeInTheDocument()
+    await selectSemiOption(screen.getByLabelText('字段类型'), 'RELATION')
+    await selectSemiOption(screen.getByLabelText('目标数据表'), systemProjectTable.id)
+    await selectSemiOption(screen.getByLabelText('关联方向'), 'TWO_WAY')
+    expect(screen.getByLabelText('目标数据表')).toHaveTextContent('请选择数据表')
+    await expect(getSemiOptionValues(screen.getByLabelText('目标数据表'))).resolves.not.toContain(
+      systemProjectTable.id,
+    )
 
     await user.click(
       within(screen.getByRole('dialog', { name: '新增字段' })).getByRole('button', {
@@ -282,7 +283,7 @@ describe('computed and relational fields', () => {
     )
     await user.click(screen.getByRole('button', { name: '编辑字段：岗位' }))
     const direction = screen.getByLabelText('关联方向')
-    expect(within(direction).getByRole('option', { name: '双向关联' })).toBeDisabled()
+    await expect(isSemiOptionDisabled(direction, 'TWO_WAY')).resolves.toBe(true)
   })
 
   it('keeps the server-owned inverse field id out of relation update payloads', async () => {
@@ -347,7 +348,7 @@ describe('computed and relational fields', () => {
     await user.click(screen.getByRole('button', { name: '编辑字段：岗位名称引用' }))
     expect(screen.getByRole('button', { name: '保存字段修改' })).toBeDisabled()
     expect(screen.getByRole('status')).toHaveTextContent('请补全字段配置后保存')
-    await user.selectOptions(screen.getByLabelText('目标字段'), 'field-position-title')
+    await selectSemiOption(screen.getByLabelText('目标字段'), 'field-position-title')
     expect(screen.getByRole('button', { name: '保存字段修改' })).toBeEnabled()
   })
 
@@ -536,7 +537,7 @@ describe('computed and relational fields', () => {
     expect(onRecordChange).not.toHaveBeenCalled()
   })
 
-  it('omits computed fields from forms and kanban grouping choices', () => {
+  it('omits computed fields from forms and kanban grouping choices', async () => {
     const computed = field({ id: 'field-result', key: 'result', name: '计算结果', type: 'FORMULA' })
     const status = field({
       id: 'field-status',
@@ -564,9 +565,7 @@ describe('computed and relational fields', () => {
       />
     )
     const groupingField = screen.getByRole('combobox', { name: '分组字段' })
-    expect(groupingField).toHaveValue('status')
-    expect(
-      within(groupingField).queryByRole('option', { name: '计算结果' })
-    ).not.toBeInTheDocument()
+    expect(groupingField).toHaveTextContent('状态')
+    await expect(getSemiOptionValues(groupingField)).resolves.not.toContain('result')
   })
 })

@@ -13,7 +13,7 @@ describe('HealthBadge', () => {
     (health, label, className) => {
       render(<HealthBadge health={health} />)
 
-      expect(screen.getByText(label)).toHaveClass(className)
+      expect(screen.getByText(label).closest('.semi-tag')).toHaveClass(className)
     }
   )
 })

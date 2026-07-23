@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import type { DataField, GalleryViewConfig } from '../types'
 
 const VISIBLE_FIELD_LIMIT = 8
@@ -30,7 +31,7 @@ export function GallerySettingsSection({
       </div>
       <label className="view-settings__stacked-field">
         <span>标题字段</span>
-        <select
+        <WorkspaceFormSelect
           aria-label="画册标题字段"
           value={config.titleFieldKey ?? ''}
           onChange={(event) => {
@@ -46,11 +47,11 @@ export function GallerySettingsSection({
         >
           <option value="">主字段</option>
           {fields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
-        </select>
+        </WorkspaceFormSelect>
       </label>
       <label className="view-settings__stacked-field">
         <span>封面字段</span>
-        <select
+        <WorkspaceFormSelect
           aria-label="画册封面字段"
           value={config.coverFieldKey ?? ''}
           onChange={(event) => {
@@ -65,32 +66,32 @@ export function GallerySettingsSection({
         >
           <option value="">无封面</option>
           {coverFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
-        </select>
+        </WorkspaceFormSelect>
       </label>
       <div className="view-settings__inline-fields">
-        <label className="view-settings__stacked-field">
-          <span>卡片尺寸</span>
-          <select
-            aria-label="画册卡片尺寸"
+        <div className="view-settings__stacked-field">
+          <span id="gallery-card-size-label">卡片尺寸</span>
+          <WorkspaceFormSelect
+            aria-labelledby="gallery-card-size-label"
             value={config.cardSize ?? 'STANDARD'}
             onChange={(event) => onChange({ ...config, cardSize: event.target.value as GalleryViewConfig['cardSize'] })}
           >
             <option value="COMPACT">紧凑</option>
             <option value="STANDARD">标准</option>
             <option value="WIDE">宽版</option>
-          </select>
-        </label>
-        <label className="view-settings__stacked-field">
-          <span>封面适应</span>
-          <select
-            aria-label="画册封面适应"
+          </WorkspaceFormSelect>
+        </div>
+        <div className="view-settings__stacked-field">
+          <span id="gallery-cover-fit-label">封面适应</span>
+          <WorkspaceFormSelect
+            aria-labelledby="gallery-cover-fit-label"
             value={config.coverFit ?? 'COVER'}
             onChange={(event) => onChange({ ...config, coverFit: event.target.value as GalleryViewConfig['coverFit'] })}
           >
             <option value="COVER">铺满裁切</option>
             <option value="CONTAIN">完整显示</option>
-          </select>
-        </label>
+          </WorkspaceFormSelect>
+        </div>
       </div>
       <fieldset className="view-settings__gallery-fields">
         <legend>卡片字段 <span>{visibleIds.length}/{VISIBLE_FIELD_LIMIT}</span></legend>

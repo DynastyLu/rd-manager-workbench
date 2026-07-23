@@ -1,6 +1,51 @@
 import { expect, test } from '@playwright/test'
 
 test.describe('workbench smoke', () => {
+  test('persists high-frequency workspace state in the hash URL', async ({ page }) => {
+    await page.goto('/#/spaces/projects?foreign=keep')
+    await page.getByLabel('搜索项目').fill('评审')
+    await expect(page).toHaveURL(/search=%E8%AF%84%E5%AE%A1/)
+    await expect(page).toHaveURL(/foreign=keep/)
+
+    await page.getByRole('combobox', { name: '项目状态' }).click()
+    await page.getByRole('option', { name: '进行中' }).click()
+    await expect(page).toHaveURL(/status=ACTIVE/)
+
+    await page.reload()
+    await expect(page.getByLabel('搜索项目')).toHaveValue('评审')
+    await expect(page.getByRole('combobox', { name: '项目状态' })).toContainText('进行中')
+
+    await page.goto('/#/my-work')
+    await page.getByRole('button', { name: '今日' }).click()
+    await expect(page).toHaveURL(/view=TODAY/)
+    await page.reload()
+    await expect(page.getByRole('button', { name: '今日' })).toHaveAttribute('aria-current', 'page')
+  })
+
+  test('restores calendar, knowledge, base, and global-search state from the URL', async ({ page }) => {
+    await page.goto('/#/calendar?calendarView=timeGridWeek&date=2026-07-15')
+    await expect(page.getByRole('button', { name: '周' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('.fc-toolbar-title')).toContainText('2026年7月')
+
+    await page.goto('/#/knowledge?directory=favorites&query=%E6%9D%90%E6%96%99')
+    await expect(page.getByRole('button', { name: '收藏' })).toHaveAttribute('data-active', 'true')
+    await expect(page.getByLabel('搜索文档')).toHaveValue('材料')
+
+    await page.goto('/#/base?query=%E9%A3%8E%E9%99%A9')
+    await expect(page.getByLabel('搜索当前表')).toHaveValue('风险')
+
+    await page.goto('/#/search?q=%E9%A1%B9%E7%9B%AE%E8%BF%9B%E5%BA%A6&types=PROJECT')
+    await expect(page.getByLabel('搜索全部工作内容')).toHaveValue('项目进度')
+    await expect(page.getByRole('button', { name: '仅搜索项目' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  test('keeps one application main landmark on complex workspaces', async ({ page }) => {
+    for (const route of ['/knowledge', '/base', '/library/intelligence/briefs']) {
+      await page.goto(`/#${route}`)
+      await expect(page.locator('main')).toHaveCount(1)
+    }
+  })
+
   test('renders the local workbench entry', async ({ page }) => {
     await page.goto('/')
 
@@ -113,5 +158,36 @@ test.describe('workbench smoke', () => {
     await expect(attachments).toBeVisible()
     await expect(attachments).toHaveCSS('padding-left', '18px')
     await expect(attachments).toHaveCSS('padding-right', '18px')
+  })
+
+  test('exposes the complete project maintenance loop', async ({ page }) => {
+    await page.goto('/#/spaces/projects')
+    const projectLink = page.locator('a[aria-label^="打开项目空间："]').first()
+    await expect(projectLink).toBeVisible()
+    await projectLink.click()
+
+    await expect(page.getByRole('button', { name: '编辑项目' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '删除项目' })).toBeVisible()
+    await expect(page.locator('.project-workspace__status')).toHaveCount(1)
+    await page.getByRole('button', { name: '编辑项目' }).click()
+
+    const projectDialog = page.getByRole('dialog', { name: '编辑项目' })
+    await expect(projectDialog.getByLabel('项目目标')).toBeVisible()
+    await expect(projectDialog.locator('.semi-datepicker')).toHaveCount(2)
+    await expect(projectDialog.locator('.semi-select')).toHaveCount(3)
+    await expect(projectDialog.getByRole('button', { name: '保存项目' })).toBeVisible()
+    await projectDialog.locator('.semi-modal-close').click()
+
+    await page.getByRole('tab', { name: '进展' }).click()
+    await expect(page.getByRole('button', { name: '提交进展' })).toBeVisible()
+
+    await page.getByRole('tab', { name: '工作项' }).click()
+    await expect(page.getByRole('button', { name: '新建工作项' }).last()).toBeVisible()
+    const workItemProgress = page.locator('.project-workspace__task-list [role="progressbar"]')
+    if (await workItemProgress.count()) await expect(workItemProgress.first()).toBeVisible()
+
+    await page.getByRole('tab', { name: '概览' }).click()
+    await expect(page.getByRole('progressbar', { name: '里程碑完成进度' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '新建里程碑' })).toBeVisible()
   })
 })

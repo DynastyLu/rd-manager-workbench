@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -324,8 +325,8 @@ function ItemEditor({ editor, saving, onCancel, onSave }: { editor: EditorState;
       <form className="operations-editor" onSubmit={submit}>
         <div><label htmlFor="rd-code">编号</label><Input id="rd-code" name="code" defaultValue={item?.code} required /></div>
         <div><label htmlFor="rd-title">事项标题</label><Input id="rd-title" name="title" defaultValue={item?.title} required /></div>
-        <div><label htmlFor="rd-kind">类型</label><select id="rd-kind" name="kind" defaultValue={item?.kind ?? 'TECH_EXPLORATION'}>{KINDS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
-        <div><label htmlFor="rd-status">状态</label><select id="rd-status" name="status" defaultValue={item?.status ?? 'DRAFT'}>{STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+        <div><span id="rd-kind-label">类型</span><WorkspaceFormSelect id="rd-kind" aria-labelledby="rd-kind-label" name="kind" defaultValue={item?.kind ?? 'TECH_EXPLORATION'}>{KINDS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</WorkspaceFormSelect></div>
+        <div><span id="rd-status-label">状态</span><WorkspaceFormSelect id="rd-status" aria-labelledby="rd-status-label" name="status" defaultValue={item?.status ?? 'DRAFT'}>{STATUSES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</WorkspaceFormSelect></div>
         <div className="operations-editor__wide"><label htmlFor="rd-objective">目标</label><Input id="rd-objective" name="objective" defaultValue={item?.objective ?? ''} /></div>
         <div className="operations-editor__wide"><label htmlFor="rd-expected">预期成果</label><Input id="rd-expected" name="expectedOutcome" defaultValue={item?.expectedOutcome ?? ''} /></div>
         <div><label htmlFor="rd-owner">负责人</label><Input id="rd-owner" name="ownerName" defaultValue={item?.ownerName ?? ''} /></div>

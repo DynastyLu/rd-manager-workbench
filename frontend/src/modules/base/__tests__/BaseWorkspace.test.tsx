@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import LibraryHomePage from '@/pages/LibraryHomePage'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 
 const api = vi.hoisted(() => ({
   createBaseField: vi.fn(),
@@ -235,7 +236,7 @@ describe('multidimensional base workspace', () => {
     await user.click(await screen.findByRole('button', { name: '字段管理' }))
     await user.click(screen.getByRole('button', { name: '新增字段' }))
     await user.type(screen.getByLabelText('字段名称'), '负责人')
-    fireEvent.change(screen.getByLabelText('字段类型'), { target: { value: 'TEXT' } })
+    await selectSemiOption(screen.getByLabelText('字段类型'), 'TEXT')
     await user.click(screen.getByRole('button', { name: '保存字段' }))
 
     expect(api.createBaseField).toHaveBeenCalledWith('table-custom', {
@@ -254,7 +255,7 @@ describe('multidimensional base workspace', () => {
     await user.click(screen.getByRole('button', { name: '字段管理' }))
     await user.click(screen.getByRole('button', { name: '新增字段' }))
     await user.type(screen.getByLabelText('字段名称'), 'priority')
-    await user.selectOptions(screen.getByLabelText('字段类型'), 'SINGLE_SELECT')
+    await selectSemiOption(screen.getByLabelText('字段类型'), 'SINGLE_SELECT')
     await user.type(screen.getByLabelText('选项'), '高, 中, 低')
     await user.click(screen.getByRole('button', { name: '保存字段' }))
 
@@ -275,7 +276,7 @@ describe('multidimensional base workspace', () => {
     await user.click(screen.getByRole('button', { name: '字段管理' }))
     await user.click(screen.getByRole('button', { name: '新增字段' }))
     await user.type(screen.getByLabelText('字段名称'), 'created_at')
-    await user.selectOptions(screen.getByLabelText('字段类型'), 'CREATED_AT')
+    await selectSemiOption(screen.getByLabelText('字段类型'), 'CREATED_AT')
     await user.click(screen.getByRole('button', { name: '保存字段' }))
 
     expect(api.createBaseField).toHaveBeenCalledWith('table-custom', {

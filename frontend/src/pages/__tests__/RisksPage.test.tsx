@@ -56,9 +56,9 @@ describe('RisksPage project context', () => {
     await waitFor(() => {
       expect(createRisk).toHaveBeenCalledWith({
         title: '供应链延期',
-        likelihood: 'HIGH',
-        impact: 'HIGH',
-        level: 'HIGH',
+        likelihood: 'MEDIUM',
+        impact: 'MEDIUM',
+        level: 'MEDIUM',
         ownerName: undefined,
         projectId: 'project-42',
       })

@@ -8,6 +8,7 @@ import { ProjectForm } from '@/modules/workbench/components/ProjectForm'
 import { listProjects } from '@/modules/workbench/api/projects'
 import type { Project, ProjectHealth, ProjectStatus } from '@/modules/workbench/types'
 import { ROUTES } from '@/constants/routes'
+import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import './ProjectsPage.less'
 
 const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string }> = [
@@ -15,14 +16,14 @@ const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string }> = [
   { value: 'ACTIVE', label: '进行中' },
   { value: 'ON_HOLD', label: '已暂停' },
   { value: 'COMPLETED', label: '已完成' },
-  { value: 'CANCELLED', label: '已取消' },
+  { value: 'CANCELLED', label: '已终止' },
 ]
 
 const STATUS_COLORS: Record<ProjectStatus, 'blue' | 'green' | 'amber' | 'grey' | 'red'> = {
   DRAFT: 'grey',
-  ACTIVE: 'blue',
+  ACTIVE: 'green',
   ON_HOLD: 'amber',
-  COMPLETED: 'green',
+  COMPLETED: 'blue',
   CANCELLED: 'red',
 }
 
@@ -60,10 +61,16 @@ function rememberProject(id: string) {
 }
 
 export default function ProjectsPage() {
-  const [search, setSearch] = useState('')
-  const [status, setStatus] = useState<ProjectStatus | undefined>()
-  const [view, setView] = useState<ProjectView>('all')
-  const [page, setPage] = useState(1)
+  const query = useWorkspaceSearchParams()
+  const search = query.getString('search')
+  const statusValue = query.getEnum(
+    'status',
+    ['ALL', ...STATUS_OPTIONS.map((option) => option.value)] as const,
+    'ALL',
+  )
+  const status = statusValue === 'ALL' ? undefined : statusValue
+  const view = query.getEnum('view', ['all', 'recent'] as const, 'all') as ProjectView
+  const page = query.getPositiveInt('page', 1)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const recentProjectIds = useMemo(() => (view === 'recent' ? getRecentProjectIds() : []), [view])
   const projectsQuery = useQuery({
@@ -189,11 +196,11 @@ export default function ProjectsPage() {
             aria-controls="projects-view-panel"
             aria-selected={view === 'recent'}
             tabIndex={view === 'recent' ? 0 : -1}
-            onClick={() => setView('recent')}
+            onClick={() => query.update({ view: 'recent', page: 1 }, { defaults: { view: 'all', page: 1 } })}
             onKeyDown={(event) => {
               if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
                 event.preventDefault()
-                setView('all')
+                query.update({ view: 'all', page: 1 }, { defaults: { view: 'all', page: 1 } })
                 document.getElementById('projects-tab-all')?.focus()
               }
             }}
@@ -207,11 +214,11 @@ export default function ProjectsPage() {
             aria-controls="projects-view-panel"
             aria-selected={view === 'all'}
             tabIndex={view === 'all' ? 0 : -1}
-            onClick={() => setView('all')}
+            onClick={() => query.update({ view: 'all', page: 1 }, { defaults: { view: 'all', page: 1 } })}
             onKeyDown={(event) => {
               if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
                 event.preventDefault()
-                setView('recent')
+                query.update({ view: 'recent', page: 1 }, { defaults: { view: 'all', page: 1 } })
                 document.getElementById('projects-tab-recent')?.focus()
               }
             }}
@@ -232,8 +239,7 @@ export default function ProjectsPage() {
             placeholder="搜索项目名称或编号"
             value={search}
             onChange={(value) => {
-              setSearch(value)
-              setPage(1)
+              query.update({ search: value, page: 1 }, { defaults: { page: 1 } })
             }}
             showClear
           />
@@ -244,8 +250,10 @@ export default function ProjectsPage() {
             aria-labelledby="project-status-label"
             value={status ?? 'ALL'}
             onChange={(value) => {
-              setStatus(value === 'ALL' ? undefined : (value as ProjectStatus))
-              setPage(1)
+              query.update(
+                { status: value === 'ALL' ? undefined : String(value), page: 1 },
+                { defaults: { page: 1 } },
+              )
             }}
             optionList={[
               { value: 'ALL', label: '全部状态' },
@@ -279,7 +287,10 @@ export default function ProjectsPage() {
                     total: projectsQuery.data?.meta.total ?? 0,
                     showTotal: true,
                     showSizeChanger: false,
-                    onPageChange: setPage,
+                    onPageChange: (nextPage) => query.update(
+                      { page: nextPage },
+                      { defaults: { page: 1 } },
+                    ),
                   }
                 : false
             }

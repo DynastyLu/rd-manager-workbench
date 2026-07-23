@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 
 import MeetingsPage from '../MeetingsPage'
 
@@ -214,10 +215,9 @@ describe('MeetingsPage project context', () => {
   })
 
   it('filters by status and date range using the backend meeting query contract', async () => {
-    const user = userEvent.setup()
     renderMeetingsPage()
 
-    await user.selectOptions(screen.getByLabelText('会议状态'), 'HELD')
+    await selectSemiOption(screen.getByLabelText('会议状态'), 'HELD')
     fireEvent.change(screen.getByLabelText('会议开始日期'), { target: { value: '2026-07-01' } })
     fireEvent.change(screen.getByLabelText('会议结束日期'), { target: { value: '2026-07-31' } })
 

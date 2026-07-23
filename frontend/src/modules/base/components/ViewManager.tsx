@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useState, type FormEvent } from 'react'
 import { Button, Input, Modal } from '@douyinfe/semi-ui'
 
@@ -132,7 +133,7 @@ export function ViewManager({
             placeholder="例如：本周重点"
           />
           <label htmlFor="view-create-type">视图类型</label>
-          <select
+          <WorkspaceFormSelect
             id="view-create-type"
             aria-label="视图类型"
             value={type}
@@ -143,7 +144,7 @@ export function ViewManager({
                 {option.label}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
           <div className="view-create__preview">
             <span aria-hidden="true">{TYPE_META[type].icon}</span>
             <div>

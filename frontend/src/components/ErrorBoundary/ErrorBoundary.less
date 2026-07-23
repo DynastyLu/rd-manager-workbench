@@ -48,7 +48,11 @@
     font-size: 13px;
     letter-spacing: 1px;
     border-radius: var(--radius, 2px);
-    transition: all var(--transition);
+    transition:
+      background-color var(--transition),
+      border-color var(--transition),
+      color var(--transition),
+      box-shadow var(--transition);
 
     &:hover {
       background: rgba(0, 255, 240, 0.1);

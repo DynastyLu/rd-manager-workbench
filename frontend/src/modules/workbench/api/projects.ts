@@ -2,9 +2,12 @@ import { request } from '@/lib/http'
 
 import type {
   ListProjectsResult,
+  Milestone,
+  MilestoneStatus,
   Project,
   ProjectDetail,
   ProjectPhase,
+  ProjectHealth,
   ProjectStatus,
   ProgressReport,
 } from '@/modules/workbench/types'
@@ -33,6 +36,7 @@ export interface CreateProjectInput {
   actualEndAt?: string
   status?: ProjectStatus
   phase?: ProjectPhase
+  healthOverride?: ProjectHealth
 }
 
 export interface UpdateProjectInput {
@@ -50,6 +54,7 @@ export interface UpdateProjectInput {
   actualEndAt?: string | null
   status?: ProjectStatus
   phase?: ProjectPhase
+  healthOverride?: ProjectHealth | null
 }
 
 export interface CreateProgressReportInput {
@@ -58,6 +63,24 @@ export interface CreateProgressReportInput {
   reportedAt: string
   blockers?: string
 }
+
+export interface UpdateProgressReportInput {
+  summary?: string
+  completionPercent?: number
+  reportedAt?: string
+  blockers?: string
+}
+
+export interface CreateMilestoneInput {
+  name: string
+  plannedAt?: string
+  actualAt?: string
+  ownerName?: string
+  isCritical?: boolean
+  status?: MilestoneStatus
+}
+
+export type UpdateMilestoneInput = Partial<CreateMilestoneInput>
 
 function toQueryString(params: ListProjectsParams): string {
   const searchParams = new URLSearchParams()
@@ -102,5 +125,51 @@ export function createProgressReport(
   return request<ProgressReport>(
     `/projects/${encodeURIComponent(projectId)}/progress-reports`,
     { method: 'POST', body: JSON.stringify(input) }
+  )
+}
+
+export function updateProgressReport(
+  projectId: string,
+  reportId: string,
+  input: UpdateProgressReportInput
+): Promise<ProgressReport> {
+  return request<ProgressReport>(
+    `/projects/${encodeURIComponent(projectId)}/progress-reports/${encodeURIComponent(reportId)}`,
+    { method: 'PATCH', body: JSON.stringify(input) }
+  )
+}
+
+export function archiveProgressReport(projectId: string, reportId: string): Promise<void> {
+  return request<void>(
+    `/projects/${encodeURIComponent(projectId)}/progress-reports/${encodeURIComponent(reportId)}`,
+    { method: 'DELETE' }
+  )
+}
+
+export function createMilestone(
+  projectId: string,
+  input: CreateMilestoneInput
+): Promise<Milestone> {
+  return request(`/projects/${encodeURIComponent(projectId)}/milestones`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateMilestone(
+  projectId: string,
+  milestoneId: string,
+  input: UpdateMilestoneInput
+): Promise<Milestone> {
+  return request(
+    `/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(milestoneId)}`,
+    { method: 'PATCH', body: JSON.stringify(input) }
+  )
+}
+
+export function archiveMilestone(projectId: string, milestoneId: string): Promise<void> {
+  return request<void>(
+    `/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(milestoneId)}`,
+    { method: 'DELETE' }
   )
 }

@@ -26,7 +26,7 @@ describe('TaskForm', () => {
     await user.click(screen.getByRole('button', { name: '保存任务' }))
 
     await waitFor(() => {
-      expect(createTask).toHaveBeenCalledWith({ title: '整理评审材料' })
+      expect(createTask).toHaveBeenCalledWith({ title: '整理评审材料', completionPercent: 0 })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['tasks'] })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['my-work'] })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['projects'] })
@@ -80,7 +80,11 @@ describe('TaskForm', () => {
     await user.click(screen.getByRole('button', { name: '保存任务' }))
 
     await waitFor(() => {
-      expect(createTask).toHaveBeenCalledWith({ title: '项目任务', projectId: 'project-1' })
+      expect(createTask).toHaveBeenCalledWith({
+        title: '项目任务',
+        projectId: 'project-1',
+        completionPercent: 0,
+      })
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['project', 'project-1'] })
     })
   })
