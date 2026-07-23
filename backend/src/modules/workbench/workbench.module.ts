@@ -15,6 +15,7 @@ import { IntelligenceModule } from './intelligence/intelligence.module';
 import { GovernanceModule } from './governance/governance.module';
 import { ExtensionsModule } from './extensions/extensions.module';
 import { ReportingModule } from './reporting/reporting.module';
+import { EmployeesModule } from './employees/employees.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ReportingModule } from './reporting/reporting.module';
     GovernanceModule,
     ExtensionsModule,
     ReportingModule,
+    EmployeesModule,
   ],
   controllers: [WorkbenchStatusController],
 })
