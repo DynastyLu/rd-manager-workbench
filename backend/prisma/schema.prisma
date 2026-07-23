@@ -644,7 +644,7 @@ model Milestone {
 
 model WorkTask {
   id                         String                  @id @default(cuid())
-  code                       String                  @unique @default(dbgenerated("app.generate_task_code()"))
+  code                       String                  @unique @default(dbgenerated("generate_task_code()"))
   projectId                  String?                 @map("project_id")
   milestoneId                String?                 @map("milestone_id")
   parentId                   String?                 @map("parent_id")
@@ -1693,6 +1693,7 @@ model ResourceLoadEntry {
   employeeWorkImportBatch   EmployeeWorkImportBatch? @relation(fields: [employeeWorkImportBatchId], references: [id], onDelete: SetNull)
 
   @@index([resourceId, archivedAt, weekStartAt])
+  @@index([employeeWorkImportBatchId, archivedAt])
   @@map("resource_load_entries")
   @@schema("app")
 }

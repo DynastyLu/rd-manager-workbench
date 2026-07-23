@@ -11,22 +11,70 @@ ADD COLUMN "department" TEXT,
 ADD COLUMN "manager_name" TEXT,
 ADD COLUMN "employment_status" "app"."EmploymentStatus" NOT NULL DEFAULT 'ACTIVE';
 
+BEGIN;
+
+LOCK TABLE "app"."tasks" IN ACCESS EXCLUSIVE MODE;
+
+CREATE SEQUENCE "app"."task_code_seq"
+AS BIGINT
+INCREMENT BY 1
+MINVALUE 1
+MAXVALUE 1099511627775
+START WITH 1
+NO CYCLE;
+
+ALTER TABLE "app"."tasks" ADD COLUMN "code" TEXT;
+WITH "ordered_tasks" AS (
+  SELECT
+    "id",
+    ROW_NUMBER() OVER (ORDER BY "id") AS "code_number"
+  FROM "app"."tasks"
+)
+UPDATE "app"."tasks"
+SET "code" = 'TASK-' || LPAD(
+  UPPER(TO_HEX("ordered_tasks"."code_number")),
+  10,
+  '0'
+)
+FROM "ordered_tasks"
+WHERE "app"."tasks"."id" = "ordered_tasks"."id";
+SELECT SETVAL(
+  'app.task_code_seq',
+  GREATEST((SELECT COUNT(*) FROM "app"."tasks"), 1),
+  EXISTS(SELECT 1 FROM "app"."tasks")
+);
+
 CREATE OR REPLACE FUNCTION "app"."generate_task_code"()
 RETURNS TEXT
 LANGUAGE SQL
 VOLATILE
 AS $$
-  SELECT 'TASK-' || UPPER(SUBSTRING(MD5(
-    RANDOM()::TEXT || CLOCK_TIMESTAMP()::TEXT
-  ), 1, 10));
+  WITH RECURSIVE "candidates" AS (
+    SELECT 'TASK-' || LPAD(UPPER(TO_HEX(NEXTVAL('app.task_code_seq'))), 10, '0') AS "code"
+    UNION ALL
+    SELECT 'TASK-' || LPAD(UPPER(TO_HEX(NEXTVAL('app.task_code_seq'))), 10, '0')
+    FROM "candidates"
+    WHERE EXISTS (
+      SELECT 1
+      FROM "app"."tasks"
+      WHERE "tasks"."code" = "candidates"."code"
+    )
+  )
+  SELECT "code"
+  FROM "candidates"
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM "app"."tasks"
+    WHERE "tasks"."code" = "candidates"."code"
+  )
+  LIMIT 1;
 $$;
 
-ALTER TABLE "app"."tasks" ADD COLUMN "code" TEXT;
-UPDATE "app"."tasks"
-SET "code" = 'TASK-' || UPPER(SUBSTRING(MD5("id"), 1, 10));
 ALTER TABLE "app"."tasks"
 ALTER COLUMN "code" SET DEFAULT "app"."generate_task_code"(),
 ALTER COLUMN "code" SET NOT NULL;
+
+COMMIT;
 
 CREATE TABLE "app"."employee_work_import_batches" (
   "id" TEXT NOT NULL,
@@ -154,6 +202,8 @@ CREATE INDEX "employee_progress_snapshots_scope_type_scope_id_period_type_idx"
 ON "app"."employee_progress_snapshots"("scope_type", "scope_id", "period_type", "period_start_at");
 CREATE UNIQUE INDEX "resource_load_entries_employee_work_item_id_key"
 ON "app"."resource_load_entries"("employee_work_item_id");
+CREATE INDEX "resource_load_entries_employee_work_import_batch_id_archive_idx"
+ON "app"."resource_load_entries"("employee_work_import_batch_id", "archived_at");
 
 ALTER TABLE "app"."employee_work_import_batches"
 ADD CONSTRAINT "employee_work_import_batches_supersedes_batch_id_fkey"
