@@ -1,5 +1,23 @@
 # 进度日志
 
+## 2026-07-22：P0 交互基础统一启动
+
+- 按用户确认的优先级直接在当前工作区开始 P0，不创建隔离工作树。
+- 已保护上一批项目管理闭环未提交改动，并完成 UI 组件、原生控件、页面地标、焦点动画和 URL 状态基线审计。
+- 新增 P0 设计规格与实施计划；下一步先扩展静态失败测试，再建立 Semi 公共组件层。
+- 已扩充工作台变量、弹窗遮罩/安全间距、焦点环和 reduced-motion；清除 7 处 `outline: none` / `transition: all`。
+- 已新增 WorkspaceSelect、WorkspaceFormSelect、WorkspaceFormActions、SaveStatus 和 SemiCompat；生产 53 处原生下拉与 14 个旧 Shadcn 消费者均完成迁移。
+- 已修复迁移暴露的表单提交、非受控输入、任务状态选项和兼容弹窗无标题问题；风险/问题/决策提交与弹窗可访问名称已由测试和 Chromium 验证。
+- 已修复知识库、多维表格和情报简报重复 `main`；静态约束阻止重复主地标、原生控件、旧 UI 导入和不安全焦点/动画规则回流。
+- 已新增 URL 状态工具并接入项目、我的工作、日历、知识库、多维表格和搜索；默认值精简、非法值回退、未知参数保留，刷新后恢复主要视图与筛选。
+- 知识库和多维表格新增统一保存状态，保存中、未保存、已保存和失败对用户明确可见。
+- 验证：typecheck、contracts、ESLint、production build、`git diff --check` 通过；关键 P0 单元组 51/53 通过，剩余 1 项为 Semi 组件耗时超过旧 5 秒阈值、1 项旧选择交互已改为组件可访问性验证；单独运行均通过。真实 Chromium smoke 11/11 通过。
+- 已完成全量 Semi 交互测试迁移：182 个测试套件、413 项测试全部通过，0 失败。
+- 已修复知识库自动保存竞态，旧请求不再把新编辑误标为已保存；URL 连续更新不再丢参数。
+- 日历 URL 同步已移出 FullCalendar 渲染回调，页面切换不再被旧日历状态覆盖；旧 `/knowledge` 跳转 `/docs` 时保留收藏、搜索等查询参数。
+- Playwright 默认验收端口对齐项目本地端口 `4312`，不再因 `4174` 被后端 CORS 拒绝；Chromium 完整 12/12 通过。
+- 最终门禁：`typecheck`、`typecheck:contracts`、ESLint、production build、`git diff --check` 和 Chromium E2E 全部通过。
+
 ## 会话：2026-07-20（组件库控件与项目资料排版复核）
 
 - 用户指出日历仍出现浏览器原生日期面板，并报告项目详情“文档与资料”附件区排版错乱。
@@ -530,6 +548,17 @@
 - 前端多维表格工作区已接入飞书式模板中心、CSV/XLSX 导入五阶段弹窗、字段映射/新字段、工作表切换、预检错误展示、错误文件下载及当前视图/完整表导出；预置系统表不显示导入入口。
 - 真实本地 API 验收创建五个模板，字段数分别为 12/13/13/12/12、每个 4 个视图且零记录；混合 CSV 预检保持零写入，提交结果为 1 条成功/1 条错误，错误 CSV、当前视图 CSV 和完整 XLSX 均返回 200；验收会话、记录、关系字段与五张临时表已删除，`imports/` 无遗留验收文件。
 - 可重复验证：P1-01C/D focused backend unit 6 suites / 17 tests、frontend focused 8 tests、Base backend 真实 PostgreSQL integration 29/29、frontend Base 全量 17 files / 152 tests；backend lint/build、frontend typecheck/contracts/lint/build、开发库和测试库 27 条迁移均通过。
+
+## 2026-07-22 项目管理闭环修复
+
+- 已完成根因审计：确认页面未接已有更新/归档 API、进展按钮条件错误，以及里程碑/进展删除和人工健康度/任务进度的数据能力缺口。
+- 已完成设计规格和实施计划，并按 TDD 补齐项目、工作项、里程碑和进展的创建/编辑/归档契约。
+- 项目详情现可维护目标、阶段、状态、计划/实际日期、负责人和人工健康度；人工健康度可随时切回自动计算，列表与详情统一展示有效健康度。
+- 工作项新增 0～100 完成百分比，完成状态自动归一为 100%；工作项与进展均支持持续追加、编辑和确认删除，进展入口不再受空列表限制。
+- 里程碑支持新增、编辑、删除、负责人、关键标记和状态维护；概览展示里程碑总体达成率、逐项状态和进度条。
+- 项目状态语义色已统一为进行中绿色、已完成蓝色、暂停黄色、已终止红色；低/中/高/严重风险使用绿/黄/红分级标签，并在项目页展示真实风险数据。
+- 数据库新增 `Project.healthOverride` 与 `WorkTask.completionPercent` 前向迁移，已部署到开发库和测试库；集成测试连接池限制为 1，避免与本地运行服务争用 PostgreSQL 角色连接上限。
+- 最终验证：前端 83 files / 396 tests、9/9 Chromium E2E、contracts/typecheck/lint/build；后端 71 suites / 383 unit、37 suites / 157 PostgreSQL integration、Prisma validate/lint/build；`git diff --check` 全部通过。
 
 ## 2026-07-20 P1/P2 统一交付收口
 

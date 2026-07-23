@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useSearchParams } from 'react-router-dom'
 
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/workspace/SemiCompat'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/workspace/SemiCompat'
 import {
   Dialog,
   DialogContent,
@@ -12,9 +12,9 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
+} from '@/components/workspace/SemiCompat'
+import { Input } from '@/components/workspace/SemiCompat'
+import { Skeleton } from '@/components/workspace/SemiCompat'
 import {
   createApplicationCase,
   getApplicationCase,

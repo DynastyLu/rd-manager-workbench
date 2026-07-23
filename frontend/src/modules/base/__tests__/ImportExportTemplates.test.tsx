@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 import { ImportDialog } from '../components/ImportDialog'
 import { uniqueImportFieldKey } from '../components/import-utils'
 import { TemplateCenter } from '../components/TemplateCenter'
@@ -82,7 +83,7 @@ describe('base import, export and templates UI', () => {
     render(<ImportDialog visible table={table} onClose={() => undefined} onCompleted={() => undefined} />)
     fireEvent.change(screen.getByLabelText('选择导入文件'), { target: { files: [new File(['xlsx'], 'items.xlsx')] } })
     await user.click(screen.getByRole('button', { name: '上传并继续' }))
-    await user.selectOptions(await screen.findByLabelText('工作表'), '第二张')
+    await selectSemiOption(await screen.findByLabelText('工作表'), '第二张')
     await user.click(screen.getByRole('button', { name: '继续字段映射' }))
     expect(api.inspectBaseImport).toHaveBeenCalledWith('xlsx-session', '第二张')
     expect(await screen.findByLabelText('标题 映射')).toBeInTheDocument()

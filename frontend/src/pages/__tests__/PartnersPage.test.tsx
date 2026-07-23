@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 
 import PartnersPage from '../PartnersPage'
 
@@ -262,7 +263,7 @@ describe('PartnersPage', () => {
     await user.click(await screen.findByRole('tab', { name: /协议/ }))
     await user.click(screen.getByRole('button', { name: '新增协议' }))
     await user.type(screen.getByRole('textbox', { name: '协议标题' }), '数据共享协议')
-    await user.selectOptions(screen.getByRole('combobox', { name: '协议状态' }), 'ACTIVE')
+    await selectSemiOption(screen.getByRole('combobox', { name: '协议状态' }), 'ACTIVE')
     await user.click(screen.getByRole('button', { name: '保存协议' }))
     await waitFor(() =>
       expect(management.createAgreement).toHaveBeenCalledWith(
@@ -272,7 +273,7 @@ describe('PartnersPage', () => {
     )
 
     await user.click(screen.getByRole('button', { name: '编辑协议：联合研发协议' }))
-    await user.selectOptions(screen.getByRole('combobox', { name: '协议状态' }), 'TERMINATED')
+    await selectSemiOption(screen.getByRole('combobox', { name: '协议状态' }), 'TERMINATED')
     await user.click(screen.getByRole('button', { name: '保存协议' }))
     await waitFor(() =>
       expect(management.updateAgreement).toHaveBeenCalledWith(
@@ -350,7 +351,7 @@ describe('PartnersPage', () => {
 
     const communication = screen.getByRole('article', { name: '沟通记录：年度合作沟通' })
     await user.click(within(communication).getByRole('button', { name: '转为任务' }))
-    expect(await screen.findByText('已关联既有任务')).toBeInTheDocument()
+    expect(await within(communication).findByText('已关联既有任务')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '查看任务：年度合作沟通' })).toHaveAttribute(
       'href',
       '/my-work?taskId=task-1'

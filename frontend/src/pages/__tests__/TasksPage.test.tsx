@@ -315,7 +315,11 @@ describe('TasksPage', () => {
     await user.type(screen.getByLabelText('任务名称'), ' 项目任务 ')
     await user.click(screen.getByRole('button', { name: '保存任务' }))
     await waitFor(() =>
-      expect(createTask).toHaveBeenCalledWith({ title: '项目任务', projectId: 'project-1' }),
+      expect(createTask).toHaveBeenCalledWith({
+        title: '项目任务',
+        projectId: 'project-1',
+        completionPercent: 0,
+      }),
     )
   })
 })

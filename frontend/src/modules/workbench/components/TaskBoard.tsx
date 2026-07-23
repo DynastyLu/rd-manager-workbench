@@ -1,13 +1,7 @@
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Badge } from '@/components/workspace/SemiCompat'
+import { Button } from '@/components/workspace/SemiCompat'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/workspace/SemiCompat'
+import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect'
 import type { TaskStatus, WorkTask } from '@/modules/workbench/types'
 
 interface TaskBoardProps {
@@ -81,22 +75,13 @@ function TaskCard({ task, onStatusChange, isUpdating }: Pick<TaskBoardProps, 'on
       </CardHeader>
       <CardContent className="grid gap-3 px-3 pt-3 pb-3 text-sm text-muted-foreground">
         {task.dueAt ? <p>截止：{formatDueDate(task.dueAt)}</p> : null}
-        <Select
+        <WorkspaceSelect
+          aria-label={`设置任务状态：${task.title}`}
           value={task.status}
-          onValueChange={(status) => onStatusChange(task.id, status as TaskStatus)}
+          onChange={(status) => onStatusChange(task.id, status as TaskStatus)}
           disabled={isUpdating}
-        >
-          <SelectTrigger aria-label={`设置任务状态：${task.title}`}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {STATUS_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          options={STATUS_OPTIONS}
+        />
         {nextStatus ? (
           <Button
             variant="outline"

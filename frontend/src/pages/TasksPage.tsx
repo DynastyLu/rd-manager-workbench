@@ -14,7 +14,7 @@ import {
   IconTick,
 } from '@douyinfe/semi-icons'
 import { toast } from 'sonner'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 
 import {
   listMyWork,
@@ -30,6 +30,7 @@ import { TaskForm } from '@/modules/workbench/components/TaskForm'
 import type { TaskPriority, WorkTask } from '@/modules/workbench/types'
 import { ROUTES } from '@/constants/routes'
 import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
+import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import './TasksPage.less'
 
 const VIEW_OPTIONS: Array<{
@@ -246,10 +247,15 @@ function TaskRow({
 
 export default function TasksPage() {
   const queryClient = useQueryClient()
-  const [searchParams] = useSearchParams()
+  const query = useWorkspaceSearchParams()
+  const { searchParams } = query
   const projectId = searchParams.get('projectId')?.trim() || undefined
   const taskId = searchParams.get('taskId')?.trim() || undefined
-  const [activeView, setActiveView] = useState<MyWorkView>('INBOX')
+  const activeView = query.getEnum(
+    'view',
+    VIEW_OPTIONS.map((option) => option.value),
+    'INBOX',
+  )
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [scheduleDialog, setScheduleDialog] = useState<ScheduleDialogState | null>(null)
   const [scheduleValue, setScheduleValue] = useState('')
@@ -397,7 +403,7 @@ export default function TasksPage() {
                 type="button"
                 className={activeView === value ? 'is-active' : undefined}
                 aria-current={activeView === value ? 'page' : undefined}
-                onClick={() => setActiveView(value)}
+                onClick={() => query.update({ view: value }, { defaults: { view: 'INBOX' } })}
               >
                 <ViewIcon size="small" />
                 <span>{label}</span>

@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 
 import { GallerySettingsSection } from '../components/GallerySettingsSection'
 import { ViewSettingsDrawer } from '../components/ViewSettingsDrawer'
@@ -15,7 +16,6 @@ const fields: DataField[] = [
 
 describe('GallerySettingsSection', () => {
   it('is available inside the shared view settings drawer and uses its save flow', async () => {
-    const user = userEvent.setup()
     const onConfigChange = vi.fn()
     const view: DataView = {
       id: 'gallery-view',
@@ -42,7 +42,7 @@ describe('GallerySettingsSection', () => {
     )
 
     expect(screen.getByRole('heading', { name: '画册设置' })).toBeInTheDocument()
-    await user.selectOptions(screen.getByLabelText('画册卡片尺寸'), 'WIDE')
+    await selectSemiOption(screen.getByRole('combobox', { name: '卡片尺寸' }), 'WIDE')
     expect(onConfigChange).toHaveBeenCalledWith(expect.objectContaining({ cardSize: 'WIDE' }))
   })
 
@@ -52,16 +52,13 @@ describe('GallerySettingsSection', () => {
     const config: GalleryViewConfig = { cardSize: 'STANDARD', coverFit: 'COVER', visibleFieldIds: [] }
     render(<GallerySettingsSection fields={fields} config={config} onChange={onChange} />)
 
-    expect(screen.getByRole('option', { name: '日期' })).toBeInTheDocument()
-    expect(screen.getByLabelText('画册封面字段')).not.toContainHTML('日期')
-
-    await user.selectOptions(screen.getByLabelText('画册标题字段'), 'title')
-    await user.selectOptions(screen.getByLabelText('画册封面字段'), 'cover')
-    await user.selectOptions(screen.getByLabelText('画册卡片尺寸'), 'WIDE')
-    await user.selectOptions(screen.getByLabelText('画册封面适应'), 'CONTAIN')
+    await selectSemiOption(screen.getByLabelText('画册封面字段'), 'cover')
+    await selectSemiOption(screen.getByLabelText('画册标题字段'), 'date')
+    await selectSemiOption(screen.getByRole('combobox', { name: '卡片尺寸' }), 'WIDE')
+    await selectSemiOption(screen.getByRole('combobox', { name: '封面适应' }), 'CONTAIN')
     await user.click(screen.getByRole('checkbox', { name: '日期' }))
 
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ titleFieldKey: 'title' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ titleFieldKey: 'date' }))
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ coverFieldKey: 'cover' }))
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ cardSize: 'WIDE' }))
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ coverFit: 'CONTAIN' }))

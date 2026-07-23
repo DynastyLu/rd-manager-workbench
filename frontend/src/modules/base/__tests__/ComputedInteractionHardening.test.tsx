@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StrictMode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 
 import { FieldManager } from '../components/FieldManager'
 import { FormulaEditor } from '../components/FormulaEditor'
@@ -172,7 +173,7 @@ describe('computed field interaction hardening', () => {
     render(<FieldManager table={table} visible onClose={vi.fn()} onCreateField={vi.fn()} />)
 
     await user.click(screen.getByRole('button', { name: '新增字段' }))
-    await user.selectOptions(screen.getByLabelText('字段类型'), 'FORMULA')
+    await selectSemiOption(screen.getByLabelText('字段类型'), 'FORMULA')
     const dialog = screen.getByRole('dialog', { name: '新增字段' })
     for (const name of ['名称', '当前公式', '直接依赖', '传递依赖', '无关公式']) {
       expect(within(dialog).getByRole('button', { name: `插入字段：${name}` })).toBeInTheDocument()
@@ -186,7 +187,7 @@ describe('computed field interaction hardening', () => {
 
     await user.click(screen.getByRole('button', { name: '新增字段' }))
     await user.type(screen.getByLabelText('字段名称'), '失败公式')
-    await user.selectOptions(screen.getByLabelText('字段类型'), 'FORMULA')
+    await selectSemiOption(screen.getByLabelText('字段类型'), 'FORMULA')
     fireEvent.change(screen.getByRole('textbox', { name: '公式表达式' }), {
       target: { value: '{name}' },
     })

@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 
-const PORT = Number(process.env['E2E_PORT'] ?? 4174)
+const PORT = Number(process.env['E2E_PORT'] ?? 4312)
 const baseURL = process.env['BASE_URL'] ?? `http://127.0.0.1:${PORT}`
 
 export default defineConfig({

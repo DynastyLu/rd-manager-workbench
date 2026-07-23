@@ -1,9 +1,9 @@
 import { useState } from 'react'
+import { Tabs } from '@douyinfe/semi-ui'
 
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Badge } from '@/components/workspace/SemiCompat'
+import { Button } from '@/components/workspace/SemiCompat'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/workspace/SemiCompat'
 import type { ApplicationCase, ApplicationNode } from '@/modules/workbench/types'
 
 interface ApplicationCaseWorkspaceProps {
@@ -89,14 +89,8 @@ export function ApplicationCaseWorkspace({
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="requirements">
-        <TabsList aria-label="案件明细">
-          <TabsTrigger value="requirements">条件</TabsTrigger>
-          <TabsTrigger value="materials">材料与版本</TabsTrigger>
-          <TabsTrigger value="evidence">证据</TabsTrigger>
-          <TabsTrigger value="timeline">补正与提交</TabsTrigger>
-        </TabsList>
-        <TabsContent value="requirements">
+      <Tabs type="line" defaultActiveKey="requirements" aria-label="案件明细">
+        <Tabs.TabPane tab="条件" itemKey="requirements">
           <Card>
             <CardHeader><CardTitle>申报条件</CardTitle></CardHeader>
             <CardContent>
@@ -114,8 +108,8 @@ export function ApplicationCaseWorkspace({
               ) : <EmptySection message="尚未配置申报条件。" />}
             </CardContent>
           </Card>
-        </TabsContent>
-        <TabsContent value="materials">
+        </Tabs.TabPane>
+        <Tabs.TabPane tab="材料与版本" itemKey="materials">
           <Card>
             <CardHeader><CardTitle>材料版本</CardTitle></CardHeader>
             <CardContent>
@@ -133,8 +127,8 @@ export function ApplicationCaseWorkspace({
               ) : <EmptySection message="尚未建立申报材料。" />}
             </CardContent>
           </Card>
-        </TabsContent>
-        <TabsContent value="evidence">
+        </Tabs.TabPane>
+        <Tabs.TabPane tab="证据" itemKey="evidence">
           <Card>
             <CardHeader><CardTitle>证据记录</CardTitle></CardHeader>
             <CardContent>
@@ -150,8 +144,8 @@ export function ApplicationCaseWorkspace({
               ) : <EmptySection message="尚未关联证据记录。" />}
             </CardContent>
           </Card>
-        </TabsContent>
-        <TabsContent value="timeline">
+        </Tabs.TabPane>
+        <Tabs.TabPane tab="补正与提交" itemKey="timeline">
           <Card>
             <CardHeader><CardTitle>补正与提交时间线</CardTitle></CardHeader>
             <CardContent className="grid gap-5">
@@ -184,7 +178,7 @@ export function ApplicationCaseWorkspace({
               ) : null}
             </CardContent>
           </Card>
-        </TabsContent>
+        </Tabs.TabPane>
       </Tabs>
     </div>
   )

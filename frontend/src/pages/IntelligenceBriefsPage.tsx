@@ -107,7 +107,7 @@ export default function IntelligenceBriefsPage() {
           周报
         </button>
       </div>
-      <main>
+      <section aria-label="情报简报工作区">
         <aside>
           {briefs.isPending ? (
             <Skeleton placeholder={<Skeleton.Paragraph rows={6} />} loading />
@@ -146,7 +146,7 @@ export default function IntelligenceBriefsPage() {
             </div>
           )}
         </section>
-      </main>
+      </section>
       <Modal
         title="简报编辑器"
         visible={editorOpen}

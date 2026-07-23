@@ -2,9 +2,9 @@ import { type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/workspace/SemiCompat'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/workspace/SemiCompat'
+import { Skeleton } from '@/components/workspace/SemiCompat'
 import { getDashboard } from '@/modules/workbench/api/dashboard'
 import { ROUTES } from '@/constants/routes'
 

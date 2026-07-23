@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -283,7 +284,7 @@ function AgreementForm({
           />
         </FormField>
         <FormField label="协议状态">
-          <select
+          <WorkspaceFormSelect
             name="status"
             aria-label="协议状态"
             value={status}
@@ -294,7 +295,7 @@ function AgreementForm({
                 {label}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
         </FormField>
         <FormField label="开始日期">
           <DateTimePickerField
@@ -381,13 +382,13 @@ function CommunicationForm({
           />
         </FormField>
         <FormField label="沟通类型">
-          <select name="type" aria-label="沟通类型" defaultValue={communication?.type ?? 'MEETING'}>
+          <WorkspaceFormSelect name="type" aria-label="沟通类型" defaultValue={communication?.type ?? 'MEETING'}>
             {Object.entries(COMMUNICATION_TYPE_LABELS).map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
         </FormField>
         <FormField label="沟通时间">
           <DateTimePickerField
@@ -405,7 +406,7 @@ function CommunicationForm({
           />
         </FormField>
         <FormField label="联系人">
-          <select
+          <WorkspaceFormSelect
             name="contactId"
             aria-label="沟通联系人"
             defaultValue={communication?.contactId ?? ''}
@@ -416,10 +417,10 @@ function CommunicationForm({
                 {contact.name}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
         </FormField>
         <FormField label="项目">
-          <select
+          <WorkspaceFormSelect
             name="projectId"
             aria-label="沟通项目"
             defaultValue={communication?.projectId ?? ''}
@@ -430,7 +431,7 @@ function CommunicationForm({
                 {relation.project?.name ?? relation.projectId}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
         </FormField>
       </div>
       <FormField label="沟通摘要">

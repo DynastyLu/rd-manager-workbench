@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -594,9 +595,9 @@ export function MeetingsWorkspace({ embedded = false }: { embedded?: boolean }) 
 
       <div className="meetings-workspace__toolbar">
         <div className="meetings-workspace__filters">
-          <select aria-label="会议状态" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }}>
+          <WorkspaceFormSelect aria-label="会议状态" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1) }}>
             {STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          </WorkspaceFormSelect>
           <label htmlFor="meeting-start-date"><span>从</span><DateTimePickerField id="meeting-start-date" aria-label="会议开始日期" mode="date" value={startDate} onChange={(value) => { setStartDate(value); setPage(1) }} /></label>
           <label htmlFor="meeting-end-date"><span>至</span><DateTimePickerField id="meeting-end-date" aria-label="会议结束日期" mode="date" value={endDate} onChange={(value) => { setEndDate(value); setPage(1) }} /></label>
         </div>

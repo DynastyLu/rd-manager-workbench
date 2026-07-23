@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -456,23 +457,23 @@ export default function IntelligencePage() {
                 <Input name="canonicalUrl" />
               </Field>
               <Field label="来源">
-                <select name="sourceId" required>
+                <WorkspaceFormSelect aria-label="来源" name="sourceId" required>
                   <option value="">请选择来源</option>
                   {(sources.data?.data ?? []).map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </WorkspaceFormSelect>
               </Field>
               <Field label="优先级">
-                <select name="priority" defaultValue="MEDIUM">
+                <WorkspaceFormSelect aria-label="优先级" name="priority" defaultValue="MEDIUM">
                   {Object.entries(priorityLabel).map(([optionValue, label]) => (
                     <option key={optionValue} value={optionValue}>
                       {label}
                     </option>
                   ))}
-                </select>
+                </WorkspaceFormSelect>
               </Field>
             </>
           ) : tab === 'topics' ? (
@@ -493,13 +494,13 @@ export default function IntelligencePage() {
                 <Input name="name" required />
               </Field>
               <Field label="类型">
-                <select name="kind" defaultValue="WEBSITE">
+                <WorkspaceFormSelect aria-label="类型" name="kind" defaultValue="WEBSITE">
                   {['WEBSITE', 'RSS', 'NEWSLETTER', 'DATABASE', 'MANUAL'].map((item) => (
                     <option key={item} value={item}>
                       {item}
                     </option>
                   ))}
-                </select>
+                </WorkspaceFormSelect>
               </Field>
               <Field label="地址">
                 <Input name="url" />
@@ -511,23 +512,23 @@ export default function IntelligencePage() {
                 <Input name="name" required />
               </Field>
               <Field label="来源">
-                <select name="sourceId" required>
+                <WorkspaceFormSelect aria-label="来源" name="sourceId" required>
                   <option value="">请选择来源</option>
                   {(sources.data?.data ?? []).map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>
                   ))}
-                </select>
+                </WorkspaceFormSelect>
               </Field>
               <Field label="频率">
-                <select name="frequency" defaultValue="MANUAL">
+                <WorkspaceFormSelect aria-label="频率" name="frequency" defaultValue="MANUAL">
                   {['MANUAL', 'DAILY', 'WEEKLY'].map((item) => (
                     <option key={item} value={item}>
                       {item}
                     </option>
                   ))}
-                </select>
+                </WorkspaceFormSelect>
               </Field>
               <Field label="执行时间">
                 <Input name="runAtLocalTime" placeholder="09:30" />

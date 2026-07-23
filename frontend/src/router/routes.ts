@@ -1,5 +1,5 @@
 import { createElement, lazy, type ComponentType } from 'react'
-import { Navigate, useParams } from 'react-router-dom'
+import { Navigate, useLocation, useParams } from 'react-router-dom'
 import { PlannedModuleState } from '@/components/AppShell/PlannedModuleState'
 import { ROUTES } from '@/constants/routes'
 import KnowledgeHomePage from '@/pages/KnowledgeHomePage'
@@ -80,7 +80,15 @@ function GovernancePage() {
 
 function createRedirect(redirectTo: string): ComponentType {
   return function LegacyRedirect() {
-    return createElement(Navigate, { to: redirectTo, replace: true })
+    const location = useLocation()
+    const [pathname, targetQuery = ''] = redirectTo.split('?')
+    const mergedQuery = new URLSearchParams(targetQuery)
+    new URLSearchParams(location.search).forEach((value, key) => mergedQuery.set(key, value))
+    const query = mergedQuery.toString()
+    return createElement(Navigate, {
+      to: `${pathname}${query ? `?${query}` : ''}`,
+      replace: true,
+    })
   }
 }
 

@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer';
 import { IsArray, IsDateString, IsEnum, IsNotEmpty, IsString, ValidateIf } from 'class-validator';
-import { ProjectPhase, ProjectStatus } from '@prisma/client';
+import { ProjectHealth, ProjectPhase, ProjectStatus } from '@prisma/client';
 
 const trimString = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -78,4 +78,8 @@ export class CreateProjectDto {
   @ValidateIf(isDefined)
   @IsEnum(ProjectStatus)
   status?: ProjectStatus;
+
+  @ValidateIf(isDefined)
+  @IsEnum(ProjectHealth)
+  healthOverride?: ProjectHealth;
 }

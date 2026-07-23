@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useState } from 'react'
 import { Button, Modal, Toast } from '@douyinfe/semi-ui'
 import { downloadBaseExport } from '../api'
@@ -17,5 +18,36 @@ export function ExportDialog({ visible, table, view, onClose }: { visible: boole
       onClose()
     } catch { Toast.error('导出失败。') } finally { setPending(false) }
   }
-  return <Modal title="导出多维表格" visible={visible} footer={null} onCancel={onClose} width={480}><div className="base-export-dialog"><label><span>文件格式</span><select aria-label="导出格式" value={format} onChange={(event) => setFormat(event.target.value as 'csv' | 'xlsx')}><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV (.csv)</option></select></label><label><span>导出范围</span><select aria-label="导出范围" value={scope} onChange={(event) => setScope(event.target.value as 'view' | 'all')}><option value="view" disabled={!view}>当前视图（筛选、排序、可见字段）</option><option value="all">完整数据表</option></select></label><p>导出会读取全部记录，不受当前页面 100 条限制。</p><Button theme="solid" type="primary" loading={pending} onClick={() => void run()}>开始导出</Button></div></Modal>
+  return (
+    <Modal title="导出多维表格" visible={visible} footer={null} onCancel={onClose} width={480}>
+      <div className="base-export-dialog">
+        <div>
+          <span id="base-export-format-label">文件格式</span>
+          <WorkspaceFormSelect
+            aria-labelledby="base-export-format-label"
+            value={format}
+            onChange={(event) => setFormat(event.target.value as 'csv' | 'xlsx')}
+          >
+            <option value="xlsx">Excel (.xlsx)</option>
+            <option value="csv">CSV (.csv)</option>
+          </WorkspaceFormSelect>
+        </div>
+        <div>
+          <span id="base-export-scope-label">导出范围</span>
+          <WorkspaceFormSelect
+            aria-labelledby="base-export-scope-label"
+            value={scope}
+            onChange={(event) => setScope(event.target.value as 'view' | 'all')}
+          >
+            <option value="view" disabled={!view}>当前视图（筛选、排序、可见字段）</option>
+            <option value="all">完整数据表</option>
+          </WorkspaceFormSelect>
+        </div>
+        <p>导出会读取全部记录，不受当前页面 100 条限制。</p>
+        <Button theme="solid" type="primary" loading={pending} onClick={() => void run()}>
+          开始导出
+        </Button>
+      </div>
+    </Modal>
+  )
 }

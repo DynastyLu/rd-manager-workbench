@@ -141,13 +141,13 @@ describe('NotificationCenter', () => {
     await user.click(screen.getByRole('button', { name: '通知中心' }))
     await user.click(await screen.findByRole('button', { name: '稍后提醒：项目评审即将开始' }))
     fireEvent.change(screen.getByLabelText('再次提醒时间'), {
-      target: { value: '2026-07-21T09:30' },
+      target: { value: '2027-07-21T09:30' },
     })
     await user.click(screen.getByRole('button', { name: '确认稍后提醒' }))
 
     await waitFor(() =>
       expect(snoozeNotification).toHaveBeenCalledWith('notification-1', {
-        snoozeUntil: new Date('2026-07-21T09:30').toISOString(),
+        snoozeUntil: new Date('2027-07-21T09:30').toISOString(),
       }),
     )
   })

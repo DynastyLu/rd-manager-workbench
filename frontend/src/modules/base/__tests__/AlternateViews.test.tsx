@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { getSemiOptionValues, selectSemiOption } from '@/test-utils/selectSemiOption'
 
 const dndHarness = vi.hoisted(() => ({
   dragEnd: undefined as
@@ -107,8 +108,6 @@ const records = [
 describe('KanbanView', () => {
   it('groups records by a single-select field and updates the same record when moved', async () => {
     const onRecordUpdate = vi.fn().mockResolvedValue(undefined)
-    const user = userEvent.setup()
-
     render(
       <KanbanView
         fields={fields}
@@ -121,7 +120,7 @@ describe('KanbanView', () => {
     expect(screen.getByRole('heading', { name: '待处理 1' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '进行中 0' })).toBeInTheDocument()
 
-    await user.selectOptions(screen.getByRole('combobox', { name: '移动“完成评审”' }), 'DOING')
+    await selectSemiOption(screen.getByRole('combobox', { name: '移动“完成评审”' }), 'DOING')
 
     expect(onRecordUpdate).toHaveBeenCalledWith('record-1', {
       values: { status: 'DOING' },
@@ -140,7 +139,7 @@ describe('KanbanView', () => {
     expect(screen.getByText('请先添加单选字段，再创建看板分组。')).toBeInTheDocument()
   })
 
-  it('limits each card to statuses allowed for its record type', () => {
+  it('limits each card to statuses allowed for its record type', async () => {
     const typedStatusField = {
       ...fields[1],
       config: {
@@ -180,10 +179,8 @@ describe('KanbanView', () => {
 
     const meetingStatus = screen.getByRole('combobox', { name: '移动“研发周会”' })
     const actionStatus = screen.getByRole('combobox', { name: '移动“整理纪要”' })
-    expect(within(meetingStatus).getByRole('option', { name: '已结束' })).toBeInTheDocument()
-    expect(within(meetingStatus).queryByRole('option', { name: '待处理' })).not.toBeInTheDocument()
-    expect(within(actionStatus).getByRole('option', { name: '已完成' })).toBeInTheDocument()
-    expect(within(actionStatus).queryByRole('option', { name: '待开始' })).not.toBeInTheDocument()
+    await expect(getSemiOptionValues(meetingStatus)).resolves.toEqual(['SCHEDULED', 'FINISHED'])
+    await expect(getSemiOptionValues(actionStatus)).resolves.toEqual(['TODO', 'DONE'])
   })
 
   it('ignores a drag target that is not allowed for the record type', () => {
@@ -227,7 +224,7 @@ describe('KanbanView', () => {
     expect(onRecordUpdate).not.toHaveBeenCalled()
   })
 
-  it('does not offer a globally read-only select field as a kanban grouping field', () => {
+  it('does not offer a globally read-only select field as a kanban grouping field', async () => {
     const priorityField = {
       ...fields[1],
       id: 'field-priority',
@@ -255,8 +252,8 @@ describe('KanbanView', () => {
     )
 
     const groupingField = screen.getByRole('combobox', { name: '分组字段' })
-    expect(groupingField).toHaveValue('priority')
-    expect(within(groupingField).queryByRole('option', { name: '状态' })).not.toBeInTheDocument()
+    expect(groupingField).toHaveTextContent('优先级')
+    await expect(getSemiOptionValues(groupingField)).resolves.not.toContain('status')
     expect(screen.getByRole('heading', { name: '普通 1' })).toBeInTheDocument()
   })
 
@@ -284,7 +281,7 @@ describe('KanbanView', () => {
       />
     )
 
-    expect(screen.getByRole('combobox', { name: '移动“研发周会”' })).toBeDisabled()
+    expect(screen.getByRole('combobox', { name: '移动“研发周会”' })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByRole('button', { name: '拖动“研发周会”' })).toBeDisabled()
 
     act(() =>
@@ -305,8 +302,6 @@ describe('KanbanView', () => {
           resolveUpdate = resolve
         })
     )
-    const user = userEvent.setup()
-
     render(
       <KanbanView
         fields={fields}
@@ -317,9 +312,9 @@ describe('KanbanView', () => {
     )
 
     const movementSelect = screen.getByRole('combobox', { name: '移动“完成评审”' })
-    await user.selectOptions(movementSelect, 'DOING')
+    await selectSemiOption(movementSelect, 'DOING')
 
-    expect(movementSelect).toBeDisabled()
+    expect(movementSelect).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByRole('button', { name: '拖动“完成评审”' })).toBeDisabled()
 
     act(() =>
@@ -403,7 +398,7 @@ describe('FormView', () => {
     render(<FormView tableSource="CUSTOM" fields={fields} onCreateRecord={onCreateRecord} />)
 
     await user.type(screen.getByLabelText('事项'), '准备周会')
-    await user.selectOptions(screen.getByLabelText('状态'), 'DOING')
+    await selectSemiOption(screen.getByLabelText('状态'), 'DOING')
     fireEvent.change(screen.getByLabelText('截止日期'), {
       target: { value: '2026-07-24T10:30' },
     })
@@ -515,7 +510,7 @@ describe('ViewManager', () => {
 
     await user.click(screen.getByRole('button', { name: '新增视图' }))
     await user.type(screen.getByLabelText('视图名称'), '状态看板')
-    await user.selectOptions(screen.getByLabelText('视图类型'), 'KANBAN')
+    await selectSemiOption(screen.getByLabelText('视图类型'), 'KANBAN')
     await user.click(screen.getByRole('button', { name: '确认新增' }))
     expect(onCreate).toHaveBeenCalledWith({ name: '状态看板', type: 'KANBAN', config: {} })
 

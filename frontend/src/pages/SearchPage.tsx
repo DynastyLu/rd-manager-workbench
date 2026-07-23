@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Banner, Button, Empty, Input, Modal, Skeleton, Toast } from '@douyinfe/semi-ui'
 import { IconSearch } from '@douyinfe/semi-icons'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
 import {
   runSearchAction,
@@ -25,6 +25,7 @@ import {
 import { buildLocalSearchResultLink } from '@/modules/workbench/search/searchLinks'
 import { SearchFilters } from '@/modules/workbench/components/search/SearchFilters'
 import { SearchResultItem } from '@/modules/workbench/components/search/SearchResultItem'
+import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 
 const SEARCH_TYPE_LABELS: Record<SearchType, string> = {
   PROJECT: '项目',
@@ -126,17 +127,19 @@ function SearchPreview({ hit }: { hit: SearchHit | null }) {
 export default function SearchPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [initialSearch] = useState(() => ({
-    query: searchParams.get('q') ?? '',
-    types: parseSearchTypes(searchParams.get('types')),
-    page: parseSearchPage(searchParams.get('page')),
-  }))
+  const urlState = useWorkspaceSearchParams()
+  const { searchParams, update: updateUrl } = urlState
+  const urlSnapshot = searchParams.toString()
+  const restoredQuery = searchParams.get('q') ?? ''
+  const restoredTypes = parseSearchTypes(searchParams.get('types'))
   const searchFieldRef = useRef<HTMLDivElement>(null)
   const lastExecutedSignatureRef = useRef<string | null>(null)
-  const didRestoreSearchRef = useRef(false)
-  const [query, setQuery] = useState(initialSearch.query)
-  const [selectedTypes, setSelectedTypes] = useState<SearchType[]>(initialSearch.types)
+  const [queryDraft, setQueryDraft] = useState({ source: urlSnapshot, value: restoredQuery })
+  const [typeDraft, setTypeDraft] = useState({ source: urlSnapshot, value: restoredTypes })
+  const query = queryDraft.source === urlSnapshot ? queryDraft.value : restoredQuery
+  const selectedTypes = typeDraft.source === urlSnapshot ? typeDraft.value : restoredTypes
+  const setQuery = (value: string) => setQueryDraft({ source: urlSnapshot, value })
+  const setSelectedTypes = (value: SearchType[]) => setTypeDraft({ source: urlSnapshot, value })
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>(loadRecentSearches)
   const [selectedHit, setSelectedHit] = useState<SearchHit | null>(null)
   const [lastRequest, setLastRequest] = useState<SearchWorkbenchParams | null>(null)
@@ -155,6 +158,7 @@ export default function SearchPage() {
     },
   })
   const mutateSearch = searchMutation.mutate
+  const resetSearch = searchMutation.reset
 
   const actionMutation = useMutation<SearchHit, Error, ActionRequest>({
     mutationFn: ({ hit, input }) => runSearchAction(hit.type, hit.id, input),
@@ -206,28 +210,47 @@ export default function SearchPage() {
         page,
         pageSize: 20,
       }
-      const nextSearchParams = new URLSearchParams({ q: normalized })
-      if (types.length) nextSearchParams.set('types', types.join(','))
-      if (page > 1) nextSearchParams.set('page', String(page))
-      setSearchParams(nextSearchParams, { replace: true })
+      updateUrl(
+        { q: normalized, types: types.length ? types.join(',') : undefined, page },
+        { defaults: { page: 1 } },
+      )
       lastExecutedSignatureRef.current = requestSignature(params)
       setLastRequest(params)
       mutateSearch({ params, recordHistory })
     },
-    [mutateSearch, setSearchParams]
+    [mutateSearch, updateUrl]
   )
 
   useEffect(() => {
-    if (didRestoreSearchRef.current) return
-    didRestoreSearchRef.current = true
-    if (Array.from(normalizedQuery(initialSearch.query)).length >= 2) {
-      const timer = window.setTimeout(() => {
-        executeSearch(initialSearch.query, initialSearch.types, false, initialSearch.page)
-      }, 0)
-      return () => window.clearTimeout(timer)
-    }
-    return undefined
-  }, [executeSearch, initialSearch])
+    const urlQuery = searchParams.get('q') ?? ''
+    const urlTypes = parseSearchTypes(searchParams.get('types'))
+    const urlPage = parseSearchPage(searchParams.get('page'))
+    const normalized = normalizedQuery(urlQuery)
+    const timer = window.setTimeout(() => {
+      if (Array.from(normalized).length < 2) {
+        if (lastExecutedSignatureRef.current) {
+          lastExecutedSignatureRef.current = null
+          setLastRequest(null)
+          setSelectedHit(null)
+          resetSearch()
+        }
+        return
+      }
+
+      const params: SearchWorkbenchParams = {
+        query: normalized,
+        types: urlTypes,
+        page: urlPage,
+        pageSize: 20,
+      }
+      const signature = requestSignature(params)
+      if (lastExecutedSignatureRef.current === signature) return
+      lastExecutedSignatureRef.current = signature
+      setLastRequest(params)
+      mutateSearch({ params, recordHistory: false })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [mutateSearch, resetSearch, searchParams])
 
   useEffect(() => {
     const normalized = normalizedQuery(query)
@@ -264,7 +287,7 @@ export default function SearchPage() {
     setLastRequest(null)
     setValidationMessage(null)
     lastExecutedSignatureRef.current = null
-    setSearchParams(new URLSearchParams(), { replace: true })
+    updateUrl({ q: undefined, types: undefined, page: undefined })
     searchMutation.reset()
   }
 

@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useMemo } from 'react'
 
 import type { BaseRecord, DataField, GanttViewConfig } from '../types'
@@ -45,7 +46,7 @@ function DateFieldSetup({
       </div>
       <label>
         <span>开始字段</span>
-        <select
+        <WorkspaceFormSelect
           aria-label="甘特开始字段"
           value={config.startFieldKey ?? ''}
           onChange={(event) =>
@@ -58,11 +59,11 @@ function DateFieldSetup({
               {field.name}
             </option>
           ))}
-        </select>
+        </WorkspaceFormSelect>
       </label>
       <label>
         <span>结束字段</span>
-        <select
+        <WorkspaceFormSelect
           aria-label="甘特结束字段"
           value={config.endFieldKey ?? ''}
           onChange={(event) =>
@@ -75,7 +76,7 @@ function DateFieldSetup({
               {field.name}
             </option>
           ))}
-        </select>
+        </WorkspaceFormSelect>
       </label>
     </div>
   )

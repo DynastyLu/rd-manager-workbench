@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
 import type { DataField, ViewFilter, ViewFilterOperator } from '../types'
 import {
@@ -82,7 +83,7 @@ function FilterValueEditor({
           ]
         : configuredOptions
     return (
-      <select
+      <WorkspaceFormSelect
         aria-label={ariaLabel}
         value={editableValueText(filter.value)}
         onChange={(event) =>
@@ -98,7 +99,7 @@ function FilterValueEditor({
             {option.label}
           </option>
         ))}
-      </select>
+      </WorkspaceFormSelect>
     )
   }
   const renderedValue =
@@ -169,7 +170,7 @@ export function ViewFilterBuilder({
           return (
             <div className="view-filter-row" key={`${index}:${filter.fieldKey}`}>
               <span className="view-filter-row__and">{index === 0 ? '当' : '且'}</span>
-              <select
+              <WorkspaceFormSelect
                 aria-label={`筛选字段 ${index + 1}`}
                 value={filter.fieldKey}
                 onChange={(event) => {
@@ -185,8 +186,8 @@ export function ViewFilterBuilder({
                     {option.name}
                   </option>
                 ))}
-              </select>
-              <select
+              </WorkspaceFormSelect>
+              <WorkspaceFormSelect
                 aria-label={`筛选运算符 ${index + 1}`}
                 value={filter.operator}
                 disabled={!field}
@@ -205,7 +206,7 @@ export function ViewFilterBuilder({
                     {OPERATOR_LABELS[operator]}
                   </option>
                 ))}
-              </select>
+              </WorkspaceFormSelect>
               {field ? (
                 <FilterValueEditor
                   filter={filter}

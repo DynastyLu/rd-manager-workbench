@@ -5,6 +5,9 @@ import {
   IsDateString,
   IsEnum,
   IsNotEmpty,
+  IsInt,
+  Max,
+  Min,
   IsString,
   ValidateIf,
 } from 'class-validator';
@@ -75,6 +78,12 @@ export class UpdateTaskDto {
   @ValidateIf(isDefined)
   @IsEnum(TaskPriority)
   priority?: TaskPriority;
+
+  @ValidateIf(isDefined)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  completionPercent?: number;
 
   @ValidateIf(isDefined)
   @IsDateString()

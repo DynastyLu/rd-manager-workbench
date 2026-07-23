@@ -11,7 +11,6 @@ import {
   IconSearch,
   IconStar,
 } from '@douyinfe/semi-icons'
-import { useSearchParams } from 'react-router-dom'
 import {
   createDocument,
   createDocumentVersion,
@@ -31,6 +30,8 @@ import {
 import { RichTextEditor } from '@/modules/content/components/RichTextEditor'
 import { FileAttachments } from '@/modules/content/components/FileAttachments'
 import { AiBusinessAction } from '@/modules/workbench/components/extensions/AiBusinessAction'
+import { SaveStatus } from '@/components/workspace/SaveStatus'
+import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import './KnowledgeHomePage.less'
 
 type DirectoryView = 'all' | 'favorites' | 'trash'
@@ -41,6 +42,13 @@ type DocumentDraft = {
   plainText: string
   tags: string[]
   dirty: boolean
+  revision: number
+}
+
+type SaveDocumentRequest = {
+  documentId: string
+  revision: number
+  payload: Partial<ContentDocument>
 }
 
 const TYPE_LABELS: Record<ContentDocumentType, string> = {
@@ -53,16 +61,26 @@ const EMPTY_CONTENT = { type: 'doc', content: [{ type: 'paragraph' }] }
 const EMPTY_TAGS: string[] = []
 
 export default function KnowledgeHomePage() {
-  const [searchParams, setSearchParams] = useSearchParams()
+  const urlState = useWorkspaceSearchParams()
+  const { searchParams, setSearchParams } = urlState
   const queryClient = useQueryClient()
   const selectedDocumentId = searchParams.get('documentId') ?? ''
   const focusedFileId = searchParams.get('fileId')?.trim() || undefined
   const projectId = searchParams.get('projectId') ?? undefined
   const partnerId = searchParams.get('partnerId')?.trim() || undefined
   const requestedCreate = searchParams.get('create')
-  const [directoryView, setDirectoryView] = useState<DirectoryView>('all')
-  const [spaceId, setSpaceId] = useState<string | undefined>()
-  const [query, setQuery] = useState('')
+  const directoryView = urlState.getEnum(
+    'directory',
+    ['all', 'favorites', 'trash'] as const,
+    'all',
+  ) as DirectoryView
+  const spaceId = urlState.getString('spaceId') || undefined
+  const query = urlState.getString('query')
+  const selectDirectory = (value: DirectoryView, selectedSpaceId?: string) => urlState.update(
+    { directory: value, spaceId: selectedSpaceId },
+    { defaults: { directory: 'all' } },
+  )
+  const setQuery = (value: string) => urlState.update({ query: value })
   const [draft, setDraft] = useState<DocumentDraft | null>(null)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [spaceModalOpen, setSpaceModalOpen] = useState(false)
@@ -108,6 +126,7 @@ export default function KnowledgeHomePage() {
             plainText: documentQuery.data.plainText,
             tags: documentQuery.data.tags,
             dirty: false,
+            revision: 0,
           }
         : null
   const title = activeDraft?.title ?? ''
@@ -140,8 +159,7 @@ export default function KnowledgeHomePage() {
   const createSpaceMutation = useMutation({
     mutationFn: () => createKnowledgeSpace({ name: spaceName.trim() }),
     onSuccess: (space) => {
-      setSpaceId(space.id)
-      setDirectoryView('all')
+      selectDirectory('all', space.id)
       setSpaceName('')
       setSpaceModalOpen(false)
       void queryClient.invalidateQueries({ queryKey: ['knowledge-spaces'] })
@@ -155,30 +173,48 @@ export default function KnowledgeHomePage() {
     createMutation.mutate(requestedCreate === 'knowledge' ? 'KNOWLEDGE_PAGE' : 'DOCUMENT')
   }, [createMutation, requestedCreate])
 
-  const { mutate: saveDocument, isPending: isSaving } = useMutation({
-    mutationFn: (overrides: Partial<ContentDocument> = {}) =>
-      updateDocument(selectedDocumentId, {
-        title,
-        content,
-        plainText,
-        tags,
-        ...overrides,
-      }),
-    onSuccess: () => {
+  const { mutate: saveDocument, isPending: isSaving, isError: saveError } = useMutation({
+    mutationFn: ({ documentId, payload }: SaveDocumentRequest) =>
+      updateDocument(documentId, payload),
+    onSuccess: (_, request) => {
       setDraft((current) =>
-        current?.documentId === selectedDocumentId ? { ...current, dirty: false } : current
+        current?.documentId === request.documentId && current.revision === request.revision
+          ? { ...current, dirty: false }
+          : current
       )
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
-      void queryClient.invalidateQueries({ queryKey: ['document', selectedDocumentId] })
+      void queryClient.invalidateQueries({ queryKey: ['document', request.documentId] })
     },
     onError: () => Toast.error('自动保存失败，内容仍保留在当前页面。'),
   })
 
   useEffect(() => {
     if (!dirty || !selectedDocumentId || directoryView === 'trash') return
-    const timeout = window.setTimeout(() => saveDocument({}), 900)
+    const revision = activeDraft?.revision ?? 0
+    const timeout = window.setTimeout(() => saveDocument({
+      documentId: selectedDocumentId,
+      revision,
+      payload: { title, content, plainText, tags },
+    }), 900)
     return () => window.clearTimeout(timeout)
-  }, [content, directoryView, dirty, plainText, saveDocument, selectedDocumentId, tags, title])
+  }, [activeDraft?.revision, content, directoryView, dirty, plainText, saveDocument, selectedDocumentId, tags, title])
+
+  function updateDraft(changes: Partial<Pick<DocumentDraft, 'title' | 'content' | 'plainText' | 'tags'>>) {
+    setDraft((current) => {
+      const base = current?.documentId === selectedDocumentId ? current : activeDraft
+      if (!base) return current
+      return { ...base, ...changes, dirty: true, revision: base.revision + 1 }
+    })
+  }
+
+  function saveDocumentOverrides(overrides: Partial<ContentDocument>) {
+    if (!selectedDocumentId) return
+    saveDocument({
+      documentId: selectedDocumentId,
+      revision: activeDraft?.revision ?? 0,
+      payload: { title, content, plainText, tags, ...overrides },
+    })
+  }
 
   const versionMutation = useMutation({
     mutationFn: () => createDocumentVersion(selectedDocumentId),
@@ -212,7 +248,7 @@ export default function KnowledgeHomePage() {
     mutationFn: () => restoreDocument(selectedDocumentId),
     onSuccess: () => {
       setDraft(null)
-      setDirectoryView('all')
+      urlState.update({ directory: 'all' }, { defaults: { directory: 'all' } })
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['document', selectedDocumentId] })
     },
@@ -230,16 +266,16 @@ export default function KnowledgeHomePage() {
     <div className="knowledge-workspace">
       <aside className="knowledge-workspace__directory" aria-label="文档目录">
         <h1>文档与知识库</h1>
-        <button data-active={directoryView === 'all' && !spaceId} onClick={() => { setDirectoryView('all'); setSpaceId(undefined) }}><IconFile /> 全部文档</button>
-        <button data-active={directoryView === 'favorites'} onClick={() => { setDirectoryView('favorites'); setSpaceId(undefined) }}><IconStar /> 收藏</button>
-        <button data-active={directoryView === 'trash'} onClick={() => { setDirectoryView('trash'); setSpaceId(undefined) }}><IconDelete /> 回收站</button>
+        <button data-active={directoryView === 'all' && !spaceId} onClick={() => selectDirectory('all')}><IconFile /> 全部文档</button>
+        <button data-active={directoryView === 'favorites'} onClick={() => selectDirectory('favorites')}><IconStar /> 收藏</button>
+        <button data-active={directoryView === 'trash'} onClick={() => selectDirectory('trash')}><IconDelete /> 回收站</button>
         <div className="knowledge-workspace__space-title">
           <span>知识空间</span>
           <button type="button" aria-label="新建知识空间" onClick={() => setSpaceModalOpen(true)}><IconPlus /></button>
         </div>
         {spacesQuery.isPending ? <Skeleton.Paragraph rows={2} /> : null}
         {spacesQuery.data?.map((space) => (
-          <button key={space.id} data-active={space.id === spaceId} onClick={() => { setDirectoryView('all'); setSpaceId(space.id) }}>
+          <button key={space.id} data-active={space.id === spaceId} onClick={() => selectDirectory('all', space.id)}>
             <IconFolder /> {space.name}
           </button>
         ))}
@@ -270,7 +306,7 @@ export default function KnowledgeHomePage() {
         </ul>
       </section>
 
-      <main className="knowledge-workspace__editor">
+      <section className="knowledge-workspace__editor" aria-label="文档编辑区">
         {!selectedDocumentId ? (
           partnerId ? (
             <div className="knowledge-workspace__partner-materials">
@@ -298,9 +334,9 @@ export default function KnowledgeHomePage() {
                   aria-label="文档标题"
                   value={title}
                   readOnly={directoryView === 'trash'}
-                  onChange={(event) => activeDraft && setDraft({ ...activeDraft, title: event.target.value, dirty: true })}
+                  onChange={(event) => updateDraft({ title: event.target.value })}
                 />
-                <span>{isSaving ? '正在保存…' : dirty ? '等待自动保存' : '已保存'}</span>
+                <SaveStatus state={saveError ? 'error' : isSaving ? 'saving' : dirty ? 'dirty' : 'saved'} />
               </div>
               <div>
                 <Tag>{TYPE_LABELS[documentQuery.data.type]}</Tag>
@@ -315,7 +351,7 @@ export default function KnowledgeHomePage() {
                       buttonLabel="AI 生成摘要"
                       adoptLabel="采纳到文档"
                     />
-                    <Button aria-label={documentQuery.data.isFavorite ? '取消收藏' : '收藏'} icon={<IconStar />} onClick={() => saveDocument({ isFavorite: !documentQuery.data.isFavorite })}>{documentQuery.data.isFavorite ? '取消收藏' : '收藏'}</Button>
+                    <Button aria-label={documentQuery.data.isFavorite ? '取消收藏' : '收藏'} icon={<IconStar />} onClick={() => saveDocumentOverrides({ isFavorite: !documentQuery.data.isFavorite })}>{documentQuery.data.isFavorite ? '取消收藏' : '收藏'}</Button>
                     <Button aria-label="保存版本" icon={<IconSave />} onClick={() => versionMutation.mutate()} loading={versionMutation.isPending}>保存版本</Button>
                     <Button onClick={() => setVersionsOpen(true)}>版本记录</Button>
                     <Button aria-label="移入回收站" type="danger" icon={<IconDelete />} onClick={() => trashMutation.mutate()}>移入回收站</Button>
@@ -329,14 +365,14 @@ export default function KnowledgeHomePage() {
                 aria-label="文档标签"
                 value={tags.join('，')}
                 readOnly={directoryView === 'trash'}
-                onChange={(event) => activeDraft && setDraft({ ...activeDraft, tags: event.target.value.split(/[，,]/).map((item) => item.trim()).filter(Boolean), dirty: true })}
+                onChange={(event) => updateDraft({ tags: event.target.value.split(/[，,]/).map((item) => item.trim()).filter(Boolean) })}
                 placeholder="用逗号分隔标签"
               />
             </div>
             <RichTextEditor
               value={content}
               readOnly={directoryView === 'trash'}
-              onChange={(nextContent, nextPlainText) => activeDraft && setDraft({ ...activeDraft, content: nextContent, plainText: nextPlainText, dirty: true })}
+              onChange={(nextContent, nextPlainText) => updateDraft({ content: nextContent, plainText: nextPlainText })}
             />
             <FileAttachments
               associations={{
@@ -346,7 +382,7 @@ export default function KnowledgeHomePage() {
             />
           </>
         ) : null}
-      </main>
+      </section>
 
       <Modal title="版本记录" visible={versionsOpen} onCancel={() => setVersionsOpen(false)} footer={null} width={560}>
         {versionsQuery.isPending ? <Skeleton.Paragraph rows={4} /> : null}

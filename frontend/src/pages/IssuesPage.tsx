@@ -1,16 +1,16 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/workspace/SemiCompat'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/workspace/SemiCompat'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+} from '@/components/workspace/SemiCompat'
+import { Input } from '@/components/workspace/SemiCompat'
 import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
 import { createIssue, getIssue, listIssues } from '@/modules/workbench/api/management'
 import {
@@ -78,7 +78,7 @@ export default function IssuesPage() {
               >
                 <Input required name="title" placeholder="问题标题" />
                 <DateTimePickerField name="dueAt" aria-label="问题截止时间" />
-                <Button disabled={createMutation.isPending}>保存问题</Button>
+                <Button type="submit" disabled={createMutation.isPending}>保存问题</Button>
               </form>
             </DialogContent>
           </Dialog>

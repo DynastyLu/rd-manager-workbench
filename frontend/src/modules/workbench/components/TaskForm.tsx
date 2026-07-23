@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, DatePicker, Input, Select } from '@douyinfe/semi-ui'
+import { Button, DatePicker, Input, InputNumber, Select } from '@douyinfe/semi-ui'
 import { toast } from 'sonner'
 
-import { createTask, type CreateTaskInput } from '@/modules/workbench/api/tasks'
+import { createTask, updateTask, type CreateTaskInput } from '@/modules/workbench/api/tasks'
 import type { TaskPriority, TaskStatus, WorkTask } from '@/modules/workbench/types'
 
 import { PRIORITY_OPTIONS, STATUS_OPTIONS } from './task-form-options'
@@ -13,6 +13,7 @@ interface TaskFormProps {
   projectId?: string
   formId?: string
   showActions?: boolean
+  task?: WorkTask
 }
 
 export function TaskForm({
@@ -20,16 +21,18 @@ export function TaskForm({
   projectId,
   formId = 'task-form',
   showActions = true,
+  task,
 }: TaskFormProps) {
   const queryClient = useQueryClient()
-  const [title, setTitle] = useState('')
-  const [dueAt, setDueAt] = useState('')
-  const [priority, setPriority] = useState<TaskPriority | undefined>()
-  const [status, setStatus] = useState<TaskStatus | undefined>()
+  const [title, setTitle] = useState(task?.title ?? '')
+  const [dueAt, setDueAt] = useState(task?.dueAt?.slice(0, 10) ?? '')
+  const [priority, setPriority] = useState<TaskPriority | undefined>(task?.priority)
+  const [status, setStatus] = useState<TaskStatus | undefined>(task?.status)
+  const [completionPercent, setCompletionPercent] = useState(task?.completionPercent ?? 0)
   const [validationMessage, setValidationMessage] = useState('')
 
   const mutation = useMutation({
-    mutationFn: (input: CreateTaskInput) => createTask(input),
+    mutationFn: (input: CreateTaskInput) => task ? updateTask(task.id, input) : createTask(input),
     onSuccess: async (task) => {
       const invalidations = [
         queryClient.invalidateQueries({ queryKey: ['tasks'] }),
@@ -41,7 +44,7 @@ export function TaskForm({
         invalidations.push(queryClient.invalidateQueries({ queryKey: ['project', projectId] }))
       }
       await Promise.all(invalidations)
-      toast.success('任务已创建')
+      toast.success(task ? '工作项已更新' : '任务已创建')
       onSuccess?.(task)
     },
     onError: (error) => {
@@ -65,6 +68,7 @@ export function TaskForm({
       ...(dueAt ? { dueAt } : {}),
       ...(priority ? { priority } : {}),
       ...(status ? { status } : {}),
+      completionPercent,
     })
   }
 
@@ -129,6 +133,19 @@ export function TaskForm({
           />
         </div>
       </div>
+      <div className="workspace-modal-form__field" role="group" aria-labelledby="task-progress-label">
+        <span id="task-progress-label">完成进度</span>
+        <InputNumber
+          aria-labelledby="task-progress-label"
+          value={completionPercent}
+          min={0}
+          max={100}
+          suffix="%"
+          onNumberChange={(value) => setCompletionPercent(Number(value ?? 0))}
+          disabled={mutation.isPending}
+          style={{ width: '100%' }}
+        />
+      </div>
       {validationMessage ? (
         <p className="workspace-modal-form__error" role="alert">
           {validationMessage}
@@ -137,7 +154,7 @@ export function TaskForm({
       {showActions ? (
         <div className="workspace-modal-form__actions">
           <Button htmlType="submit" theme="solid" type="primary" loading={mutation.isPending}>
-            保存任务
+            {task ? '保存修改' : '保存任务'}
           </Button>
         </div>
       ) : null}

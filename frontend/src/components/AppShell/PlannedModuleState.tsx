@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/workspace/SemiCompat'
 
 type RelatedRoute =
   | string

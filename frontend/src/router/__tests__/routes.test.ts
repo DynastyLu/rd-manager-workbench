@@ -9,7 +9,11 @@ function LocationProbe() {
   const location = useLocation()
   const navigationType = useNavigationType()
 
-  return createElement('output', undefined, `${location.pathname}:${navigationType}`)
+  return createElement(
+    'output',
+    undefined,
+    `${location.pathname}${location.search}:${navigationType}`,
+  )
 }
 
 afterEach(() => {
@@ -100,6 +104,33 @@ describe('workspace route registry', () => {
     )
 
     expect(await screen.findByText('/spaces/projects:REPLACE')).toBeInTheDocument()
+  })
+
+  it('preserves query state while redirecting a legacy workspace URL', async () => {
+    const legacyRoute = findRoute(ROUTES.KNOWLEDGE)
+
+    render(
+      createElement(
+        MemoryRouter,
+        { initialEntries: [`${ROUTES.KNOWLEDGE}?directory=favorites&query=材料`] },
+        createElement(Routes, undefined, [
+          createElement(Route, {
+            key: 'legacy-knowledge',
+            path: ROUTES.KNOWLEDGE,
+            element: legacyRoute ? createElement(legacyRoute.component) : null,
+          }),
+          createElement(Route, {
+            key: 'documents',
+            path: ROUTES.DOCS,
+            element: createElement(LocationProbe),
+          }),
+        ]),
+      ),
+    )
+
+    expect(
+      await screen.findByText('/docs?directory=favorites&query=%E6%9D%90%E6%96%99:REPLACE'),
+    ).toBeInTheDocument()
   })
 
   it('keeps the real documents app available at its canonical route', () => {

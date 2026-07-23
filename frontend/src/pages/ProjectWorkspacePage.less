@@ -38,6 +38,12 @@
     padding: 16px 28px 20px;
   }
 
+  &__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
   &__project-mark {
     display: grid;
     width: 44px;
@@ -171,6 +177,7 @@
       padding: 0 18px;
       border-bottom: 1px solid var(--workspace-border);
 
+      > div { display: flex; align-items: baseline; gap: 8px; }
       h2 { margin: 0; font-size: 14px; font-weight: 620; }
       span { color: var(--workspace-text-muted); font-size: 12px; }
     }
@@ -225,9 +232,34 @@
 
   &__task-list li {
     display: grid;
-    grid-template-columns: 8px minmax(220px, 1fr) minmax(100px, .45fr) 110px 74px;
+    grid-template-columns: 8px minmax(220px, 1fr) minmax(100px, .4fr) 100px 54px 74px auto;
     strong { overflow: hidden; font-size: 13px; font-weight: 560; text-overflow: ellipsis; white-space: nowrap; }
     > span:not(.project-workspace__priority), time { color: var(--workspace-text-secondary); font-size: 12px; }
+  }
+
+  &__task-title {
+    display: grid;
+    min-width: 0;
+    gap: 7px;
+
+    .semi-progress { max-width: 240px; }
+  }
+
+  &__task-percent { text-align: right; font-variant-numeric: tabular-nums; }
+
+  &__row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    white-space: nowrap;
+  }
+
+  &__milestone-progress { padding: 14px 18px 4px; }
+
+  &__milestones li {
+    min-height: 62px;
+    grid-template-columns: 8px minmax(0, 1fr) auto auto;
   }
 
   &__dot,
@@ -304,12 +336,35 @@
     padding: 20px 24px;
     list-style: none;
 
-    li { display: grid; grid-template-columns: 58px 1fr; gap: 16px; padding: 0 0 24px; }
+    li { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 16px; padding: 0 0 24px; }
     li > span { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 50%; background: var(--workspace-brand-soft); color: #245bdb; font-weight: 680; }
     li > div { display: grid; align-content: start; gap: 6px; padding-top: 3px; border-bottom: 1px solid var(--workspace-border); }
     strong { font-size: 14px; font-weight: 580; }
     time { color: var(--workspace-text-muted); font-size: 11px; }
     p { margin: 4px 0 18px; color: var(--workspace-danger); font-size: 12px; }
+  }
+
+  &__risk-list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      min-height: 62px;
+      padding: 10px 18px;
+      border-bottom: 1px solid var(--workspace-border);
+    }
+
+    li:last-child { border-bottom: 0; }
+    li > div { display: grid; gap: 4px; }
+    strong { font-size: 13px; font-weight: 600; }
+    div span { color: var(--workspace-text-muted); font-size: 11px; }
+    a { color: var(--workspace-brand); font-size: 12px; text-decoration: none; }
   }
 
   &__empty {
@@ -335,5 +390,10 @@
     &__metrics > div:nth-child(-n + 2) { border-bottom: 1px solid var(--workspace-border); }
     &__overview-grid { grid-template-columns: 1fr; }
     &__panel--wide { grid-column: auto; }
+    &__header { grid-template-columns: auto minmax(0, 1fr); }
+    &__header-actions { grid-column: 1 / -1; padding-left: 58px; }
+    &__task-list li { grid-template-columns: 8px minmax(180px, 1fr) 80px 54px auto; }
+    &__task-list li > span:nth-of-type(2),
+    &__task-list li > time { display: none; }
   }
 }

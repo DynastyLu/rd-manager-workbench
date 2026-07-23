@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tag } from '@douyinfe/semi-ui'
+import { Button } from '@/components/workspace/SemiCompat'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/workspace/SemiCompat'
 import {
   Dialog,
   DialogContent,
@@ -10,16 +11,28 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+} from '@/components/workspace/SemiCompat'
+import { Input } from '@/components/workspace/SemiCompat'
+import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect'
 import { createRisk, getRisk, listRisks } from '@/modules/workbench/api/management'
 import {
   ManagementEmpty,
   ManagementError,
   ManagementLoading,
 } from '@/modules/workbench/components/management/ManagementState'
-import type { RiskStatus } from '@/modules/workbench/types'
+import type { RiskLevel, RiskStatus } from '@/modules/workbench/types'
+
+const RISK_LEVEL_META: Record<RiskLevel, { label: string; color: 'green' | 'amber' | 'red' }> = {
+  LOW: { label: '低风险', color: 'green' },
+  MEDIUM: { label: '中风险', color: 'amber' },
+  HIGH: { label: '高风险', color: 'red' },
+  CRITICAL: { label: '严重风险', color: 'red' },
+}
+
+function RiskLevelTag({ level }: { level: RiskLevel }) {
+  const meta = RISK_LEVEL_META[level]
+  return <Tag color={meta.color}>{meta.label}</Tag>
+}
 
 export default function RisksPage() {
   const [searchParams] = useSearchParams()
@@ -27,6 +40,7 @@ export default function RisksPage() {
   const recordId = searchParams.get('recordId')?.trim() || undefined
   const [status, setStatus] = useState<RiskStatus | undefined>()
   const [open, setOpen] = useState(false)
+  const [level, setLevel] = useState<RiskLevel>('MEDIUM')
   const queryClient = useQueryClient()
   const risksQuery = useQuery({
     queryKey: ['risks', { projectId, status }],
@@ -43,9 +57,9 @@ export default function RisksPage() {
 
       return createRisk({
         title: data.get('title') as string,
-        likelihood: 'HIGH',
-        impact: 'HIGH',
-        level: 'HIGH',
+        likelihood: level === 'LOW' ? 'LOW' : level === 'MEDIUM' ? 'MEDIUM' : 'HIGH',
+        impact: level === 'CRITICAL' ? 'CRITICAL' : level,
+        level,
         ownerName: (data.get('ownerName') as string) || undefined,
         ...(projectId ? { projectId } : {}),
       })
@@ -92,7 +106,16 @@ export default function RisksPage() {
               >
                 <Input name="title" required placeholder="风险标题" />
                 <Input name="ownerName" placeholder="责任人" />
-                <Button disabled={createRiskMutation.isPending}>保存风险</Button>
+                <WorkspaceSelect
+                  aria-label="风险等级"
+                  value={level}
+                  onChange={(value) => setLevel(value as RiskLevel)}
+                  options={Object.entries(RISK_LEVEL_META).map(([value, meta]) => ({
+                    value: value as RiskLevel,
+                    label: meta.label,
+                  }))}
+                />
+                <Button type="submit" disabled={createRiskMutation.isPending}>保存风险</Button>
               </form>
             </DialogContent>
           </Dialog>
@@ -106,7 +129,7 @@ export default function RisksPage() {
                 <CardTitle>{focusedRiskQuery.data.title}</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
-                等级：{focusedRiskQuery.data.level} · 状态：{focusedRiskQuery.data.status} · 负责人：
+                <RiskLevelTag level={focusedRiskQuery.data.level} /> · 状态：{focusedRiskQuery.data.status} · 负责人：
                 {focusedRiskQuery.data.ownerName ?? '未指定'}
               </CardContent>
             </Card>
@@ -115,22 +138,19 @@ export default function RisksPage() {
 
         <Card className="mb-4">
           <CardContent className="pt-4">
-            <Select
+            <WorkspaceSelect
+              aria-label="按风险状态筛选"
               value={status ?? 'ALL'}
-              onValueChange={(value) =>
+              onChange={(value) =>
                 setStatus(value === 'ALL' ? undefined : (value as RiskStatus))
               }
-            >
-              <SelectTrigger aria-label="按风险状态筛选">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">全部状态</SelectItem>
-                <SelectItem value="OPEN">未关闭</SelectItem>
-                <SelectItem value="MITIGATING">处理中</SelectItem>
-                <SelectItem value="CLOSED">已关闭</SelectItem>
-              </SelectContent>
-            </Select>
+              options={[
+                { value: 'ALL', label: '全部状态' },
+                { value: 'OPEN', label: '未关闭' },
+                { value: 'MITIGATING', label: '处理中' },
+                { value: 'CLOSED', label: '已关闭' },
+              ]}
+            />
           </CardContent>
         </Card>
 
@@ -147,7 +167,7 @@ export default function RisksPage() {
                     <CardTitle>{risk.title}</CardTitle>
                   </CardHeader>
                   <CardContent className="text-sm text-muted-foreground">
-                    等级：{risk.level} · 状态：{risk.status} · 负责人：
+                    <RiskLevelTag level={risk.level} /> · 状态：{risk.status} · 负责人：
                     {risk.ownerName ?? '未指定'}
                     <p className="mt-2">详情可继续关联任务、项目和处置记录。</p>
                   </CardContent>

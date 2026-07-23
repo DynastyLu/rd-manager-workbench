@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import zhCnLocale from '@fullcalendar/core/locales/zh-cn'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
@@ -65,7 +66,7 @@ export function CalendarView({
         <label htmlFor="base-calendar-field" style={{ color: '#646a73', fontSize: 12 }}>
           日期字段
         </label>
-        <select
+        <WorkspaceFormSelect
           id="base-calendar-field"
           value={dateField.key}
           onChange={(event) => onDateFieldChange?.(event.target.value)}
@@ -76,7 +77,7 @@ export function CalendarView({
               {field.name}
             </option>
           ))}
-        </select>
+        </WorkspaceFormSelect>
       </div>
       <div
         style={{ padding: 14, border: '1px solid #e5e6eb', borderRadius: 10, background: '#fff' }}

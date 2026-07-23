@@ -1,5 +1,27 @@
 # 发现与决策
 
+## 2026-07-22 P0 交互基础审计
+
+- 生产 TSX 中仍有 53 处原生 `select`，主要集中在多维表格高级配置、合作方、行业情报、资源负荷和非项目研发页面。
+- 14 个生产 TSX 仍导入 `@/components/ui`，与 52 个 Semi 页面并存，造成按钮、卡片、弹窗、下拉和焦点行为不一致。
+- 日期时间静态 AST 规则已存在且当前通过，但尚未禁止原生 `select` 和旧 UI 导入回流。
+- 应用壳已经提供唯一主 `main`，但知识库、多维表格和情报简报页面内部仍使用 `main`，形成重复主地标。
+- 仍存在 `outline: none` 和 `transition: all`；需要保留明确的 `focus-visible`，并使用具体属性动画。
+- 工作台已有基础颜色和弹窗安全间距，但缺少控件高度、焦点环、遮罩、表单间距和保存状态变量。
+- 知识库已有 `documentId` 查询参数，多维表格只读取 `tableId/recordId` 但没有同步选择；项目、我的工作、日历和搜索仍有关键视图状态仅保存在本地。
+- P0 不修改后端和数据库；所有业务行为必须在前端迁移中保持不变。
+
+## 2026-07-22 P0 交互基础实施结论
+
+- 生产 TSX 原生 `select` 已从 53 处降为 0；静态 AST 同时禁止原生日期/时间、原生下拉和 `@/components/ui` 业务依赖回流。
+- React 19 adapter 必须在入口和测试环境最先加载；公共适配层现统一提供 Semi Input、Button、Card、Dialog、Select、日期时间和保存状态。
+- 风险/问题/决策表单在组件迁移后必须显式声明 submit 类型；已用非受控表单值测试锁定，避免点击保存无请求的静默回归。
+- Semi Modal 固定依赖 `semi-modal-title` 作为 `aria-labelledby`；兼容 Dialog 必须将复合 `DialogTitle` 提升为 Modal 的 `title`，不能只在 body 中渲染标题。
+- AppShell 是唯一 `main` 所有者；知识库、多维表格和情报简报内部已改为带名称的 `section`。
+- 项目、我的工作、日历、知识库、多维表格和搜索的主要视图状态已写入 URL；未知查询参数保留，默认值从 URL 删除，非法枚举和页码安全回退。
+- 知识库与多维表格已接入统一保存状态；多维表格记录详情、视图、数据表、搜索与画册页码均可从 URL 恢复。
+- 全量 Vitest 暴露的主要失败模式是旧测试仍调用原生 `selectOptions/fireEvent.change`，以及 409 项并发运行触发 5 秒超时；真实 Chromium 11/11 通过，证明生产 Semi 交互链路可用。该测试迁移不能通过重新引入原生控件解决。
+
 > **历史记录说明（2026-07-18）：** 本文件中关于根 pnpm workspace、`apps/`、`packages/` 与根锁文件的条目均为已替代方案的历史发现，不是当前工程指令。当前代码和命令只在独立的 `frontend/` 与 `backend/` 中继续；以 `docs/superpowers/specs/2026-07-18-direct-framework-migration-design.md` 和 `docs/superpowers/plans/2026-07-18-direct-framework-migration.md` 为准。
 
 ## 需求
@@ -52,6 +74,18 @@
 - UI 优先组合 shadcn 现有组件并使用语义色变量；不复制旧霓虹/世界杯主题，不用原始颜色覆盖组件状态。
 - React 首骨架避免无意义 memo、barrel imports 和浏览器 Service Worker；运行时配置只初始化一次并使用版本化本地存储键。
 - REST 使用复数资源、正确 HTTP 语义、统一分页和结构化错误；API 契约不得镜像数据库表结构。
+
+## 2026-07-22 项目详情问题根因
+
+- `ProjectWorkspacePage` 只调用 `getProject`、`createTask` 和 `createProgressReport`；已有的 `updateProject`、`updateTask`、`archiveProject`、`archiveTask` 完全没有接入页面，因此目标和工作项表现为只读。
+- `ProgressSection` 只在 `progressReports.length === 0` 时渲染“提交进展”，一旦存在记录就没有新增入口，直接造成“进展只能设置一个”。后端实际允许多条记录。
+- 后端已有里程碑新增/更新接口，但前端没有 API 封装和表单；后端也缺少里程碑删除、进展更新/删除接口。
+- 项目健康度来自自动快照，Project 上没有人工覆盖字段；要满足人工设置同时保留自动评估，需要可空的 `healthOverride`。
+- WorkTask 没有进度字段，无法持久化工作项进度条；需增加 0–100 的 `completionPercent`，而不是从状态临时猜测。
+- 风险页签当前只是跳转空状态，无法在项目上下文中展示风险等级，也就无法满足风险分级颜色要求。
+- 项目更新和软归档能力原本已经存在，主要缺口是前端未接线；里程碑删除、进展编辑/删除则属于后端真实能力缺失，已补为项目范围内受约束的接口。
+- 健康度采用“自动快照 + 可空人工覆盖”而不是覆盖自动快照：`healthOverride = null` 时继续使用最新自动计算值，避免人工设置永久破坏风险驱动的健康评估。
+- 工作项完成百分比作为独立字段保存；状态变为 DONE 时服务端强制归一为 100，避免列表、报表与详情出现完成状态但进度不足的矛盾。
 
 ## 研究发现
 - Electron 的主进程和 Utility Process 都具备 Node.js 环境，适合托管 NestJS 编译产物。
@@ -173,3 +207,13 @@
 - 修复后日历创建弹窗真实 DOM 为 3 个 Semi DatePicker、2 个 Semi Select，原生日期和原生 select 均为 0；实际展开 `.semi-datepicker-container` 成功，不再调用 Chromium 原生面板。
 - 修复后项目附件区四边 padding 均为 `18px`，附件内容起点回到卡片内容网格；样式已迁至 `FileAttachments.less` 并由组件自身导入。
 - 普通原生 `select` 仍有 53 处、分布在 18 个生产组件文件：主要是多维表格字段/视图/筛选/导入导出高级配置，以及情报、合作方、资源、会议、非项目研发旧表单。它们不再包含本次截图中的日历弹窗，但仍应作为下一轮组件库迁移范围。
+
+## P0 交互基础收口（2026-07-23）
+
+- 生产 TSX 中的原生 `select`、原生日期/时间输入和 `@/components/ui` 业务引用已归零，并由 AST/静态测试阻止回流。
+- Semi `Select` 是 `div[role=combobox]`，不能沿用原生 `selectOptions`、`value` 和内嵌 `option` 断言；测试已改为展开 Portal 后按真实选项交互。
+- 知识库自动保存必须携带文档 ID 和修订号快照；只有返回请求与当前草稿完全匹配时才能清除 dirty，否则慢请求会覆盖用户新编辑。
+- 查询参数工具需在同一事件中累积连续更新；仅从当前 render 的 `searchParams` 克隆会丢掉前一次修改。
+- 旧路由重定向不能只传 pathname，必须合并并保留原查询参数；否则收藏目录、搜索词和深链会在 `/knowledge` 到 `/docs` 的过渡中丢失。
+- FullCalendar `datesSet` 可在 React 渲染阶段触发，不能在其中同步 navigate；当前使用可取消的延后 URL 同步，卸载时清理，避免切换页面后旧日历回调篡改新路由。
+- 浏览器验收服务必须使用产品约定的 `4312` 端口；临时 `4174` 会被后端精确 CORS 白名单拒绝，导致页面表面上看起来“没有数据”。

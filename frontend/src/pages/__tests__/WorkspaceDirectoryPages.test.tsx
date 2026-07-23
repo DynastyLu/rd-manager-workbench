@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
@@ -62,6 +62,7 @@ function renderPage(page: React.ReactNode, path = '/') {
 
 describe('workspace directory pages', () => {
   beforeEach(() => {
+    vi.useRealTimers()
     for (const mock of Object.values(documentApi)) mock.mockReset()
     for (const mock of Object.values(baseApi)) mock.mockReset()
     baseApi.listBaseWorkspaces.mockResolvedValue([{
@@ -154,6 +155,33 @@ describe('workspace directory pages', () => {
     expect(screen.queryByText(/规划/)).not.toBeInTheDocument()
     expect(documentApi.listDocuments).toHaveBeenCalled()
     expect(documentApi.getDocument).toHaveBeenCalledWith('document-1')
+  })
+
+  it('does not mark a newer knowledge draft as saved when an older request finishes', async () => {
+    let resolveFirst: ((value: unknown) => void) | undefined
+    let resolveSecond: ((value: unknown) => void) | undefined
+    documentApi.updateDocument
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSecond = resolve }))
+    renderPage(<KnowledgeHomePage />, '/docs?documentId=document-1')
+
+    const title = await screen.findByDisplayValue('耐盐材料技术方案')
+    vi.useFakeTimers()
+    fireEvent.change(title, { target: { value: '第一次编辑' } })
+    await act(() => vi.advanceTimersByTimeAsync(900))
+    expect(documentApi.updateDocument).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(title, { target: { value: '第二次编辑' } })
+    await act(() => vi.advanceTimersByTimeAsync(900))
+    expect(documentApi.updateDocument).toHaveBeenCalledTimes(2)
+
+    await act(async () => resolveFirst?.({ id: 'document-1' }))
+    expect(screen.getByDisplayValue('第二次编辑')).toBeInTheDocument()
+    expect(screen.queryByText('已保存')).not.toBeInTheDocument()
+
+    await act(async () => resolveSecond?.({ id: 'document-1' }))
+    vi.useRealTimers()
+    await waitFor(() => expect(screen.getByText('已保存')).toBeInTheDocument())
   })
 
   it('opens a partner-scoped material workspace and forwards the association to attachments', async () => {

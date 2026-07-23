@@ -51,7 +51,9 @@
     line-height: 1;
     padding: 0 2px;
     border-radius: 2px;
-    transition: all var(--transition);
+    transition:
+      background-color var(--transition),
+      color var(--transition);
 
     &:hover:not(:disabled) {
       color: var(--accent-pink);

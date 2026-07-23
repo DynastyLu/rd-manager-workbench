@@ -14,6 +14,7 @@ import {
 } from '../interface/http/dto/list-my-work-query.dto';
 import { ListTasksQueryDto } from '../interface/http/dto/list-tasks-query.dto';
 import { UpdateMilestoneDto } from '../interface/http/dto/update-milestone.dto';
+import { UpdateProgressReportDto } from '../interface/http/dto/update-progress-report.dto';
 import { UpdateTaskDto } from '../interface/http/dto/update-task.dto';
 import { UpsertTaskLaterDto } from '../interface/http/dto/upsert-task-later.dto';
 import { UpsertTaskReminderDto } from '../interface/http/dto/upsert-task-reminder.dto';
@@ -66,6 +67,7 @@ export class TasksService {
         data: {
           title: dto.title,
           ...this.toTaskFields(dto),
+          completionPercent: dto.status === TaskStatus.DONE ? 100 : (dto.completionPercent ?? 0),
           ...(dto.status === TaskStatus.DONE ? { completedAt: new Date() } : {}),
           ...(dto.dependencyIds?.length
             ? {
@@ -234,6 +236,11 @@ export class TasksService {
         where: { id },
         data: {
           ...this.toTaskFields(dto),
+          ...(dto.status === TaskStatus.DONE
+            ? { completionPercent: 100 }
+            : dto.completionPercent !== undefined
+              ? { completionPercent: dto.completionPercent }
+              : {}),
           ...(dto.status !== undefined && dto.status !== existing.status
             ? { completedAt: dto.status === TaskStatus.DONE ? new Date() : null }
             : {}),
@@ -315,6 +322,17 @@ export class TasksService {
     });
   }
 
+  async deleteMilestone(projectId: string, milestoneId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquireProjectHealthLocks(tx, [projectId]);
+      await this.assertActiveProject(tx, projectId);
+      const milestone = await tx.milestone.findFirst({ where: { id: milestoneId, projectId } });
+      if (!milestone) throw this.notFound(ErrorCodes.MILESTONE_NOT_FOUND, 'Milestone not found');
+      await tx.milestone.delete({ where: { id: milestoneId } });
+      await this.recalculateHealth(tx, projectId);
+    });
+  }
+
   async createProgressReport(projectId: string, dto: CreateProgressReportDto) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
@@ -333,6 +351,47 @@ export class TasksService {
     });
   }
 
+  async updateProgressReport(
+    projectId: string,
+    reportId: string,
+    dto: UpdateProgressReportDto,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquireProjectHealthLocks(tx, [projectId]);
+      await this.assertActiveProject(tx, projectId);
+      const report = await tx.progressReport.findFirst({ where: { id: reportId, projectId } });
+      if (!report) {
+        throw this.notFound(ErrorCodes.PROGRESS_REPORT_NOT_FOUND, 'Progress report not found');
+      }
+      const updated = await tx.progressReport.update({
+        where: { id: reportId },
+        data: {
+          ...(dto.reportedAt !== undefined ? { reportedAt: new Date(dto.reportedAt) } : {}),
+          ...(dto.summary !== undefined ? { summary: dto.summary } : {}),
+          ...(dto.completionPercent !== undefined
+            ? { completionPercent: dto.completionPercent }
+            : {}),
+          ...(dto.blockers !== undefined ? { blockers: dto.blockers } : {}),
+        },
+      });
+      await this.recalculateHealth(tx, projectId);
+      return updated;
+    });
+  }
+
+  async deleteProgressReport(projectId: string, reportId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.acquireProjectHealthLocks(tx, [projectId]);
+      await this.assertActiveProject(tx, projectId);
+      const report = await tx.progressReport.findFirst({ where: { id: reportId, projectId } });
+      if (!report) {
+        throw this.notFound(ErrorCodes.PROGRESS_REPORT_NOT_FOUND, 'Progress report not found');
+      }
+      await tx.progressReport.delete({ where: { id: reportId } });
+      await this.recalculateHealth(tx, projectId);
+    });
+  }
+
   private toTaskFields(dto: Partial<CreateTaskDto>) {
     return {
       ...(dto.title !== undefined ? { title: dto.title } : {}),
@@ -343,6 +402,9 @@ export class TasksService {
       ...(dto.assigneeName !== undefined ? { assigneeName: dto.assigneeName } : {}),
       ...(dto.collaboratorNames !== undefined ? { collaboratorNames: dto.collaboratorNames } : {}),
       ...(dto.priority !== undefined ? { priority: dto.priority } : {}),
+      ...(dto.completionPercent !== undefined
+        ? { completionPercent: dto.completionPercent }
+        : {}),
       ...(dto.status !== undefined ? { status: dto.status } : {}),
       ...(dto.dueAt !== undefined ? { dueAt: new Date(dto.dueAt) } : {}),
       ...(dto.sourceType !== undefined ? { sourceType: dto.sourceType } : {}),

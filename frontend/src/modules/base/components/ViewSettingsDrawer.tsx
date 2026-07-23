@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useEffect, useRef, useState } from 'react'
 import { Button, Checkbox, Input, SideSheet } from '@douyinfe/semi-ui'
 
@@ -44,7 +45,7 @@ function SortBuilder({
           return (
             <div className="view-sort-row" key={`${index}:${sort.fieldKey}`}>
               <span>{index + 1}</span>
-              <select
+              <WorkspaceFormSelect
                 aria-label={`排序字段 ${index + 1}`}
                 value={sort.fieldKey}
                 onChange={(event) =>
@@ -61,8 +62,8 @@ function SortBuilder({
                     {option.name}
                   </option>
                 ))}
-              </select>
-              <select
+              </WorkspaceFormSelect>
+              <WorkspaceFormSelect
                 aria-label={`排序方向 ${index + 1}`}
                 value={sort.direction}
                 onChange={(event) =>
@@ -77,7 +78,7 @@ function SortBuilder({
               >
                 <option value="asc">升序</option>
                 <option value="desc">降序</option>
-              </select>
+              </WorkspaceFormSelect>
               {!field ? (
                 <span className="view-filter-row__invalid">字段已失效：{sort.fieldKey}</span>
               ) : null}
@@ -154,7 +155,7 @@ function GanttSettings({
       </div>
       <label className="view-settings__stacked-field">
         <span>标题字段</span>
-        <select
+        <WorkspaceFormSelect
           aria-label="甘特标题字段"
           value={String(config.titleFieldKey ?? '')}
           onChange={(event) => onChange({
@@ -169,11 +170,11 @@ function GanttSettings({
               {field.name}{field.isPrimary ? '（主字段）' : ''}
             </option>
           ))}
-        </select>
+        </WorkspaceFormSelect>
       </label>
       <label className="view-settings__stacked-field">
         <span>开始字段</span>
-        <select
+        <WorkspaceFormSelect
           aria-label="甘特开始字段"
           value={String(config.startFieldKey ?? '')}
           onChange={(event) => onChange({
@@ -184,11 +185,11 @@ function GanttSettings({
           <option value="">请选择基础日期字段</option>
           {!selectedStartExists ? <option value={config.startFieldKey}>失效字段</option> : null}
           {dateFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
-        </select>
+        </WorkspaceFormSelect>
       </label>
       <label className="view-settings__stacked-field">
         <span>结束字段</span>
-        <select
+        <WorkspaceFormSelect
           aria-label="甘特结束字段"
           value={String(config.endFieldKey ?? '')}
           onChange={(event) => onChange({
@@ -199,12 +200,12 @@ function GanttSettings({
           <option value="">请选择基础日期字段</option>
           {!selectedEndExists ? <option value={config.endFieldKey}>失效字段</option> : null}
           {dateFields.map((field) => <option key={field.id} value={field.key}>{field.name}</option>)}
-        </select>
+        </WorkspaceFormSelect>
       </label>
-      <label className="view-settings__stacked-field">
-        <span>时间缩放</span>
-        <select
-          aria-label="甘特缩放"
+      <div className="view-settings__stacked-field">
+        <span id="gantt-scale-label">时间缩放</span>
+        <WorkspaceFormSelect
+          aria-labelledby="gantt-scale-label"
           value={config.scale ?? 'WEEK'}
           onChange={(event) => onChange({
             ...config,
@@ -214,12 +215,12 @@ function GanttSettings({
           <option value="DAY">日</option>
           <option value="WEEK">周</option>
           <option value="MONTH">月</option>
-        </select>
-      </label>
-      <label className="view-settings__stacked-field">
-        <span>行高</span>
-        <select
-          aria-label="甘特行高"
+        </WorkspaceFormSelect>
+      </div>
+      <div className="view-settings__stacked-field">
+        <span id="gantt-row-height-label">行高</span>
+        <WorkspaceFormSelect
+          aria-labelledby="gantt-row-height-label"
           value={config.rowHeight ?? 'STANDARD'}
           onChange={(event) => onChange({
             ...config,
@@ -228,8 +229,8 @@ function GanttSettings({
         >
           <option value="COMPACT">紧凑</option>
           <option value="STANDARD">标准</option>
-        </select>
-      </label>
+        </WorkspaceFormSelect>
+      </div>
     </section>
   )
 }
@@ -348,7 +349,7 @@ export function ViewSettingsDrawer({
           </div>
           <label className="view-settings__stacked-field">
             <span>分组字段</span>
-            <select
+            <WorkspaceFormSelect
               aria-label="视图分组字段"
               value={String(draft.groupField ?? '')}
               onChange={(event) =>
@@ -361,7 +362,7 @@ export function ViewSettingsDrawer({
                   {field.name}
                 </option>
               ))}
-            </select>
+            </WorkspaceFormSelect>
           </label>
           <div className="view-settings__fields" aria-label="显示字段">
             {fields.map((field) => (

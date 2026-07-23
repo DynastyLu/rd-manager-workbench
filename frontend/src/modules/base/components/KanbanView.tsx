@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import {
   DndContext,
   KeyboardSensor,
@@ -213,7 +214,7 @@ function KanbanCard({
           ))}
         </dl>
       ) : null}
-      <select
+      <WorkspaceFormSelect
         aria-label={`移动“${title}”`}
         value={readText(record.values[groupField.key]) || UNGROUPED_VALUE}
         onPointerDown={(event) => event.stopPropagation()}
@@ -239,7 +240,7 @@ function KanbanCard({
             {option.label}
           </option>
         ))}
-      </select>
+      </WorkspaceFormSelect>
     </article>
   )
 }
@@ -377,8 +378,9 @@ export function KanbanView({
         <label htmlFor="base-kanban-group" style={{ color: '#646a73', fontSize: 12 }}>
           分组字段
         </label>
-        <select
+        <WorkspaceFormSelect
           id="base-kanban-group"
+          aria-label="分组字段"
           value={groupField.key}
           onChange={(event) => onGroupFieldChange?.(event.target.value)}
           style={{ height: 30, border: '1px solid #dee0e3', borderRadius: 6, background: '#fff' }}
@@ -388,7 +390,7 @@ export function KanbanView({
               {field.name}
             </option>
           ))}
-        </select>
+        </WorkspaceFormSelect>
       </div>
       <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
         <div

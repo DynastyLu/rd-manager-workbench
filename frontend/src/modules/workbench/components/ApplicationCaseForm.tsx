@@ -1,8 +1,8 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useState, type FormEvent } from 'react'
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Button } from '@/components/workspace/SemiCompat'
+import { Input } from '@/components/workspace/SemiCompat'
 import type { CreateApplicationCaseInput, WorkflowTemplate } from '@/modules/workbench/api/applications'
 
 interface ApplicationCaseFormProps {
@@ -47,7 +47,7 @@ export function ApplicationCaseForm({
   return (
     <form className="grid gap-4" onSubmit={handleSubmit} noValidate>
       <div className="grid gap-2">
-        <Label htmlFor="application-case-name">案件名称</Label>
+        <label htmlFor="application-case-name">案件名称</label>
         <Input
           id="application-case-name"
           value={title}
@@ -58,7 +58,7 @@ export function ApplicationCaseForm({
         {errors.title ? <p className="text-sm text-destructive" role="alert">{errors.title}</p> : null}
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="application-case-code">案件编号</Label>
+        <label htmlFor="application-case-code">案件编号</label>
         <Input
           id="application-case-code"
           value={code}
@@ -69,7 +69,7 @@ export function ApplicationCaseForm({
         {errors.code ? <p className="text-sm text-destructive" role="alert">{errors.code}</p> : null}
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="application-case-project">关联项目 ID</Label>
+        <label htmlFor="application-case-project">关联项目 ID</label>
         <Input
           id="application-case-project"
           value={projectId}
@@ -80,8 +80,9 @@ export function ApplicationCaseForm({
         {errors.project ? <p className="text-sm text-destructive" role="alert">{errors.project}</p> : null}
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="application-case-template">流程模板</Label>
-        <select
+        <label htmlFor="application-case-template">流程模板</label>
+        <WorkspaceFormSelect
+          aria-label="流程模板"
           id="application-case-template"
           className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs"
           value={workflowTemplateId}
@@ -94,7 +95,7 @@ export function ApplicationCaseForm({
               {template.name}
             </option>
           ))}
-        </select>
+        </WorkspaceFormSelect>
         {errors.template ? <p className="text-sm text-destructive" role="alert">{errors.template}</p> : null}
       </div>
       <Button type="submit" disabled={isSubmitting}>

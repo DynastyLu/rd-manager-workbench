@@ -1,3 +1,4 @@
+import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   flexRender,
@@ -293,7 +294,7 @@ export function GridView({
         />
         <label>
           <span>排序</span>
-          <select
+          <WorkspaceFormSelect
             aria-label="排序字段"
             value={configuredSorts(config)[0]?.fieldKey ?? ''}
             onChange={(event) => {
@@ -313,7 +314,7 @@ export function GridView({
                 {field.name}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
         </label>
         <button
           type="button"
@@ -332,7 +333,7 @@ export function GridView({
         </button>
         <label>
           <span>筛选</span>
-          <select
+          <WorkspaceFormSelect
             aria-label="筛选字段"
             value={quickFilterFieldKey}
             onChange={(event) => {
@@ -355,7 +356,7 @@ export function GridView({
                 {field.name}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
         </label>
         {quickFilterFieldKey ? (
           <input
@@ -381,7 +382,7 @@ export function GridView({
         ) : null}
         <label>
           <span>分组</span>
-          <select
+          <WorkspaceFormSelect
             aria-label="分组字段"
             value={config.groupField ?? ''}
             onChange={(event) => updateConfig({ groupField: event.target.value || undefined })}
@@ -392,7 +393,7 @@ export function GridView({
                 {field.name}
               </option>
             ))}
-          </select>
+          </WorkspaceFormSelect>
         </label>
         <details className="base-grid__field-visibility">
           <summary>显示字段</summary>

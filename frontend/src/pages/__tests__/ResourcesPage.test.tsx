@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { selectSemiOption } from '@/test-utils/selectSemiOption'
 
 import ResourcesPage from '../ResourcesPage'
 
@@ -102,7 +103,7 @@ describe('ResourcesPage', () => {
     const user = userEvent.setup()
     renderPage()
     await user.click(await screen.findByRole('button', { name: '张三 2026-07-20 安排负荷' }))
-    await user.selectOptions(screen.getByLabelText('投入类型'), 'PROJECT')
+    await selectSemiOption(screen.getByLabelText('投入类型'), 'PROJECT')
     await user.type(screen.getByLabelText('搜索关联对象'), '平台')
     expect(await screen.findByText('P-1 · 平台升级')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '管理张三' }))
