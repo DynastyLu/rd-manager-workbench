@@ -83,4 +83,36 @@ describe('AuditLogService', () => {
       }),
     });
   });
+
+  it('keeps only safe employee work export and risk identifiers', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'audit-employee-work' });
+    const service = new AuditLogService({ auditLog: { create } } as never);
+
+    await service.record({
+      action: 'EMPLOYEE_WORK_RISK_CONVERTED',
+      entityType: 'employeeWorkItem',
+      entityId: 'work-1',
+      outcome: 'SUCCEEDED',
+      changedFields: ['riskId'],
+      metadata: {
+        workItemId: 'work-1',
+        riskId: 'risk-1',
+        format: 'xlsx',
+        rowCount: 20,
+        title: '=private title',
+        riskText: 'private blocker',
+      },
+    });
+
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        metadata: {
+          workItemId: 'work-1',
+          riskId: 'risk-1',
+          format: 'xlsx',
+          rowCount: 20,
+        },
+      }),
+    });
+  });
 });

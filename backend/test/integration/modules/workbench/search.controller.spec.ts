@@ -1,6 +1,12 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { PrismaClient } from '@prisma/client';
+import {
+  EmployeeImportRowStatus,
+  EmployeeProgressPeriod,
+  EmployeeWorkImportStatus,
+  EmployeeWorkStatus,
+  PrismaClient,
+} from '@prisma/client';
 import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
@@ -15,6 +21,10 @@ describe('Global search API', () => {
   let documentId: string;
   let riskId: string;
   let nonProjectRdId: string;
+  let employeeId: string;
+  const employeeBatchIds: string[] = [];
+  const employeeRowIds: string[] = [];
+  const employeeWorkItemIds: string[] = [];
 
   beforeAll(async () => {
     const { AppModule } = await import('../../../../src/app.module');
@@ -60,9 +70,76 @@ describe('Global search API', () => {
       },
     });
     nonProjectRdId = nonProjectRd.id;
+    const employee = await prisma.resourceProfile.create({
+      data: {
+        displayName: `${prefix} 权限工程师`,
+        department: `${prefix} 研发平台`,
+        roleTitle: '高级工程师',
+      },
+    });
+    employeeId = employee.id;
+    const periodStartAt = new Date('2038-07-19T00:00:00.000Z');
+    const periodEndAt = new Date('2038-07-25T00:00:00.000Z');
+    for (const [version, status, title] of [
+      [1, EmployeeWorkImportStatus.SUPERSEDED, `${prefix} 旧权限周报`],
+      [2, EmployeeWorkImportStatus.COMPLETED, `${prefix} 当前权限周报`],
+    ] as const) {
+      const batch = await prisma.employeeWorkImportBatch.create({
+        data: {
+          periodType: EmployeeProgressPeriod.WEEK,
+          periodStartAt,
+          periodEndAt,
+          version,
+          status,
+          originalName: `${prefix}-${version}.xlsx`,
+          fileHash: `${prefix}-${version}`,
+          sourceStorageKey: `test/${prefix}/${version}.xlsx`,
+          templateVersion: 1,
+          totalRows: 1,
+          validRows: 1,
+          importedRows: 1,
+          expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+        },
+      });
+      employeeBatchIds.push(batch.id);
+      const row = await prisma.employeeWorkImportRow.create({
+        data: {
+          batchId: batch.id,
+          rowNumber: 2,
+          rawValues: { 员工姓名: employee.displayName, 工作内容: title },
+          normalizedValues: {},
+          status: EmployeeImportRowStatus.VALID,
+          errors: [],
+          resolvedEmployeeId: employee.id,
+          resolvedProjectId: project.id,
+          resolvedTaskId: task.id,
+        },
+      });
+      employeeRowIds.push(row.id);
+      const workItem = await prisma.employeeWorkItem.create({
+        data: {
+          employeeId: employee.id,
+          importBatchId: batch.id,
+          sourceRowId: row.id,
+          periodStartAt,
+          periodEndAt,
+          title,
+          summaryText: `${prefix} 权限接口已联调`,
+          status: EmployeeWorkStatus.IN_PROGRESS,
+          projectId: project.id,
+          taskId: task.id,
+          rawRow: { 员工姓名: employee.displayName, 工作内容: title },
+        },
+      });
+      employeeWorkItemIds.push(workItem.id);
+    }
   });
 
   afterAll(async () => {
+    await prisma.employeeWorkItem.deleteMany({ where: { id: { in: employeeWorkItemIds } } });
+    await prisma.employeeWorkImportRow.deleteMany({ where: { id: { in: employeeRowIds } } });
+    await prisma.employeeWorkImportBatch.deleteMany({ where: { id: { in: employeeBatchIds } } });
+    await prisma.resourceProfile.deleteMany({ where: { id: employeeId } });
     await prisma.nonProjectRdItem.deleteMany({ where: { id: nonProjectRdId } });
     await prisma.risk.deleteMany({ where: { id: riskId } });
     await prisma.contentDocument.deleteMany({ where: { id: documentId } });
@@ -97,9 +174,7 @@ describe('Global search API', () => {
       ]),
     );
     expect(
-      response.body.data.data.every(({ path }: { path: string }) =>
-        /^\/(?!\/)/u.test(path),
-      ),
+      response.body.data.data.every(({ path }: { path: string }) => /^\/(?!\/)/u.test(path)),
     ).toBe(true);
   });
 
@@ -111,15 +186,51 @@ describe('Global search API', () => {
       .expect(400);
   });
 
+  it('searches active employees and only current confirmed employee work', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({
+        q: prefix,
+        types: 'EMPLOYEE,EMPLOYEE_WORK',
+        page: 1,
+        pageSize: 20,
+      })
+      .expect(200);
+
+    expect(response.body.data.groups).toEqual(
+      expect.arrayContaining([
+        { type: 'EMPLOYEE', count: 1 },
+        { type: 'EMPLOYEE_WORK', count: 1 },
+      ]),
+    );
+    expect(response.body.data.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'EMPLOYEE',
+          id: employeeId,
+          path: `/employees/${employeeId}`,
+        }),
+        expect.objectContaining({
+          type: 'EMPLOYEE_WORK',
+          id: employeeWorkItemIds[1],
+          path: `/employees/${employeeId}?periodType=WEEK&periodStart=2038-07-19&workItemId=${employeeWorkItemIds[1]}`,
+        }),
+      ]),
+    );
+    expect(
+      response.body.data.data.some(({ id }: { id: string }) => id === employeeWorkItemIds[0]),
+    ).toBe(false);
+  });
+
   it('runs task and risk actions through the real domain services', async () => {
     const taskResponse = await request(app.getHttpServer())
       .post(`/api/search/actions/TASK/${taskId}`)
       .send({ action: 'COMPLETE_TASK' })
       .expect(201);
     expect(taskResponse.body.data.actions).toContain('REOPEN_TASK');
-    await expect(prisma.workTask.findUniqueOrThrow({ where: { id: taskId } })).resolves.toMatchObject(
-      { status: 'DONE' },
-    );
+    await expect(
+      prisma.workTask.findUniqueOrThrow({ where: { id: taskId } }),
+    ).resolves.toMatchObject({ status: 'DONE' });
 
     await request(app.getHttpServer())
       .post(`/api/search/actions/RISK/${riskId}`)

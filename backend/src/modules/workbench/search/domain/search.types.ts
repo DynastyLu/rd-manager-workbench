@@ -13,6 +13,8 @@ export const SEARCH_TYPES = [
   'NON_PROJECT_RD',
   'INTELLIGENCE_ITEM',
   'BASE_RECORD',
+  'EMPLOYEE',
+  'EMPLOYEE_WORK',
 ] as const;
 
 export type SearchType = (typeof SEARCH_TYPES)[number];

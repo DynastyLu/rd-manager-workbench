@@ -5,6 +5,7 @@ import { TasksModule } from '../tasks/tasks.module';
 import { ApplicationsSearchAdapter } from './adapters/applications-search.adapter';
 import { BaseSearchAdapter } from './adapters/base-search.adapter';
 import { ContentSearchAdapter } from './adapters/content-search.adapter';
+import { EmployeesSearchAdapter } from './adapters/employees-search.adapter';
 import { ManagementSearchAdapter } from './adapters/management-search.adapter';
 import { OperationsSearchAdapter } from './adapters/operations-search.adapter';
 import { ProjectsSearchAdapter } from './adapters/projects-search.adapter';
@@ -22,6 +23,7 @@ import { SearchController } from './interface/http/search.controller';
     TasksSearchAdapter,
     ApplicationsSearchAdapter,
     ContentSearchAdapter,
+    EmployeesSearchAdapter,
     ManagementSearchAdapter,
     OperationsSearchAdapter,
     BaseSearchAdapter,
@@ -32,6 +34,7 @@ import { SearchController } from './interface/http/search.controller';
         TasksSearchAdapter,
         ApplicationsSearchAdapter,
         ContentSearchAdapter,
+        EmployeesSearchAdapter,
         ManagementSearchAdapter,
         OperationsSearchAdapter,
         BaseSearchAdapter,

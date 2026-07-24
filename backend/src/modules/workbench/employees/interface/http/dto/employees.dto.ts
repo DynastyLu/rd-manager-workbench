@@ -11,6 +11,7 @@ import {
   IsDateString,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsString,
@@ -153,6 +154,18 @@ export class ListEmployeeWorkItemsQueryDto extends ProgressPeriodQueryDto {
   @Min(1)
   @Max(MAX_EMPLOYEE_PAGE_SIZE)
   pageSize?: number;
+}
+
+export class ExportEmployeeWorkItemsQueryDto extends ProgressPeriodQueryDto {
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  employeeId?: string;
+
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @ValidateIf(isDefined)
+  @IsIn(['csv', 'xlsx'])
+  format?: 'csv' | 'xlsx';
 }
 
 export class ListEmployeeImportsQueryDto {

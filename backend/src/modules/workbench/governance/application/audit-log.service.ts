@@ -29,6 +29,9 @@ const allowedMetadataKeys = new Set([
   'restoredFromBatchId',
   'rowCount',
   'snapshotStatus',
+  'workItemId',
+  'riskId',
+  'format',
 ]);
 
 type AuditClient = Pick<Prisma.TransactionClient, 'auditLog'>;

@@ -145,6 +145,9 @@ describe('Employee progress and import history API', () => {
         where: { id: { in: staleBatchIds } },
       });
     }
+    if (projectIds.length > 0) {
+      await prisma.risk.deleteMany({ where: { projectId: { in: projectIds } } });
+    }
     await prisma.workTask.deleteMany({
       where: {
         OR: [
@@ -549,6 +552,79 @@ describe('Employee progress and import history API', () => {
       .expect(200);
     expect(downloaded.body).toEqual(sourceContent);
     expect(downloaded.headers['x-source-batch-ids']).toBe(sourceBatchId);
+  });
+
+  it('exports all current filtered work and converts one eligible work risk idempotently', async () => {
+    await prisma.employeeWorkItem.update({
+      where: { id: currentWorkItemId },
+      data: {
+        title: `=${prefix}-公式工作`,
+        status: EmployeeWorkStatus.AT_RISK,
+        riskText: `${prefix}-权限依赖未就绪`,
+      },
+    });
+
+    const csv = await request(app.getHttpServer())
+      .get('/api/employee-work-items/export')
+      .query({
+        periodType: EmployeeProgressPeriod.WEEK,
+        periodStart: periodStartText,
+        employeeId,
+        projectId,
+        status: EmployeeWorkStatus.AT_RISK,
+        format: 'csv',
+      })
+      .expect(200);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.headers['x-source-batch-ids']).toBe(currentBatchId);
+    expect(csv.text).toContain(`'=${prefix}-公式工作`);
+    expect(csv.text).not.toContain(`${prefix}-旧版本工作`);
+
+    const [first, second] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/api/employee-work-items/${currentWorkItemId}/convert-risk`)
+        .send({})
+        .expect(201),
+      request(app.getHttpServer())
+        .post(`/api/employee-work-items/${currentWorkItemId}/convert-risk`)
+        .send({})
+        .expect(201),
+    ]);
+    expect(first.body.data.risk.id).toBe(second.body.data.risk.id);
+    expect([first.body.data.alreadyExists, second.body.data.alreadyExists].sort()).toEqual([
+      false,
+      true,
+    ]);
+    await expect(
+      prisma.employeeWorkItem.findUniqueOrThrow({
+        where: { id: currentWorkItemId },
+        select: { riskId: true },
+      }),
+    ).resolves.toEqual({ riskId: first.body.data.risk.id });
+    await expect(
+      prisma.risk.findUniqueOrThrow({ where: { id: first.body.data.risk.id } }),
+    ).resolves.toMatchObject({
+      likelihood: 'MEDIUM',
+      impact: 'MEDIUM',
+      level: 'MEDIUM',
+      projectId,
+      taskId,
+    });
+    await request(app.getHttpServer())
+      .post(`/api/employee-work-items/${sourceWorkItemId}/convert-risk`)
+      .send({})
+      .expect(404);
+
+    const audits = await prisma.auditLog.findMany({
+      where: {
+        entityType: 'employeeWorkItem',
+        entityId: currentWorkItemId,
+        action: 'EMPLOYEE_WORK_RISK_CONVERTED',
+      },
+      select: { outcome: true },
+    });
+    expect(audits).toHaveLength(2);
+    expect(audits.every(({ outcome }) => outcome === 'SUCCEEDED')).toBe(true);
   });
 
   it('restores a superseded batch once under concurrent retries and preserves every version and source', async () => {

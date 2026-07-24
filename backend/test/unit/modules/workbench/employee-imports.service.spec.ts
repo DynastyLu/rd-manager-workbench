@@ -597,7 +597,12 @@ describe('EmployeeImportsService', () => {
     expect(dependencies.storage.write).not.toHaveBeenCalled();
     expect(dependencies.tx.employeeWorkImportRow.deleteMany).not.toHaveBeenCalled();
     expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
-    expect(dependencies.audit.record).not.toHaveBeenCalled();
+    expect(dependencies.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'EMPLOYEE_IMPORT_PREVIEW_FAILED',
+        outcome: 'FAILED',
+      }),
+    );
   });
 
   it.each([
@@ -618,7 +623,12 @@ describe('EmployeeImportsService', () => {
     expect(dependencies.storage.write).not.toHaveBeenCalled();
     expect(dependencies.tx.employeeWorkImportRow.deleteMany).not.toHaveBeenCalled();
     expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
-    expect(dependencies.audit.record).not.toHaveBeenCalled();
+    expect(dependencies.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'EMPLOYEE_IMPORT_PREVIEW_FAILED',
+        outcome: 'FAILED',
+      }),
+    );
   });
 
   it('cleans only a new preview artifact when its transactional audit fails', async () => {
@@ -1187,7 +1197,12 @@ describe('EmployeeImportsService', () => {
       statusCode: 422,
     });
     expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
-    expect(dependencies.audit.record).not.toHaveBeenCalled();
+    expect(dependencies.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'EMPLOYEE_IMPORT_RESOLUTION_FAILED',
+        outcome: 'FAILED',
+      }),
+    );
   });
 
   it.each([
@@ -1762,5 +1777,63 @@ describe('EmployeeImportsService', () => {
     });
     expect(dependencies.storage.read).not.toHaveBeenCalled();
     expect(dependencies.storage.write).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      operation: 'upload',
+      run: (dependencies: ReturnType<typeof createService>) =>
+        dependencies.service.upload(undefined),
+      action: 'EMPLOYEE_IMPORT_UPLOAD_FAILED',
+      entityId: undefined,
+    },
+    {
+      operation: 'preview',
+      run: (dependencies: ReturnType<typeof createService>) =>
+        dependencies.service.preview('batch-1'),
+      action: 'EMPLOYEE_IMPORT_PREVIEW_FAILED',
+      entityId: 'batch-1',
+      foundBatch: batch({ status: EmployeeWorkImportStatus.COMPLETED }),
+    },
+    {
+      operation: 'resolution',
+      run: (dependencies: ReturnType<typeof createService>) =>
+        dependencies.service.resolve('batch-1', { rows: [] }),
+      action: 'EMPLOYEE_IMPORT_RESOLUTION_FAILED',
+      entityId: 'batch-1',
+      foundBatch: batch(),
+    },
+  ])(
+    'audits a failed $operation without hiding the original error',
+    async ({ run, action, entityId, foundBatch }) => {
+      const dependencies = createService({ foundBatch });
+
+      await expect(run(dependencies)).rejects.toBeDefined();
+      expect(dependencies.audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action,
+          entityType: 'employeeWorkImportBatch',
+          entityId,
+          outcome: 'FAILED',
+          metadata: expect.objectContaining({ errorCode: expect.any(String) }),
+        }),
+      );
+    },
+  );
+
+  it('audits a failed restore attempt', async () => {
+    const dependencies = createService({
+      foundBatch: batch({ status: EmployeeWorkImportStatus.READY }),
+      commitService: { commit: jest.fn(), rebuildSnapshots: jest.fn() },
+    });
+
+    await expect(dependencies.service.restore('batch-1')).rejects.toBeDefined();
+    expect(dependencies.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'EMPLOYEE_IMPORT_RESTORE_FAILED',
+        entityId: 'batch-1',
+        outcome: 'FAILED',
+      }),
+    );
   });
 });

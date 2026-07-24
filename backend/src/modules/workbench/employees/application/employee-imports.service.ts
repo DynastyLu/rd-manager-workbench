@@ -132,6 +132,15 @@ export class EmployeeImportsService {
   }
 
   async restore(id: string) {
+    try {
+      return await this.restoreAttempt(id);
+    } catch (error) {
+      await this.recordFailure('EMPLOYEE_IMPORT_RESTORE_FAILED', id, error);
+      throw error;
+    }
+  }
+
+  private async restoreAttempt(id: string) {
     if (!this.commitService) {
       throw new Error('Employee import commit service is unavailable');
     }
@@ -269,6 +278,15 @@ export class EmployeeImportsService {
   }
 
   async upload(file: UploadedContentFile | undefined) {
+    try {
+      return await this.uploadAttempt(file);
+    } catch (error) {
+      await this.recordFailure('EMPLOYEE_IMPORT_UPLOAD_FAILED', undefined, error);
+      throw error;
+    }
+  }
+
+  private async uploadAttempt(file: UploadedContentFile | undefined) {
     if (!file?.buffer) {
       throw new AppError({
         code: ErrorCodes.FILE_UPLOAD_REQUIRED,
@@ -368,6 +386,15 @@ export class EmployeeImportsService {
   }
 
   async preview(id: string) {
+    try {
+      return await this.previewAttempt(id);
+    } catch (error) {
+      await this.recordFailure('EMPLOYEE_IMPORT_PREVIEW_FAILED', id, error);
+      throw error;
+    }
+  }
+
+  private async previewAttempt(id: string) {
     const snapshot = await this.requireBatch(id);
     this.assertDraft(snapshot.status);
     const source = await this.readStoredFile(snapshot.sourceStorageKey);
@@ -452,6 +479,15 @@ export class EmployeeImportsService {
   }
 
   async resolve(id: string, input: ResolveEmployeeImportInput) {
+    try {
+      return await this.resolveAttempt(id, input);
+    } catch (error) {
+      await this.recordFailure('EMPLOYEE_IMPORT_RESOLUTION_FAILED', id, error);
+      throw error;
+    }
+  }
+
+  private async resolveAttempt(id: string, input: ResolveEmployeeImportInput) {
     let newErrorStorageKey: string | null = null;
     let previousErrorStorageKey: string | null = null;
     try {
@@ -714,6 +750,25 @@ export class EmployeeImportsService {
       }
       return this.validatedStageRow(batchId, row);
     });
+  }
+
+  private async recordFailure(
+    action: string,
+    entityId: string | undefined,
+    error: unknown,
+  ): Promise<void> {
+    await this.audit
+      .record({
+        action,
+        entityType: 'employeeWorkImportBatch',
+        entityId,
+        outcome: 'FAILED',
+        changedFields: [],
+        metadata: {
+          errorCode: error instanceof AppError ? error.code : ErrorCodes.INTERNAL_ERROR,
+        },
+      })
+      .catch(() => undefined);
   }
 
   private assertRestorableBatch(batch: EmployeeWorkImportBatch): void {

@@ -10,11 +10,16 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { EmployeeProgressQueryService } from '../../application/employee-progress-query.service';
+import { EmployeeWorkExportService } from '../../application/employee-work-export.service';
+import { EmployeeWorkRiskService } from '../../application/employee-work-risk.service';
 import { EmployeesService } from '../../application/employees.service';
 import {
   CreateEmployeeDto,
+  ExportEmployeeWorkItemsQueryDto,
   ListEmployeeWorkItemsQueryDto,
   ListEmployeesQueryDto,
   ProgressPeriodQueryDto,
@@ -54,7 +59,11 @@ export class EmployeesController {
 
 @Controller()
 export class EmployeeProgressController {
-  constructor(private readonly progress: EmployeeProgressQueryService) {}
+  constructor(
+    private readonly progress: EmployeeProgressQueryService,
+    private readonly workExport: EmployeeWorkExportService,
+    private readonly workRisks: EmployeeWorkRiskService,
+  ) {}
 
   @Get('employee-progress')
   team(@Query() query: ProgressPeriodQueryDto) {
@@ -66,9 +75,31 @@ export class EmployeeProgressController {
     return this.progress.workItems(query);
   }
 
+  @Get('employee-work-items/export')
+  async exportWorkItems(
+    @Query() query: ExportEmployeeWorkItemsQueryDto,
+    @Res() response: Response,
+  ) {
+    const result = await this.workExport.export(query);
+    const fallbackName = result.fileName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+    response.setHeader('Content-Type', result.contentType);
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodeURIComponent(result.fileName)}`,
+    );
+    response.setHeader('Content-Length', result.content.length);
+    response.setHeader('X-Source-Batch-Ids', result.sourceBatchIds.join(','));
+    response.status(HttpStatus.OK).send(result.content);
+  }
+
   @Get('employee-work-items/:id')
   workItem(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.progress.workItem(id);
+  }
+
+  @Post('employee-work-items/:id/convert-risk')
+  convertRisk(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.workRisks.convert(id);
   }
 
   @Get('employees/:id/progress')
