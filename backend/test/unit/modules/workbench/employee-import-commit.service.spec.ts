@@ -362,10 +362,13 @@ describe('EmployeeImportCommitService', () => {
     });
     expect(dependencies.tx.employeeWorkItem.createMany).not.toHaveBeenCalled();
     expect(dependencies.tx.employeeWorkImportBatch.updateMany).toHaveBeenCalledWith({
-      where: {
+      where: expect.objectContaining({
         id: 'batch-v2',
         status: { in: [EmployeeWorkImportStatus.READY, EmployeeWorkImportStatus.IMPORTING] },
-      },
+        updatedAt: NOW,
+        previewFingerprint: 'stale-fingerprint',
+        sourceStorageKey: 'employee-imports/batch-v2/source.xlsx',
+      }),
       data: { status: EmployeeWorkImportStatus.FAILED },
     });
     expect(dependencies.audit.record).toHaveBeenCalledWith(
@@ -406,10 +409,12 @@ describe('EmployeeImportCommitService', () => {
     expect(dependencies.validator.validate).not.toHaveBeenCalled();
     expect(dependencies.tx.employeeWorkItem.createMany).not.toHaveBeenCalled();
     expect(dependencies.tx.employeeWorkImportBatch.updateMany).toHaveBeenCalledWith({
-      where: {
+      where: expect.objectContaining({
         id: 'batch-v2',
         status: { in: [EmployeeWorkImportStatus.READY, EmployeeWorkImportStatus.IMPORTING] },
-      },
+        updatedAt: NOW,
+        previewFingerprint: dependencies.target.previewFingerprint,
+      }),
       data: { status: EmployeeWorkImportStatus.FAILED },
     });
   });
@@ -425,11 +430,104 @@ describe('EmployeeImportCommitService', () => {
       data: { status: EmployeeWorkImportStatus.SUPERSEDED },
     });
     expect(dependencies.tx.employeeWorkImportBatch.updateMany).toHaveBeenCalledWith({
-      where: {
+      where: expect.objectContaining({
         id: 'batch-v2',
         status: { in: [EmployeeWorkImportStatus.READY, EmployeeWorkImportStatus.IMPORTING] },
-      },
+        updatedAt: NOW,
+        previewFingerprint: dependencies.target.previewFingerprint,
+      }),
       data: { status: EmployeeWorkImportStatus.FAILED },
     });
+  });
+
+  it('does not mark a newer READY preview FAILED after the claimed revision rolls back', async () => {
+    const rows = [stagedRow(2)];
+    const claimedBatch = batch(rows, {
+      previewFingerprint: 'commit-a-fingerprint',
+      updatedAt: new Date('2026-07-24T07:00:00.000Z'),
+    });
+    let currentBatch = { ...claimedBatch };
+    let currentRows = rows;
+    let recoveryStarted!: () => void;
+    let resumeRecovery!: () => void;
+    const recoveryIsWaiting = new Promise<void>((resolve) => {
+      recoveryStarted = resolve;
+    });
+    const recoveryBarrier = new Promise<void>((resolve) => {
+      resumeRecovery = resolve;
+    });
+    let transactionNumber = 0;
+    const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      employeeWorkImportBatch: {
+        findUnique: jest.fn().mockImplementation(async () => currentBatch),
+        updateMany: jest.fn().mockImplementation(async ({ where, data }) => {
+          if (where.status === EmployeeWorkImportStatus.READY) return { count: 1 };
+          if (where.updatedAt && where.updatedAt.getTime() !== currentBatch.updatedAt.getTime()) {
+            return { count: 0 };
+          }
+          if (
+            where.previewFingerprint !== undefined &&
+            where.previewFingerprint !== currentBatch.previewFingerprint
+          ) {
+            return { count: 0 };
+          }
+          currentBatch = { ...currentBatch, ...data };
+          return { count: 1 };
+        }),
+      },
+      employeeWorkImportRow: {
+        findMany: jest.fn().mockImplementation(async () => currentRows),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn().mockImplementation(async (work) => {
+        transactionNumber += 1;
+        if (transactionNumber === 2) {
+          recoveryStarted();
+          await recoveryBarrier;
+        }
+        return work(tx);
+      }),
+    };
+    const validator = { validate: jest.fn() };
+    const audit = { record: jest.fn().mockResolvedValue({ id: 'audit-1' }) };
+    const service = new EmployeeImportCommitService(
+      prisma as never,
+      validator as never,
+      audit as never,
+      () => NOW,
+    );
+
+    const commitA = service.commit('batch-v2');
+    await recoveryIsWaiting;
+    const previewBRows = [
+      stagedRow(2, {
+        normalizedValues: normalizedRow(2, { title: 'Preview B row' }),
+      }),
+    ];
+    currentRows = previewBRows;
+    currentBatch = {
+      ...currentBatch,
+      status: EmployeeWorkImportStatus.READY,
+      previewFingerprint: fingerprint(previewBRows),
+      updatedAt: new Date('2026-07-24T09:00:00.000Z'),
+    };
+    resumeRecovery();
+
+    await expect(commitA).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_INTEGRITY_FAILED',
+      statusCode: 422,
+    });
+    expect(currentBatch).toMatchObject({
+      status: EmployeeWorkImportStatus.READY,
+      previewFingerprint: fingerprint(previewBRows),
+      updatedAt: new Date('2026-07-24T09:00:00.000Z'),
+    });
+    expect(currentRows).toBe(previewBRows);
+    expect(audit.record).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'EMPLOYEE_IMPORT_COMMIT_FAILED' }),
+      tx,
+    );
   });
 });

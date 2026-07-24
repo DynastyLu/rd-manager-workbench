@@ -91,7 +91,11 @@ describe('Employee work imports API', () => {
     }
   });
 
-  async function workbookBuffer(label = ''): Promise<Buffer> {
+  async function workbookBuffer(
+    label = '',
+    periodStart = new Date(Date.UTC(2026, 6, 20)),
+    periodEnd = new Date(Date.UTC(2026, 6, 26)),
+  ): Promise<Buffer> {
     const template = await new EmployeeWorkbookService().template();
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(template as unknown as Parameters<typeof workbook.xlsx.load>[0], {
@@ -100,8 +104,8 @@ describe('Employee work imports API', () => {
     const instructions = workbook.getWorksheet('说明');
     const details = workbook.getWorksheet('工作明细');
     if (!instructions || !details) throw new Error('Employee workbook sheets are missing');
-    instructions.getCell('B4').value = new Date(Date.UTC(2026, 6, 20));
-    instructions.getCell('B5').value = new Date(Date.UTC(2026, 6, 26));
+    instructions.getCell('B4').value = periodStart;
+    instructions.getCell('B5').value = periodEnd;
     details.addRow([
       employeeName,
       `实现员工周报导入${label ? ` ${label}` : ''}`,
@@ -523,6 +527,77 @@ describe('Employee work imports API', () => {
           supersedesBatchId: v2Id,
         });
       });
+  });
+
+  it('serializes concurrent READY batches for one period into unique current versions', async () => {
+    const periodStart = new Date(Date.UTC(2026, 8, 7));
+    const periodEnd = new Date(Date.UTC(2026, 8, 13));
+    const firstId = await uploadPreviewAndResolve(
+      await workbookBuffer('concurrent-a', periodStart, periodEnd),
+      'concurrent-a.xlsx',
+    );
+    const secondId = await uploadPreviewAndResolve(
+      await workbookBuffer('concurrent-b', periodStart, periodEnd),
+      'concurrent-b.xlsx',
+    );
+
+    const responses = await Promise.all(
+      [firstId, secondId].map((id) =>
+        request(app.getHttpServer())
+          .post(`/api/employee-work-imports/${id}/commit`)
+          .send({})
+          .expect(201),
+      ),
+    );
+    const committed = responses
+      .map(({ body }) => body.data as { id: string; version: number; status: string })
+      .sort((left, right) => left.version - right.version);
+    expect(committed.map(({ version }) => version)).toEqual([1, 2]);
+    expect(committed.every(({ status }) => status === EmployeeWorkImportStatus.COMPLETED)).toBe(
+      true,
+    );
+    const supersededId = committed[0].id;
+    const currentId = committed[1].id;
+
+    await expect(
+      prisma.employeeWorkImportBatch.findMany({
+        where: { id: { in: [firstId, secondId] } },
+        orderBy: { version: 'asc' },
+        select: { id: true, status: true, version: true, supersedesBatchId: true },
+      }),
+    ).resolves.toEqual([
+      {
+        id: supersededId,
+        status: EmployeeWorkImportStatus.SUPERSEDED,
+        version: 1,
+        supersedesBatchId: null,
+      },
+      {
+        id: currentId,
+        status: EmployeeWorkImportStatus.COMPLETED,
+        version: 2,
+        supersedesBatchId: supersededId,
+      },
+    ]);
+    const activeWorkItems = await prisma.employeeWorkItem.findMany({
+      where: { importBatchId: { in: [firstId, secondId] }, archivedAt: null },
+      select: { importBatchId: true },
+    });
+    expect(activeWorkItems).toHaveLength(2);
+    expect(activeWorkItems.every(({ importBatchId }) => importBatchId === currentId)).toBe(true);
+    const activeLoadEntries = await prisma.resourceLoadEntry.findMany({
+      where: {
+        employeeWorkImportBatchId: { in: [firstId, secondId] },
+        archivedAt: null,
+      },
+      select: { employeeWorkImportBatchId: true },
+    });
+    expect(activeLoadEntries).toEqual([{ employeeWorkImportBatchId: currentId }]);
+    await expect(
+      prisma.employeeWorkItem.count({
+        where: { importBatchId: supersededId, archivedAt: { not: null } },
+      }),
+    ).resolves.toBe(2);
   });
 
   it('resolves 50,000 staged rows within the transaction timeout', async () => {

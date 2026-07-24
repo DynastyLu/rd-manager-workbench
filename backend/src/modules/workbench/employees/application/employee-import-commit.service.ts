@@ -33,6 +33,18 @@ const IMPORT_TRANSACTION_OPTIONS = {
   timeout: 120_000,
 } as const;
 
+type EmployeeImportCommitRevision = Pick<
+  EmployeeWorkImportBatch,
+  | 'updatedAt'
+  | 'previewFingerprint'
+  | 'sourceStorageKey'
+  | 'fileHash'
+  | 'templateVersion'
+  | 'periodType'
+  | 'periodStartAt'
+  | 'periodEndAt'
+>;
+
 @Injectable()
 export class EmployeeImportCommitService {
   private readonly now: () => Date;
@@ -49,7 +61,7 @@ export class EmployeeImportCommitService {
   }
 
   async commit(id: string) {
-    let claimed = false;
+    let claimedRevision: EmployeeImportCommitRevision | null = null;
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.lock(tx, `employee-import:${id}`);
@@ -80,7 +92,7 @@ export class EmployeeImportCommitService {
         if (claim.count !== 1) {
           throw this.stateInvalid('Employee work import batch could not be claimed');
         }
-        claimed = true;
+        claimedRevision = this.commitRevision(batch);
 
         const rows = (
           await tx.employeeWorkImportRow.findMany({
@@ -215,8 +227,8 @@ export class EmployeeImportCommitService {
         return this.publicBatch(completed);
       }, IMPORT_TRANSACTION_OPTIONS);
     } catch (error) {
-      if (claimed) {
-        await this.markFailed(id, error);
+      if (claimedRevision) {
+        await this.markFailed(id, error, claimedRevision);
       }
       throw error;
     }
@@ -376,13 +388,18 @@ export class EmployeeImportCommitService {
     }
   }
 
-  private async markFailed(id: string, error: unknown): Promise<void> {
+  private async markFailed(
+    id: string,
+    error: unknown,
+    revision: EmployeeImportCommitRevision,
+  ): Promise<void> {
     try {
       await this.prisma.$transaction(async (tx) => {
         await this.lock(tx, `employee-import:${id}`);
         let batch = await tx.employeeWorkImportBatch.findUnique({ where: { id } });
         if (
           !batch ||
+          !this.matchesRevision(batch, revision) ||
           (batch.status !== EmployeeWorkImportStatus.READY &&
             batch.status !== EmployeeWorkImportStatus.IMPORTING)
         ) {
@@ -390,11 +407,12 @@ export class EmployeeImportCommitService {
         }
         await this.lock(
           tx,
-          `employee-import-period:${batch.periodType}:${this.dateOnly(batch.periodStartAt)}`,
+          `employee-import-period:${revision.periodType}:${this.dateOnly(revision.periodStartAt)}`,
         );
         batch = await tx.employeeWorkImportBatch.findUnique({ where: { id } });
         if (
           !batch ||
+          !this.matchesRevision(batch, revision) ||
           (batch.status !== EmployeeWorkImportStatus.READY &&
             batch.status !== EmployeeWorkImportStatus.IMPORTING)
         ) {
@@ -406,6 +424,14 @@ export class EmployeeImportCommitService {
             status: {
               in: [EmployeeWorkImportStatus.READY, EmployeeWorkImportStatus.IMPORTING],
             },
+            updatedAt: revision.updatedAt,
+            previewFingerprint: revision.previewFingerprint,
+            sourceStorageKey: revision.sourceStorageKey,
+            fileHash: revision.fileHash,
+            templateVersion: revision.templateVersion,
+            periodType: revision.periodType,
+            periodStartAt: revision.periodStartAt,
+            periodEndAt: revision.periodEndAt,
           },
           data: { status: EmployeeWorkImportStatus.FAILED },
         });
@@ -456,6 +482,35 @@ export class EmployeeImportCommitService {
 
   private sortedUnique(values: string[]): string[] {
     return [...new Set(values)].sort();
+  }
+
+  private commitRevision(batch: EmployeeWorkImportBatch): EmployeeImportCommitRevision {
+    return {
+      updatedAt: batch.updatedAt,
+      previewFingerprint: batch.previewFingerprint,
+      sourceStorageKey: batch.sourceStorageKey,
+      fileHash: batch.fileHash,
+      templateVersion: batch.templateVersion,
+      periodType: batch.periodType,
+      periodStartAt: batch.periodStartAt,
+      periodEndAt: batch.periodEndAt,
+    };
+  }
+
+  private matchesRevision(
+    batch: EmployeeWorkImportBatch,
+    revision: EmployeeImportCommitRevision,
+  ): boolean {
+    return (
+      batch.updatedAt.getTime() === revision.updatedAt.getTime() &&
+      batch.previewFingerprint === revision.previewFingerprint &&
+      batch.sourceStorageKey === revision.sourceStorageKey &&
+      batch.fileHash === revision.fileHash &&
+      batch.templateVersion === revision.templateVersion &&
+      batch.periodType === revision.periodType &&
+      batch.periodStartAt.getTime() === revision.periodStartAt.getTime() &&
+      batch.periodEndAt.getTime() === revision.periodEndAt.getTime()
+    );
   }
 
   private async lock(client: Prisma.TransactionClient, key: string): Promise<void> {
