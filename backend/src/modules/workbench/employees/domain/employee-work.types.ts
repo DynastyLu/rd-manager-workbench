@@ -30,6 +30,32 @@ export interface EmployeeWorkbookParseResult {
   rows: NormalizedEmployeeWorkRow[];
 }
 
+export type EmployeeWorkbookIssueCode =
+  | 'REQUIRED_FIELD'
+  | 'INVALID_VALUE'
+  | 'TEXT_TOO_LONG'
+  | 'FORMULA_NOT_ALLOWED'
+  | 'UNSUPPORTED_CELL_VALUE'
+  | 'DATA_OUTSIDE_SCHEMA';
+
+export interface EmployeeWorkbookInspectionIssue {
+  code: EmployeeWorkbookIssueCode;
+  rowNumber: number;
+  field: string;
+  rawValue: string | number | null;
+  reason: string;
+}
+
+export interface EmployeeWorkbookSourceRow {
+  rowNumber: number;
+  rawValues: Record<string, string | number | null>;
+}
+
+export interface EmployeeWorkbookInspectionResult extends EmployeeWorkbookParseResult {
+  sourceRows: EmployeeWorkbookSourceRow[];
+  issues: EmployeeWorkbookInspectionIssue[];
+}
+
 export interface EmployeeWorkbookValidationIssue {
   reason: string;
   rowNumber?: number;

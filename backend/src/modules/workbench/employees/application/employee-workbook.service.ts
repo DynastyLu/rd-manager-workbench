@@ -1,21 +1,28 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { EmployeeWorkStatus } from '@prisma/client';
+import { EmployeeWorkStatus, Prisma } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import {
+  EmployeeWorkbookInspectionIssue,
+  EmployeeWorkbookInspectionResult,
+  EmployeeWorkbookIssueCode,
   EmployeeWorkbookMeta,
   EmployeeWorkbookParseResult,
+  EmployeeWorkbookSourceRow,
   EmployeeWorkbookValidationIssue,
   NormalizedEmployeeWorkRow,
 } from '../domain/employee-work.types';
+import { preflightEmployeeWorkbookZip } from './employee-workbook-zip-preflight';
 
 const TEMPLATE_VERSION = 1 as const;
 const PERIOD_TYPE = 'WEEK' as const;
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_DATA_ROWS = 50_000;
 const MAX_CELL_TEXT_LENGTH = 10_000;
-const TEMPLATE_VALIDATION_LAST_ROW = 5_001;
+const TEMPLATE_VALIDATION_LAST_ROW = 50_001;
+const MAX_ISSUES_IN_ERROR_DETAILS = 1_000;
+const MAX_ISSUE_RAW_VALUE_LENGTH = 256;
 
 const HEADERS = [
   '员工姓名',
@@ -44,6 +51,9 @@ const STATUS_MAP: Readonly<Record<string, EmployeeWorkStatus>> = {
   已阻塞: EmployeeWorkStatus.BLOCKED,
 };
 
+const CRITICAL_FORMULA_COLUMNS = new Set<number>([1, 5, 6, 9, 10, 11, 12]);
+const VOLATILE_FORMULA = /\b(?:CELL|INFO|NOW|RAND|RANDBETWEEN|OFFSET|INDIRECT|TODAY)\s*\(/i;
+
 interface DataValidationStore {
   add(address: string, validation: ExcelJS.DataValidation): void;
 }
@@ -56,6 +66,13 @@ interface ParsedSourceRow {
   rowNumber: number;
   rawValues: Record<EmployeeWorkHeader, NormalizedCellValue>;
   cells: ExcelJS.Cell[];
+}
+
+interface InspectedEmployeeRow {
+  normalizedRow?: NormalizedEmployeeWorkRow;
+  sourceRow: EmployeeWorkbookSourceRow;
+  issues: EmployeeWorkbookInspectionIssue[];
+  isBlank: boolean;
 }
 
 @Injectable()
@@ -98,34 +115,53 @@ export class EmployeeWorkbookService {
   }
 
   async parse(buffer: Buffer): Promise<EmployeeWorkbookParseResult> {
+    const inspected = await this.inspect(buffer);
+    if (inspected.issues.length > 0) {
+      const issues = inspected.issues.slice(0, MAX_ISSUES_IN_ERROR_DETAILS);
+      const firstIssue = inspected.issues[0];
+      throw new AppError({
+        code: ErrorCodes.EMPLOYEE_IMPORT_TEMPLATE_INVALID,
+        message: `row ${firstIssue.rowNumber} ${firstIssue.field}: ${firstIssue.reason} (${inspected.issues.length} total issue(s))`,
+        statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+        details: {
+          issues,
+          total: inspected.issues.length,
+          truncated: issues.length < inspected.issues.length,
+        },
+      });
+    }
+    return { meta: inspected.meta, rows: inspected.rows };
+  }
+
+  async inspect(buffer: Buffer): Promise<EmployeeWorkbookInspectionResult> {
     this.assertFile(buffer);
+    await preflightEmployeeWorkbookZip(buffer);
 
     const workbook = new ExcelJS.Workbook();
     try {
       await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0], {
-        ignoreNodes: ['picture'],
+        ignoreNodes: ['picture', 'dataValidations'],
       });
     } catch (cause) {
       throw this.invalid('File is not a parseable XLSX workbook', undefined, cause);
     }
 
-    const instructions = workbook.getWorksheet('说明');
-    const details = workbook.getWorksheet('工作明细');
-    if (!instructions || !details) {
-      throw this.invalid('Workbook must contain both 说明 and 工作明细 sheets');
+    if (
+      workbook.worksheets.length !== 2 ||
+      workbook.worksheets[0]?.name !== '说明' ||
+      workbook.worksheets[1]?.name !== '工作明细'
+    ) {
+      throw this.invalid('Workbook must contain exactly two sheets in order: 说明, 工作明细');
     }
+    const instructions = workbook.worksheets[0];
+    const details = workbook.worksheets[1];
 
+    this.assertInstructionsSheet(instructions);
     const meta = this.parseMeta(instructions, workbook.properties.date1904 === true);
     this.assertHeaders(details);
-    this.assertDataRowLimit(details);
+    const { rows, sourceRows, issues } = this.inspectDataRows(details);
 
-    const rows: NormalizedEmployeeWorkRow[] = [];
-    for (let rowNumber = 2; rowNumber <= details.rowCount; rowNumber += 1) {
-      if (this.isBlankRow(details.getRow(rowNumber))) continue;
-      rows.push(this.parseRow(details.getRow(rowNumber)));
-    }
-
-    return { meta, rows };
+    return { meta, rows, sourceRows, issues };
   }
 
   private configureInstructionsSheet(sheet: ExcelJS.Worksheet): void {
@@ -236,9 +272,10 @@ export class EmployeeWorkbookService {
       error: '请选择未开始、进行中、已完成、有风险或已阻塞。',
     });
     validations.add(`E2:E${TEMPLATE_VALIDATION_LAST_ROW}`, {
-      type: 'decimal',
-      operator: 'between',
-      formulae: [0, 100],
+      type: 'custom',
+      formulae: [
+        'OR(AND(ISNUMBER(E2),E2>=0,E2<=100,E2=INT(E2)),AND(ISNUMBER(E2),E2>=0,E2<=1,LEFT(CELL("format",E2),1)="P",E2*100=INT(E2*100)))',
+      ],
       allowBlank: true,
       showErrorMessage: true,
       errorStyle: 'stop',
@@ -247,7 +284,7 @@ export class EmployeeWorkbookService {
     });
     validations.add(`I2:I${TEMPLATE_VALIDATION_LAST_ROW}`, {
       type: 'custom',
-      formulae: ['OR(I2="",AND(ISNUMBER(I2),I2>=0,ROUND(I2,2)=I2))'],
+      formulae: ['OR(I2="",AND(ISNUMBER(I2),I2>=0,I2<=9999.99,ROUND(I2,2)=I2))'],
       allowBlank: true,
       showErrorMessage: true,
       errorStyle: 'stop',
@@ -256,7 +293,7 @@ export class EmployeeWorkbookService {
     });
     validations.add(`J2:J${TEMPLATE_VALIDATION_LAST_ROW}`, {
       type: 'custom',
-      formulae: ['OR(J2="",AND(ISNUMBER(J2),J2>=0,ROUND(J2,2)=J2))'],
+      formulae: ['OR(J2="",AND(ISNUMBER(J2),J2>=0,J2<=9999.99,ROUND(J2,2)=J2))'],
       allowBlank: true,
       showErrorMessage: true,
       errorStyle: 'stop',
@@ -303,6 +340,27 @@ export class EmployeeWorkbookService {
     };
   }
 
+  private assertInstructionsSheet(sheet: ExcelJS.Worksheet): void {
+    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      row.eachCell({ includeEmpty: false }, (cell, columnNumber) => {
+        const field = cell.address;
+        this.assertRawCellTextLength(cell.value, { rowNumber, field });
+        if (rowNumber > 18 || columnNumber > 2) {
+          throw this.invalid(`说明 contains data outside A1:B18 at ${cell.address}`, {
+            rowNumber,
+            field,
+          });
+        }
+        if (this.isFormulaValue(cell.value)) {
+          throw this.invalid('formulas are not allowed in the 说明 sheet', {
+            rowNumber,
+            field,
+          });
+        }
+      });
+    });
+  }
+
   private parseDateCell(cell: ExcelJS.Cell, date1904: boolean, field: string): string {
     const value = this.resolveCellValue(cell.value, { field });
     if (value instanceof Date) {
@@ -316,7 +374,7 @@ export class EmployeeWorkbookService {
           field,
         });
       }
-      return this.formatUtcDate(value);
+      return this.assertPeriodDateRange(this.formatUtcDate(value), field);
     }
     if (typeof value === 'number') {
       if (!Number.isInteger(value)) {
@@ -325,7 +383,10 @@ export class EmployeeWorkbookService {
         });
       }
       const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 30);
-      return this.formatUtcDate(new Date(epoch + value * 86_400_000));
+      return this.assertPeriodDateRange(
+        this.formatUtcDate(new Date(epoch + value * 86_400_000)),
+        field,
+      );
     }
     if (typeof value === 'string') {
       const normalized = value.trim();
@@ -337,9 +398,17 @@ export class EmployeeWorkbookService {
       if (this.formatUtcDate(parsed) !== normalized) {
         throw this.invalid(`${field} is not a valid calendar date`, { field });
       }
-      return normalized;
+      return this.assertPeriodDateRange(normalized, field);
     }
     throw this.invalid(`${field} is required and must be a date`, { field });
+  }
+
+  private assertPeriodDateRange(value: string, field: string): string {
+    const year = Number(value.slice(0, 4));
+    if (year < 2000 || year > 2100) {
+      throw this.invalid(`${field} year must be between 2000 and 2100`, { field });
+    }
+    return value;
   }
 
   private assertHeaders(sheet: ExcelJS.Worksheet): void {
@@ -368,81 +437,194 @@ export class EmployeeWorkbookService {
     }
   }
 
-  private assertDataRowLimit(sheet: ExcelJS.Worksheet): void {
+  private inspectDataRows(sheet: ExcelJS.Worksheet): {
+    rows: NormalizedEmployeeWorkRow[];
+    sourceRows: EmployeeWorkbookSourceRow[];
+    issues: EmployeeWorkbookInspectionIssue[];
+  } {
     let nonEmptyRows = 0;
-    for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
-      if (this.isBlankRow(sheet.getRow(rowNumber))) continue;
+    const rows: NormalizedEmployeeWorkRow[] = [];
+    const sourceRows: EmployeeWorkbookSourceRow[] = [];
+    const issues: EmployeeWorkbookInspectionIssue[] = [];
+    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const inspected = this.inspectRow(row);
+      if (inspected.isBlank) return;
       nonEmptyRows += 1;
       if (nonEmptyRows > MAX_DATA_ROWS) {
         throw this.invalid('Workbook contains more than 50,000 non-empty data rows', {
           rowNumber,
         });
       }
-    }
+      sourceRows.push(inspected.sourceRow);
+      issues.push(...inspected.issues);
+      if (inspected.normalizedRow) rows.push(inspected.normalizedRow);
+    });
+    return { rows, sourceRows, issues };
   }
 
-  private isBlankRow(row: ExcelJS.Row): boolean {
-    const lastColumn = Math.max(HEADERS.length, row.cellCount);
-    for (let column = 1; column <= lastColumn; column += 1) {
-      const value = row.getCell(column).value;
-      if (value === null || value === undefined) continue;
-      if (typeof value === 'string' && value.trim().length === 0) continue;
-      if (
-        typeof value === 'object' &&
-        !Array.isArray(value) &&
-        'richText' in value &&
-        value.richText.every(({ text }) => text.trim().length === 0)
-      ) {
-        continue;
-      }
-      return false;
-    }
-    return true;
-  }
-
-  private parseRow(row: ExcelJS.Row): NormalizedEmployeeWorkRow {
+  private inspectRow(row: ExcelJS.Row): InspectedEmployeeRow {
     const rawValues = {} as Record<EmployeeWorkHeader, NormalizedCellValue>;
+    const sourceRawValues = {} as Record<EmployeeWorkHeader, NormalizedCellValue>;
     const cells: ExcelJS.Cell[] = [];
+    const issues: EmployeeWorkbookInspectionIssue[] = [];
+    const invalidFields = new Set<EmployeeWorkHeader>();
+
     for (let index = 0; index < HEADERS.length; index += 1) {
       const header = HEADERS[index];
       const cell = row.getCell(index + 1);
       cells.push(cell);
-      rawValues[header] = this.normalizeCellValue(cell, {
-        rowNumber: row.number,
-        field: header,
-      });
-    }
-    for (let column = HEADERS.length + 1; column <= row.cellCount; column += 1) {
-      const extra = this.normalizeCellValue(row.getCell(column), {
-        rowNumber: row.number,
-        field: `column ${column}`,
-      });
-      if (extra !== null) {
-        throw this.invalid('data exists outside the 13 defined columns', {
+      sourceRawValues[header] = this.safeRawValue(cell.value, MAX_CELL_TEXT_LENGTH);
+      try {
+        this.assertFormulaPolicy(cell.value, index + 1, row.number, header);
+        rawValues[header] = this.normalizeCellValue(cell, {
           rowNumber: row.number,
-          field: `column ${column}`,
+          field: header,
         });
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        rawValues[header] = null;
+        invalidFields.add(header);
+        issues.push(
+          this.inspectionIssueFromError(
+            error,
+            row.number,
+            header,
+            cell.value,
+            this.cellIssueCode(error),
+          ),
+        );
       }
     }
 
+    row.eachCell({ includeEmpty: false }, (cell, column) => {
+      if (column <= HEADERS.length) return;
+      const field = `column ${column}`;
+      const safeValue = this.safeRawValue(cell.value, MAX_CELL_TEXT_LENGTH);
+      try {
+        this.assertRawCellTextLength(cell.value, { rowNumber: row.number, field });
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        issues.push({
+          ...this.inspectionIssueFromError(error, row.number, field, cell.value, 'TEXT_TOO_LONG'),
+        });
+      }
+      if (safeValue !== null) {
+        issues.push({
+          code: 'DATA_OUTSIDE_SCHEMA',
+          rowNumber: row.number,
+          field,
+          rawValue: this.safeRawValue(cell.value, MAX_ISSUE_RAW_VALUE_LENGTH),
+          reason: 'data exists outside the 13 defined columns',
+        });
+      }
+    });
+
     const source: ParsedSourceRow = { rowNumber: row.number, rawValues, cells };
-    return {
+    const sourceRow: EmployeeWorkbookSourceRow = {
       rowNumber: row.number,
-      employeeName: this.requiredText(source, '员工姓名'),
-      title: this.requiredText(source, '工作内容'),
-      planText: this.optionalText(source, '本期计划'),
-      summaryText: this.optionalText(source, '本期完成情况'),
-      completionRate: this.parseCompletionRate(source),
-      status: this.parseStatus(source),
-      nextPlanText: this.optionalText(source, '下期计划'),
-      riskText: this.optionalText(source, '风险与阻塞'),
-      plannedHours: this.parseHours(source, '计划工时'),
-      actualHours: this.parseHours(source, '实际工时'),
-      projectCode: this.optionalText(source, '项目编号'),
-      taskCode: this.optionalText(source, '任务编号'),
-      note: this.optionalText(source, '备注'),
-      rawValues,
+      rawValues: sourceRawValues,
     };
+
+    const hasSourceValue = Object.values(sourceRawValues).some((value) => value !== null);
+    if (!hasSourceValue && issues.length === 0) {
+      return { sourceRow, issues, isBlank: true };
+    }
+
+    const capture = <T>(
+      field: EmployeeWorkHeader,
+      code: EmployeeWorkbookIssueCode,
+      work: () => T,
+    ): T | undefined => {
+      if (invalidFields.has(field)) return undefined;
+      try {
+        return work();
+      } catch (error) {
+        if (!(error instanceof AppError)) throw error;
+        issues.push(
+          this.inspectionIssueFromError(
+            error,
+            row.number,
+            field,
+            cells[HEADERS.indexOf(field)].value,
+            this.isRequiredError(error) ? 'REQUIRED_FIELD' : code,
+          ),
+        );
+        invalidFields.add(field);
+        return undefined;
+      }
+    };
+
+    const employeeName = capture('员工姓名', 'REQUIRED_FIELD', () =>
+      this.requiredText(source, '员工姓名'),
+    );
+    const title = capture('工作内容', 'REQUIRED_FIELD', () =>
+      this.requiredText(source, '工作内容'),
+    );
+    const completionRate = capture('完成度', 'INVALID_VALUE', () =>
+      this.parseCompletionRate(source),
+    );
+    const status = capture('工作状态', 'INVALID_VALUE', () => this.parseStatus(source));
+    const plannedHours = capture('计划工时', 'INVALID_VALUE', () =>
+      this.parseHours(source, '计划工时'),
+    );
+    const actualHours = capture('实际工时', 'INVALID_VALUE', () =>
+      this.parseHours(source, '实际工时'),
+    );
+
+    if (
+      issues.length > 0 ||
+      employeeName === undefined ||
+      title === undefined ||
+      status === undefined
+    ) {
+      return { sourceRow, issues, isBlank: false };
+    }
+
+    return {
+      sourceRow,
+      issues,
+      isBlank: false,
+      normalizedRow: {
+        rowNumber: row.number,
+        employeeName,
+        title,
+        planText: this.optionalText(source, '本期计划'),
+        summaryText: this.optionalText(source, '本期完成情况'),
+        completionRate: completionRate ?? null,
+        status,
+        nextPlanText: this.optionalText(source, '下期计划'),
+        riskText: this.optionalText(source, '风险与阻塞'),
+        plannedHours: plannedHours ?? null,
+        actualHours: actualHours ?? null,
+        projectCode: this.optionalText(source, '项目编号'),
+        taskCode: this.optionalText(source, '任务编号'),
+        note: this.optionalText(source, '备注'),
+        rawValues,
+      },
+    };
+  }
+
+  private assertFormulaPolicy(
+    value: ExcelJS.CellValue,
+    columnNumber: number,
+    rowNumber: number,
+    field: string,
+  ): void {
+    if (!this.isFormulaValue(value)) return;
+    const formula =
+      ('formula' in value ? value.formula : (value.formula ?? value.sharedFormula)) ?? '';
+    if (
+      CRITICAL_FORMULA_COLUMNS.has(columnNumber) ||
+      'sharedFormula' in value ||
+      formula.includes('[') ||
+      VOLATILE_FORMULA.test(formula)
+    ) {
+      throw this.invalid('formula is not allowed in this field', {
+        rowNumber,
+        field,
+      });
+    }
   }
 
   private requiredText(source: ParsedSourceRow, field: EmployeeWorkHeader): string {
@@ -519,34 +701,28 @@ export class EmployeeWorkbookService {
     const value = source.rawValues[field];
     if (value === null) return null;
 
-    let parsed: number;
-    if (typeof value === 'number') {
-      parsed = value;
-    } else if (/^\d+(?:\.\d{1,2})?$/.test(value)) {
-      parsed = Number(value);
-    } else {
+    const decimalText = typeof value === 'number' ? value.toString() : value;
+    if (!/^\d+(?:\.\d{1,2})?$/.test(decimalText)) {
       throw this.invalid('must be non-negative with at most two decimal places', {
         rowNumber: source.rowNumber,
         field,
       });
     }
-    if (
-      !Number.isFinite(parsed) ||
-      parsed < 0 ||
-      Math.abs(parsed * 100 - Math.round(parsed * 100)) > 1e-8
-    ) {
-      throw this.invalid('must be non-negative with at most two decimal places', {
+    const decimal = new Prisma.Decimal(decimalText);
+    if (decimal.decimalPlaces() > 2 || decimal.greaterThan(new Prisma.Decimal('9999.99'))) {
+      throw this.invalid('must be between 0 and 9999.99 with at most two decimal places', {
         rowNumber: source.rowNumber,
         field,
       });
     }
-    return parsed;
+    return decimal.toNumber();
   }
 
   private normalizeCellValue(
     cell: ExcelJS.Cell,
     issue: Omit<EmployeeWorkbookValidationIssue, 'reason'>,
   ): NormalizedCellValue {
+    this.assertRawCellTextLength(cell.value, issue);
     const value = this.resolveCellValue(cell.value, issue);
     if (value === null || value === undefined) return null;
     if (typeof value === 'number') {
@@ -574,6 +750,108 @@ export class EmployeeWorkbookService {
       return this.formatUtcDate(value);
     }
     throw this.invalid('contains an unsupported Excel value', issue);
+  }
+
+  private assertRawCellTextLength(
+    value: ExcelJS.CellValue,
+    issue: Omit<EmployeeWorkbookValidationIssue, 'reason'>,
+  ): void {
+    let textLength = 0;
+    if (typeof value === 'string') {
+      textLength = value.length;
+    } else if (value && typeof value === 'object') {
+      if ('richText' in value) {
+        textLength = value.richText.reduce((total, { text }) => total + text.length, 0);
+      } else if ('hyperlink' in value) {
+        textLength = value.text.length;
+      } else if (this.isFormulaValue(value) && typeof value.result === 'string') {
+        textLength = value.result.length;
+      }
+    }
+    if (textLength > MAX_CELL_TEXT_LENGTH) {
+      throw this.invalid('raw text exceeds 10,000 characters', issue);
+    }
+  }
+
+  private safeRawValue(value: ExcelJS.CellValue, maxLength: number): NormalizedCellValue {
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
+    if (typeof value === 'string') return this.safeTextValue(value, maxLength);
+    if (typeof value === 'boolean') return String(value);
+    if (value instanceof Date) {
+      return this.safeTextValue(value.toISOString(), maxLength);
+    }
+    if ('richText' in value) {
+      return this.safeTextValue(value.richText.map(({ text }) => text).join(''), maxLength);
+    }
+    if ('hyperlink' in value) {
+      return this.safeTextValue(value.text, maxLength);
+    }
+    if (this.isFormulaValue(value)) {
+      const formula =
+        ('formula' in value ? value.formula : (value.formula ?? value.sharedFormula)) ?? '';
+      return this.safeTextValue(`=${formula}`, maxLength);
+    }
+    if ('error' in value) {
+      return this.safeTextValue(`[Excel error ${value.error}]`, maxLength);
+    }
+    return this.safeTextValue('[unsupported Excel value]', maxLength);
+  }
+
+  private safeTextValue(value: string, maxLength: number): string | null {
+    const normalized = value.slice(0, maxLength).trim();
+    if (normalized.length === 0) return null;
+    return /^[=+\-@]/.test(normalized)
+      ? `'${normalized.slice(0, Math.max(maxLength - 1, 0))}`
+      : normalized;
+  }
+
+  private inspectionIssueFromError(
+    error: AppError,
+    rowNumber: number,
+    field: string,
+    rawValue: ExcelJS.CellValue,
+    code: EmployeeWorkbookIssueCode,
+  ): EmployeeWorkbookInspectionIssue {
+    return {
+      code,
+      rowNumber,
+      field,
+      rawValue: this.safeRawValue(rawValue, MAX_ISSUE_RAW_VALUE_LENGTH),
+      reason: this.appErrorReason(error),
+    };
+  }
+
+  private cellIssueCode(error: AppError): EmployeeWorkbookIssueCode {
+    const reason = this.appErrorReason(error);
+    if (reason.includes('10,000')) return 'TEXT_TOO_LONG';
+    if (reason.includes('formula')) return 'FORMULA_NOT_ALLOWED';
+    return 'UNSUPPORTED_CELL_VALUE';
+  }
+
+  private isRequiredError(error: AppError): boolean {
+    return this.appErrorReason(error).includes('required field');
+  }
+
+  private appErrorReason(error: AppError): string {
+    const details = error.details;
+    if (
+      details &&
+      typeof details === 'object' &&
+      'reason' in details &&
+      typeof details.reason === 'string'
+    ) {
+      return details.reason;
+    }
+    return error.message;
+  }
+
+  private isFormulaValue(
+    value: ExcelJS.CellValue,
+  ): value is ExcelJS.CellFormulaValue | ExcelJS.CellSharedFormulaValue {
+    return Boolean(
+      value && typeof value === 'object' && ('formula' in value || 'sharedFormula' in value),
+    );
   }
 
   private resolveCellValue(
