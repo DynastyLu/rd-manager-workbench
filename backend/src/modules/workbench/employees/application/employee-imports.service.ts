@@ -177,13 +177,11 @@ export class EmployeeImportsService {
     const periodStartAt = this.utcDate(inspected.meta.periodStart);
     const periodEndAt = this.utcDate(inspected.meta.periodEnd);
     const now = this.now();
-    let writtenSourceKey: string | null = null;
+    const uploadLockKey = `employee-import-upload:${fileHash}:${inspected.meta.periodType}:${inspected.meta.periodStart}:${inspected.meta.periodEnd}`;
+    let uploadAttempt: { id: string; sourceStorageKey: string } | null = null;
     try {
       const result = await this.prisma.$transaction(async (tx) => {
-        await this.lock(
-          tx,
-          `employee-import-upload:${fileHash}:${inspected.meta.periodType}:${inspected.meta.periodStart}:${inspected.meta.periodEnd}`,
-        );
+        await this.lock(tx, uploadLockKey);
         const existing = await tx.employeeWorkImportBatch.findFirst({
           where: {
             fileHash,
@@ -200,12 +198,12 @@ export class EmployeeImportsService {
 
         const id = randomUUID();
         const sourceStorageKey = `employee-imports/${id}/source.xlsx`;
+        uploadAttempt = { id, sourceStorageKey };
         await this.storage.write({
           key: sourceStorageKey,
           content: file.buffer,
           mimeType: XLSX_MIME_TYPE,
         });
-        writtenSourceKey = sourceStorageKey;
         const created = await tx.employeeWorkImportBatch.create({
           data: {
             id,
@@ -242,8 +240,8 @@ export class EmployeeImportsService {
       }, IMPORT_TRANSACTION_OPTIONS);
       return this.publicBatch(result);
     } catch (error) {
-      if (writtenSourceKey) {
-        await this.storage.delete(writtenSourceKey).catch(() => undefined);
+      if (uploadAttempt) {
+        await this.cleanupUnreferencedUpload(uploadLockKey, uploadAttempt);
       }
       throw error;
     }
@@ -286,7 +284,7 @@ export class EmployeeImportsService {
         await this.lock(tx, `employee-import:${id}`);
         const batch = await this.requireBatchFrom(tx, id);
         this.assertDraft(batch.status);
-        this.assertSourceIdentity(snapshot, batch);
+        this.assertSnapshotCurrent(snapshot, batch);
         previousErrorStorageKey = batch.errorStorageKey;
 
         await tx.employeeWorkImportRow.deleteMany({ where: { batchId: id } });
@@ -859,10 +857,34 @@ export class EmployeeImportsService {
         return current?.errorStorageKey !== attemptKey;
       }, IMPORT_TRANSACTION_OPTIONS);
       if (canDelete) {
-        await this.storage.delete(attemptKey).catch(() => undefined);
+        await this.deleteBestEffort(attemptKey, `attempt artifact ${attemptKey}`);
       }
     } catch {
       // A failed ownership check must leave a possible committed artifact intact.
+    }
+  }
+
+  private async cleanupUnreferencedUpload(
+    lockKey: string,
+    attempt: { id: string; sourceStorageKey: string },
+  ): Promise<void> {
+    try {
+      const canDelete = await this.prisma.$transaction(async (tx) => {
+        await this.lock(tx, lockKey);
+        const current = await tx.employeeWorkImportBatch.findUnique({
+          where: { id: attempt.id },
+          select: { sourceStorageKey: true },
+        });
+        return current?.sourceStorageKey !== attempt.sourceStorageKey;
+      }, IMPORT_TRANSACTION_OPTIONS);
+      if (canDelete) {
+        await this.deleteBestEffort(
+          attempt.sourceStorageKey,
+          `uncommitted upload source ${attempt.sourceStorageKey}`,
+        );
+      }
+    } catch {
+      // A failed ownership check must leave a possible committed source intact.
     }
   }
 
@@ -936,6 +958,24 @@ export class EmployeeImportsService {
       current.periodEndAt.getTime() !== snapshot.periodEndAt.getTime()
     ) {
       throw this.integrityFailed('Employee import source changed during preview');
+    }
+  }
+
+  private assertSnapshotCurrent(
+    snapshot: EmployeeWorkImportBatch,
+    current: EmployeeWorkImportBatch,
+  ): void {
+    this.assertSourceIdentity(snapshot, current);
+    if (
+      current.status !== snapshot.status ||
+      current.updatedAt.getTime() !== snapshot.updatedAt.getTime() ||
+      current.previewFingerprint !== snapshot.previewFingerprint
+    ) {
+      throw new AppError({
+        code: ErrorCodes.EMPLOYEE_IMPORT_STATE_STALE,
+        message: 'Employee import changed while preview was being prepared',
+        statusCode: HttpStatus.CONFLICT,
+      });
     }
   }
 

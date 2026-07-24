@@ -277,6 +277,40 @@ describe('EmployeeImportsService', () => {
     expect(dependencies.storage.delete).toHaveBeenCalledWith(created.sourceStorageKey);
   });
 
+  it('keeps an uploaded source when an ambiguous commit already references it', async () => {
+    const dependencies = createService({});
+    let transactionCall = 0;
+    dependencies.prisma.$transaction.mockImplementation(async (work) => {
+      transactionCall += 1;
+      if (transactionCall === 1) {
+        await work(dependencies.tx);
+        const created = dependencies.tx.employeeWorkImportBatch.create.mock.calls[0][0].data;
+        dependencies.tx.employeeWorkImportBatch.findUnique.mockResolvedValue(
+          batch({
+            id: created.id,
+            sourceStorageKey: created.sourceStorageKey,
+          }),
+        );
+        throw new Error('upload commit result ambiguous');
+      }
+      return work(dependencies.tx);
+    });
+
+    await expect(
+      dependencies.service.upload({
+        originalname: 'weekly.xlsx',
+        mimetype: 'application/octet-stream',
+        size: SOURCE.length,
+        buffer: SOURCE,
+      }),
+    ).rejects.toThrow('upload commit result ambiguous');
+
+    const sourceKey =
+      dependencies.tx.employeeWorkImportBatch.create.mock.calls[0][0].data.sourceStorageKey;
+    expect(dependencies.prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(dependencies.storage.delete).not.toHaveBeenCalledWith(sourceKey);
+  });
+
   it('acquires the upload advisory lock before the in-transaction duplicate check', async () => {
     const dependencies = createService({});
 
@@ -428,6 +462,64 @@ describe('EmployeeImportsService', () => {
     expect(dependencies.storage.write.mock.invocationCallOrder[0]).toBeLessThan(lockOrder);
   });
 
+  it.each([
+    ['status', { status: EmployeeWorkImportStatus.RESOLVING }],
+    ['updatedAt', { updatedAt: new Date(NOW.getTime() + 1) }],
+    ['preview fingerprint', { previewFingerprint: 'new-preview-fingerprint' }],
+  ])(
+    'rejects a slow preview when the snapshot %s changed before it acquired the lock',
+    async (_field, changed) => {
+      const snapshot = batch({
+        status: EmployeeWorkImportStatus.PREVIEWED,
+        previewFingerprint: null,
+      });
+      const inspectionBarrier = deferred<EmployeeWorkbookInspectionResult>();
+      const dependencies = createService({ foundBatch: snapshot });
+      dependencies.workbook.inspect.mockReturnValue(inspectionBarrier.promise);
+      let current = snapshot;
+      dependencies.tx.employeeWorkImportBatch.findUnique.mockImplementation(async () => current);
+
+      const slowPreview = dependencies.service.preview('batch-1');
+      await new Promise<void>((resolve) => {
+        const poll = () =>
+          dependencies.workbook.inspect.mock.calls.length > 0 ? resolve() : setImmediate(poll);
+        poll();
+      });
+      current = batch({
+        ...snapshot,
+        ...changed,
+        errorStorageKey: 'employee-imports/batch-1/errors/peer.xlsx',
+      });
+      inspectionBarrier.resolve({
+        ...inspection(),
+        rows: [],
+        sourceRows: [{ rowNumber: 2, rawValues: { 员工姓名: null } }],
+        issues: [
+          {
+            code: 'REQUIRED_FIELD',
+            rowNumber: 2,
+            field: '员工姓名',
+            rawValue: null,
+            reason: 'required',
+          },
+        ],
+      });
+
+      await expect(slowPreview).rejects.toMatchObject({
+        code: 'EMPLOYEE_IMPORT_STATE_STALE',
+        statusCode: 409,
+      });
+      const attemptKey = dependencies.storage.write.mock.calls[0][0].key as string;
+      expect(dependencies.tx.employeeWorkImportRow.deleteMany).not.toHaveBeenCalled();
+      expect(dependencies.tx.employeeWorkImportRow.createMany).not.toHaveBeenCalled();
+      expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
+      expect(dependencies.storage.delete).toHaveBeenCalledWith(attemptKey);
+      expect(dependencies.storage.delete).not.toHaveBeenCalledWith(
+        'employee-imports/batch-1/errors/peer.xlsx',
+      );
+    },
+  );
+
   it('rejects a source hash mismatch before parsing or writing staged state', async () => {
     const dependencies = createService({
       foundBatch: batch({ fileHash: createHash('sha256').update('original').digest('hex') }),
@@ -495,6 +587,38 @@ describe('EmployeeImportsService', () => {
     expect(newKey).not.toBe(oldKey);
     expect(dependencies.storage.delete).toHaveBeenCalledWith(newKey);
     expect(dependencies.storage.delete).not.toHaveBeenCalledWith(oldKey);
+  });
+
+  it('warns when guarded attempt artifact cleanup cannot delete storage', async () => {
+    const dependencies = createService({
+      auditFailure: new Error('audit failed'),
+      inspection: {
+        ...inspection(),
+        rows: [],
+        sourceRows: [{ rowNumber: 2, rawValues: { 员工姓名: null } }],
+        issues: [
+          {
+            code: 'REQUIRED_FIELD',
+            rowNumber: 2,
+            field: '员工姓名',
+            rawValue: null,
+            reason: 'required',
+          },
+        ],
+      },
+      validation: [],
+    });
+    dependencies.storage.delete.mockRejectedValueOnce(new Error('storage unavailable'));
+    const warning = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    try {
+      await expect(dependencies.service.preview('batch-1')).rejects.toThrow('audit failed');
+      const attemptKey = dependencies.storage.write.mock.calls[0][0].key as string;
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining(`attempt artifact ${attemptKey}`),
+      );
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   it('uses unique attempt keys so a rolled-back preview cannot delete a successful peer artifact', async () => {
@@ -912,6 +1036,60 @@ describe('EmployeeImportsService', () => {
     expect(dependencies.tx.employeeWorkImportRow.update).not.toHaveBeenCalled();
     expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(2);
   });
+
+  it('updates exactly 50,000 validated rows with 50 bulk statements of 1,000 rows', async () => {
+    const rowCount = 50_000;
+    const stagedRows = Array.from({ length: rowCount }, (_, index) => {
+      const rowNumber = index + 2;
+      return {
+        id: `row-${rowNumber}`,
+        batchId: 'batch-1',
+        rowNumber,
+        rawValues: normalizedRow({ rowNumber }).rawValues,
+        normalizedValues: normalizedRow({ rowNumber }),
+        status: EmployeeImportRowStatus.UNRESOLVED,
+        errors: [],
+        resolvedEmployeeId: 'employee-1',
+        resolvedProjectId: null,
+        resolvedTaskId: null,
+        keepUnlinked: false,
+      };
+    });
+    const dependencies = createService({
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: stagedRows,
+        totalRows: rowCount,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+    });
+    dependencies.validator.validate.mockImplementation(async (rows) =>
+      rows.map((row) => ({
+        row,
+        status: EmployeeImportRowStatus.VALID,
+        errors: [],
+        resolvedEmployeeId: 'employee-1',
+        resolvedProjectId: null,
+        resolvedTaskId: null,
+        keepUnlinked: true,
+      })),
+    );
+    dependencies.tx.$executeRaw.mockResolvedValueOnce(1).mockResolvedValue(1_000);
+
+    await dependencies.service.resolve('batch-1', {
+      rows: stagedRows.map(({ rowNumber }) => ({ rowNumber, keepUnlinked: true })),
+    });
+
+    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(51);
+    expect(dependencies.tx.employeeWorkImportBatch.update).toHaveBeenCalledWith({
+      where: { id: 'batch-1' },
+      data: expect.objectContaining({
+        status: EmployeeWorkImportStatus.READY,
+        validRows: rowCount,
+        unresolvedRows: 0,
+      }),
+    });
+  }, 30_000);
 
   it('rolls back with a typed integrity error when a bulk update partially matches', async () => {
     const staged = {
