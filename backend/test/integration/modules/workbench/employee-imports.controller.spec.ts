@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -165,14 +165,53 @@ describe('Employee work imports API', () => {
     ]);
     const batchId = uploaded.body.data.id as string;
     batchIds.push(batchId);
+    const winnerName = uploaded.body.data.originalName as string;
     expect(concurrentUpload.body.data.id).toBe(batchId);
+    expect(concurrentUpload.body.data.originalName).toBe(winnerName);
+    expect(['weekly.xlsx', 'concurrent.xlsx']).toContain(winnerName);
     expect(uploaded.body.data).toMatchObject({
       id: batchId,
       status: EmployeeWorkImportStatus.UPLOADED,
-      originalName: 'weekly.xlsx',
+      originalName: winnerName,
       hasErrors: false,
     });
     expect(uploaded.body.data).not.toHaveProperty('sourceStorageKey');
+    const sourceHash = createHash('sha256').update(source).digest('hex');
+    const persistedWinners = await prisma.employeeWorkImportBatch.findMany({
+      where: {
+        fileHash: sourceHash,
+        periodType: 'WEEK',
+        periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+        periodEndAt: new Date('2026-07-26T00:00:00.000Z'),
+        archivedAt: null,
+      },
+      select: { id: true, originalName: true, sourceStorageKey: true },
+    });
+    expect(persistedWinners).toEqual([
+      {
+        id: batchId,
+        originalName: winnerName,
+        sourceStorageKey: `employee-imports/${batchId}/source.xlsx`,
+      },
+    ]);
+    const storage = app.get(StoragePort);
+    const sourceEntries = (await storage.walk('employee-imports')).filter(
+      ({ key, kind }) => kind === 'FILE' && key.endsWith('/source.xlsx'),
+    );
+    const matchingSourceHashes = await Promise.all(
+      sourceEntries.map(async ({ key }) => ({
+        key,
+        hash: createHash('sha256')
+          .update((await storage.read(key)).content)
+          .digest('hex'),
+      })),
+    );
+    expect(matchingSourceHashes.filter(({ hash }) => hash === sourceHash)).toEqual([
+      {
+        key: `employee-imports/${batchId}/source.xlsx`,
+        hash: sourceHash,
+      },
+    ]);
 
     const duplicate = await request(app.getHttpServer())
       .post('/api/employee-work-imports')
@@ -182,6 +221,7 @@ describe('Employee work imports API', () => {
       })
       .expect(201);
     expect(duplicate.body.data.id).toBe(batchId);
+    expect(duplicate.body.data.originalName).toBe(winnerName);
 
     const previewed = await request(app.getHttpServer())
       .patch(`/api/employee-work-imports/${batchId}/preview`)
