@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Res,
@@ -46,17 +47,23 @@ export class EmployeeImportsController {
   }
 
   @Patch(':id/preview')
-  preview(@Param('id') id: string) {
+  preview(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.imports.preview(id);
   }
 
   @Patch(':id/resolutions')
-  resolve(@Param('id') id: string, @Body() dto: ResolveEmployeeImportDto) {
+  resolve(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() dto: ResolveEmployeeImportDto,
+  ) {
     return this.imports.resolve(id, dto);
   }
 
   @Get(':id/errors')
-  async errors(@Param('id') id: string, @Res() response: Response) {
+  async errors(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Res() response: Response,
+  ) {
     const file = await this.imports.errorFile(id);
     this.setDownloadHeaders(response, file.fileName);
     response.setHeader('Content-Length', file.content.length);
@@ -65,7 +72,7 @@ export class EmployeeImportsController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id') id: string) {
+  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.imports.remove(id);
   }
 

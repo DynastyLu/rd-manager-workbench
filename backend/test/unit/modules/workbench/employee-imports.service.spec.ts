@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { Logger } from '@nestjs/common';
 import {
   EmployeeImportRowStatus,
   EmployeeWorkImportStatus,
@@ -13,6 +14,18 @@ import {
 const NOW = new Date('2026-07-24T00:00:00.000Z');
 const SOURCE = Buffer.from('xlsx');
 const SOURCE_HASH = createHash('sha256').update(SOURCE).digest('hex');
+const ATTEMPT_KEY_PATTERN =
+  /^employee-imports\/batch-1\/errors\/[a-f0-9]{64}-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.xlsx$/;
+
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 function normalizedRow(
   overrides: Partial<NormalizedEmployeeWorkRow> = {},
@@ -280,6 +293,22 @@ describe('EmployeeImportsService', () => {
     );
   });
 
+  it('uses a unified 30s max-wait and 120s transaction timeout', async () => {
+    const dependencies = createService({});
+
+    await dependencies.service.upload({
+      originalname: 'weekly.xlsx',
+      mimetype: 'application/octet-stream',
+      size: SOURCE.length,
+      buffer: SOURCE,
+    });
+
+    expect(dependencies.prisma.$transaction.mock.calls[0][1]).toEqual({
+      maxWait: 30_000,
+      timeout: 120_000,
+    });
+  });
+
   it('previews into staged rows in one transaction and never writes formal work items', async () => {
     const invalidSource = {
       rowNumber: 3,
@@ -347,14 +376,12 @@ describe('EmployeeImportsService', () => {
         errorRows: 1,
         unresolvedRows: 1,
         previewFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
-        errorStorageKey: expect.stringMatching(
-          /^employee-imports\/batch-1\/errors\/[a-f0-9]{64}\.xlsx$/,
-        ),
+        errorStorageKey: expect.stringMatching(ATTEMPT_KEY_PATTERN),
       }),
     });
     expect(dependencies.storage.write).toHaveBeenCalledWith(
       expect.objectContaining({
-        key: expect.stringMatching(/^employee-imports\/batch-1\/errors\/[a-f0-9]{64}\.xlsx$/),
+        key: expect.stringMatching(ATTEMPT_KEY_PATTERN),
         mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }),
     );
@@ -371,6 +398,34 @@ describe('EmployeeImportsService', () => {
       expect.objectContaining({ action: 'EMPLOYEE_IMPORT_PREVIEWED' }),
       dependencies.tx,
     );
+  });
+
+  it('precomputes preview file work before taking the batch advisory lock', async () => {
+    const dependencies = createService({
+      inspection: {
+        ...inspection(),
+        rows: [],
+        sourceRows: [{ rowNumber: 2, rawValues: { 员工姓名: null } }],
+        issues: [
+          {
+            code: 'REQUIRED_FIELD',
+            rowNumber: 2,
+            field: '员工姓名',
+            rawValue: null,
+            reason: 'required',
+          },
+        ],
+      },
+      validation: [],
+    });
+
+    await dependencies.service.preview('batch-1');
+
+    const lockOrder = dependencies.tx.$executeRaw.mock.invocationCallOrder[0];
+    expect(dependencies.storage.read.mock.invocationCallOrder[0]).toBeLessThan(lockOrder);
+    expect(dependencies.workbook.inspect.mock.invocationCallOrder[0]).toBeLessThan(lockOrder);
+    expect(dependencies.validator.validate.mock.invocationCallOrder[0]).toBeLessThan(lockOrder);
+    expect(dependencies.storage.write.mock.invocationCallOrder[0]).toBeLessThan(lockOrder);
   });
 
   it('rejects a source hash mismatch before parsing or writing staged state', async () => {
@@ -436,10 +491,91 @@ describe('EmployeeImportsService', () => {
     await expect(dependencies.service.preview('batch-1')).rejects.toThrow('audit failed');
 
     const newKey = dependencies.storage.write.mock.calls[0][0].key as string;
-    expect(newKey).toMatch(/^employee-imports\/batch-1\/errors\/[a-f0-9]{64}\.xlsx$/);
+    expect(newKey).toMatch(ATTEMPT_KEY_PATTERN);
     expect(newKey).not.toBe(oldKey);
     expect(dependencies.storage.delete).toHaveBeenCalledWith(newKey);
     expect(dependencies.storage.delete).not.toHaveBeenCalledWith(oldKey);
+  });
+
+  it('uses unique attempt keys so a rolled-back preview cannot delete a successful peer artifact', async () => {
+    const auditBarrier = deferred();
+    const invalidInspection = {
+      ...inspection(),
+      rows: [],
+      sourceRows: [{ rowNumber: 2, rawValues: { 员工姓名: null } }],
+      issues: [
+        {
+          code: 'REQUIRED_FIELD' as const,
+          rowNumber: 2,
+          field: '员工姓名',
+          rawValue: null,
+          reason: 'required',
+        },
+      ],
+    };
+    const first = createService({ inspection: invalidInspection, validation: [] });
+    const second = createService({ inspection: invalidInspection, validation: [] });
+    first.audit.record.mockImplementationOnce(() => auditBarrier.promise);
+    second.storage.write = first.storage.write;
+    second.storage.delete = first.storage.delete;
+
+    const rolledBack = first.service.preview('batch-1');
+    await new Promise<void>((resolve) => {
+      const poll = () =>
+        first.audit.record.mock.calls.length > 0 ? resolve() : setImmediate(poll);
+      poll();
+    });
+    await second.service.preview('batch-1');
+    const firstKey = first.storage.write.mock.calls[0][0].key as string;
+    const secondKey = first.storage.write.mock.calls[1][0].key as string;
+    auditBarrier.reject(new Error('first preview rolled back'));
+    await expect(rolledBack).rejects.toThrow('first preview rolled back');
+
+    expect(firstKey).not.toBe(secondKey);
+    expect(first.storage.delete).toHaveBeenCalledWith(firstKey);
+    expect(first.storage.delete).not.toHaveBeenCalledWith(secondKey);
+  });
+
+  it('keeps an attempt artifact when an ambiguous commit is already referenced by the batch', async () => {
+    const dependencies = createService({
+      inspection: {
+        ...inspection(),
+        rows: [],
+        sourceRows: [{ rowNumber: 2, rawValues: { 员工姓名: null } }],
+        issues: [
+          {
+            code: 'REQUIRED_FIELD',
+            rowNumber: 2,
+            field: '员工姓名',
+            rawValue: null,
+            reason: 'required',
+          },
+        ],
+      },
+      validation: [],
+    });
+    let transactionCall = 0;
+    dependencies.prisma.$transaction.mockImplementation(async (work) => {
+      transactionCall += 1;
+      if (transactionCall === 1) {
+        await work(dependencies.tx);
+        const attemptKey =
+          dependencies.tx.employeeWorkImportBatch.update.mock.calls[0][0].data.errorStorageKey;
+        dependencies.tx.employeeWorkImportBatch.findUnique.mockResolvedValue(
+          batch({ errorStorageKey: attemptKey }),
+        );
+        throw new Error('commit result ambiguous');
+      }
+      return work(dependencies.tx);
+    });
+
+    await expect(dependencies.service.preview('batch-1')).rejects.toThrow(
+      'commit result ambiguous',
+    );
+
+    const attemptKey = dependencies.storage.write.mock.calls[0][0].key as string;
+    expect(dependencies.prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(dependencies.storage.delete).not.toHaveBeenCalledWith(attemptKey);
   });
 
   it('marks a clean preview ready and removes an obsolete error workbook', async () => {
@@ -465,6 +601,25 @@ describe('EmployeeImportsService', () => {
       'employee-imports/batch-1/errors.xlsx',
     );
     expect(result).toMatchObject({ status: EmployeeWorkImportStatus.READY, hasErrors: false });
+  });
+
+  it('keeps a successful preview and traces best-effort old artifact deletion failure', async () => {
+    const oldKey = 'employee-imports/batch-1/errors/old.xlsx';
+    const dependencies = createService({
+      foundBatch: batch({ errorStorageKey: oldKey }),
+    });
+    dependencies.storage.delete.mockRejectedValueOnce(new Error('storage unavailable'));
+    const warning = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    try {
+      await expect(dependencies.service.preview('batch-1')).resolves.toMatchObject({
+        status: EmployeeWorkImportStatus.READY,
+      });
+      expect(warning).toHaveBeenCalledWith(
+        expect.stringContaining(`old preview artifact ${oldKey}`),
+      );
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   it('revalidates explicit resolutions and recomputes counts and fingerprint', async () => {
@@ -584,7 +739,7 @@ describe('EmployeeImportsService', () => {
     ).rejects.toThrow('audit failed');
 
     const newKey = dependencies.storage.write.mock.calls[0][0].key as string;
-    expect(newKey).toMatch(/^employee-imports\/batch-1\/errors\/[a-f0-9]{64}\.xlsx$/);
+    expect(newKey).toMatch(ATTEMPT_KEY_PATTERN);
     expect(newKey).not.toBe(oldKey);
     expect(dependencies.storage.delete).toHaveBeenCalledWith(newKey);
     expect(dependencies.storage.delete).not.toHaveBeenCalledWith(oldKey);
@@ -748,13 +903,50 @@ describe('EmployeeImportsService', () => {
         keepUnlinked: true,
       })),
     );
+    dependencies.tx.$executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(205);
 
     await dependencies.service.resolve('batch-1', {
       rows: stagedRows.map(({ rowNumber }) => ({ rowNumber, keepUnlinked: true })),
     });
 
     expect(dependencies.tx.employeeWorkImportRow.update).not.toHaveBeenCalled();
-    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(4);
+    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('rolls back with a typed integrity error when a bulk update partially matches', async () => {
+    const staged = {
+      id: 'row-1',
+      batchId: 'batch-1',
+      rowNumber: 2,
+      rawValues: normalizedRow().rawValues,
+      normalizedValues: normalizedRow(),
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: [],
+      resolvedEmployeeId: 'employee-1',
+      resolvedProjectId: null,
+      resolvedTaskId: null,
+      keepUnlinked: false,
+    };
+    const dependencies = createService({
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: [staged],
+        totalRows: 1,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+    });
+    dependencies.tx.$executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+
+    await expect(
+      dependencies.service.resolve('batch-1', {
+        rows: [{ rowNumber: 2, keepUnlinked: true }],
+      }),
+    ).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_INTEGRITY_FAILED',
+      statusCode: 422,
+    });
+    expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
+    expect(dependencies.audit.record).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -878,10 +1070,9 @@ describe('EmployeeImportsService', () => {
       data: {
         status: EmployeeWorkImportStatus.EXPIRED,
         archivedAt: NOW,
-        errorStorageKey: null,
       },
     });
-    expect(draft.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(draft.tx.$executeRaw).toHaveBeenCalledTimes(2);
     expect(draft.audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'EMPLOYEE_IMPORT_EXPIRED' }),
       draft.tx,
@@ -904,6 +1095,47 @@ describe('EmployeeImportsService', () => {
       expect.objectContaining({ action: 'EMPLOYEE_IMPORT_EXPIRED' }),
       dependencies.tx,
     );
+  });
+
+  it('retries file cleanup idempotently for an already EXPIRED batch', async () => {
+    const dependencies = createService({
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.EXPIRED,
+        archivedAt: NOW,
+        errorStorageKey: 'employee-imports/batch-1/errors/current.xlsx',
+      }),
+    });
+
+    await dependencies.service.remove('batch-1');
+
+    expect(dependencies.storage.delete).toHaveBeenCalledWith(
+      'employee-imports/batch-1/source.xlsx',
+    );
+    expect(dependencies.storage.delete).toHaveBeenCalledWith(
+      'employee-imports/batch-1/errors/current.xlsx',
+    );
+    expect(dependencies.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('keeps cleanup locators and returns typed 503 when file deletion fails', async () => {
+    const dependencies = createService({
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.READY,
+        errorStorageKey: 'employee-imports/batch-1/errors/current.xlsx',
+      }),
+    });
+    dependencies.storage.delete.mockRejectedValueOnce(new Error('storage unavailable'));
+
+    await expect(dependencies.service.remove('batch-1')).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_CLEANUP_FAILED',
+      statusCode: 503,
+    });
+
+    expect(dependencies.tx.employeeWorkImportBatch.update.mock.calls[0][0].data).toEqual({
+      status: EmployeeWorkImportStatus.EXPIRED,
+      archivedAt: NOW,
+    });
+    expect(dependencies.tx.employeeWorkImportBatch.update).toHaveBeenCalledTimes(1);
   });
 
   it('serializes remove ahead of preview so the waiting preview cannot revive EXPIRED', async () => {

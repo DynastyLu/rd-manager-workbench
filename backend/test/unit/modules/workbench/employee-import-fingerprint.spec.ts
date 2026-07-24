@@ -1,4 +1,7 @@
-import { employeeImportFingerprint } from '../../../../src/modules/workbench/employees/application/employee-import-fingerprint';
+import {
+  canonicalJson,
+  employeeImportFingerprint,
+} from '../../../../src/modules/workbench/employees/application/employee-import-fingerprint';
 
 describe('employeeImportFingerprint', () => {
   it('is stable across recursive object key order while retaining resolution state', () => {
@@ -61,5 +64,16 @@ describe('employeeImportFingerprint', () => {
     expect(left).toMatch(/^[a-f0-9]{64}$/);
     expect(right).toBe(left);
     expect(changedResolution).not.toBe(left);
+  });
+
+  it('sorts canonical object keys without locale-dependent comparison', () => {
+    const localeCompare = jest.spyOn(String.prototype, 'localeCompare').mockImplementation(() => {
+      throw new Error('localeCompare must not be used');
+    });
+    try {
+      expect(canonicalJson({ ä: 1, z: 2, A: 3 })).toBe('{"A":3,"z":2,"ä":1}');
+    } finally {
+      localeCompare.mockRestore();
+    }
   });
 });

@@ -1,6 +1,13 @@
+import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { EmployeeWorkImportStatus, PrismaClient } from '@prisma/client';
+import {
+  EmployeeImportRowStatus,
+  EmployeeWorkImportStatus,
+  EmployeeWorkStatus,
+  PrismaClient,
+} from '@prisma/client';
 import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
@@ -10,7 +17,7 @@ import { HttpExceptionFilter } from '../../../../src/shared/filters/http-excepti
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
 
 describe('Employee work imports API', () => {
-  jest.setTimeout(60_000);
+  jest.setTimeout(240_000);
 
   const prisma = new PrismaClient();
   const prefix = `TEST-EMPLOYEE-IMPORT-${Date.now()}`;
@@ -257,5 +264,102 @@ describe('Employee work imports API', () => {
         },
       }),
     ).resolves.toBe(1);
+  });
+
+  it('rejects a non-v4 UUID route parameter before service lookup', async () => {
+    await request(app.getHttpServer())
+      .patch('/api/employee-work-imports/not-a-uuid/preview')
+      .send({})
+      .expect(400);
+  });
+
+  it('resolves 50,000 staged rows within the transaction timeout', async () => {
+    const rowCount = 50_000;
+    const batchId = randomUUID();
+    batchIds.push(batchId);
+    await prisma.employeeWorkImportBatch.create({
+      data: {
+        id: batchId,
+        periodType: 'WEEK',
+        periodStartAt: new Date('2026-08-03T00:00:00.000Z'),
+        periodEndAt: new Date('2026-08-09T00:00:00.000Z'),
+        status: EmployeeWorkImportStatus.RESOLVING,
+        originalName: 'capacity.xlsx',
+        fileHash: 'capacity-file-hash',
+        sourceStorageKey: `employee-imports/${batchId}/source.xlsx`,
+        templateVersion: 1,
+        previewFingerprint: 'capacity-preview-fingerprint',
+        totalRows: rowCount,
+        unresolvedRows: rowCount,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1_000),
+      },
+    });
+    const insertChunkSize = 5_000;
+    for (let offset = 0; offset < rowCount; offset += insertChunkSize) {
+      await prisma.employeeWorkImportRow.createMany({
+        data: Array.from({ length: Math.min(insertChunkSize, rowCount - offset) }, (_, index) => {
+          const rowNumber = offset + index + 2;
+          const rawValues = {
+            员工姓名: employeeName,
+            工作内容: `容量行 ${rowNumber}`,
+          };
+          return {
+            id: randomUUID(),
+            batchId,
+            rowNumber,
+            rawValues,
+            normalizedValues: {
+              rowNumber,
+              employeeName,
+              title: `容量行 ${rowNumber}`,
+              planText: null,
+              summaryText: null,
+              completionRate: 0,
+              status: EmployeeWorkStatus.NOT_STARTED,
+              nextPlanText: null,
+              riskText: null,
+              plannedHours: null,
+              actualHours: null,
+              projectCode: null,
+              taskCode: null,
+              note: null,
+              rawValues,
+            },
+            status: EmployeeImportRowStatus.UNRESOLVED,
+            errors: [],
+            resolvedEmployeeId: employeeId,
+            keepUnlinked: false,
+          };
+        }),
+      });
+    }
+
+    const startedAt = performance.now();
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${batchId}/resolutions`)
+      .send({
+        rows: Array.from({ length: rowCount }, (_, index) => ({
+          rowNumber: index + 2,
+          keepUnlinked: true,
+        })),
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({
+          status: EmployeeWorkImportStatus.READY,
+          totalRows: rowCount,
+          validRows: rowCount,
+          unresolvedRows: 0,
+        });
+      });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(120_000);
+    await expect(
+      prisma.employeeWorkImportRow.count({
+        where: { batchId, status: EmployeeImportRowStatus.VALID },
+      }),
+    ).resolves.toBe(rowCount);
+    console.info(`employee import 50k resolution elapsed: ${Math.round(elapsedMs)}ms`);
   });
 });

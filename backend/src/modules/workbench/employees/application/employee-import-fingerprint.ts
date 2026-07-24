@@ -31,7 +31,7 @@ export function canonicalJson(value: unknown): string {
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, CanonicalJson | undefined>)
       .filter(([, item]) => item !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right));
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
     return `{${entries
       .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
       .join(',')}}`;

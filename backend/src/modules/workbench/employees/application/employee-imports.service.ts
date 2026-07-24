@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
-import { HttpStatus, Inject, Injectable, Optional } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   EmployeeImportRowStatus,
   EmployeeWorkImportBatch,
@@ -39,7 +39,11 @@ const DRAFT_STATUSES = new Set<EmployeeWorkImportStatus>([
   EmployeeWorkImportStatus.FAILED,
 ]);
 const EMPLOYEE_IMPORT_CLOCK = Symbol('EMPLOYEE_IMPORT_CLOCK');
-const RESOLUTION_UPDATE_CHUNK_SIZE = 100;
+const RESOLUTION_UPDATE_CHUNK_SIZE = 1_000;
+const IMPORT_TRANSACTION_OPTIONS = {
+  maxWait: 30_000,
+  timeout: 120_000,
+} as const;
 
 const persistedTextSchema = z.string().max(10_000);
 const persistedNullableTextSchema = persistedTextSchema.nullable();
@@ -128,6 +132,7 @@ interface StagedRowData {
 
 @Injectable()
 export class EmployeeImportsService {
+  private readonly logger = new Logger(EmployeeImportsService.name);
   private readonly now: () => Date;
 
   constructor(
@@ -174,70 +179,67 @@ export class EmployeeImportsService {
     const now = this.now();
     let writtenSourceKey: string | null = null;
     try {
-      const result = await this.prisma.$transaction(
-        async (tx) => {
-          await this.lock(
-            tx,
-            `employee-import-upload:${fileHash}:${inspected.meta.periodType}:${inspected.meta.periodStart}:${inspected.meta.periodEnd}`,
-          );
-          const existing = await tx.employeeWorkImportBatch.findFirst({
-            where: {
-              fileHash,
-              periodType: inspected.meta.periodType,
-              periodStartAt,
-              periodEndAt,
-              expiresAt: { gt: now },
-              status: { not: EmployeeWorkImportStatus.EXPIRED },
-              archivedAt: null,
-            },
-            orderBy: { createdAt: 'desc' },
-          });
-          if (existing) return existing;
+      const result = await this.prisma.$transaction(async (tx) => {
+        await this.lock(
+          tx,
+          `employee-import-upload:${fileHash}:${inspected.meta.periodType}:${inspected.meta.periodStart}:${inspected.meta.periodEnd}`,
+        );
+        const existing = await tx.employeeWorkImportBatch.findFirst({
+          where: {
+            fileHash,
+            periodType: inspected.meta.periodType,
+            periodStartAt,
+            periodEndAt,
+            expiresAt: { gt: now },
+            status: { not: EmployeeWorkImportStatus.EXPIRED },
+            archivedAt: null,
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (existing) return existing;
 
-          const id = randomUUID();
-          const sourceStorageKey = `employee-imports/${id}/source.xlsx`;
-          await this.storage.write({
-            key: sourceStorageKey,
-            content: file.buffer,
-            mimeType: XLSX_MIME_TYPE,
-          });
-          writtenSourceKey = sourceStorageKey;
-          const created = await tx.employeeWorkImportBatch.create({
-            data: {
-              id,
-              periodType: inspected.meta.periodType,
-              periodStartAt,
-              periodEndAt,
+        const id = randomUUID();
+        const sourceStorageKey = `employee-imports/${id}/source.xlsx`;
+        await this.storage.write({
+          key: sourceStorageKey,
+          content: file.buffer,
+          mimeType: XLSX_MIME_TYPE,
+        });
+        writtenSourceKey = sourceStorageKey;
+        const created = await tx.employeeWorkImportBatch.create({
+          data: {
+            id,
+            periodType: inspected.meta.periodType,
+            periodStartAt,
+            periodEndAt,
+            status: EmployeeWorkImportStatus.UPLOADED,
+            originalName,
+            fileHash,
+            sourceStorageKey,
+            templateVersion: inspected.meta.templateVersion,
+            expiresAt: new Date(now.getTime() + IMPORT_TTL_MS),
+          },
+        });
+        await this.audit.record(
+          {
+            action: 'EMPLOYEE_IMPORT_UPLOADED',
+            entityType: 'employeeWorkImportBatch',
+            entityId: id,
+            outcome: 'SUCCEEDED',
+            changedFields: ['status'],
+            metadata: {
               status: EmployeeWorkImportStatus.UPLOADED,
-              originalName,
-              fileHash,
-              sourceStorageKey,
-              templateVersion: inspected.meta.templateVersion,
-              expiresAt: new Date(now.getTime() + IMPORT_TTL_MS),
+              sha256: fileHash,
+              byteSize: file.buffer.length,
+              periodType: inspected.meta.periodType,
+              periodStart: inspected.meta.periodStart,
+              periodEnd: inspected.meta.periodEnd,
             },
-          });
-          await this.audit.record(
-            {
-              action: 'EMPLOYEE_IMPORT_UPLOADED',
-              entityType: 'employeeWorkImportBatch',
-              entityId: id,
-              outcome: 'SUCCEEDED',
-              changedFields: ['status'],
-              metadata: {
-                status: EmployeeWorkImportStatus.UPLOADED,
-                sha256: fileHash,
-                byteSize: file.buffer.length,
-                periodType: inspected.meta.periodType,
-                periodStart: inspected.meta.periodStart,
-                periodEnd: inspected.meta.periodEnd,
-              },
-            },
-            tx,
-          );
-          return created;
-        },
-        { timeout: 30_000 },
-      );
+          },
+          tx,
+        );
+        return created;
+      }, IMPORT_TRANSACTION_OPTIONS);
       return this.publicBatch(result);
     } catch (error) {
       if (writtenSourceKey) {
@@ -248,85 +250,84 @@ export class EmployeeImportsService {
   }
 
   async preview(id: string) {
+    const snapshot = await this.requireBatch(id);
+    this.assertDraft(snapshot.status);
+    const source = await this.storage.read(snapshot.sourceStorageKey);
+    if (this.sha256(source.content) !== snapshot.fileHash) {
+      throw this.integrityFailed('Stored employee import source hash does not match');
+    }
+    const inspected = await this.workbook.inspect(source.content);
+    this.assertSourceMetadata(snapshot, inspected.meta);
+    const validated = await this.validator.validate(inspected.rows);
+    const stagedRows = this.stageRows(id, inspected.sourceRows, inspected.issues, validated);
+    const counts = this.counts(stagedRows);
+    const status = this.previewStatus(counts);
+    const previewFingerprint = this.fingerprint({
+      fileHash: snapshot.fileHash,
+      templateVersion: snapshot.templateVersion,
+      periodType: snapshot.periodType,
+      periodStart: inspected.meta.periodStart,
+      periodEnd: inspected.meta.periodEnd,
+      rows: stagedRows,
+    });
     let newErrorStorageKey: string | null = null;
     let previousErrorStorageKey: string | null = null;
     try {
-      const updated = await this.prisma.$transaction(
-        async (tx) => {
-          await this.lock(tx, `employee-import:${id}`);
-          const batch = await this.requireBatchFrom(tx, id);
-          this.assertDraft(batch.status);
-          previousErrorStorageKey = batch.errorStorageKey;
+      if (counts.errorRows + counts.unresolvedRows > 0) {
+        newErrorStorageKey = `employee-imports/${id}/errors/${previewFingerprint}-${randomUUID()}.xlsx`;
+        const errorContent = await this.errorWorkbook(stagedRows);
+        await this.storage.write({
+          key: newErrorStorageKey,
+          content: errorContent,
+          mimeType: XLSX_MIME_TYPE,
+        });
+      }
+      const updated = await this.prisma.$transaction(async (tx) => {
+        await this.lock(tx, `employee-import:${id}`);
+        const batch = await this.requireBatchFrom(tx, id);
+        this.assertDraft(batch.status);
+        this.assertSourceIdentity(snapshot, batch);
+        previousErrorStorageKey = batch.errorStorageKey;
 
-          const source = await this.storage.read(batch.sourceStorageKey);
-          if (this.sha256(source.content) !== batch.fileHash) {
-            throw this.integrityFailed('Stored employee import source hash does not match');
-          }
-          const inspected = await this.workbook.inspect(source.content);
-          this.assertSourceMetadata(batch, inspected.meta);
-          const validated = await this.validator.validate(inspected.rows, new Map(), tx);
-          const stagedRows = this.stageRows(id, inspected.sourceRows, inspected.issues, validated);
-          const counts = this.counts(stagedRows);
-          const status = this.previewStatus(counts);
-          const previewFingerprint = this.fingerprint({
-            fileHash: batch.fileHash,
-            templateVersion: batch.templateVersion,
-            periodType: batch.periodType,
-            periodStart: inspected.meta.periodStart,
-            periodEnd: inspected.meta.periodEnd,
-            rows: stagedRows,
+        await tx.employeeWorkImportRow.deleteMany({ where: { batchId: id } });
+        if (stagedRows.length > 0) {
+          await tx.employeeWorkImportRow.createMany({
+            data: stagedRows.map((row) => this.rowCreateData(row)),
           });
-          const errorStorageKey =
-            counts.errorRows + counts.unresolvedRows > 0
-              ? `employee-imports/${id}/errors/${previewFingerprint}.xlsx`
-              : null;
-          newErrorStorageKey = errorStorageKey;
-          if (errorStorageKey && errorStorageKey !== previousErrorStorageKey) {
-            await this.storage.write({
-              key: errorStorageKey,
-              content: await this.errorWorkbook(stagedRows),
-              mimeType: XLSX_MIME_TYPE,
-            });
-          }
-
-          await tx.employeeWorkImportRow.deleteMany({ where: { batchId: id } });
-          if (stagedRows.length > 0) {
-            await tx.employeeWorkImportRow.createMany({
-              data: stagedRows.map((row) => this.rowCreateData(row)),
-            });
-          }
-          const result = await tx.employeeWorkImportBatch.update({
-            where: { id },
-            data: {
-              status,
-              ...counts,
-              importedRows: 0,
-              previewFingerprint,
-              errorStorageKey,
-            },
-          });
-          await this.audit.record(
-            {
-              action: 'EMPLOYEE_IMPORT_PREVIEWED',
-              entityType: 'employeeWorkImportBatch',
-              entityId: id,
-              outcome: 'SUCCEEDED',
-              changedFields: ['status', 'totalRows', 'validRows', 'errorRows', 'unresolvedRows'],
-              metadata: { status, ...counts },
-            },
-            tx,
-          );
-          return result;
-        },
-        { timeout: 30_000 },
-      );
+        }
+        const result = await tx.employeeWorkImportBatch.update({
+          where: { id },
+          data: {
+            status,
+            ...counts,
+            importedRows: 0,
+            previewFingerprint,
+            errorStorageKey: newErrorStorageKey,
+          },
+        });
+        await this.audit.record(
+          {
+            action: 'EMPLOYEE_IMPORT_PREVIEWED',
+            entityType: 'employeeWorkImportBatch',
+            entityId: id,
+            outcome: 'SUCCEEDED',
+            changedFields: ['status', 'totalRows', 'validRows', 'errorRows', 'unresolvedRows'],
+            metadata: { status, ...counts },
+          },
+          tx,
+        );
+        return result;
+      }, IMPORT_TRANSACTION_OPTIONS);
       if (previousErrorStorageKey && previousErrorStorageKey !== newErrorStorageKey) {
-        await this.storage.delete(previousErrorStorageKey).catch(() => undefined);
+        await this.deleteBestEffort(
+          previousErrorStorageKey,
+          `old preview artifact ${previousErrorStorageKey}`,
+        );
       }
       return this.publicBatch(updated);
     } catch (error) {
       if (newErrorStorageKey && newErrorStorageKey !== previousErrorStorageKey) {
-        await this.storage.delete(newErrorStorageKey).catch(() => undefined);
+        await this.cleanupUnreferencedAttempt(id, newErrorStorageKey);
       }
       throw error;
     }
@@ -336,127 +337,125 @@ export class EmployeeImportsService {
     let newErrorStorageKey: string | null = null;
     let previousErrorStorageKey: string | null = null;
     try {
-      const updated = await this.prisma.$transaction(
-        async (tx) => {
-          await this.lock(tx, `employee-import:${id}`);
-          const batch = await this.requireBatchFrom(tx, id);
-          const storedRows = await tx.employeeWorkImportRow.findMany({
-            where: { batchId: id },
-            orderBy: { rowNumber: 'asc' },
-          });
-          this.assertResolvable(batch, storedRows.length);
-          if (input.rows.length === 0) {
-            throw this.resolutionInvalid('At least one row resolution is required');
+      const updated = await this.prisma.$transaction(async (tx) => {
+        await this.lock(tx, `employee-import:${id}`);
+        const batch = await this.requireBatchFrom(tx, id);
+        const storedRows = await tx.employeeWorkImportRow.findMany({
+          where: { batchId: id },
+          orderBy: { rowNumber: 'asc' },
+        });
+        this.assertResolvable(batch, storedRows.length);
+        if (input.rows.length === 0) {
+          throw this.resolutionInvalid('At least one row resolution is required');
+        }
+        previousErrorStorageKey = batch.errorStorageKey;
+        const rows: StagedRowData[] = storedRows.map((row) => this.storedRow(row));
+        const rowsByNumber = new Map(rows.map((row) => [row.rowNumber, row]));
+        const resolutionMap = new Map<number, EmployeeImportResolution>();
+        const changedRows: NormalizedEmployeeWorkRow[] = [];
+        for (const resolution of input.rows) {
+          if (resolutionMap.has(resolution.rowNumber)) {
+            throw this.resolutionInvalid('Each row may be resolved only once');
           }
-          previousErrorStorageKey = batch.errorStorageKey;
-          const rows: StagedRowData[] = storedRows.map((row) => this.storedRow(row));
-          const rowsByNumber = new Map(rows.map((row) => [row.rowNumber, row]));
-          const resolutionMap = new Map<number, EmployeeImportResolution>();
-          const changedRows: NormalizedEmployeeWorkRow[] = [];
-          for (const resolution of input.rows) {
-            if (resolutionMap.has(resolution.rowNumber)) {
-              throw this.resolutionInvalid('Each row may be resolved only once');
-            }
-            const staged = rowsByNumber.get(resolution.rowNumber);
-            if (!staged || !this.isNormalizedRow(staged.normalizedValues)) {
-              throw this.resolutionInvalid(`Row ${resolution.rowNumber} cannot be resolved`);
-            }
-            const merged: EmployeeImportResolution = {
-              employeeId:
-                resolution.employeeId !== undefined
-                  ? resolution.employeeId
-                  : (staged.resolvedEmployeeId ?? undefined),
-              projectId:
-                resolution.projectId !== undefined
-                  ? resolution.projectId
-                  : (staged.resolvedProjectId ?? undefined),
-              taskId:
-                resolution.taskId !== undefined
-                  ? resolution.taskId
-                  : (staged.resolvedTaskId ?? undefined),
-              keepUnlinked: resolution.keepUnlinked ?? staged.keepUnlinked,
-            };
-            resolutionMap.set(resolution.rowNumber, merged);
-            changedRows.push(staged.normalizedValues);
+          const staged = rowsByNumber.get(resolution.rowNumber);
+          if (!staged || !this.isNormalizedRow(staged.normalizedValues)) {
+            throw this.resolutionInvalid(`Row ${resolution.rowNumber} cannot be resolved`);
           }
+          const merged: EmployeeImportResolution = {
+            employeeId:
+              resolution.employeeId !== undefined
+                ? resolution.employeeId
+                : (staged.resolvedEmployeeId ?? undefined),
+            projectId:
+              resolution.projectId !== undefined
+                ? resolution.projectId
+                : (staged.resolvedProjectId ?? undefined),
+            taskId:
+              resolution.taskId !== undefined
+                ? resolution.taskId
+                : (staged.resolvedTaskId ?? undefined),
+            keepUnlinked: resolution.keepUnlinked ?? staged.keepUnlinked,
+          };
+          resolutionMap.set(resolution.rowNumber, merged);
+          changedRows.push(staged.normalizedValues);
+        }
 
-          const validated = await this.validator.validate(changedRows, resolutionMap, tx);
-          const invalid = validated.filter(
-            ({ status }) => status !== EmployeeImportRowStatus.VALID,
-          );
-          if (invalid.length > 0) {
-            throw new AppError({
-              code: ErrorCodes.EMPLOYEE_IMPORT_RESOLUTION_INVALID,
-              message: 'One or more employee import resolutions are invalid',
-              statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-              details: {
-                issues: invalid.flatMap(({ row, errors }) =>
-                  errors.map((error) => ({ rowNumber: row.rowNumber, ...error })),
-                ),
-              },
-            });
-          }
-
-          const validatedByNumber = new Map(validated.map((row) => [row.row.rowNumber, row]));
-          const nextRows = rows.map((row) => {
-            const replacement = validatedByNumber.get(row.rowNumber);
-            return replacement ? this.validatedStageRow(id, replacement, row.id) : row;
-          });
-          const counts = this.counts(nextRows);
-          const status = this.previewStatus(counts);
-          const previewFingerprint = this.fingerprint({
-            fileHash: batch.fileHash,
-            templateVersion: batch.templateVersion,
-            periodType: batch.periodType,
-            periodStart: this.dateOnly(batch.periodStartAt),
-            periodEnd: this.dateOnly(batch.periodEndAt),
-            rows: nextRows,
-          });
-          const errorStorageKey =
-            counts.errorRows + counts.unresolvedRows > 0
-              ? `employee-imports/${id}/errors/${previewFingerprint}.xlsx`
-              : null;
-          newErrorStorageKey = errorStorageKey;
-          if (errorStorageKey && errorStorageKey !== previousErrorStorageKey) {
-            await this.storage.write({
-              key: errorStorageKey,
-              content: await this.errorWorkbook(nextRows),
-              mimeType: XLSX_MIME_TYPE,
-            });
-          }
-
-          await this.bulkUpdateResolvedRows(tx, validated, rowsByNumber);
-          const result = await tx.employeeWorkImportBatch.update({
-            where: { id },
-            data: {
-              status,
-              ...counts,
-              previewFingerprint,
-              errorStorageKey,
+        const validated = await this.validator.validate(changedRows, resolutionMap, tx);
+        const invalid = validated.filter(({ status }) => status !== EmployeeImportRowStatus.VALID);
+        if (invalid.length > 0) {
+          throw new AppError({
+            code: ErrorCodes.EMPLOYEE_IMPORT_RESOLUTION_INVALID,
+            message: 'One or more employee import resolutions are invalid',
+            statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+            details: {
+              issues: invalid.flatMap(({ row, errors }) =>
+                errors.map((error) => ({ rowNumber: row.rowNumber, ...error })),
+              ),
             },
           });
-          await this.audit.record(
-            {
-              action: 'EMPLOYEE_IMPORT_RESOLVED',
-              entityType: 'employeeWorkImportBatch',
-              entityId: id,
-              outcome: 'SUCCEEDED',
-              changedFields: ['status', 'validRows', 'unresolvedRows'],
-              metadata: { status, itemCount: validated.length, ...counts },
-            },
-            tx,
-          );
-          return result;
-        },
-        { timeout: 30_000 },
-      );
+        }
+
+        const validatedByNumber = new Map(validated.map((row) => [row.row.rowNumber, row]));
+        const nextRows = rows.map((row) => {
+          const replacement = validatedByNumber.get(row.rowNumber);
+          return replacement ? this.validatedStageRow(id, replacement, row.id) : row;
+        });
+        const counts = this.counts(nextRows);
+        const status = this.previewStatus(counts);
+        const previewFingerprint = this.fingerprint({
+          fileHash: batch.fileHash,
+          templateVersion: batch.templateVersion,
+          periodType: batch.periodType,
+          periodStart: this.dateOnly(batch.periodStartAt),
+          periodEnd: this.dateOnly(batch.periodEndAt),
+          rows: nextRows,
+        });
+        const errorStorageKey =
+          counts.errorRows + counts.unresolvedRows > 0
+            ? `employee-imports/${id}/errors/${previewFingerprint}-${randomUUID()}.xlsx`
+            : null;
+        newErrorStorageKey = errorStorageKey;
+        if (errorStorageKey && errorStorageKey !== previousErrorStorageKey) {
+          await this.storage.write({
+            key: errorStorageKey,
+            content: await this.errorWorkbook(nextRows),
+            mimeType: XLSX_MIME_TYPE,
+          });
+        }
+
+        await this.bulkUpdateResolvedRows(tx, validated, rowsByNumber);
+        const result = await tx.employeeWorkImportBatch.update({
+          where: { id },
+          data: {
+            status,
+            ...counts,
+            previewFingerprint,
+            errorStorageKey,
+          },
+        });
+        await this.audit.record(
+          {
+            action: 'EMPLOYEE_IMPORT_RESOLVED',
+            entityType: 'employeeWorkImportBatch',
+            entityId: id,
+            outcome: 'SUCCEEDED',
+            changedFields: ['status', 'validRows', 'unresolvedRows'],
+            metadata: { status, itemCount: validated.length, ...counts },
+          },
+          tx,
+        );
+        return result;
+      }, IMPORT_TRANSACTION_OPTIONS);
       if (previousErrorStorageKey && previousErrorStorageKey !== newErrorStorageKey) {
-        await this.storage.delete(previousErrorStorageKey).catch(() => undefined);
+        await this.deleteBestEffort(
+          previousErrorStorageKey,
+          `old resolve artifact ${previousErrorStorageKey}`,
+        );
       }
       return this.publicBatch(updated);
     } catch (error) {
       if (newErrorStorageKey && newErrorStorageKey !== previousErrorStorageKey) {
-        await this.storage.delete(newErrorStorageKey).catch(() => undefined);
+        await this.cleanupUnreferencedAttempt(id, newErrorStorageKey);
       }
       throw error;
     }
@@ -480,17 +479,16 @@ export class EmployeeImportsService {
   }
 
   async remove(id: string): Promise<void> {
-    const files = await this.prisma.$transaction(
-      async (tx) => {
-        await this.lock(tx, `employee-import:${id}`);
-        const batch = await this.requireBatchFrom(tx, id, false);
+    const cleanup = await this.prisma.$transaction(async (tx) => {
+      await this.lock(tx, `employee-import:${id}`);
+      const batch = await this.requireBatchFrom(tx, id, false);
+      if (batch.status !== EmployeeWorkImportStatus.EXPIRED) {
         this.assertDraft(batch.status);
         await tx.employeeWorkImportBatch.update({
           where: { id },
           data: {
             status: EmployeeWorkImportStatus.EXPIRED,
             archivedAt: this.now(),
-            errorStorageKey: null,
           },
         });
         await this.audit.record(
@@ -507,13 +505,28 @@ export class EmployeeImportsService {
           },
           tx,
         );
-        return [batch.sourceStorageKey, batch.errorStorageKey].filter((key): key is string =>
-          Boolean(key),
-        );
-      },
-      { timeout: 30_000 },
+      }
+      return {
+        sourceStorageKey: batch.sourceStorageKey,
+        errorStorageKey: batch.errorStorageKey,
+      };
+    }, IMPORT_TRANSACTION_OPTIONS);
+    const files = [cleanup.sourceStorageKey, cleanup.errorStorageKey].filter((key): key is string =>
+      Boolean(key),
     );
-    await Promise.all(files.map((key) => this.storage.delete(key).catch(() => undefined)));
+    try {
+      await Promise.all(files.map((key) => this.storage.delete(key)));
+    } catch (cause) {
+      throw new AppError({
+        code: ErrorCodes.EMPLOYEE_IMPORT_CLEANUP_FAILED,
+        message: 'Employee import expired but its stored files could not be removed',
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        cause,
+      });
+    }
+    if (cleanup.errorStorageKey) {
+      await this.clearDeletedErrorLocator(id, cleanup.errorStorageKey);
+    }
   }
 
   private stageRows(
@@ -804,7 +817,7 @@ export class EmployeeImportsService {
         )`,
         ),
       );
-      await client.$executeRaw(Prisma.sql`
+      const affectedRows = await client.$executeRaw(Prisma.sql`
         UPDATE "app"."employee_work_import_rows" AS target
         SET
           "status" = incoming.status,
@@ -827,6 +840,58 @@ export class EmployeeImportsService {
         )
         WHERE target.id = incoming.id
       `);
+      if (affectedRows !== chunk.length) {
+        throw this.integrityFailed(
+          `Employee import resolution update matched ${affectedRows} of ${chunk.length} rows`,
+        );
+      }
+    }
+  }
+
+  private async cleanupUnreferencedAttempt(id: string, attemptKey: string): Promise<void> {
+    try {
+      const canDelete = await this.prisma.$transaction(async (tx) => {
+        await this.lock(tx, `employee-import:${id}`);
+        const current = await tx.employeeWorkImportBatch.findUnique({
+          where: { id },
+          select: { errorStorageKey: true },
+        });
+        return current?.errorStorageKey !== attemptKey;
+      }, IMPORT_TRANSACTION_OPTIONS);
+      if (canDelete) {
+        await this.storage.delete(attemptKey).catch(() => undefined);
+      }
+    } catch {
+      // A failed ownership check must leave a possible committed artifact intact.
+    }
+  }
+
+  private async clearDeletedErrorLocator(id: string, deletedKey: string): Promise<void> {
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await this.lock(tx, `employee-import:${id}`);
+        const current = await tx.employeeWorkImportBatch.findUnique({
+          where: { id },
+          select: { errorStorageKey: true },
+        });
+        if (current?.errorStorageKey === deletedKey) {
+          await tx.employeeWorkImportBatch.update({
+            where: { id },
+            data: { errorStorageKey: null },
+          });
+        }
+      }, IMPORT_TRANSACTION_OPTIONS);
+    } catch {
+      // The retained locator makes a later idempotent cleanup safe.
+      this.logger.warn(`Could not clear deleted employee import artifact locator ${deletedKey}`);
+    }
+  }
+
+  private async deleteBestEffort(storageKey: string, description: string): Promise<void> {
+    try {
+      await this.storage.delete(storageKey);
+    } catch {
+      this.logger.warn(`Could not delete ${description}`);
     }
   }
 
@@ -855,6 +920,22 @@ export class EmployeeImportsService {
       meta.periodEnd !== this.dateOnly(batch.periodEndAt)
     ) {
       throw this.integrityFailed('Stored employee import source metadata does not match');
+    }
+  }
+
+  private assertSourceIdentity(
+    snapshot: EmployeeWorkImportBatch,
+    current: EmployeeWorkImportBatch,
+  ): void {
+    if (
+      current.sourceStorageKey !== snapshot.sourceStorageKey ||
+      current.fileHash !== snapshot.fileHash ||
+      current.templateVersion !== snapshot.templateVersion ||
+      current.periodType !== snapshot.periodType ||
+      current.periodStartAt.getTime() !== snapshot.periodStartAt.getTime() ||
+      current.periodEndAt.getTime() !== snapshot.periodEndAt.getTime()
+    ) {
+      throw this.integrityFailed('Employee import source changed during preview');
     }
   }
 
