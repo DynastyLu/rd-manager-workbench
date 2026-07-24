@@ -361,7 +361,7 @@ export class EmployeeImportsService {
   }
 
   async remove(id: string): Promise<void> {
-    const batch = await this.requireBatch(id);
+    const batch = await this.requireBatchForCleanup(id);
     this.assertDraft(batch.status);
     await this.storage.delete(batch.sourceStorageKey);
     if (batch.errorStorageKey) await this.storage.delete(batch.errorStorageKey);
@@ -612,6 +612,20 @@ export class EmployeeImportsService {
         code: ErrorCodes.EMPLOYEE_IMPORT_EXPIRED,
         message: 'Employee work import batch has expired',
         statusCode: HttpStatus.GONE,
+      });
+    }
+    return batch;
+  }
+
+  private async requireBatchForCleanup(id: string) {
+    const batch = await this.prisma.employeeWorkImportBatch.findUnique({
+      where: { id },
+    });
+    if (!batch) {
+      throw new AppError({
+        code: ErrorCodes.EMPLOYEE_IMPORT_NOT_FOUND,
+        message: 'Employee work import batch not found',
+        statusCode: HttpStatus.NOT_FOUND,
       });
     }
     return batch;

@@ -440,28 +440,68 @@ describe('EmployeeImportsService', () => {
     );
   });
 
-  it('rejects cleanup for committed states and removes both draft files before expiring a draft', async () => {
-    const committed = createService({
-      foundBatch: batch({
-        status: EmployeeWorkImportStatus.COMPLETED,
-        expiresAt: new Date('2026-07-23T00:00:00.000Z'),
-      }),
-    });
-    await expect(committed.service.remove('batch-1')).rejects.toMatchObject({
-      statusCode: 409,
-    });
-    expect(committed.storage.delete).not.toHaveBeenCalled();
-
+  it.each([
+    EmployeeWorkImportStatus.UPLOADED,
+    EmployeeWorkImportStatus.PREVIEWED,
+    EmployeeWorkImportStatus.RESOLVING,
+    EmployeeWorkImportStatus.READY,
+    EmployeeWorkImportStatus.FAILED,
+  ])('cleans an expired %s draft and marks it EXPIRED', async (status) => {
     const draft = createService({
       foundBatch: batch({
-        status: EmployeeWorkImportStatus.RESOLVING,
+        status,
+        expiresAt: new Date('2026-07-23T00:00:00.000Z'),
         errorStorageKey: 'employee-imports/batch-1/errors.xlsx',
       }),
     });
+
     await draft.service.remove('batch-1');
+
     expect(draft.storage.delete).toHaveBeenCalledWith('employee-imports/batch-1/source.xlsx');
     expect(draft.storage.delete).toHaveBeenCalledWith('employee-imports/batch-1/errors.xlsx');
-    expect(draft.prisma.employeeWorkImportBatch.findUnique).toHaveBeenCalled();
+    expect(draft.prisma.employeeWorkImportBatch.update).toHaveBeenCalledWith({
+      where: { id: 'batch-1' },
+      data: {
+        status: EmployeeWorkImportStatus.EXPIRED,
+        archivedAt: NOW,
+        errorStorageKey: null,
+      },
+    });
+  });
+
+  it.each([
+    EmployeeWorkImportStatus.IMPORTING,
+    EmployeeWorkImportStatus.COMPLETED,
+    EmployeeWorkImportStatus.SUPERSEDED,
+  ])('rejects cleanup for %s even after its TTL', async (status) => {
+    const protectedBatch = createService({
+      foundBatch: batch({
+        status,
+        expiresAt: new Date('2026-07-23T00:00:00.000Z'),
+      }),
+    });
+
+    await expect(protectedBatch.service.remove('batch-1')).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    expect(protectedBatch.storage.delete).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['preview', (service: EmployeeImportsService) => service.preview('batch-1')],
+    ['resolve', (service: EmployeeImportsService) => service.resolve('batch-1', { rows: [] })],
+    ['error download', (service: EmployeeImportsService) => service.errorFile('batch-1')],
+  ])('keeps expired drafts unavailable to %s', async (_label, operation) => {
+    const expired = createService({
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.READY,
+        expiresAt: new Date('2026-07-23T00:00:00.000Z'),
+      }),
+    });
+
+    await expect(operation(expired.service)).rejects.toMatchObject({
+      statusCode: 410,
+    });
   });
 
   it('downloads only the stored error workbook for a live batch', async () => {
