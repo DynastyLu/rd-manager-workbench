@@ -14,6 +14,7 @@ import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { AuditLogService } from '../../governance/application/audit-log.service';
 import { NormalizedEmployeeWorkRow } from '../domain/employee-work.types';
 import { employeeImportFingerprint } from './employee-import-fingerprint';
+import { EmployeeProgressSnapshotService } from './employee-progress-snapshot.service';
 import {
   EmployeeImportResolution,
   EmployeeImportValidatorService,
@@ -56,14 +57,17 @@ export class EmployeeImportCommitService {
     @Optional()
     @Inject(EMPLOYEE_IMPORT_COMMIT_CLOCK)
     clock?: () => Date,
+    @Optional()
+    private readonly snapshots?: EmployeeProgressSnapshotService,
   ) {
     this.now = clock ?? (() => new Date());
   }
 
   async commit(id: string) {
     let claimedRevision: EmployeeImportCommitRevision | null = null;
+    let result;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      result = await this.prisma.$transaction(async (tx) => {
         await this.lock(tx, `employee-import:${id}`);
         let batch = await tx.employeeWorkImportBatch.findUnique({ where: { id } });
         if (!batch) throw this.notFound();
@@ -232,6 +236,28 @@ export class EmployeeImportCommitService {
       }
       throw error;
     }
+    if (
+      this.snapshots &&
+      result.status === EmployeeWorkImportStatus.COMPLETED &&
+      result.snapshotStatus !== EmployeeSnapshotStatus.READY
+    ) {
+      try {
+        return this.publicSnapshotResult(await this.snapshots.ensureBatch(id));
+      } catch {
+        return {
+          ...result,
+          warning: { code: ErrorCodes.EMPLOYEE_SNAPSHOT_GENERATION_FAILED },
+        };
+      }
+    }
+    return result;
+  }
+
+  async rebuildSnapshots(id: string) {
+    if (!this.snapshots) {
+      throw new Error('Employee progress snapshot service is unavailable');
+    }
+    return this.publicSnapshotResult(await this.snapshots.rebuildBatch(id));
   }
 
   private assertStagedRows(
@@ -576,6 +602,15 @@ export class EmployeeImportCommitService {
       ),
     );
     return { ...safe, hasErrors: Boolean(batch.errorStorageKey) };
+  }
+
+  private publicSnapshotResult(
+    result: Awaited<ReturnType<EmployeeProgressSnapshotService['rebuildBatch']>>,
+  ) {
+    return {
+      ...this.publicBatch(result.batch),
+      ...(result.warning ? { warning: result.warning } : {}),
+    };
   }
 
   private dateOnly(value: Date): string {

@@ -122,6 +122,13 @@ export class EmployeeImportsService {
     return this.commitService.commit(id);
   }
 
+  rebuildSnapshots(id: string) {
+    if (!this.commitService) {
+      throw new Error('Employee import commit service is unavailable');
+    }
+    return this.commitService.rebuildSnapshots(id);
+  }
+
   async upload(file: UploadedContentFile | undefined) {
     if (!file?.buffer) {
       throw new AppError({

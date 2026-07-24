@@ -4,6 +4,9 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
   EmployeeImportRowStatus,
+  EmployeeProgressPeriod,
+  EmployeeProgressScope,
+  EmployeeSnapshotStatus,
   EmployeeWorkImportStatus,
   EmployeeWorkStatus,
   LoadEntryKind,
@@ -75,6 +78,9 @@ describe('Employee work imports API', () => {
       }
       await prisma.resourceLoadEntry.deleteMany({
         where: { employeeWorkImportBatchId: { in: batchIds } },
+      });
+      await prisma.employeeProgressSnapshot.deleteMany({
+        where: { sourceBatchIds: { hasSome: batchIds } },
       });
       await prisma.employeeWorkItem.deleteMany({ where: { importBatchId: { in: batchIds } } });
       await prisma.employeeWorkImportRow.deleteMany({ where: { batchId: { in: batchIds } } });
@@ -387,6 +393,42 @@ describe('Employee work imports API', () => {
       status: EmployeeWorkImportStatus.COMPLETED,
       version: 1,
       importedRows: 2,
+      snapshotStatus: EmployeeSnapshotStatus.READY,
+    });
+    const v1WeeklySnapshots = await prisma.employeeProgressSnapshot.findMany({
+      where: {
+        periodType: EmployeeProgressPeriod.WEEK,
+        periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+        archivedAt: null,
+      },
+      orderBy: { scopeKey: 'asc' },
+    });
+    expect(v1WeeklySnapshots.map(({ scopeKey }) => scopeKey)).toEqual([
+      `EMPLOYEE:${employeeId}`,
+      `PROJECT:${projectId}`,
+      'TEAM',
+    ]);
+    const v1TeamWeekly = v1WeeklySnapshots.find(
+      ({ scopeType }) => scopeType === EmployeeProgressScope.TEAM,
+    );
+    expect(v1TeamWeekly).toMatchObject({
+      sourceBatchIds: [v1Id],
+      highlights: { workItemIds: [] },
+      risks: { workItemIds: [] },
+      metrics: {
+        workItemCount: 2,
+        completedCount: 0,
+        completionRate: 0,
+        averageCompletionRate: 90,
+        plannedHours: 8,
+        actualHours: 7,
+        riskCount: 0,
+        blockedCount: 0,
+        projectCount: 1,
+        unlinkedCount: 1,
+        dataComplete: true,
+        missingWeeks: [],
+      },
     });
     await expect(
       prisma.employeeWorkItem.count({ where: { importBatchId: v1Id, archivedAt: null } }),
@@ -421,8 +463,156 @@ describe('Employee work imports API', () => {
           status: EmployeeWorkImportStatus.COMPLETED,
           version: 2,
           supersedesBatchId: v1Id,
+          snapshotStatus: EmployeeSnapshotStatus.READY,
         });
       });
+    const julyTeam = await prisma.employeeProgressSnapshot.findFirstOrThrow({
+      where: {
+        scopeKey: 'TEAM',
+        periodType: EmployeeProgressPeriod.MONTH,
+        periodStartAt: new Date('2026-07-01T00:00:00.000Z'),
+        archivedAt: null,
+      },
+    });
+    expect(julyTeam.sourceBatchIds).toEqual([v2Id]);
+    expect(julyTeam.metrics).toMatchObject({
+      workItemCount: 2,
+      dataComplete: false,
+      missingWeeks: ['2026-06-29', '2026-07-06', '2026-07-13'],
+    });
+    const activeWeeklyBeforeRebuild = await prisma.employeeProgressSnapshot.findFirstOrThrow({
+      where: {
+        scopeKey: 'TEAM',
+        periodType: EmployeeProgressPeriod.WEEK,
+        periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+        archivedAt: null,
+      },
+      select: { id: true, version: true },
+    });
+    await request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${v2Id}/rebuild-snapshots`)
+      .send({})
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({
+          id: v2Id,
+          status: EmployeeWorkImportStatus.COMPLETED,
+          snapshotStatus: EmployeeSnapshotStatus.READY,
+        });
+      });
+    await expect(
+      prisma.employeeProgressSnapshot.findUniqueOrThrow({
+        where: { id: activeWeeklyBeforeRebuild.id },
+        select: { archivedAt: true },
+      }),
+    ).resolves.toEqual({ archivedAt: expect.any(Date) });
+    await expect(
+      prisma.employeeProgressSnapshot.findFirstOrThrow({
+        where: {
+          scopeKey: 'TEAM',
+          periodType: EmployeeProgressPeriod.WEEK,
+          periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+          archivedAt: null,
+        },
+        select: { version: true },
+      }),
+    ).resolves.toEqual({ version: activeWeeklyBeforeRebuild.version + 1 });
+    await expect(
+      prisma.employeeProgressSnapshot.count({
+        where: {
+          scopeKey: 'TEAM',
+          periodType: EmployeeProgressPeriod.WEEK,
+          periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+          archivedAt: null,
+        },
+      }),
+    ).resolves.toBe(1);
+    const activeMonthBeforeConcurrentRebuild =
+      await prisma.employeeProgressSnapshot.findFirstOrThrow({
+        where: {
+          scopeKey: 'TEAM',
+          periodType: EmployeeProgressPeriod.MONTH,
+          periodStartAt: new Date('2026-07-01T00:00:00.000Z'),
+          archivedAt: null,
+        },
+        select: { id: true, version: true },
+      });
+    const activeWeekBeforeConcurrentRebuild =
+      await prisma.employeeProgressSnapshot.findFirstOrThrow({
+        where: {
+          scopeKey: 'TEAM',
+          periodType: EmployeeProgressPeriod.WEEK,
+          periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+          archivedAt: null,
+        },
+        select: { id: true, version: true },
+      });
+    const concurrentRebuilds = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        request(app.getHttpServer())
+          .post(`/api/employee-work-imports/${v2Id}/rebuild-snapshots`)
+          .send({})
+          .expect(201),
+      ),
+    );
+    expect(
+      concurrentRebuilds.every(
+        ({ body }) =>
+          body.data.id === v2Id &&
+          body.data.status === EmployeeWorkImportStatus.COMPLETED &&
+          body.data.snapshotStatus === EmployeeSnapshotStatus.READY,
+      ),
+    ).toBe(true);
+    await expect(
+      prisma.employeeWorkImportBatch.findUniqueOrThrow({
+        where: { id: v2Id },
+        select: { snapshotStatus: true },
+      }),
+    ).resolves.toEqual({ snapshotStatus: EmployeeSnapshotStatus.READY });
+    const activeWeekAfterConcurrentRebuild = await prisma.employeeProgressSnapshot.findMany({
+      where: {
+        periodType: EmployeeProgressPeriod.WEEK,
+        periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+        archivedAt: null,
+      },
+      orderBy: { scopeKey: 'asc' },
+      select: { scopeKey: true, version: true },
+    });
+    const activeMonthAfterConcurrentRebuild = await prisma.employeeProgressSnapshot.findMany({
+      where: {
+        periodType: EmployeeProgressPeriod.MONTH,
+        periodStartAt: new Date('2026-07-01T00:00:00.000Z'),
+        archivedAt: null,
+      },
+      orderBy: { scopeKey: 'asc' },
+      select: { scopeKey: true, version: true },
+    });
+    expect(activeWeekAfterConcurrentRebuild.map(({ scopeKey }) => scopeKey)).toEqual([
+      `EMPLOYEE:${employeeId}`,
+      `PROJECT:${projectId}`,
+      'TEAM',
+    ]);
+    expect(activeMonthAfterConcurrentRebuild.map(({ scopeKey }) => scopeKey)).toEqual([
+      `EMPLOYEE:${employeeId}`,
+      `PROJECT:${projectId}`,
+      'TEAM',
+    ]);
+    expect(
+      activeWeekAfterConcurrentRebuild.find(({ scopeKey }) => scopeKey === 'TEAM')?.version,
+    ).toBe(activeWeekBeforeConcurrentRebuild.version + 2);
+    expect(
+      activeMonthAfterConcurrentRebuild.find(({ scopeKey }) => scopeKey === 'TEAM')?.version,
+    ).toBe(activeMonthBeforeConcurrentRebuild.version + 2);
+    await expect(
+      prisma.employeeProgressSnapshot.findMany({
+        where: {
+          id: {
+            in: [activeWeekBeforeConcurrentRebuild.id, activeMonthBeforeConcurrentRebuild.id],
+          },
+        },
+        select: { archivedAt: true },
+      }),
+    ).resolves.toEqual([{ archivedAt: expect.any(Date) }, { archivedAt: expect.any(Date) }]);
     await expect(
       prisma.employeeWorkImportBatch.findUniqueOrThrow({
         where: { id: v1Id },
@@ -550,12 +740,23 @@ describe('Employee work imports API', () => {
       ),
     );
     const committed = responses
-      .map(({ body }) => body.data as { id: string; version: number; status: string })
+      .map(
+        ({ body }) =>
+          body.data as {
+            id: string;
+            version: number;
+            status: string;
+            snapshotStatus: EmployeeSnapshotStatus;
+          },
+      )
       .sort((left, right) => left.version - right.version);
     expect(committed.map(({ version }) => version)).toEqual([1, 2]);
     expect(committed.every(({ status }) => status === EmployeeWorkImportStatus.COMPLETED)).toBe(
       true,
     );
+    expect(
+      committed.some(({ snapshotStatus }) => snapshotStatus === EmployeeSnapshotStatus.READY),
+    ).toBe(true);
     const supersededId = committed[0].id;
     const currentId = committed[1].id;
 
@@ -697,6 +898,7 @@ describe('Employee work imports API', () => {
         expect(body.data).toMatchObject({
           status: EmployeeWorkImportStatus.COMPLETED,
           importedRows: rowCount,
+          snapshotStatus: EmployeeSnapshotStatus.READY,
         });
       });
     const commitElapsedMs = performance.now() - commitStartedAt;
@@ -717,6 +919,33 @@ describe('Employee work imports API', () => {
     ).resolves.toEqual({
       kind: LoadEntryKind.OTHER,
       employeeWorkItemId: expect.any(String),
+    });
+    await expect(
+      prisma.employeeProgressSnapshot.findFirstOrThrow({
+        where: {
+          scopeKey: 'TEAM',
+          periodType: EmployeeProgressPeriod.WEEK,
+          periodStartAt: new Date('2026-08-03T00:00:00.000Z'),
+          archivedAt: null,
+        },
+        select: { metrics: true, sourceBatchIds: true },
+      }),
+    ).resolves.toMatchObject({
+      metrics: {
+        workItemCount: rowCount,
+        completedCount: 0,
+        completionRate: 0,
+        averageCompletionRate: 0,
+        plannedHours: rowCount,
+        actualHours: 0,
+        riskCount: 0,
+        blockedCount: 0,
+        projectCount: 0,
+        unlinkedCount: rowCount,
+        dataComplete: true,
+        missingWeeks: [],
+      },
+      sourceBatchIds: [batchId],
     });
     console.info(
       `employee import 50k resolution/commit elapsed: ${Math.round(elapsedMs)}ms/${Math.round(

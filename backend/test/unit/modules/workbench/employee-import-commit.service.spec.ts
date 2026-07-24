@@ -114,6 +114,7 @@ function createService(options: {
   lockedEmployeeIds?: string[];
   lockedProjectIds?: string[];
   lockedTasks?: Array<{ id: string; projectId: string }>;
+  snapshotWarning?: { code: string };
 }) {
   const rows = options.rows ?? [
     stagedRow(2),
@@ -198,12 +199,28 @@ function createService(options: {
     ),
   };
   const audit = { record: jest.fn().mockResolvedValue({ id: 'audit-1' }) };
+  const snapshotResult = {
+    batch: {
+      ...target,
+      status: EmployeeWorkImportStatus.COMPLETED,
+      version: 2,
+      snapshotStatus: options.snapshotWarning
+        ? EmployeeSnapshotStatus.FAILED
+        : EmployeeSnapshotStatus.READY,
+    },
+    warning: options.snapshotWarning,
+  };
+  const snapshots = {
+    ensureBatch: jest.fn().mockResolvedValue(snapshotResult),
+    rebuildBatch: jest.fn().mockResolvedValue(snapshotResult),
+  };
   return {
     service: new EmployeeImportCommitService(
       prisma as never,
       validator as never,
       audit as never,
       () => NOW,
+      snapshots as never,
     ),
     prisma,
     validator,
@@ -211,6 +228,7 @@ function createService(options: {
     tx,
     rows,
     target,
+    snapshots,
   };
 }
 
@@ -299,12 +317,18 @@ describe('EmployeeImportCommitService', () => {
       id: 'batch-v2',
       status: EmployeeWorkImportStatus.COMPLETED,
       version: 2,
+      snapshotStatus: EmployeeSnapshotStatus.READY,
     });
+    expect(dependencies.snapshots.ensureBatch).toHaveBeenCalledWith('batch-v2');
   });
 
   it('returns an already completed batch without claiming or writing rows', async () => {
     const dependencies = createService({
-      batchOverrides: { status: EmployeeWorkImportStatus.COMPLETED, version: 1 },
+      batchOverrides: {
+        status: EmployeeWorkImportStatus.COMPLETED,
+        version: 1,
+        snapshotStatus: EmployeeSnapshotStatus.READY,
+      },
     });
 
     await expect(dependencies.service.commit('batch-v2')).resolves.toMatchObject({
@@ -314,6 +338,25 @@ describe('EmployeeImportCommitService', () => {
     });
     expect(dependencies.tx.employeeWorkImportBatch.updateMany).not.toHaveBeenCalled();
     expect(dependencies.tx.employeeWorkItem.createMany).not.toHaveBeenCalled();
+    expect(dependencies.snapshots.ensureBatch).not.toHaveBeenCalled();
+  });
+
+  it('recovers snapshot generation when an idempotent completed retry is still NOT_STARTED', async () => {
+    const dependencies = createService({
+      batchOverrides: {
+        status: EmployeeWorkImportStatus.COMPLETED,
+        version: 1,
+        snapshotStatus: EmployeeSnapshotStatus.NOT_STARTED,
+      },
+    });
+
+    await expect(dependencies.service.commit('batch-v2')).resolves.toMatchObject({
+      id: 'batch-v2',
+      status: EmployeeWorkImportStatus.COMPLETED,
+      snapshotStatus: EmployeeSnapshotStatus.READY,
+    });
+    expect(dependencies.snapshots.ensureBatch).toHaveBeenCalledWith('batch-v2');
+    expect(dependencies.tx.employeeWorkImportBatch.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects a non-READY batch without creating formal rows', async () => {
@@ -529,5 +572,29 @@ describe('EmployeeImportCommitService', () => {
       expect.objectContaining({ action: 'EMPLOYEE_IMPORT_COMMIT_FAILED' }),
       tx,
     );
+  });
+
+  it('returns a safe warning when post-commit snapshot generation fails', async () => {
+    const dependencies = createService({
+      snapshotWarning: { code: 'EMPLOYEE_SNAPSHOT_GENERATION_FAILED' },
+    });
+
+    await expect(dependencies.service.commit('batch-v2')).resolves.toMatchObject({
+      id: 'batch-v2',
+      status: EmployeeWorkImportStatus.COMPLETED,
+      snapshotStatus: EmployeeSnapshotStatus.FAILED,
+      warning: { code: 'EMPLOYEE_SNAPSHOT_GENERATION_FAILED' },
+    });
+    expect(dependencies.tx.employeeWorkItem.createMany).toHaveBeenCalled();
+  });
+
+  it('allows an explicit idempotent snapshot rebuild for a completed batch', async () => {
+    const dependencies = createService({});
+
+    await expect(dependencies.service.rebuildSnapshots('batch-v2')).resolves.toMatchObject({
+      id: 'batch-v2',
+      snapshotStatus: EmployeeSnapshotStatus.READY,
+    });
+    expect(dependencies.snapshots.rebuildBatch).toHaveBeenCalledWith('batch-v2');
   });
 });

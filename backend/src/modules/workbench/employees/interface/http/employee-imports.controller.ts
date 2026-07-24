@@ -64,6 +64,11 @@ export class EmployeeImportsController {
     return this.imports.commit(id);
   }
 
+  @Post(':id/rebuild-snapshots')
+  rebuildSnapshots(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.imports.rebuildSnapshots(id);
+  }
+
   @Get(':id/errors')
   async errors(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
