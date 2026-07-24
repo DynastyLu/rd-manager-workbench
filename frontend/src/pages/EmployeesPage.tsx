@@ -291,15 +291,17 @@ export default function EmployeesPage() {
     if (department) values.add(department)
     return [...values].sort((left, right) => left.localeCompare(right, 'zh-CN'))
   }, [department, teamProgress])
-  const progressProjectOptions = useMemo(
-    () =>
-      (teamProgress?.projects.data ?? []).map((project) => ({
-        id: project.projectId,
-        code: project.projectCode,
-        name: project.projectName,
-      })),
-    [teamProgress]
-  )
+  const progressProjectOptions = useMemo(() => {
+    const options = (teamProgress?.projects.data ?? []).map((project) => ({
+      id: project.projectId,
+      code: project.projectCode,
+      name: project.projectName,
+    }))
+    if (projectId && !options.some((option) => option.id === projectId)) {
+      options.push({ id: projectId, code: projectId, name: '' })
+    }
+    return options
+  }, [projectId, teamProgress])
 
   function openCreateEditor() {
     setDraft({ ...EMPTY_DRAFT })

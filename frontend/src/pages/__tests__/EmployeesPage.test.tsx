@@ -588,6 +588,22 @@ describe('EmployeesPage', () => {
     )
   })
 
+  it('keeps the active project filter present in the work-items project options', async () => {
+    const user = userEvent.setup()
+    renderEmployees(
+      '/employees?tab=work-items&periodType=WEEK&periodStart=2026-07-20&projectId=project-9'
+    )
+
+    expect(await screen.findByText('权限模型联调')).toBeInTheDocument()
+    expect(employeesApi.listEmployeeWorkItems).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: 'project-9' })
+    )
+
+    await user.click(screen.getByRole('combobox', { name: '项目' }))
+
+    expect(await screen.findByRole('option', { name: /project-9/ })).toBeInTheDocument()
+  })
+
   it('serves the imports tab with import history and the wizard entry', async () => {
     employeesApi.listEmployeeWorkImports.mockResolvedValue({
       data: [
