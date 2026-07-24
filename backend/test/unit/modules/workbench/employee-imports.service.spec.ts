@@ -11,6 +11,8 @@ import {
 } from '../../../../src/modules/workbench/employees/domain/employee-work.types';
 
 const NOW = new Date('2026-07-24T00:00:00.000Z');
+const SOURCE = Buffer.from('xlsx');
+const SOURCE_HASH = createHash('sha256').update(SOURCE).digest('hex');
 
 function normalizedRow(
   overrides: Partial<NormalizedEmployeeWorkRow> = {},
@@ -49,7 +51,7 @@ function batch(overrides: Record<string, unknown> = {}) {
     version: null,
     status: EmployeeWorkImportStatus.UPLOADED,
     originalName: 'weekly.xlsx',
-    fileHash: 'hash',
+    fileHash: SOURCE_HASH,
     sourceStorageKey: 'employee-imports/batch-1/source.xlsx',
     errorStorageKey: null,
     templateVersion: 1,
@@ -72,21 +74,27 @@ function createService(options: {
   foundBatch?: ReturnType<typeof batch> | null;
   inspection?: ReturnType<typeof inspection>;
   validation?: unknown[];
+  auditFailure?: Error;
 }) {
+  const foundBatch = options.foundBatch ?? batch();
   const tx = {
+    $executeRaw: jest.fn().mockResolvedValue(1),
     employeeWorkImportRow: {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
       update: jest.fn().mockResolvedValue({}),
     },
     employeeWorkImportBatch: {
+      findFirst: jest.fn().mockResolvedValue(options.existingBatch ?? null),
+      findUnique: jest.fn().mockResolvedValue(foundBatch),
+      create: jest.fn().mockImplementation(({ data }) => batch(data)),
       update: jest.fn().mockImplementation(({ data }) => batch(data)),
     },
   };
   const prisma = {
     employeeWorkImportBatch: {
       findFirst: jest.fn().mockResolvedValue(options.existingBatch ?? null),
-      findUnique: jest.fn().mockResolvedValue(options.foundBatch ?? batch()),
+      findUnique: jest.fn().mockResolvedValue(foundBatch),
       create: jest.fn().mockImplementation(({ data }) => batch(data)),
       update: jest.fn().mockImplementation(({ data }) => batch(data)),
     },
@@ -96,7 +104,7 @@ function createService(options: {
   const storage = {
     write: jest.fn().mockResolvedValue({ storageKey: 'stored', size: 4 }),
     read: jest.fn().mockResolvedValue({
-      content: Buffer.from('xlsx'),
+      content: SOURCE,
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     }),
     delete: jest.fn().mockResolvedValue(undefined),
@@ -119,7 +127,11 @@ function createService(options: {
       ],
     ),
   };
-  const audit = { record: jest.fn().mockResolvedValue({ id: 'audit-1' }) };
+  const audit = {
+    record: options.auditFailure
+      ? jest.fn().mockRejectedValue(options.auditFailure)
+      : jest.fn().mockResolvedValue({ id: 'audit-1' }),
+  };
   return {
     service: new EmployeeImportsService(
       prisma as never,
@@ -164,7 +176,7 @@ describe('EmployeeImportsService', () => {
       buffer: content,
     });
 
-    const created = dependencies.prisma.employeeWorkImportBatch.create.mock.calls[0][0].data;
+    const created = dependencies.tx.employeeWorkImportBatch.create.mock.calls[0][0].data;
     expect(created).toMatchObject({
       originalName: 'weekly.xlsx',
       fileHash: createHash('sha256').update(content).digest('hex'),
@@ -184,6 +196,7 @@ describe('EmployeeImportsService', () => {
         entityId: created.id,
         outcome: 'SUCCEEDED',
       }),
+      dependencies.tx,
     );
     expect(result).not.toHaveProperty('sourceStorageKey');
     expect(result).not.toHaveProperty('errorStorageKey');
@@ -203,8 +216,49 @@ describe('EmployeeImportsService', () => {
 
     expect(result).toMatchObject({ id: 'existing-batch' });
     expect(dependencies.storage.write).not.toHaveBeenCalled();
-    expect(dependencies.prisma.employeeWorkImportBatch.create).not.toHaveBeenCalled();
+    expect(dependencies.tx.employeeWorkImportBatch.create).not.toHaveBeenCalled();
     expect(dependencies.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('deletes the winning upload source when the transactional audit insert fails', async () => {
+    const dependencies = createService({ auditFailure: new Error('audit failed') });
+
+    await expect(
+      dependencies.service.upload({
+        originalname: 'weekly.xlsx',
+        mimetype: 'application/octet-stream',
+        size: SOURCE.length,
+        buffer: SOURCE,
+      }),
+    ).rejects.toThrow('audit failed');
+
+    const created = dependencies.tx.employeeWorkImportBatch.create.mock.calls[0][0].data;
+    expect(dependencies.storage.write).toHaveBeenCalledWith({
+      key: created.sourceStorageKey,
+      content: SOURCE,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    expect(dependencies.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'EMPLOYEE_IMPORT_UPLOADED' }),
+      dependencies.tx,
+    );
+    expect(dependencies.storage.delete).toHaveBeenCalledWith(created.sourceStorageKey);
+  });
+
+  it('acquires the upload advisory lock before the in-transaction duplicate check', async () => {
+    const dependencies = createService({});
+
+    await dependencies.service.upload({
+      originalname: 'weekly.xlsx',
+      mimetype: 'application/octet-stream',
+      size: SOURCE.length,
+      buffer: SOURCE,
+    });
+
+    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(dependencies.tx.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      dependencies.tx.employeeWorkImportBatch.findFirst.mock.invocationCallOrder[0],
+    );
   });
 
   it('previews into staged rows in one transaction and never writes formal work items', async () => {
@@ -274,12 +328,14 @@ describe('EmployeeImportsService', () => {
         errorRows: 1,
         unresolvedRows: 1,
         previewFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
-        errorStorageKey: 'employee-imports/batch-1/errors.xlsx',
+        errorStorageKey: expect.stringMatching(
+          /^employee-imports\/batch-1\/errors\/[a-f0-9]{64}\.xlsx$/,
+        ),
       }),
     });
     expect(dependencies.storage.write).toHaveBeenCalledWith(
       expect.objectContaining({
-        key: 'employee-imports/batch-1/errors.xlsx',
+        key: expect.stringMatching(/^employee-imports\/batch-1\/errors\/[a-f0-9]{64}\.xlsx$/),
         mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       }),
     );
@@ -291,6 +347,80 @@ describe('EmployeeImportsService', () => {
       unresolvedRows: 1,
       hasErrors: true,
     });
+    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(dependencies.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'EMPLOYEE_IMPORT_PREVIEWED' }),
+      dependencies.tx,
+    );
+  });
+
+  it('rejects a source hash mismatch before parsing or writing staged state', async () => {
+    const dependencies = createService({
+      foundBatch: batch({ fileHash: createHash('sha256').update('original').digest('hex') }),
+    });
+
+    await expect(dependencies.service.preview('batch-1')).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_INTEGRITY_FAILED',
+      statusCode: 422,
+    });
+
+    expect(dependencies.workbook.inspect).not.toHaveBeenCalled();
+    expect(dependencies.storage.write).not.toHaveBeenCalled();
+    expect(dependencies.tx.employeeWorkImportRow.deleteMany).not.toHaveBeenCalled();
+    expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
+    expect(dependencies.audit.record).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['template version', { templateVersion: 2 }],
+    ['period type', { periodType: 'MONTH' }],
+    ['period start', { periodStart: '2026-07-13' }],
+    ['period end', { periodEnd: '2026-07-27' }],
+  ])('rejects preview when stored source %s differs from the batch', async (_label, meta) => {
+    const dependencies = createService({
+      inspection: { ...inspection(), meta: { ...inspection().meta, ...meta } } as never,
+    });
+
+    await expect(dependencies.service.preview('batch-1')).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_INTEGRITY_FAILED',
+      statusCode: 422,
+    });
+
+    expect(dependencies.storage.write).not.toHaveBeenCalled();
+    expect(dependencies.tx.employeeWorkImportRow.deleteMany).not.toHaveBeenCalled();
+    expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
+    expect(dependencies.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('cleans only a new preview artifact when its transactional audit fails', async () => {
+    const oldKey = 'employee-imports/batch-1/errors/old.xlsx';
+    const dependencies = createService({
+      auditFailure: new Error('audit failed'),
+      foundBatch: batch({ errorStorageKey: oldKey }),
+      inspection: {
+        ...inspection(),
+        rows: [],
+        sourceRows: [{ rowNumber: 2, rawValues: { 员工姓名: null } }],
+        issues: [
+          {
+            code: 'REQUIRED_FIELD',
+            rowNumber: 2,
+            field: '员工姓名',
+            rawValue: null,
+            reason: 'required',
+          },
+        ],
+      },
+      validation: [],
+    });
+
+    await expect(dependencies.service.preview('batch-1')).rejects.toThrow('audit failed');
+
+    const newKey = dependencies.storage.write.mock.calls[0][0].key as string;
+    expect(newKey).toMatch(/^employee-imports\/batch-1\/errors\/[a-f0-9]{64}\.xlsx$/);
+    expect(newKey).not.toBe(oldKey);
+    expect(dependencies.storage.delete).toHaveBeenCalledWith(newKey);
+    expect(dependencies.storage.delete).not.toHaveBeenCalledWith(oldKey);
   });
 
   it('marks a clean preview ready and removes an obsolete error workbook', async () => {
@@ -336,6 +466,8 @@ describe('EmployeeImportsService', () => {
       foundBatch: batch({
         status: EmployeeWorkImportStatus.RESOLVING,
         rows: [staged],
+        totalRows: 1,
+        previewFingerprint: 'preview-fingerprint',
         errorStorageKey: 'employee-imports/batch-1/errors.xlsx',
       }),
       validation: [
@@ -376,6 +508,7 @@ describe('EmployeeImportsService', () => {
           },
         ],
       ]),
+      dependencies.tx,
     );
     expect(dependencies.tx.employeeWorkImportRow.update).toHaveBeenCalledWith({
       where: { id: 'row-1' },
@@ -397,6 +530,64 @@ describe('EmployeeImportsService', () => {
       }),
     });
     expect(result).toMatchObject({ status: EmployeeWorkImportStatus.READY });
+    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(dependencies.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'EMPLOYEE_IMPORT_RESOLVED' }),
+      dependencies.tx,
+    );
+  });
+
+  it.each([
+    {
+      label: 'never previewed',
+      value: batch({
+        status: EmployeeWorkImportStatus.UPLOADED,
+        rows: [],
+        totalRows: 0,
+        previewFingerprint: null,
+      }),
+    },
+    {
+      label: 'missing fingerprint',
+      value: batch({
+        status: EmployeeWorkImportStatus.PREVIEWED,
+        rows: [
+          {
+            id: 'row-1',
+            batchId: 'batch-1',
+            rowNumber: 2,
+            rawValues: normalizedRow().rawValues,
+            normalizedValues: normalizedRow(),
+            status: EmployeeImportRowStatus.UNRESOLVED,
+            errors: [],
+            resolvedEmployeeId: 'employee-1',
+            resolvedProjectId: null,
+            resolvedTaskId: null,
+            keepUnlinked: false,
+          },
+        ],
+        totalRows: 1,
+        previewFingerprint: null,
+      }),
+    },
+    {
+      label: 'incomplete staged rows',
+      value: batch({
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: [],
+        totalRows: 1,
+        previewFingerprint: 'fingerprint',
+      }),
+    },
+  ])('rejects resolutions for a batch that is $label', async ({ value }) => {
+    const dependencies = createService({ foundBatch: value });
+
+    await expect(dependencies.service.resolve('batch-1', { rows: [] })).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_STATE_INVALID',
+    });
+
+    expect(dependencies.validator.validate).not.toHaveBeenCalled();
+    expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
   });
 
   it('keeps unresolved references undefined when a resolution does not change them', async () => {
@@ -417,6 +608,8 @@ describe('EmployeeImportsService', () => {
       foundBatch: batch({
         status: EmployeeWorkImportStatus.RESOLVING,
         rows: [staged],
+        totalRows: 1,
+        previewFingerprint: 'preview-fingerprint',
       }),
     });
 
@@ -437,6 +630,7 @@ describe('EmployeeImportsService', () => {
           },
         ],
       ]),
+      dependencies.tx,
     );
   });
 
@@ -459,7 +653,7 @@ describe('EmployeeImportsService', () => {
 
     expect(draft.storage.delete).toHaveBeenCalledWith('employee-imports/batch-1/source.xlsx');
     expect(draft.storage.delete).toHaveBeenCalledWith('employee-imports/batch-1/errors.xlsx');
-    expect(draft.prisma.employeeWorkImportBatch.update).toHaveBeenCalledWith({
+    expect(draft.tx.employeeWorkImportBatch.update).toHaveBeenCalledWith({
       where: { id: 'batch-1' },
       data: {
         status: EmployeeWorkImportStatus.EXPIRED,
@@ -467,6 +661,143 @@ describe('EmployeeImportsService', () => {
         errorStorageKey: null,
       },
     });
+    expect(draft.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(draft.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'EMPLOYEE_IMPORT_EXPIRED' }),
+      draft.tx,
+    );
+  });
+
+  it('does not delete active files when the transactional remove audit fails', async () => {
+    const dependencies = createService({
+      auditFailure: new Error('audit failed'),
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.READY,
+        errorStorageKey: 'employee-imports/batch-1/errors/current.xlsx',
+      }),
+    });
+
+    await expect(dependencies.service.remove('batch-1')).rejects.toThrow('audit failed');
+
+    expect(dependencies.storage.delete).not.toHaveBeenCalled();
+    expect(dependencies.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'EMPLOYEE_IMPORT_EXPIRED' }),
+      dependencies.tx,
+    );
+  });
+
+  it('serializes remove ahead of preview so the waiting preview cannot revive EXPIRED', async () => {
+    let current = batch({
+      status: EmployeeWorkImportStatus.READY,
+      totalRows: 1,
+      validRows: 1,
+      previewFingerprint: 'preview-fingerprint',
+    });
+    const dependencies = createService({ foundBatch: current });
+    dependencies.tx.employeeWorkImportBatch.findUnique.mockImplementation(async () => current);
+    dependencies.tx.employeeWorkImportBatch.update.mockImplementation(async ({ data }) => {
+      current = batch({ ...current, ...data });
+      return current;
+    });
+    let barrier = Promise.resolve();
+    dependencies.prisma.$transaction.mockImplementation((work) => {
+      const pending = barrier.then(() => work(dependencies.tx));
+      barrier = pending.then(
+        () => undefined,
+        () => undefined,
+      );
+      return pending;
+    });
+
+    const removing = dependencies.service.remove('batch-1');
+    const previewing = dependencies.service.preview('batch-1');
+    const [removed, previewed] = await Promise.allSettled([removing, previewing]);
+
+    expect(removed.status).toBe('fulfilled');
+    expect(previewed).toMatchObject({
+      status: 'rejected',
+      reason: expect.objectContaining({ code: 'EMPLOYEE_IMPORT_EXPIRED' }),
+    });
+    expect(current.status).toBe(EmployeeWorkImportStatus.EXPIRED);
+    expect(dependencies.tx.employeeWorkImportRow.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('serializes two resolutions and makes the second requery the first result', async () => {
+    const stagedRows = [2, 3].map((rowNumber) => ({
+      id: `row-${rowNumber}`,
+      batchId: 'batch-1',
+      rowNumber,
+      rawValues: normalizedRow({ rowNumber }).rawValues,
+      normalizedValues: normalizedRow({ rowNumber }),
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: [{ field: '项目编号', code: 'PROJECT_NOT_FOUND' }],
+      resolvedEmployeeId: 'employee-1',
+      resolvedProjectId: null,
+      resolvedTaskId: null,
+      keepUnlinked: false,
+    }));
+    let currentRows = stagedRows;
+    let current = batch({
+      status: EmployeeWorkImportStatus.RESOLVING,
+      totalRows: 2,
+      unresolvedRows: 2,
+      previewFingerprint: 'preview-fingerprint',
+      rows: currentRows,
+    });
+    const dependencies = createService({ foundBatch: current });
+    dependencies.validator.validate.mockImplementation(async (rows) =>
+      rows.map((row) => ({
+        row,
+        status: EmployeeImportRowStatus.VALID,
+        errors: [],
+        resolvedEmployeeId: 'employee-1',
+        resolvedProjectId: null,
+        resolvedTaskId: null,
+        keepUnlinked: true,
+      })),
+    );
+    dependencies.tx.employeeWorkImportBatch.findUnique.mockImplementation(async () => ({
+      ...current,
+      rows: currentRows,
+    }));
+    dependencies.tx.employeeWorkImportRow.update.mockImplementation(async ({ where, data }) => {
+      currentRows = currentRows.map((row) =>
+        row.id === where.id ? ({ ...row, ...data } as typeof row) : row,
+      );
+      return {};
+    });
+    dependencies.tx.employeeWorkImportBatch.update.mockImplementation(async ({ data }) => {
+      current = batch({ ...current, ...data, rows: currentRows });
+      return current;
+    });
+    let barrier = Promise.resolve();
+    dependencies.prisma.$transaction.mockImplementation((work) => {
+      const pending = barrier.then(() => work(dependencies.tx));
+      barrier = pending.then(
+        () => undefined,
+        () => undefined,
+      );
+      return pending;
+    });
+
+    const first = dependencies.service.resolve('batch-1', {
+      rows: [{ rowNumber: 2, keepUnlinked: true }],
+    });
+    const second = dependencies.service.resolve('batch-1', {
+      rows: [{ rowNumber: 3, keepUnlinked: true }],
+    });
+    await Promise.all([first, second]);
+
+    expect(dependencies.tx.employeeWorkImportBatch.findUnique).toHaveBeenCalledTimes(2);
+    expect(dependencies.tx.employeeWorkImportBatch.update.mock.calls[1][0].data).toMatchObject({
+      validRows: 2,
+      unresolvedRows: 0,
+      status: EmployeeWorkImportStatus.READY,
+    });
+    expect(currentRows.map(({ status }) => status)).toEqual([
+      EmployeeImportRowStatus.VALID,
+      EmployeeImportRowStatus.VALID,
+    ]);
   });
 
   it.each([

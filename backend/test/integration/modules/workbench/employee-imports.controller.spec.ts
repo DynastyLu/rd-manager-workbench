@@ -140,15 +140,25 @@ describe('Employee work imports API', () => {
     const source = await workbookBuffer();
     await request(app.getHttpServer()).post('/api/employee-work-imports').expect(422);
 
-    const uploaded = await request(app.getHttpServer())
-      .post('/api/employee-work-imports')
-      .attach('file', source, {
-        filename: 'weekly.xlsx',
-        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      })
-      .expect(201);
+    const [uploaded, concurrentUpload] = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/employee-work-imports')
+        .attach('file', source, {
+          filename: 'weekly.xlsx',
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        })
+        .expect(201),
+      request(app.getHttpServer())
+        .post('/api/employee-work-imports')
+        .attach('file', source, {
+          filename: 'concurrent.xlsx',
+          contentType: 'application/octet-stream',
+        })
+        .expect(201),
+    ]);
     const batchId = uploaded.body.data.id as string;
     batchIds.push(batchId);
+    expect(concurrentUpload.body.data.id).toBe(batchId);
     expect(uploaded.body.data).toMatchObject({
       id: batchId,
       status: EmployeeWorkImportStatus.UPLOADED,
@@ -182,6 +192,10 @@ describe('Employee work imports API', () => {
     await expect(
       prisma.employeeWorkItem.count({ where: { importBatchId: batchId } }),
     ).resolves.toBe(0);
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${batchId}/resolutions`)
+      .send({ rows: [] })
+      .expect(400);
 
     const errorDownload = await request(app.getHttpServer())
       .get(`/api/employee-work-imports/${batchId}/errors`)

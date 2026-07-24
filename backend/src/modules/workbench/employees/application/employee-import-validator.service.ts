@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { EmployeeImportRowStatus, EmploymentStatus } from '@prisma/client';
+import { EmployeeImportRowStatus, EmploymentStatus, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { NormalizedEmployeeWorkRow } from '../domain/employee-work.types';
 
@@ -40,6 +40,8 @@ export class EmployeeImportValidatorService {
   async validate(
     rows: NormalizedEmployeeWorkRow[],
     resolutions: ReadonlyMap<number, EmployeeImportResolution> = new Map(),
+    client: Pick<Prisma.TransactionClient, 'resourceProfile' | 'project' | 'workTask'> = this
+      .prisma,
   ): Promise<ValidatedEmployeeImportRow[]> {
     const employeeNames = this.unique(rows.map(({ employeeName }) => employeeName));
     const projectCodes = this.unique(
@@ -56,7 +58,7 @@ export class EmployeeImportValidatorService {
     const taskIds = this.unique(resolutionValues.flatMap(({ taskId }) => (taskId ? [taskId] : [])));
 
     const [employees, projects, tasks] = await Promise.all([
-      this.prisma.resourceProfile.findMany({
+      client.resourceProfile.findMany({
         where: {
           archivedAt: null,
           employmentStatus: { not: EmploymentStatus.LEFT },
@@ -64,14 +66,14 @@ export class EmployeeImportValidatorService {
         },
         select: { id: true, displayName: true },
       }),
-      this.prisma.project.findMany({
+      client.project.findMany({
         where: {
           archivedAt: null,
           OR: [{ code: { in: projectCodes } }, { id: { in: projectIds } }],
         },
         select: { id: true, code: true },
       }),
-      this.prisma.workTask.findMany({
+      client.workTask.findMany({
         where: {
           archivedAt: null,
           OR: [{ code: { in: taskCodes } }, { id: { in: taskIds } }],

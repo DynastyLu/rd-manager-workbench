@@ -118,229 +118,304 @@ export class EmployeeImportsService {
     const periodStartAt = this.utcDate(inspected.meta.periodStart);
     const periodEndAt = this.utcDate(inspected.meta.periodEnd);
     const now = this.now();
-    const existing = await this.prisma.employeeWorkImportBatch.findFirst({
-      where: {
-        fileHash,
-        periodType: inspected.meta.periodType,
-        periodStartAt,
-        expiresAt: { gt: now },
-        status: { not: EmployeeWorkImportStatus.EXPIRED },
-        archivedAt: null,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (existing) return this.publicBatch(existing);
-
-    const id = randomUUID();
-    const sourceStorageKey = `employee-imports/${id}/source.xlsx`;
-    await this.storage.write({
-      key: sourceStorageKey,
-      content: file.buffer,
-      mimeType: file.mimetype || XLSX_MIME_TYPE,
-    });
+    let writtenSourceKey: string | null = null;
     try {
-      const created = await this.prisma.employeeWorkImportBatch.create({
-        data: {
-          id,
-          periodType: inspected.meta.periodType,
-          periodStartAt,
-          periodEndAt,
-          status: EmployeeWorkImportStatus.UPLOADED,
-          originalName,
-          fileHash,
-          sourceStorageKey,
-          templateVersion: inspected.meta.templateVersion,
-          expiresAt: new Date(now.getTime() + IMPORT_TTL_MS),
+      const result = await this.prisma.$transaction(
+        async (tx) => {
+          await this.lock(
+            tx,
+            `employee-import-upload:${fileHash}:${inspected.meta.periodType}:${inspected.meta.periodStart}:${inspected.meta.periodEnd}`,
+          );
+          const existing = await tx.employeeWorkImportBatch.findFirst({
+            where: {
+              fileHash,
+              periodType: inspected.meta.periodType,
+              periodStartAt,
+              periodEndAt,
+              expiresAt: { gt: now },
+              status: { not: EmployeeWorkImportStatus.EXPIRED },
+              archivedAt: null,
+            },
+            orderBy: { createdAt: 'desc' },
+          });
+          if (existing) return existing;
+
+          const id = randomUUID();
+          const sourceStorageKey = `employee-imports/${id}/source.xlsx`;
+          await this.storage.write({
+            key: sourceStorageKey,
+            content: file.buffer,
+            mimeType: XLSX_MIME_TYPE,
+          });
+          writtenSourceKey = sourceStorageKey;
+          const created = await tx.employeeWorkImportBatch.create({
+            data: {
+              id,
+              periodType: inspected.meta.periodType,
+              periodStartAt,
+              periodEndAt,
+              status: EmployeeWorkImportStatus.UPLOADED,
+              originalName,
+              fileHash,
+              sourceStorageKey,
+              templateVersion: inspected.meta.templateVersion,
+              expiresAt: new Date(now.getTime() + IMPORT_TTL_MS),
+            },
+          });
+          await this.audit.record(
+            {
+              action: 'EMPLOYEE_IMPORT_UPLOADED',
+              entityType: 'employeeWorkImportBatch',
+              entityId: id,
+              outcome: 'SUCCEEDED',
+              changedFields: ['status'],
+              metadata: {
+                status: EmployeeWorkImportStatus.UPLOADED,
+                sha256: fileHash,
+                byteSize: file.buffer.length,
+                periodType: inspected.meta.periodType,
+                periodStart: inspected.meta.periodStart,
+                periodEnd: inspected.meta.periodEnd,
+              },
+            },
+            tx,
+          );
+          return created;
         },
-      });
-      await this.audit.record({
-        action: 'EMPLOYEE_IMPORT_UPLOADED',
-        entityType: 'employeeWorkImportBatch',
-        entityId: id,
-        outcome: 'SUCCEEDED',
-        changedFields: ['status'],
-        metadata: {
-          status: EmployeeWorkImportStatus.UPLOADED,
-          sha256: fileHash,
-          byteSize: file.buffer.length,
-          periodType: inspected.meta.periodType,
-          periodStart: inspected.meta.periodStart,
-          periodEnd: inspected.meta.periodEnd,
-        },
-      });
-      return this.publicBatch(created);
+        { timeout: 30_000 },
+      );
+      return this.publicBatch(result);
     } catch (error) {
-      await this.storage.delete(sourceStorageKey).catch(() => undefined);
+      if (writtenSourceKey) {
+        await this.storage.delete(writtenSourceKey).catch(() => undefined);
+      }
       throw error;
     }
   }
 
   async preview(id: string) {
-    const batch = await this.requireBatch(id);
-    this.assertDraft(batch.status);
-    const source = await this.storage.read(batch.sourceStorageKey);
-    const inspected = await this.workbook.inspect(source.content);
-    const validated = await this.validator.validate(inspected.rows);
-    const stagedRows = this.stageRows(id, inspected.sourceRows, inspected.issues, validated);
-    const counts = this.counts(stagedRows);
-    const status = this.previewStatus(counts);
-    const errorStorageKey =
-      counts.errorRows + counts.unresolvedRows > 0 ? `employee-imports/${id}/errors.xlsx` : null;
+    let newErrorStorageKey: string | null = null;
+    let previousErrorStorageKey: string | null = null;
+    try {
+      const updated = await this.prisma.$transaction(
+        async (tx) => {
+          await this.lock(tx, `employee-import:${id}`);
+          const batch = await this.requireBatchFrom(tx, id, true);
+          this.assertDraft(batch.status);
+          previousErrorStorageKey = batch.errorStorageKey;
 
-    if (errorStorageKey) {
-      await this.storage.write({
-        key: errorStorageKey,
-        content: await this.errorWorkbook(stagedRows),
-        mimeType: XLSX_MIME_TYPE,
-      });
-    } else if (batch.errorStorageKey) {
-      await this.storage.delete(batch.errorStorageKey);
-    }
+          const source = await this.storage.read(batch.sourceStorageKey);
+          if (this.sha256(source.content) !== batch.fileHash) {
+            throw this.integrityFailed('Stored employee import source hash does not match');
+          }
+          const inspected = await this.workbook.inspect(source.content);
+          this.assertSourceMetadata(batch, inspected.meta);
+          const validated = await this.validator.validate(inspected.rows, new Map(), tx);
+          const stagedRows = this.stageRows(id, inspected.sourceRows, inspected.issues, validated);
+          const counts = this.counts(stagedRows);
+          const status = this.previewStatus(counts);
+          const previewFingerprint = this.fingerprint({
+            fileHash: batch.fileHash,
+            templateVersion: batch.templateVersion,
+            periodType: batch.periodType,
+            periodStart: inspected.meta.periodStart,
+            periodEnd: inspected.meta.periodEnd,
+            rows: stagedRows,
+          });
+          const errorStorageKey =
+            counts.errorRows + counts.unresolvedRows > 0
+              ? `employee-imports/${id}/errors/${previewFingerprint}.xlsx`
+              : null;
+          newErrorStorageKey = errorStorageKey;
+          if (errorStorageKey && errorStorageKey !== previousErrorStorageKey) {
+            await this.storage.write({
+              key: errorStorageKey,
+              content: await this.errorWorkbook(stagedRows),
+              mimeType: XLSX_MIME_TYPE,
+            });
+          }
 
-    const previewFingerprint = this.fingerprint({
-      fileHash: batch.fileHash,
-      periodStart: inspected.meta.periodStart,
-      periodEnd: inspected.meta.periodEnd,
-      rows: stagedRows,
-    });
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.employeeWorkImportRow.deleteMany({ where: { batchId: id } });
-      if (stagedRows.length > 0) {
-        await tx.employeeWorkImportRow.createMany({
-          data: stagedRows.map((row) => this.rowCreateData(row)),
-        });
-      }
-      return tx.employeeWorkImportBatch.update({
-        where: { id },
-        data: {
-          status,
-          ...counts,
-          importedRows: 0,
-          previewFingerprint,
-          errorStorageKey,
+          await tx.employeeWorkImportRow.deleteMany({ where: { batchId: id } });
+          if (stagedRows.length > 0) {
+            await tx.employeeWorkImportRow.createMany({
+              data: stagedRows.map((row) => this.rowCreateData(row)),
+            });
+          }
+          const result = await tx.employeeWorkImportBatch.update({
+            where: { id },
+            data: {
+              status,
+              ...counts,
+              importedRows: 0,
+              previewFingerprint,
+              errorStorageKey,
+            },
+          });
+          await this.audit.record(
+            {
+              action: 'EMPLOYEE_IMPORT_PREVIEWED',
+              entityType: 'employeeWorkImportBatch',
+              entityId: id,
+              outcome: 'SUCCEEDED',
+              changedFields: ['status', 'totalRows', 'validRows', 'errorRows', 'unresolvedRows'],
+              metadata: { status, ...counts },
+            },
+            tx,
+          );
+          return result;
         },
-      });
-    });
-    await this.audit.record({
-      action: 'EMPLOYEE_IMPORT_PREVIEWED',
-      entityType: 'employeeWorkImportBatch',
-      entityId: id,
-      outcome: 'SUCCEEDED',
-      changedFields: ['status', 'totalRows', 'validRows', 'errorRows', 'unresolvedRows'],
-      metadata: { status, ...counts },
-    });
-    return this.publicBatch(updated);
+        { timeout: 30_000 },
+      );
+      if (previousErrorStorageKey && previousErrorStorageKey !== newErrorStorageKey) {
+        await this.storage.delete(previousErrorStorageKey).catch(() => undefined);
+      }
+      return this.publicBatch(updated);
+    } catch (error) {
+      if (newErrorStorageKey && newErrorStorageKey !== previousErrorStorageKey) {
+        await this.storage.delete(newErrorStorageKey).catch(() => undefined);
+      }
+      throw error;
+    }
   }
 
   async resolve(id: string, input: ResolveEmployeeImportInput) {
-    const batch = await this.requireBatch(id);
-    this.assertDraft(batch.status);
-    const rows = (batch.rows ?? []).map((row) => this.storedRow(row));
-    const rowsByNumber = new Map(rows.map((row) => [row.rowNumber, row]));
-    const resolutionMap = new Map<number, EmployeeImportResolution>();
-    const changedRows: NormalizedEmployeeWorkRow[] = [];
-    for (const resolution of input.rows) {
-      if (resolutionMap.has(resolution.rowNumber)) {
-        throw this.resolutionInvalid('Each row may be resolved only once');
-      }
-      const staged = rowsByNumber.get(resolution.rowNumber);
-      if (!staged || !this.isNormalizedRow(staged.normalizedValues)) {
-        throw this.resolutionInvalid(`Row ${resolution.rowNumber} cannot be resolved`);
-      }
-      const merged: EmployeeImportResolution = {
-        employeeId:
-          resolution.employeeId !== undefined
-            ? resolution.employeeId
-            : (staged.resolvedEmployeeId ?? undefined),
-        projectId:
-          resolution.projectId !== undefined
-            ? resolution.projectId
-            : (staged.resolvedProjectId ?? undefined),
-        taskId:
-          resolution.taskId !== undefined
-            ? resolution.taskId
-            : (staged.resolvedTaskId ?? undefined),
-        keepUnlinked: resolution.keepUnlinked ?? staged.keepUnlinked,
-      };
-      resolutionMap.set(resolution.rowNumber, merged);
-      changedRows.push(staged.normalizedValues);
-    }
+    let newErrorStorageKey: string | null = null;
+    let previousErrorStorageKey: string | null = null;
+    try {
+      const updated = await this.prisma.$transaction(
+        async (tx) => {
+          await this.lock(tx, `employee-import:${id}`);
+          const batch = await this.requireBatchFrom(tx, id, true);
+          this.assertResolvable(batch);
+          if (input.rows.length === 0) {
+            throw this.resolutionInvalid('At least one row resolution is required');
+          }
+          previousErrorStorageKey = batch.errorStorageKey;
+          const rows: StagedRowData[] = (batch.rows ?? []).map((row: any) => this.storedRow(row));
+          const rowsByNumber = new Map(rows.map((row) => [row.rowNumber, row]));
+          const resolutionMap = new Map<number, EmployeeImportResolution>();
+          const changedRows: NormalizedEmployeeWorkRow[] = [];
+          for (const resolution of input.rows) {
+            if (resolutionMap.has(resolution.rowNumber)) {
+              throw this.resolutionInvalid('Each row may be resolved only once');
+            }
+            const staged = rowsByNumber.get(resolution.rowNumber);
+            if (!staged || !this.isNormalizedRow(staged.normalizedValues)) {
+              throw this.resolutionInvalid(`Row ${resolution.rowNumber} cannot be resolved`);
+            }
+            const merged: EmployeeImportResolution = {
+              employeeId:
+                resolution.employeeId !== undefined
+                  ? resolution.employeeId
+                  : (staged.resolvedEmployeeId ?? undefined),
+              projectId:
+                resolution.projectId !== undefined
+                  ? resolution.projectId
+                  : (staged.resolvedProjectId ?? undefined),
+              taskId:
+                resolution.taskId !== undefined
+                  ? resolution.taskId
+                  : (staged.resolvedTaskId ?? undefined),
+              keepUnlinked: resolution.keepUnlinked ?? staged.keepUnlinked,
+            };
+            resolutionMap.set(resolution.rowNumber, merged);
+            changedRows.push(staged.normalizedValues);
+          }
 
-    const validated = await this.validator.validate(changedRows, resolutionMap);
-    const invalid = validated.filter(({ status }) => status !== EmployeeImportRowStatus.VALID);
-    if (invalid.length > 0) {
-      throw new AppError({
-        code: ErrorCodes.EMPLOYEE_IMPORT_RESOLUTION_INVALID,
-        message: 'One or more employee import resolutions are invalid',
-        statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
-        details: {
-          issues: invalid.flatMap(({ row, errors }) =>
-            errors.map((error) => ({ rowNumber: row.rowNumber, ...error })),
-          ),
+          const validated = await this.validator.validate(changedRows, resolutionMap, tx);
+          const invalid = validated.filter(
+            ({ status }) => status !== EmployeeImportRowStatus.VALID,
+          );
+          if (invalid.length > 0) {
+            throw new AppError({
+              code: ErrorCodes.EMPLOYEE_IMPORT_RESOLUTION_INVALID,
+              message: 'One or more employee import resolutions are invalid',
+              statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+              details: {
+                issues: invalid.flatMap(({ row, errors }) =>
+                  errors.map((error) => ({ rowNumber: row.rowNumber, ...error })),
+                ),
+              },
+            });
+          }
+
+          const validatedByNumber = new Map(validated.map((row) => [row.row.rowNumber, row]));
+          const nextRows = rows.map((row) => {
+            const replacement = validatedByNumber.get(row.rowNumber);
+            return replacement ? this.validatedStageRow(id, replacement, row.id) : row;
+          });
+          const counts = this.counts(nextRows);
+          const status = this.previewStatus(counts);
+          const previewFingerprint = this.fingerprint({
+            fileHash: batch.fileHash,
+            templateVersion: batch.templateVersion,
+            periodType: batch.periodType,
+            periodStart: this.dateOnly(batch.periodStartAt),
+            periodEnd: this.dateOnly(batch.periodEndAt),
+            rows: nextRows,
+          });
+          const errorStorageKey =
+            counts.errorRows + counts.unresolvedRows > 0
+              ? `employee-imports/${id}/errors/${previewFingerprint}.xlsx`
+              : null;
+          newErrorStorageKey = errorStorageKey;
+          if (errorStorageKey && errorStorageKey !== previousErrorStorageKey) {
+            await this.storage.write({
+              key: errorStorageKey,
+              content: await this.errorWorkbook(nextRows),
+              mimeType: XLSX_MIME_TYPE,
+            });
+          }
+
+          for (const validatedRow of validated) {
+            const existing = rowsByNumber.get(validatedRow.row.rowNumber);
+            if (!existing?.id) continue;
+            await tx.employeeWorkImportRow.update({
+              where: { id: existing.id },
+              data: {
+                status: validatedRow.status,
+                errors: validatedRow.errors as unknown as Prisma.InputJsonValue,
+                resolvedEmployeeId: validatedRow.resolvedEmployeeId,
+                resolvedProjectId: validatedRow.resolvedProjectId,
+                resolvedTaskId: validatedRow.resolvedTaskId,
+                keepUnlinked: validatedRow.keepUnlinked,
+              },
+            });
+          }
+          const result = await tx.employeeWorkImportBatch.update({
+            where: { id },
+            data: {
+              status,
+              ...counts,
+              previewFingerprint,
+              errorStorageKey,
+            },
+          });
+          await this.audit.record(
+            {
+              action: 'EMPLOYEE_IMPORT_RESOLVED',
+              entityType: 'employeeWorkImportBatch',
+              entityId: id,
+              outcome: 'SUCCEEDED',
+              changedFields: ['status', 'validRows', 'unresolvedRows'],
+              metadata: { status, itemCount: validated.length, ...counts },
+            },
+            tx,
+          );
+          return result;
         },
-      });
-    }
-
-    const validatedByNumber = new Map(validated.map((row) => [row.row.rowNumber, row]));
-    const nextRows = rows.map((row) => {
-      const replacement = validatedByNumber.get(row.rowNumber);
-      return replacement ? this.validatedStageRow(id, replacement, row.id) : row;
-    });
-    const counts = this.counts(nextRows);
-    const status = this.previewStatus(counts);
-    const errorStorageKey =
-      counts.errorRows + counts.unresolvedRows > 0 ? `employee-imports/${id}/errors.xlsx` : null;
-    if (errorStorageKey) {
-      await this.storage.write({
-        key: errorStorageKey,
-        content: await this.errorWorkbook(nextRows),
-        mimeType: XLSX_MIME_TYPE,
-      });
-    } else if (batch.errorStorageKey) {
-      await this.storage.delete(batch.errorStorageKey);
-    }
-    const previewFingerprint = this.fingerprint({
-      fileHash: batch.fileHash,
-      periodStart: this.dateOnly(batch.periodStartAt),
-      periodEnd: this.dateOnly(batch.periodEndAt),
-      rows: nextRows,
-    });
-
-    const updated = await this.prisma.$transaction(async (tx) => {
-      for (const validatedRow of validated) {
-        const existing = rowsByNumber.get(validatedRow.row.rowNumber);
-        if (!existing?.id) continue;
-        await tx.employeeWorkImportRow.update({
-          where: { id: existing.id },
-          data: {
-            status: validatedRow.status,
-            errors: validatedRow.errors as unknown as Prisma.InputJsonValue,
-            resolvedEmployeeId: validatedRow.resolvedEmployeeId,
-            resolvedProjectId: validatedRow.resolvedProjectId,
-            resolvedTaskId: validatedRow.resolvedTaskId,
-            keepUnlinked: validatedRow.keepUnlinked,
-          },
-        });
+        { timeout: 30_000 },
+      );
+      if (previousErrorStorageKey && previousErrorStorageKey !== newErrorStorageKey) {
+        await this.storage.delete(previousErrorStorageKey).catch(() => undefined);
       }
-      return tx.employeeWorkImportBatch.update({
-        where: { id },
-        data: {
-          status,
-          ...counts,
-          previewFingerprint,
-          errorStorageKey,
-        },
-      });
-    });
-    await this.audit.record({
-      action: 'EMPLOYEE_IMPORT_RESOLVED',
-      entityType: 'employeeWorkImportBatch',
-      entityId: id,
-      outcome: 'SUCCEEDED',
-      changedFields: ['status', 'validRows', 'unresolvedRows'],
-      metadata: { status, itemCount: validated.length, ...counts },
-    });
-    return this.publicBatch(updated);
+      return this.publicBatch(updated);
+    } catch (error) {
+      if (newErrorStorageKey && newErrorStorageKey !== previousErrorStorageKey) {
+        await this.storage.delete(newErrorStorageKey).catch(() => undefined);
+      }
+      throw error;
+    }
   }
 
   async errorFile(id: string) {
@@ -361,29 +436,40 @@ export class EmployeeImportsService {
   }
 
   async remove(id: string): Promise<void> {
-    const batch = await this.requireBatchForCleanup(id);
-    this.assertDraft(batch.status);
-    await this.storage.delete(batch.sourceStorageKey);
-    if (batch.errorStorageKey) await this.storage.delete(batch.errorStorageKey);
-    await this.prisma.employeeWorkImportBatch.update({
-      where: { id },
-      data: {
-        status: EmployeeWorkImportStatus.EXPIRED,
-        archivedAt: this.now(),
-        errorStorageKey: null,
+    const files = await this.prisma.$transaction(
+      async (tx) => {
+        await this.lock(tx, `employee-import:${id}`);
+        const batch = await this.requireBatchFrom(tx, id, false, false);
+        this.assertDraft(batch.status);
+        await tx.employeeWorkImportBatch.update({
+          where: { id },
+          data: {
+            status: EmployeeWorkImportStatus.EXPIRED,
+            archivedAt: this.now(),
+            errorStorageKey: null,
+          },
+        });
+        await this.audit.record(
+          {
+            action: 'EMPLOYEE_IMPORT_EXPIRED',
+            entityType: 'employeeWorkImportBatch',
+            entityId: id,
+            outcome: 'SUCCEEDED',
+            changedFields: ['status', 'archivedAt'],
+            metadata: {
+              previousStatus: batch.status,
+              status: EmployeeWorkImportStatus.EXPIRED,
+            },
+          },
+          tx,
+        );
+        return [batch.sourceStorageKey, batch.errorStorageKey].filter((key): key is string =>
+          Boolean(key),
+        );
       },
-    });
-    await this.audit.record({
-      action: 'EMPLOYEE_IMPORT_EXPIRED',
-      entityType: 'employeeWorkImportBatch',
-      entityId: id,
-      outcome: 'SUCCEEDED',
-      changedFields: ['status', 'archivedAt'],
-      metadata: {
-        previousStatus: batch.status,
-        status: EmployeeWorkImportStatus.EXPIRED,
-      },
-    });
+      { timeout: 30_000 },
+    );
+    await Promise.all(files.map((key) => this.storage.delete(key).catch(() => undefined)));
   }
 
   private stageRows(
@@ -525,6 +611,8 @@ export class EmployeeImportsService {
 
   private fingerprint(input: {
     fileHash: string;
+    templateVersion: number;
+    periodType: string;
     periodStart: string;
     periodEnd: string;
     rows: StagedRowData[];
@@ -544,6 +632,8 @@ export class EmployeeImportsService {
       Buffer.from(
         JSON.stringify({
           fileHash: input.fileHash,
+          templateVersion: input.templateVersion,
+          periodType: input.periodType,
           periodStart: input.periodStart,
           periodEnd: input.periodEnd,
           rows,
@@ -617,9 +707,15 @@ export class EmployeeImportsService {
     return batch;
   }
 
-  private async requireBatchForCleanup(id: string) {
-    const batch = await this.prisma.employeeWorkImportBatch.findUnique({
+  private async requireBatchFrom(
+    client: Prisma.TransactionClient,
+    id: string,
+    includeRows: boolean,
+    enforceExpiry = true,
+  ): Promise<any> {
+    const batch = await client.employeeWorkImportBatch.findUnique({
       where: { id },
+      ...(includeRows ? { include: { rows: { orderBy: { rowNumber: 'asc' as const } } } } : {}),
     });
     if (!batch) {
       throw new AppError({
@@ -628,7 +724,77 @@ export class EmployeeImportsService {
         statusCode: HttpStatus.NOT_FOUND,
       });
     }
+    if (
+      (enforceExpiry && batch.status === EmployeeWorkImportStatus.EXPIRED) ||
+      (enforceExpiry && DRAFT_STATUSES.has(batch.status) && batch.expiresAt <= this.now())
+    ) {
+      throw new AppError({
+        code: ErrorCodes.EMPLOYEE_IMPORT_EXPIRED,
+        message: 'Employee work import batch has expired',
+        statusCode: HttpStatus.GONE,
+      });
+    }
     return batch;
+  }
+
+  private async lock(client: Prisma.TransactionClient, key: string): Promise<void> {
+    await client.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
+  }
+
+  private assertSourceMetadata(
+    batch: {
+      templateVersion: number;
+      periodType: string;
+      periodStartAt: Date;
+      periodEndAt: Date;
+    },
+    meta: {
+      templateVersion: number;
+      periodType: string;
+      periodStart: string;
+      periodEnd: string;
+    },
+  ): void {
+    if (
+      meta.templateVersion !== batch.templateVersion ||
+      meta.periodType !== batch.periodType ||
+      meta.periodStart !== this.dateOnly(batch.periodStartAt) ||
+      meta.periodEnd !== this.dateOnly(batch.periodEndAt)
+    ) {
+      throw this.integrityFailed('Stored employee import source metadata does not match');
+    }
+  }
+
+  private assertResolvable(batch: {
+    status: EmployeeWorkImportStatus;
+    previewFingerprint: string | null;
+    totalRows: number;
+    rows?: unknown[];
+  }): void {
+    const previewedStatus =
+      batch.status === EmployeeWorkImportStatus.PREVIEWED ||
+      batch.status === EmployeeWorkImportStatus.RESOLVING ||
+      batch.status === EmployeeWorkImportStatus.READY ||
+      batch.status === EmployeeWorkImportStatus.FAILED;
+    if (
+      !previewedStatus ||
+      !batch.previewFingerprint ||
+      (batch.rows?.length ?? 0) !== batch.totalRows
+    ) {
+      throw new AppError({
+        code: ErrorCodes.EMPLOYEE_IMPORT_STATE_INVALID,
+        message: 'Employee work import batch must have a complete preview before resolution',
+        statusCode: HttpStatus.CONFLICT,
+      });
+    }
+  }
+
+  private integrityFailed(message: string): AppError {
+    return new AppError({
+      code: ErrorCodes.EMPLOYEE_IMPORT_INTEGRITY_FAILED,
+      message,
+      statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+    });
   }
 
   private assertDraft(status: EmployeeWorkImportStatus): void {

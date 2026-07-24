@@ -1,5 +1,7 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayNotEmpty,
   IsArray,
   IsBoolean,
   IsInt,
@@ -33,6 +35,8 @@ export class ResolveEmployeeImportRowDto {
 
 export class ResolveEmployeeImportDto {
   @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(50_000)
   @ValidateNested({ each: true })
   @Type(() => ResolveEmployeeImportRowDto)
   rows!: ResolveEmployeeImportRowDto[];
