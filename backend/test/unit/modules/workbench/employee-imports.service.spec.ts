@@ -82,6 +82,7 @@ function createService(options: {
     employeeWorkImportRow: {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findMany: jest.fn().mockResolvedValue((foundBatch as any)?.rows ?? []),
       update: jest.fn().mockResolvedValue({}),
     },
     employeeWorkImportBatch: {
@@ -218,6 +219,24 @@ describe('EmployeeImportsService', () => {
     expect(dependencies.storage.write).not.toHaveBeenCalled();
     expect(dependencies.tx.employeeWorkImportBatch.create).not.toHaveBeenCalled();
     expect(dependencies.audit.record).not.toHaveBeenCalled();
+  });
+
+  it('rejects upload MIME types outside canonical XLSX and octet-stream', async () => {
+    const dependencies = createService({});
+
+    await expect(
+      dependencies.service.upload({
+        originalname: 'weekly.xlsx',
+        mimetype: 'text/plain',
+        size: SOURCE.length,
+        buffer: SOURCE,
+      }),
+    ).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_TEMPLATE_INVALID',
+      statusCode: 422,
+    });
+    expect(dependencies.workbook.inspect).not.toHaveBeenCalled();
+    expect(dependencies.storage.write).not.toHaveBeenCalled();
   });
 
   it('deletes the winning upload source when the transactional audit insert fails', async () => {
@@ -510,14 +529,8 @@ describe('EmployeeImportsService', () => {
       ]),
       dependencies.tx,
     );
-    expect(dependencies.tx.employeeWorkImportRow.update).toHaveBeenCalledWith({
-      where: { id: 'row-1' },
-      data: expect.objectContaining({
-        status: EmployeeImportRowStatus.VALID,
-        errors: [],
-        keepUnlinked: true,
-      }),
-    });
+    expect(dependencies.tx.employeeWorkImportRow.update).not.toHaveBeenCalled();
+    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(2);
     expect(dependencies.tx.employeeWorkImportBatch.update).toHaveBeenCalledWith({
       where: { id: 'batch-1' },
       data: expect.objectContaining({
@@ -530,11 +543,218 @@ describe('EmployeeImportsService', () => {
       }),
     });
     expect(result).toMatchObject({ status: EmployeeWorkImportStatus.READY });
-    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(2);
     expect(dependencies.audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'EMPLOYEE_IMPORT_RESOLVED' }),
       dependencies.tx,
     );
+  });
+
+  it('preserves the old resolve artifact and removes only the new one on audit failure', async () => {
+    const oldKey = 'employee-imports/batch-1/errors/old.xlsx';
+    const stagedRows = [2, 3].map((rowNumber) => ({
+      id: `row-${rowNumber}`,
+      batchId: 'batch-1',
+      rowNumber,
+      rawValues: normalizedRow({ rowNumber }).rawValues,
+      normalizedValues: normalizedRow({ rowNumber }),
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: [{ field: '项目编号', code: 'PROJECT_NOT_FOUND' }],
+      resolvedEmployeeId: 'employee-1',
+      resolvedProjectId: null,
+      resolvedTaskId: null,
+      keepUnlinked: false,
+    }));
+    const dependencies = createService({
+      auditFailure: new Error('audit failed'),
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: stagedRows,
+        totalRows: 2,
+        unresolvedRows: 2,
+        previewFingerprint: 'preview-fingerprint',
+        errorStorageKey: oldKey,
+      }),
+    });
+
+    await expect(
+      dependencies.service.resolve('batch-1', {
+        rows: [{ rowNumber: 2, keepUnlinked: true }],
+      }),
+    ).rejects.toThrow('audit failed');
+
+    const newKey = dependencies.storage.write.mock.calls[0][0].key as string;
+    expect(newKey).toMatch(/^employee-imports\/batch-1\/errors\/[a-f0-9]{64}\.xlsx$/);
+    expect(newKey).not.toBe(oldKey);
+    expect(dependencies.storage.delete).toHaveBeenCalledWith(newKey);
+    expect(dependencies.storage.delete).not.toHaveBeenCalledWith(oldKey);
+  });
+
+  it.each([
+    ['raw values', { rawValues: [] }],
+    ['normalized values', { normalizedValues: { employeeName: '张明' } }],
+    ['errors', { errors: { code: 'PROJECT_NOT_FOUND' } }],
+  ])('rejects malformed persisted %s with a typed integrity error', async (_label, malformed) => {
+    const staged = {
+      id: 'row-1',
+      batchId: 'batch-1',
+      rowNumber: 2,
+      rawValues: normalizedRow().rawValues,
+      normalizedValues: normalizedRow(),
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: [],
+      resolvedEmployeeId: 'employee-1',
+      resolvedProjectId: null,
+      resolvedTaskId: null,
+      keepUnlinked: false,
+      ...malformed,
+    };
+    const dependencies = createService({
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: [staged],
+        totalRows: 1,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+    });
+
+    await expect(
+      dependencies.service.resolve('batch-1', {
+        rows: [{ rowNumber: 2, keepUnlinked: true }],
+      }),
+    ).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_INTEGRITY_FAILED',
+      statusCode: 422,
+    });
+    expect(dependencies.validator.validate).not.toHaveBeenCalled();
+    expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['empty required text', { normalizedValues: normalizedRow({ employeeName: '' }) }],
+    ['oversized nullable text', { normalizedValues: normalizedRow({ note: 'x'.repeat(10_001) }) }],
+    ['fractional completion rate', { normalizedValues: normalizedRow({ completionRate: 90.5 }) }],
+    ['out-of-range hours', { normalizedValues: normalizedRow({ plannedHours: 10_000 }) }],
+    ['over-precise hours', { normalizedValues: normalizedRow({ actualHours: 1.001 }) }],
+    ['oversized raw text', { rawValues: { 工作内容: 'x'.repeat(10_001) } }],
+    [
+      'oversized error reason',
+      { errors: [{ field: '项目编号', code: 'PROJECT_NOT_FOUND', reason: 'x'.repeat(1_001) }] },
+    ],
+    ['mismatched normalized row number', { normalizedValues: normalizedRow({ rowNumber: 3 }) }],
+  ])('enforces persisted Task3 boundary: %s', async (_label, malformed) => {
+    const staged = {
+      id: 'row-1',
+      batchId: 'batch-1',
+      rowNumber: 2,
+      rawValues: normalizedRow().rawValues,
+      normalizedValues: normalizedRow(),
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: [],
+      resolvedEmployeeId: 'employee-1',
+      resolvedProjectId: null,
+      resolvedTaskId: null,
+      keepUnlinked: false,
+      ...malformed,
+    };
+    const dependencies = createService({
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: [staged],
+        totalRows: 1,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+    });
+
+    await expect(
+      dependencies.service.resolve('batch-1', {
+        rows: [{ rowNumber: 2, keepUnlinked: true }],
+      }),
+    ).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_INTEGRITY_FAILED',
+      statusCode: 422,
+    });
+  });
+
+  it('queries batch metadata and staged rows separately during resolution', async () => {
+    const staged = {
+      id: 'row-1',
+      batchId: 'batch-1',
+      rowNumber: 2,
+      rawValues: normalizedRow().rawValues,
+      normalizedValues: normalizedRow(),
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: [],
+      resolvedEmployeeId: 'employee-1',
+      resolvedProjectId: null,
+      resolvedTaskId: null,
+      keepUnlinked: false,
+    };
+    const dependencies = createService({
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: [staged],
+        totalRows: 1,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+    });
+
+    await dependencies.service.resolve('batch-1', {
+      rows: [{ rowNumber: 2, keepUnlinked: true }],
+    });
+
+    expect(dependencies.tx.employeeWorkImportBatch.findUnique).toHaveBeenCalledWith({
+      where: { id: 'batch-1' },
+    });
+    expect(dependencies.tx.employeeWorkImportRow.findMany).toHaveBeenCalledWith({
+      where: { batchId: 'batch-1' },
+      orderBy: { rowNumber: 'asc' },
+    });
+  });
+
+  it('updates large resolution sets in bounded bulk statements', async () => {
+    const stagedRows = Array.from({ length: 205 }, (_, index) => {
+      const rowNumber = index + 2;
+      return {
+        id: `row-${rowNumber}`,
+        batchId: 'batch-1',
+        rowNumber,
+        rawValues: normalizedRow({ rowNumber }).rawValues,
+        normalizedValues: normalizedRow({ rowNumber }),
+        status: EmployeeImportRowStatus.UNRESOLVED,
+        errors: [],
+        resolvedEmployeeId: 'employee-1',
+        resolvedProjectId: null,
+        resolvedTaskId: null,
+        keepUnlinked: false,
+      };
+    });
+    const dependencies = createService({
+      foundBatch: batch({
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: stagedRows,
+        totalRows: stagedRows.length,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+    });
+    dependencies.validator.validate.mockImplementation(async (rows) =>
+      rows.map((row) => ({
+        row,
+        status: EmployeeImportRowStatus.VALID,
+        errors: [],
+        resolvedEmployeeId: 'employee-1',
+        resolvedProjectId: null,
+        resolvedTaskId: null,
+        keepUnlinked: true,
+      })),
+    );
+
+    await dependencies.service.resolve('batch-1', {
+      rows: stagedRows.map(({ rowNumber }) => ({ rowNumber, keepUnlinked: true })),
+    });
+
+    expect(dependencies.tx.employeeWorkImportRow.update).not.toHaveBeenCalled();
+    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(4);
   });
 
   it.each([
@@ -736,7 +956,7 @@ describe('EmployeeImportsService', () => {
       resolvedTaskId: null,
       keepUnlinked: false,
     }));
-    let currentRows = stagedRows;
+    let currentRows: any[] = stagedRows;
     let current = batch({
       status: EmployeeWorkImportStatus.RESOLVING,
       totalRows: 2,
@@ -758,13 +978,20 @@ describe('EmployeeImportsService', () => {
     );
     dependencies.tx.employeeWorkImportBatch.findUnique.mockImplementation(async () => ({
       ...current,
-      rows: currentRows,
     }));
-    dependencies.tx.employeeWorkImportRow.update.mockImplementation(async ({ where, data }) => {
-      currentRows = currentRows.map((row) =>
-        row.id === where.id ? ({ ...row, ...data } as typeof row) : row,
-      );
-      return {};
+    dependencies.tx.employeeWorkImportRow.findMany.mockImplementation(async () => currentRows);
+    let sqlCall = 0;
+    dependencies.tx.$executeRaw.mockImplementation(async () => {
+      sqlCall += 1;
+      if (sqlCall % 2 === 0) {
+        const rowNumber = sqlCall === 2 ? 2 : 3;
+        currentRows = currentRows.map((row) =>
+          row.rowNumber === rowNumber
+            ? { ...row, status: EmployeeImportRowStatus.VALID, keepUnlinked: true }
+            : row,
+        );
+      }
+      return 1;
     });
     dependencies.tx.employeeWorkImportBatch.update.mockImplementation(async ({ data }) => {
       current = batch({ ...current, ...data, rows: currentRows });

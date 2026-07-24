@@ -1,8 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { HttpStatus, Inject, Injectable, Optional } from '@nestjs/common';
-import { EmployeeImportRowStatus, EmployeeWorkImportStatus, Prisma } from '@prisma/client';
+import {
+  EmployeeImportRowStatus,
+  EmployeeWorkImportBatch,
+  EmployeeWorkImportStatus,
+  EmployeeWorkStatus,
+  Prisma,
+} from '@prisma/client';
 import ExcelJS from 'exceljs';
+import { z } from 'zod';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { StoragePort } from '../../../../infrastructure/storage/storage.port';
 import { AppError } from '../../../../shared/errors/app-error';
@@ -19,6 +26,7 @@ import {
   EmployeeImportValidatorService,
   ValidatedEmployeeImportRow,
 } from './employee-import-validator.service';
+import { employeeImportFingerprint } from './employee-import-fingerprint';
 import { EmployeeWorkbookService } from './employee-workbook.service';
 
 const IMPORT_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -31,6 +39,45 @@ const DRAFT_STATUSES = new Set<EmployeeWorkImportStatus>([
   EmployeeWorkImportStatus.FAILED,
 ]);
 const EMPLOYEE_IMPORT_CLOCK = Symbol('EMPLOYEE_IMPORT_CLOCK');
+const RESOLUTION_UPDATE_CHUNK_SIZE = 100;
+
+const persistedTextSchema = z.string().max(10_000);
+const persistedNullableTextSchema = persistedTextSchema.nullable();
+const persistedHoursSchema = z.number().finite().min(0).max(9_999.99).multipleOf(0.01).nullable();
+const rawValuesSchema = z.record(
+  z.string().max(200),
+  z.union([z.string().max(10_000), z.number().finite(), z.null()]),
+);
+const normalizedRowSchema = z
+  .object({
+    rowNumber: z.number().int().min(2).max(1_048_576),
+    employeeName: z.string().min(1).max(10_000),
+    title: z.string().min(1).max(10_000),
+    planText: persistedNullableTextSchema,
+    summaryText: persistedNullableTextSchema,
+    completionRate: z.number().int().min(0).max(100).nullable(),
+    status: z.nativeEnum(EmployeeWorkStatus),
+    nextPlanText: persistedNullableTextSchema,
+    riskText: persistedNullableTextSchema,
+    plannedHours: persistedHoursSchema,
+    actualHours: persistedHoursSchema,
+    projectCode: persistedNullableTextSchema,
+    taskCode: persistedNullableTextSchema,
+    note: persistedNullableTextSchema,
+    rawValues: rawValuesSchema,
+  })
+  .strict();
+const emptyNormalizedRowSchema = z.object({}).strict();
+const rowErrorsSchema = z.array(
+  z
+    .object({
+      field: z.string().min(1).max(200),
+      code: z.string().min(1).max(120),
+      rawValue: z.union([z.string().max(256), z.number().finite(), z.null()]).optional(),
+      reason: z.string().max(1_000).optional(),
+    })
+    .strict(),
+);
 
 const ERROR_HEADERS = [
   '员工姓名',
@@ -109,6 +156,13 @@ export class EmployeeImportsService {
       throw new AppError({
         code: ErrorCodes.EMPLOYEE_IMPORT_TEMPLATE_INVALID,
         message: 'Only XLSX employee workbooks are supported',
+        statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+      });
+    }
+    if (file.mimetype !== XLSX_MIME_TYPE && file.mimetype !== 'application/octet-stream') {
+      throw new AppError({
+        code: ErrorCodes.EMPLOYEE_IMPORT_TEMPLATE_INVALID,
+        message: 'Employee import MIME type must be XLSX or application/octet-stream',
         statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
       });
     }
@@ -200,7 +254,7 @@ export class EmployeeImportsService {
       const updated = await this.prisma.$transaction(
         async (tx) => {
           await this.lock(tx, `employee-import:${id}`);
-          const batch = await this.requireBatchFrom(tx, id, true);
+          const batch = await this.requireBatchFrom(tx, id);
           this.assertDraft(batch.status);
           previousErrorStorageKey = batch.errorStorageKey;
 
@@ -285,13 +339,17 @@ export class EmployeeImportsService {
       const updated = await this.prisma.$transaction(
         async (tx) => {
           await this.lock(tx, `employee-import:${id}`);
-          const batch = await this.requireBatchFrom(tx, id, true);
-          this.assertResolvable(batch);
+          const batch = await this.requireBatchFrom(tx, id);
+          const storedRows = await tx.employeeWorkImportRow.findMany({
+            where: { batchId: id },
+            orderBy: { rowNumber: 'asc' },
+          });
+          this.assertResolvable(batch, storedRows.length);
           if (input.rows.length === 0) {
             throw this.resolutionInvalid('At least one row resolution is required');
           }
           previousErrorStorageKey = batch.errorStorageKey;
-          const rows: StagedRowData[] = (batch.rows ?? []).map((row: any) => this.storedRow(row));
+          const rows: StagedRowData[] = storedRows.map((row) => this.storedRow(row));
           const rowsByNumber = new Map(rows.map((row) => [row.rowNumber, row]));
           const resolutionMap = new Map<number, EmployeeImportResolution>();
           const changedRows: NormalizedEmployeeWorkRow[] = [];
@@ -367,21 +425,7 @@ export class EmployeeImportsService {
             });
           }
 
-          for (const validatedRow of validated) {
-            const existing = rowsByNumber.get(validatedRow.row.rowNumber);
-            if (!existing?.id) continue;
-            await tx.employeeWorkImportRow.update({
-              where: { id: existing.id },
-              data: {
-                status: validatedRow.status,
-                errors: validatedRow.errors as unknown as Prisma.InputJsonValue,
-                resolvedEmployeeId: validatedRow.resolvedEmployeeId,
-                resolvedProjectId: validatedRow.resolvedProjectId,
-                resolvedTaskId: validatedRow.resolvedTaskId,
-                keepUnlinked: validatedRow.keepUnlinked,
-              },
-            });
-          }
+          await this.bulkUpdateResolvedRows(tx, validated, rowsByNumber);
           const result = await tx.employeeWorkImportBatch.update({
             where: { id },
             data: {
@@ -439,7 +483,7 @@ export class EmployeeImportsService {
     const files = await this.prisma.$transaction(
       async (tx) => {
         await this.lock(tx, `employee-import:${id}`);
-        const batch = await this.requireBatchFrom(tx, id, false, false);
+        const batch = await this.requireBatchFrom(tx, id, false);
         this.assertDraft(batch.status);
         await tx.employeeWorkImportBatch.update({
           where: { id },
@@ -617,29 +661,20 @@ export class EmployeeImportsService {
     periodEnd: string;
     rows: StagedRowData[];
   }): string {
-    const rows = [...input.rows]
-      .sort((left, right) => left.rowNumber - right.rowNumber)
-      .map((row) => ({
+    return employeeImportFingerprint({
+      ...input,
+      rows: input.rows.map((row) => ({
         rowNumber: row.rowNumber,
+        rawValues: row.rawValues,
         normalizedValues: row.normalizedValues,
+        status: row.status,
+        errors: row.errors,
         resolvedEmployeeId: row.resolvedEmployeeId,
         resolvedProjectId: row.resolvedProjectId,
         resolvedTaskId: row.resolvedTaskId,
         keepUnlinked: row.keepUnlinked,
-        status: row.status,
-      }));
-    return this.sha256(
-      Buffer.from(
-        JSON.stringify({
-          fileHash: input.fileHash,
-          templateVersion: input.templateVersion,
-          periodType: input.periodType,
-          periodStart: input.periodStart,
-          periodEnd: input.periodEnd,
-          rows,
-        }),
-      ),
-    );
+      })),
+    });
   }
 
   private storedRow(row: {
@@ -655,16 +690,27 @@ export class EmployeeImportsService {
     resolvedTaskId: string | null;
     keepUnlinked: boolean;
   }): StagedRowData {
+    const rawValues = rawValuesSchema.safeParse(row.rawValues);
+    const normalizedValues = z
+      .union([normalizedRowSchema, emptyNormalizedRowSchema])
+      .safeParse(row.normalizedValues);
+    const errors = rowErrorsSchema.safeParse(row.errors);
+    if (
+      !rawValues.success ||
+      !normalizedValues.success ||
+      !errors.success ||
+      ('rowNumber' in normalizedValues.data && normalizedValues.data.rowNumber !== row.rowNumber)
+    ) {
+      throw this.integrityFailed(`Persisted employee import row ${row.rowNumber} is malformed`);
+    }
     return {
       id: row.id,
       batchId: row.batchId,
       rowNumber: row.rowNumber,
-      rawValues: row.rawValues as Record<string, string | number | null>,
-      normalizedValues: row.normalizedValues as unknown as
-        | NormalizedEmployeeWorkRow
-        | Record<string, never>,
+      rawValues: rawValues.data,
+      normalizedValues: normalizedValues.data,
       status: row.status,
-      errors: row.errors as unknown as StagedRowData['errors'],
+      errors: errors.data,
       resolvedEmployeeId: row.resolvedEmployeeId,
       resolvedProjectId: row.resolvedProjectId,
       resolvedTaskId: row.resolvedTaskId,
@@ -685,7 +731,6 @@ export class EmployeeImportsService {
   private async requireBatch(id: string) {
     const batch = await this.prisma.employeeWorkImportBatch.findUnique({
       where: { id },
-      include: { rows: { orderBy: { rowNumber: 'asc' } } },
     });
     if (!batch) {
       throw new AppError({
@@ -710,12 +755,10 @@ export class EmployeeImportsService {
   private async requireBatchFrom(
     client: Prisma.TransactionClient,
     id: string,
-    includeRows: boolean,
     enforceExpiry = true,
-  ): Promise<any> {
+  ): Promise<EmployeeWorkImportBatch> {
     const batch = await client.employeeWorkImportBatch.findUnique({
       where: { id },
-      ...(includeRows ? { include: { rows: { orderBy: { rowNumber: 'asc' as const } } } } : {}),
     });
     if (!batch) {
       throw new AppError({
@@ -735,6 +778,56 @@ export class EmployeeImportsService {
       });
     }
     return batch;
+  }
+
+  private async bulkUpdateResolvedRows(
+    client: Prisma.TransactionClient,
+    validated: ValidatedEmployeeImportRow[],
+    rowsByNumber: ReadonlyMap<number, StagedRowData>,
+  ): Promise<void> {
+    const updates = validated.flatMap((validatedRow) => {
+      const existing = rowsByNumber.get(validatedRow.row.rowNumber);
+      return existing?.id ? [{ id: existing.id, validatedRow }] : [];
+    });
+    for (let offset = 0; offset < updates.length; offset += RESOLUTION_UPDATE_CHUNK_SIZE) {
+      const chunk = updates.slice(offset, offset + RESOLUTION_UPDATE_CHUNK_SIZE);
+      const values = Prisma.join(
+        chunk.map(
+          ({ id, validatedRow }) => Prisma.sql`(
+          ${id}::text,
+          ${validatedRow.status}::"app"."EmployeeImportRowStatus",
+          ${JSON.stringify(validatedRow.errors)}::jsonb,
+          ${validatedRow.resolvedEmployeeId}::text,
+          ${validatedRow.resolvedProjectId}::text,
+          ${validatedRow.resolvedTaskId}::text,
+          ${validatedRow.keepUnlinked}::boolean
+        )`,
+        ),
+      );
+      await client.$executeRaw(Prisma.sql`
+        UPDATE "app"."employee_work_import_rows" AS target
+        SET
+          "status" = incoming.status,
+          "errors" = incoming.errors,
+          "resolved_employee_id" = incoming.resolved_employee_id,
+          "resolved_project_id" = incoming.resolved_project_id,
+          "resolved_task_id" = incoming.resolved_task_id,
+          "keep_unlinked" = incoming.keep_unlinked,
+          "updated_at" = now()
+        FROM (
+          VALUES ${values}
+        ) AS incoming(
+          id,
+          status,
+          errors,
+          resolved_employee_id,
+          resolved_project_id,
+          resolved_task_id,
+          keep_unlinked
+        )
+        WHERE target.id = incoming.id
+      `);
+    }
   }
 
   private async lock(client: Prisma.TransactionClient, key: string): Promise<void> {
@@ -765,22 +858,20 @@ export class EmployeeImportsService {
     }
   }
 
-  private assertResolvable(batch: {
-    status: EmployeeWorkImportStatus;
-    previewFingerprint: string | null;
-    totalRows: number;
-    rows?: unknown[];
-  }): void {
+  private assertResolvable(
+    batch: {
+      status: EmployeeWorkImportStatus;
+      previewFingerprint: string | null;
+      totalRows: number;
+    },
+    persistedRowCount: number,
+  ): void {
     const previewedStatus =
       batch.status === EmployeeWorkImportStatus.PREVIEWED ||
       batch.status === EmployeeWorkImportStatus.RESOLVING ||
       batch.status === EmployeeWorkImportStatus.READY ||
       batch.status === EmployeeWorkImportStatus.FAILED;
-    if (
-      !previewedStatus ||
-      !batch.previewFingerprint ||
-      (batch.rows?.length ?? 0) !== batch.totalRows
-    ) {
+    if (!previewedStatus || !batch.previewFingerprint || persistedRowCount !== batch.totalRows) {
       throw new AppError({
         code: ErrorCodes.EMPLOYEE_IMPORT_STATE_INVALID,
         message: 'Employee work import batch must have a complete preview before resolution',
