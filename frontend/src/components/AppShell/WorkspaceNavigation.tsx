@@ -6,6 +6,7 @@ import {
   IconGridStroked,
   IconHomeStroked,
   IconSearchStroked,
+  IconUserGroup,
 } from '@douyinfe/semi-icons'
 import { NavLink, useLocation } from 'react-router-dom'
 import type { NavigationIcon, NavigationItem } from '@/router/routes'
@@ -18,6 +19,7 @@ const navigationIcons: Record<NavigationIcon, typeof IconHomeStroked> = {
   home: IconHomeStroked,
   tasks: IconChecklistStroked,
   projects: IconBriefcaseStroked,
+  employees: IconUserGroup,
   docs: IconBookOpenStroked,
   base: IconGridStroked,
   calendar: IconCalendarStroked,

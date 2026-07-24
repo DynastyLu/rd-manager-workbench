@@ -7,7 +7,15 @@ import LibraryHomePage from '@/pages/LibraryHomePage'
 
 export type ModuleAvailability = 'AVAILABLE' | 'PLANNED'
 
-export type NavigationIcon = 'home' | 'tasks' | 'projects' | 'docs' | 'base' | 'calendar' | 'search'
+export type NavigationIcon =
+  | 'home'
+  | 'tasks'
+  | 'projects'
+  | 'employees'
+  | 'docs'
+  | 'base'
+  | 'calendar'
+  | 'search'
 
 export interface NavigationItem {
   key: string
@@ -64,6 +72,22 @@ function PlannedGovernancePage() {
   })
 }
 
+function EmployeesWorkspacePlaceholder() {
+  return createElement(PlannedModuleState, {
+    title: '员工',
+    description: '员工目录、工作计划导入与团队进展页面正在接入。',
+    nextStep: '员工数据接口与页面路由已就绪。',
+  })
+}
+
+function EmployeeDetailPlaceholder() {
+  return createElement(PlannedModuleState, {
+    title: '员工进展',
+    description: '员工档案与周期进展页面正在接入。',
+    nextStep: '返回员工页面查看团队入口。',
+  })
+}
+
 const governancePages: Record<string, ComponentType> = {
   risks: RisksPage,
   issues: IssuesPage,
@@ -109,6 +133,12 @@ export const primaryNavigation: NavigationItem[] = [
     title: '项目',
     icon: 'projects',
     path: ROUTES.PROJECT_SPACES,
+  },
+  {
+    key: 'employees',
+    title: '员工',
+    icon: 'employees',
+    path: ROUTES.EMPLOYEES,
   },
   {
     key: 'docs',
@@ -167,6 +197,22 @@ const canonicalRoutes: RouteDefinition[] = [
     icon: '▦',
     component: ProjectWorkspacePage,
     navigationKey: 'projects',
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.EMPLOYEES,
+    title: '员工',
+    icon: 'employees',
+    component: EmployeesWorkspacePlaceholder,
+    navigationKey: 'employees',
+    availability: 'AVAILABLE',
+  },
+  {
+    path: '/employees/:employeeId',
+    title: '员工进展',
+    icon: 'employees',
+    component: EmployeeDetailPlaceholder,
+    navigationKey: 'employees',
     availability: 'AVAILABLE',
   },
   {

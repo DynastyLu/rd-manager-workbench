@@ -5,6 +5,8 @@ export const ROUTES = {
   PROJECT_SPACES: '/spaces/projects',
   projectWorkspace: (projectId: string, section = 'overview') =>
     `/spaces/projects/${encodeURIComponent(projectId)}/${section}`,
+  EMPLOYEES: '/employees',
+  employeeDetail: (employeeId: string) => `/employees/${encodeURIComponent(employeeId)}`,
   DOCS: '/docs',
   BASE: '/base',
   CALENDAR: '/calendar',

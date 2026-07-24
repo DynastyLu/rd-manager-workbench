@@ -12,7 +12,7 @@ function LocationProbe() {
   return createElement(
     'output',
     undefined,
-    `${location.pathname}${location.search}:${navigationType}`,
+    `${location.pathname}${location.search}:${navigationType}`
   )
 }
 
@@ -21,11 +21,12 @@ afterEach(() => {
 })
 
 describe('workspace route registry', () => {
-  it('exposes the seven core apps in product order', () => {
+  it('exposes the eight core apps in product order', () => {
     expect(primaryNavigation.map((item) => item.title)).toEqual([
       '工作台',
       '我的工作',
       '项目',
+      '员工',
       '文档与知识库',
       '多维表格',
       '日历',
@@ -35,6 +36,7 @@ describe('workspace route registry', () => {
       ROUTES.HOME,
       ROUTES.MY_WORK,
       ROUTES.PROJECT_SPACES,
+      ROUTES.EMPLOYEES,
       ROUTES.DOCS,
       ROUTES.BASE,
       ROUTES.CALENDAR,
@@ -48,6 +50,7 @@ describe('workspace route registry', () => {
       '工作台',
       '我的工作',
       '项目',
+      '员工',
       '文档与知识库',
       '多维表格',
       '日历',
@@ -124,12 +127,12 @@ describe('workspace route registry', () => {
             path: ROUTES.DOCS,
             element: createElement(LocationProbe),
           }),
-        ]),
-      ),
+        ])
+      )
     )
 
     expect(
-      await screen.findByText('/docs?directory=favorites&query=%E6%9D%90%E6%96%99:REPLACE'),
+      await screen.findByText('/docs?directory=favorites&query=%E6%9D%90%E6%96%99:REPLACE')
     ).toBeInTheDocument()
   })
 
@@ -169,5 +172,11 @@ describe('workspace route registry', () => {
     )
     expect(ROUTES.projectWorkspace('project-1', 'tasks')).toBe('/spaces/projects/project-1/tasks')
     expect(ROUTES.governance('risks')).toBe('/library/governance/risks')
+  })
+
+  it('builds encoded employee detail paths and registers both employee routes', () => {
+    expect(ROUTES.employeeDetail('员工 / A')).toBe('/employees/%E5%91%98%E5%B7%A5%20%2F%20A')
+    expect(findRoute(ROUTES.EMPLOYEES)?.title).toBe('员工')
+    expect(findRoute('/employees/:employeeId')?.navigationKey).toBe('employees')
   })
 })

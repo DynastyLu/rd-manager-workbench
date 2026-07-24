@@ -5,7 +5,7 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly code: string,
-    public readonly details?: unknown,
+    public readonly details?: unknown
   ) {
     super(message)
     this.name = 'ApiError'
@@ -52,10 +52,7 @@ function getApiBaseUrl(): string {
   throw new Error('VITE_API_BASE_URL is required in production.')
 }
 
-function getEnvelopeError(
-  payload: ApiFailureEnvelope,
-  status: number,
-): ApiError {
+function getEnvelopeError(payload: ApiFailureEnvelope, status: number): ApiError {
   const code = typeof payload.error.code === 'string' ? payload.error.code : 'API_ERROR'
   const message =
     typeof payload.error.message === 'string' ? payload.error.message : 'The API request failed.'
@@ -78,11 +75,17 @@ async function parseJson(response: Response): Promise<unknown> {
   try {
     return JSON.parse(responseText) as unknown
   } catch {
-    throw new ApiError(
-      'The API returned malformed JSON.',
-      response.status,
-      'MALFORMED_RESPONSE',
-    )
+    throw new ApiError('The API returned malformed JSON.', response.status, 'MALFORMED_RESPONSE')
+  }
+}
+
+async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
+  const url = `${getApiBaseUrl()}${path}`
+  try {
+    return await fetch(url, init)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Network request failed.'
+    throw new ApiError(message, 0, 'NETWORK_ERROR')
   }
 }
 
@@ -98,14 +101,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  const url = `${getApiBaseUrl()}${path}`
-  let response: Response
-  try {
-    response = await fetch(url, { ...init, headers })
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Network request failed.'
-    throw new ApiError(message, 0, 'NETWORK_ERROR')
-  }
+  const response = await fetchApi(path, { ...init, headers })
 
   if (response.status === 204) {
     return undefined as T
@@ -125,7 +121,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(
       'The API returned an invalid response envelope.',
       response.status,
-      'MALFORMED_RESPONSE',
+      'MALFORMED_RESPONSE'
     )
   }
 
@@ -134,10 +130,16 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function download(
   path: string,
-  init?: RequestInit,
+  init?: RequestInit
 ): Promise<{ blob: Blob; fileName: string }> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, init)
-  if (!response.ok) throw getHttpError(response)
+  const response = await fetchApi(path, init)
+  if (!response.ok) {
+    const payload = await parseJson(response)
+    if (isFailureEnvelope(payload)) {
+      throw getEnvelopeError(payload, response.status)
+    }
+    throw getHttpError(response)
+  }
   const disposition = response.headers.get('Content-Disposition') ?? ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   const fallback = disposition.match(/filename="([^"]+)"/i)?.[1]

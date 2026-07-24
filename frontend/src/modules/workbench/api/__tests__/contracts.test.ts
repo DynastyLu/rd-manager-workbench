@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type {
-  CreateProjectInput,
-  ListProjectsParams,
-  UpdateProjectInput,
-} from '../projects'
+import type { CreateProjectInput, ListProjectsParams, UpdateProjectInput } from '../projects'
 import type { CreateTaskInput, ListTasksParams, UpdateTaskInput } from '../tasks'
 import type {
   ApplicationCase,
@@ -22,6 +18,20 @@ import type {
   Project,
   WorkTask,
 } from '../../types'
+import type {
+  Employee,
+  EmployeeLoadEntry,
+  EmployeeProgress,
+  EmployeeProgressMetrics,
+  EmployeeSkill,
+  EmployeeWorkImportBatch,
+  EmployeeWorkImportRow,
+  EmployeeWorkItem,
+  ImportRowError,
+  ProjectTeamProgress,
+  TeamProgress,
+  UpdateEmployeeInput,
+} from '../../../employees/types'
 
 const workflowTemplate = {
   id: 'template-1',
@@ -141,6 +151,7 @@ const milestone = {
 
 const task = {
   id: 'task-1',
+  code: 'TASK-001',
   projectId: 'project-1',
   milestoneId: 'milestone-1',
   parentId: null,
@@ -159,6 +170,317 @@ const task = {
   createdAt: '2026-07-01T00:00:00.000Z',
   updatedAt: '2026-07-01T00:00:00.000Z',
 } satisfies WorkTask
+
+const employeeProgressMetrics = {
+  workItemCount: 1,
+  completedCount: 1,
+  completionRate: 100,
+  averageCompletionRate: 100,
+  plannedHours: 8,
+  actualHours: 7,
+  riskCount: 0,
+  blockedCount: 0,
+  projectCount: 1,
+  unlinkedCount: 0,
+  dataComplete: true,
+  missingWeeks: [],
+} satisfies EmployeeProgressMetrics
+
+const employeeSkill = {
+  id: 'skill-1',
+  resourceId: 'employee-1',
+  name: 'TypeScript',
+  level: 'PROFICIENT',
+  evidence: null,
+  assessedAt: '2026-07-18T00:00:00.000Z',
+  createdAt: '2026-07-18T00:00:00.000Z',
+  updatedAt: '2026-07-18T00:00:00.000Z',
+} satisfies EmployeeSkill
+
+const employeeLoadEntry = {
+  id: 'load-1',
+  resourceId: 'employee-1',
+  weekStartAt: '2026-07-20T00:00:00.000Z',
+  kind: 'PROJECT',
+  nonProjectRdItemId: null,
+  projectId: 'project-1',
+  taskId: null,
+  employeeWorkItemId: 'work-1',
+  employeeWorkImportBatchId: 'batch-1',
+  plannedHours: '8.00',
+  note: null,
+  archivedAt: null,
+  createdAt: '2026-07-18T00:00:00.000Z',
+  updatedAt: '2026-07-18T00:00:00.000Z',
+} satisfies EmployeeLoadEntry
+
+const employee = {
+  id: 'employee-1',
+  displayName: '张明',
+  roleTitle: '高级工程师',
+  department: '研发部',
+  managerName: null,
+  employmentStatus: 'ACTIVE',
+  weeklyCapacityHours: 40,
+  developmentGoal: null,
+  notes: null,
+  archivedAt: null,
+  createdAt: '2026-07-18T00:00:00.000Z',
+  updatedAt: '2026-07-18T00:00:00.000Z',
+  skills: [employeeSkill],
+  loadEntries: [employeeLoadEntry],
+} satisfies Employee
+
+const importRowError = {
+  field: 'employeeName',
+  code: 'EMPLOYEE_NOT_FOUND',
+  rawValue: '未知员工',
+  reason: '找不到有效员工',
+} satisfies ImportRowError
+
+const employeeImportRow = {
+  id: 'row-1',
+  rowNumber: 18,
+  status: 'UNRESOLVED',
+  errors: [importRowError],
+  rawValues: { 员工姓名: '未知员工', 工作内容: '完成权限联调' },
+  normalizedValues: {
+    rowNumber: 18,
+    employeeName: '未知员工',
+    title: '完成权限联调',
+    planText: '联调权限',
+    summaryText: null,
+    completionRate: null,
+    status: 'IN_PROGRESS',
+    nextPlanText: null,
+    riskText: null,
+    plannedHours: 8,
+    actualHours: null,
+    projectCode: 'RD-001',
+    taskCode: 'TASK-001',
+    note: null,
+    rawValues: { 员工姓名: '未知员工', 工作内容: '完成权限联调' },
+  },
+  resolvedEmployeeId: null,
+  resolvedProjectId: 'project-1',
+  resolvedTaskId: 'task-1',
+  keepUnlinked: false,
+  workItemId: null,
+  links: {
+    sourceBatch: '/employee-work-imports/batch-1',
+  },
+} satisfies EmployeeWorkImportRow
+
+const stagedEmployeeImportBatch = {
+  id: 'batch-1',
+  periodType: 'WEEK',
+  periodStart: '2026-07-20',
+  periodEnd: '2026-07-26',
+  version: null,
+  status: 'READY',
+  snapshotStatus: 'NOT_STARTED',
+  snapshotError: null,
+  originalName: '研发周报.xlsx',
+  fileHash: 'sha256',
+  templateVersion: 1,
+  totalRows: 1,
+  validRows: 1,
+  errorRows: 0,
+  unresolvedRows: 0,
+  importedRows: 0,
+  supersedesBatchId: null,
+  restoredFromBatchId: null,
+  committedAt: null,
+  expiresAt: '2026-07-24T00:00:00.000Z',
+  archivedAt: null,
+  createdAt: '2026-07-23T00:00:00.000Z',
+  updatedAt: '2026-07-23T00:00:00.000Z',
+  hasErrors: false,
+  sourceAvailable: true,
+  sourceBatchIds: ['batch-1'],
+  links: {
+    self: '/employee-work-imports/batch-1',
+    source: '/employee-work-imports/batch-1/source',
+  },
+} satisfies EmployeeWorkImportBatch
+
+const employeeWorkItem = {
+  id: 'work-1',
+  employeeId: 'employee-1',
+  employeeName: '张明',
+  department: '研发部',
+  importBatchId: 'batch-1',
+  importVersion: 1,
+  sourceRowId: 'row-1',
+  sourceRowNumber: 18,
+  sourceBatchIds: ['batch-1'],
+  periodStart: '2026-07-20',
+  periodEnd: '2026-07-26',
+  title: '完成权限联调',
+  planText: '联调权限',
+  summaryText: '已完成',
+  completionRate: 100,
+  status: 'COMPLETED',
+  nextPlanText: null,
+  riskText: null,
+  plannedHours: 8,
+  actualHours: 7,
+  project: { id: 'project-1', code: 'RD-001', name: '耐盐材料筛选' },
+  task: { id: 'task-1', code: 'TASK-001', title: '核对数据' },
+  riskId: null,
+  note: null,
+  links: {
+    selfUrl: '/employee-work-items/work-1',
+    employeeProgressUrl: '/employees/employee-1/progress?periodType=WEEK&periodStart=2026-07-20',
+    projectProgressUrl: '/projects/project-1/team-progress?periodType=WEEK&periodStart=2026-07-20',
+    taskUrl: '/projects/project-1?taskId=task-1',
+    sourceBatchUrl: '/employee-work-imports/batch-1',
+  },
+} satisfies EmployeeWorkItem
+
+const employeeWorkItemSummary = {
+  id: employeeWorkItem.id,
+  title: employeeWorkItem.title,
+  employeeId: employeeWorkItem.employeeId,
+  employeeName: employeeWorkItem.employeeName,
+  projectId: employeeWorkItem.project.id,
+  projectCode: employeeWorkItem.project.code,
+  status: employeeWorkItem.status,
+  riskText: employeeWorkItem.riskText,
+  sourceBatchIds: employeeWorkItem.sourceBatchIds,
+  links: employeeWorkItem.links,
+}
+
+const teamProgress = {
+  period: { type: 'WEEK', start: '2026-07-20', end: '2026-07-26' },
+  metrics: employeeProgressMetrics,
+  sourceBatchIds: ['batch-1'],
+  employees: {
+    data: [
+      {
+        employeeId: employee.id,
+        displayName: employee.displayName,
+        department: employee.department,
+        roleTitle: employee.roleTitle,
+        metrics: employeeProgressMetrics,
+        sourceBatchIds: ['batch-1'],
+        employeeProgressUrl:
+          '/employees/employee-1/progress?periodType=WEEK&periodStart=2026-07-20',
+        workItemsUrl:
+          '/employee-work-items?periodType=WEEK&periodStart=2026-07-20&employeeId=employee-1',
+      },
+    ],
+    total: 1,
+    limit: 100,
+    hasMore: false,
+  },
+  projects: {
+    data: [
+      {
+        projectId: project.id,
+        projectCode: project.code,
+        projectName: project.name,
+        participantCount: 1,
+        metrics: employeeProgressMetrics,
+        sourceBatchIds: ['batch-1'],
+        projectProgressUrl:
+          '/projects/project-1/team-progress?periodType=WEEK&periodStart=2026-07-20',
+        workItemsUrl:
+          '/employee-work-items?periodType=WEEK&periodStart=2026-07-20&projectId=project-1',
+      },
+    ],
+    total: 1,
+    limit: 100,
+    hasMore: false,
+  },
+  risks: { data: [employeeWorkItemSummary], total: 1, limit: 20, hasMore: false },
+  links: {
+    workItemsUrl: '/employee-work-items?periodType=WEEK&periodStart=2026-07-20',
+  },
+} satisfies TeamProgress
+
+const employeeProgress = {
+  employee: {
+    id: employee.id,
+    displayName: employee.displayName,
+    department: employee.department,
+    roleTitle: employee.roleTitle,
+    managerName: employee.managerName,
+    employmentStatus: employee.employmentStatus,
+    weeklyCapacityHours: employee.weeklyCapacityHours,
+  },
+  period: teamProgress.period,
+  metrics: employeeProgressMetrics,
+  sourceBatchIds: ['batch-1'],
+  projects: {
+    data: [
+      {
+        projectId: project.id,
+        projectCode: project.code,
+        projectName: project.name,
+        metrics: employeeProgressMetrics,
+        sourceBatchIds: ['batch-1'],
+        projectProgressUrl:
+          '/projects/project-1/team-progress?periodType=WEEK&periodStart=2026-07-20',
+        workItemsUrl:
+          '/employee-work-items?periodType=WEEK&periodStart=2026-07-20&employeeId=employee-1&projectId=project-1',
+      },
+    ],
+    total: 1,
+    limit: 100,
+    hasMore: false,
+  },
+  risks: { data: [employeeWorkItemSummary], total: 1, limit: 20, hasMore: false },
+  links: {
+    workItemsUrl:
+      '/employee-work-items?periodType=WEEK&periodStart=2026-07-20&employeeId=employee-1',
+  },
+} satisfies EmployeeProgress
+
+const projectTeamProgress = {
+  project: {
+    id: 'project-1',
+    code: 'RD-001',
+    name: '耐盐材料筛选',
+    status: 'ACTIVE',
+  },
+  period: { type: 'WEEK', start: '2026-07-20', end: '2026-07-26' },
+  metrics: employeeProgressMetrics,
+  sourceBatchIds: ['batch-1'],
+  employees: {
+    data: [
+      {
+        employeeId: 'employee-1',
+        displayName: '张明',
+        department: '研发部',
+        metrics: employeeProgressMetrics,
+        completedItems: {
+          data: [{ workItemId: 'work-1', title: '完成权限联调' }],
+          total: 1,
+          limit: 10,
+          hasMore: false,
+        },
+        nextPlans: { data: [], total: 0, limit: 10, hasMore: false },
+        risks: { data: [], total: 0, limit: 10, hasMore: false },
+        sourceBatchIds: ['batch-1'],
+        employeeProgressUrl:
+          '/employees/employee-1/progress?periodType=WEEK&periodStart=2026-07-20&projectId=project-1',
+        workItemsUrl:
+          '/employee-work-items?periodType=WEEK&periodStart=2026-07-20&employeeId=employee-1&projectId=project-1',
+      },
+    ],
+    total: 1,
+    limit: 100,
+    hasMore: false,
+  },
+  risks: { data: [], total: 0, limit: 20, hasMore: false },
+  links: {
+    workItemsUrl: '/employee-work-items?periodType=WEEK&periodStart=2026-07-20&projectId=project-1',
+  },
+} satisfies ProjectTeamProgress
+
+type EmployeeUpdateRejectsNull = null extends UpdateEmployeeInput['roleTitle'] ? false : true
+const employeeUpdateRejectsNull: EmployeeUpdateRejectsNull = true
 
 const progressReport = {
   id: 'report-1',
@@ -261,6 +583,13 @@ describe('workbench client contracts', () => {
       updateTaskInput,
       workflowTemplate,
       applicationCase,
+      employee,
+      stagedEmployeeImportBatch,
+      employeeImportRow,
+      employeeWorkItem,
+      teamProgress,
+      employeeProgress,
+      projectTeamProgress,
       createWorkflowTemplateInput,
       createApplicationCaseInput,
       listApplicationCasesResult,
@@ -269,7 +598,20 @@ describe('workbench client contracts', () => {
       listProjectsResult: { meta: { page: 1, pageSize: 20, total: 1 } },
       listTasksResult: { meta: { page: 1, pageSize: 20, total: 1 } },
       applicationCase: { nodes: [{ code: 'PREPARE', status: 'PENDING' }] },
+      employee: { loadEntries: [{ plannedHours: '8.00' }] },
+      stagedEmployeeImportBatch: {
+        version: null,
+        periodStart: '2026-07-20',
+        periodEnd: '2026-07-26',
+        sourceAvailable: true,
+      },
+      employeeImportRow: { errors: [{ code: 'EMPLOYEE_NOT_FOUND' }] },
+      employeeWorkItem: { riskId: null },
+      teamProgress: { employees: { total: 1, hasMore: false } },
+      employeeProgress: { projects: { total: 1, hasMore: false } },
+      projectTeamProgress: { employees: { total: 1, hasMore: false } },
       listApplicationCasesResult: { meta: { page: 1, pageSize: 20, total: 1 } },
     })
+    expect(employeeUpdateRejectsNull).toBe(true)
   })
 })
