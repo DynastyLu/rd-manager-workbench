@@ -8,26 +8,26 @@ interface ZipEntryFixture {
   declaredUncompressedSize?: number;
 }
 
-function crc32(data: Buffer): number {
-  let crc = 0xffffffff;
-  for (const byte of data) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-    }
-  }
-  return (crc ^ 0xffffffff) >>> 0;
+interface CentralRecordFixture {
+  path: string;
+  localIndex: number;
+  compressedSize?: number;
+  uncompressedSize?: number;
+  method?: number;
 }
 
-function createZip(entries: ZipEntryFixture[]): Buffer {
+function createZip(entries: ZipEntryFixture[], centralRecords?: CentralRecordFixture[]): Buffer {
   const localParts: Buffer[] = [];
-  const centralParts: Buffer[] = [];
+  const locals: Array<{
+    offset: number;
+    compressedSize: number;
+    uncompressedSize: number;
+  }> = [];
   let localOffset = 0;
 
   for (const fixture of entries) {
     const name = Buffer.from(fixture.path, 'utf8');
     const compressed = deflateRawSync(fixture.data);
-    const checksum = crc32(fixture.data);
     const declaredSize = fixture.declaredUncompressedSize ?? fixture.data.length;
 
     const localHeader = Buffer.alloc(30);
@@ -35,33 +35,49 @@ function createZip(entries: ZipEntryFixture[]): Buffer {
     localHeader.writeUInt16LE(20, 4);
     localHeader.writeUInt16LE(0, 6);
     localHeader.writeUInt16LE(8, 8);
-    localHeader.writeUInt32LE(checksum, 14);
+    localHeader.writeUInt32LE(0, 14);
     localHeader.writeUInt32LE(compressed.length, 18);
     localHeader.writeUInt32LE(declaredSize, 22);
     localHeader.writeUInt16LE(name.length, 26);
     localParts.push(localHeader, name, compressed);
+    locals.push({
+      offset: localOffset,
+      compressedSize: compressed.length,
+      uncompressedSize: declaredSize,
+    });
+    localOffset += localHeader.length + name.length + compressed.length;
+  }
 
+  const records: CentralRecordFixture[] =
+    centralRecords ??
+    entries.map((entry, localIndex) => ({
+      path: entry.path,
+      localIndex,
+    }));
+  const centralParts: Buffer[] = [];
+  for (const record of records) {
+    const local = locals[record.localIndex];
+    const name = Buffer.from(record.path, 'utf8');
     const centralHeader = Buffer.alloc(46);
     centralHeader.writeUInt32LE(0x02014b50, 0);
     centralHeader.writeUInt16LE(20, 4);
     centralHeader.writeUInt16LE(20, 6);
     centralHeader.writeUInt16LE(0, 8);
     centralHeader.writeUInt16LE(8, 10);
-    centralHeader.writeUInt32LE(checksum, 16);
-    centralHeader.writeUInt32LE(compressed.length, 20);
-    centralHeader.writeUInt32LE(declaredSize, 24);
+    centralHeader.writeUInt32LE(0, 16);
+    centralHeader.writeUInt32LE(record.compressedSize ?? local.compressedSize, 20);
+    centralHeader.writeUInt32LE(record.uncompressedSize ?? local.uncompressedSize, 24);
     centralHeader.writeUInt16LE(name.length, 28);
-    centralHeader.writeUInt32LE(localOffset, 42);
+    centralHeader.writeUInt16LE(record.method ?? 8, 10);
+    centralHeader.writeUInt32LE(local.offset, 42);
     centralParts.push(centralHeader, name);
-
-    localOffset += localHeader.length + name.length + compressed.length;
   }
 
   const centralDirectory = Buffer.concat(centralParts);
   const end = Buffer.alloc(22);
   end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(entries.length, 8);
-  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt16LE(records.length, 8);
+  end.writeUInt16LE(records.length, 10);
   end.writeUInt32LE(centralDirectory.length, 12);
   end.writeUInt32LE(localOffset, 16);
   return Buffer.concat([...localParts, centralDirectory, end]);
@@ -132,6 +148,55 @@ describe('EmployeeWorkbookService ZIP preflight', () => {
         { path: 'xl/workbook.xml', data: Buffer.from('<a/>') },
         { path: 'xl/workbook.xml', data: Buffer.from('<b/>') },
       ]),
+    );
+  });
+
+  it('rejects 257 central records pointing to one local entry before ExcelJS load', async () => {
+    const records = Array.from({ length: 257 }, (_, index) => ({
+      path: `xl/worksheets/central-${index}.xml`,
+      localIndex: 0,
+    }));
+    await expectRejectedBeforeExcelLoad(
+      createZip([{ path: 'xl/worksheets/local.xml', data: Buffer.from('<x/>') }], records),
+    );
+  });
+
+  it.each([
+    {
+      label: 'central-only macro path',
+      record: { path: 'xl/vbaProject.bin', localIndex: 0 },
+    },
+    {
+      label: 'central/local name mismatch',
+      record: { path: 'xl/worksheets/other.xml', localIndex: 0 },
+    },
+    {
+      label: 'central/local compressed size mismatch',
+      record: { path: 'xl/worksheets/local.xml', localIndex: 0, compressedSize: 1 },
+    },
+    {
+      label: 'central/local uncompressed size mismatch',
+      record: { path: 'xl/worksheets/local.xml', localIndex: 0, uncompressedSize: 1 },
+    },
+    {
+      label: 'central/local method mismatch',
+      record: { path: 'xl/worksheets/local.xml', localIndex: 0, method: 0 },
+    },
+  ])('rejects $label before ExcelJS load', async ({ record }) => {
+    await expectRejectedBeforeExcelLoad(
+      createZip([{ path: 'xl/worksheets/local.xml', data: Buffer.from('<payload/>') }], [record]),
+    );
+  });
+
+  it('rejects multiple central records sharing one local offset before ExcelJS load', async () => {
+    await expectRejectedBeforeExcelLoad(
+      createZip(
+        [{ path: 'xl/worksheets/local.xml', data: Buffer.from('<x/>') }],
+        [
+          { path: 'xl/worksheets/local.xml', localIndex: 0 },
+          { path: 'xl/worksheets/second.xml', localIndex: 0 },
+        ],
+      ),
     );
   });
 });

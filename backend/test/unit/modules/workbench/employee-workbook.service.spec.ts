@@ -452,6 +452,33 @@ describe('EmployeeWorkbookService', () => {
     }
   });
 
+  it('does not densely scan header columns when XFD1 contains an unknown header', async () => {
+    const workbook = await validTemplateWorkbook();
+    detailSheet(workbook).getCell('XFD1').value = '越界表头';
+    const buffer = await saveWorkbook(workbook);
+    const rowPrototype = Object.getPrototypeOf(detailSheet(workbook).getRow(1)) as ExcelJS.Row;
+    const originalGetCell = rowPrototype.getCell;
+    let getCellCalls = 0;
+    const getCellSpy = jest.spyOn(rowPrototype, 'getCell').mockImplementation(function (
+      this: ExcelJS.Row,
+      ...args: Parameters<ExcelJS.Row['getCell']>
+    ) {
+      getCellCalls += 1;
+      if (getCellCalls > 100) throw new Error('dense header column scan detected');
+      return originalGetCell.apply(this, args);
+    });
+
+    try {
+      await expect(service.parse(buffer)).rejects.toMatchObject({
+        code: 'EMPLOYEE_IMPORT_TEMPLATE_INVALID',
+        statusCode: 422,
+      });
+      expect(getCellCalls).toBeLessThan(100);
+    } finally {
+      getCellSpy.mockRestore();
+    }
+  });
+
   it('rejects text longer than 10,000 characters with row and field context', async () => {
     const workbook = await validTemplateWorkbook();
     addValidRow(workbook, { 工作内容: '工'.repeat(10_001) });
@@ -552,6 +579,39 @@ describe('EmployeeWorkbookService', () => {
       title: '工作',
       planText: '2026-07-20',
     });
+  });
+
+  it('reports an invalid Date cell as an unsupported value without throwing RangeError', async () => {
+    const workbook = await validTemplateWorkbook();
+    addValidRow(workbook, { 本期计划: new Date(Number.NaN) });
+
+    const result = await service.inspect(await saveWorkbook(workbook));
+
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rowNumber: 2,
+          field: '本期计划',
+          code: 'UNSUPPORTED_CELL_VALUE',
+        }),
+      ]),
+    );
+  });
+
+  it('rejects an oversized allowed formula expression independently of its cached result', async () => {
+    const workbook = await validTemplateWorkbook();
+    addValidRow(workbook, {
+      工作内容: { formula: 'A'.repeat(10_001), result: '短' },
+    });
+
+    const result = await service.inspect(await saveWorkbook(workbook));
+    const issue = result.issues.find(({ field }) => field === '工作内容');
+
+    expect(issue).toMatchObject({ code: 'TEXT_TOO_LONG' });
+    expect(issue?.rawValue).toEqual(expect.stringMatching(/^'=/));
+    expect(String(issue?.rawValue).length).toBeLessThanOrEqual(256);
+    expect(result.sourceRows[0].rawValues['工作内容']).toEqual(expect.stringMatching(/^'=/));
+    expect(String(result.sourceRows[0].rawValues['工作内容']).length).toBeLessThanOrEqual(10_000);
   });
 
   it.each([

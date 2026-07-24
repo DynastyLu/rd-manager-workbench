@@ -419,13 +419,14 @@ export class EmployeeWorkbookService {
         field: `header ${index + 1}`,
       }),
     );
-    for (let column = HEADERS.length + 1; column <= headerRow.cellCount; column += 1) {
-      const extra = this.normalizeCellValue(headerRow.getCell(column), {
+    headerRow.eachCell({ includeEmpty: false }, (cell, column) => {
+      if (column <= HEADERS.length) return;
+      const extra = this.normalizeCellValue(cell, {
         rowNumber: 1,
         field: `header ${column}`,
       });
       if (extra !== null) actual.push(extra);
-    }
+    });
     if (
       actual.length !== HEADERS.length ||
       actual.some((value, index) => value !== HEADERS[index])
@@ -739,6 +740,9 @@ export class EmployeeWorkbookService {
       return normalized.length === 0 ? null : normalized;
     }
     if (value instanceof Date) {
+      if (!Number.isFinite(value.getTime())) {
+        throw this.invalid('contains an invalid date', issue);
+      }
       if (
         value.getUTCHours() !== 0 ||
         value.getUTCMinutes() !== 0 ||
@@ -764,8 +768,12 @@ export class EmployeeWorkbookService {
         textLength = value.richText.reduce((total, { text }) => total + text.length, 0);
       } else if ('hyperlink' in value) {
         textLength = value.text.length;
-      } else if (this.isFormulaValue(value) && typeof value.result === 'string') {
-        textLength = value.result.length;
+      } else if (this.isFormulaValue(value)) {
+        const formula = ('formula' in value ? value.formula : value.sharedFormula) ?? '';
+        if (formula.length > MAX_CELL_TEXT_LENGTH) {
+          throw this.invalid('raw formula text exceeds 10,000 characters', issue);
+        }
+        if (typeof value.result === 'string') textLength = value.result.length;
       }
     }
     if (textLength > MAX_CELL_TEXT_LENGTH) {
@@ -779,7 +787,9 @@ export class EmployeeWorkbookService {
     if (typeof value === 'string') return this.safeTextValue(value, maxLength);
     if (typeof value === 'boolean') return String(value);
     if (value instanceof Date) {
-      return this.safeTextValue(value.toISOString(), maxLength);
+      return Number.isFinite(value.getTime())
+        ? this.safeTextValue(value.toISOString(), maxLength)
+        : this.safeTextValue('[invalid date]', maxLength);
     }
     if ('richText' in value) {
       return this.safeTextValue(value.richText.map(({ text }) => text).join(''), maxLength);
