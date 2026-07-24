@@ -18,6 +18,13 @@ const allowedMetadataKeys = new Set([
   'localDate',
   'routeTemplate',
   'method',
+  'periodType',
+  'periodStart',
+  'periodEnd',
+  'totalRows',
+  'validRows',
+  'errorRows',
+  'unresolvedRows',
 ]);
 
 type AuditClient = Pick<Prisma.TransactionClient, 'auditLog'>;
