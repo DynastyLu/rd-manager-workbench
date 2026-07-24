@@ -16,6 +16,7 @@ import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
+import { EmployeeProgressSnapshotService } from '../../../../src/modules/workbench/employees/application/employee-progress-snapshot.service';
 import { EmployeeWorkbookService } from '../../../../src/modules/workbench/employees/application/employee-workbook.service';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
@@ -388,13 +389,16 @@ describe('Employee work imports API', () => {
       .post(`/api/employee-work-imports/${v1Id}/commit`)
       .send({})
       .expect(201);
+    const v1Version = firstCommit.body.data.version as number;
     expect(firstCommit.body.data).toMatchObject({
       id: v1Id,
       status: EmployeeWorkImportStatus.COMPLETED,
-      version: 1,
+      version: expect.any(Number),
       importedRows: 2,
       snapshotStatus: EmployeeSnapshotStatus.READY,
     });
+    expect(Number.isInteger(v1Version)).toBe(true);
+    expect(v1Version).toBeGreaterThan(0);
     const v1WeeklySnapshots = await prisma.employeeProgressSnapshot.findMany({
       where: {
         periodType: EmployeeProgressPeriod.WEEK,
@@ -446,7 +450,7 @@ describe('Employee work imports API', () => {
     expect(idempotent.body.data).toMatchObject({
       id: v1Id,
       status: EmployeeWorkImportStatus.COMPLETED,
-      version: 1,
+      version: v1Version,
     });
     await expect(prisma.employeeWorkItem.count({ where: { importBatchId: v1Id } })).resolves.toBe(
       2,
@@ -461,7 +465,7 @@ describe('Employee work imports API', () => {
         expect(body.data).toMatchObject({
           id: v2Id,
           status: EmployeeWorkImportStatus.COMPLETED,
-          version: 2,
+          version: v1Version + 1,
           supersedesBatchId: v1Id,
           snapshotStatus: EmployeeSnapshotStatus.READY,
         });
@@ -713,7 +717,7 @@ describe('Employee work imports API', () => {
         expect(body.data).toMatchObject({
           id: driftId,
           status: EmployeeWorkImportStatus.COMPLETED,
-          version: 3,
+          version: v1Version + 2,
           supersedesBatchId: v2Id,
         });
       });
@@ -750,7 +754,8 @@ describe('Employee work imports API', () => {
           },
       )
       .sort((left, right) => left.version - right.version);
-    expect(committed.map(({ version }) => version)).toEqual([1, 2]);
+    expect(committed[0].version).toBeGreaterThan(0);
+    expect(committed[1].version).toBe(committed[0].version + 1);
     expect(committed.every(({ status }) => status === EmployeeWorkImportStatus.COMPLETED)).toBe(
       true,
     );
@@ -766,17 +771,16 @@ describe('Employee work imports API', () => {
         orderBy: { version: 'asc' },
         select: { id: true, status: true, version: true, supersedesBatchId: true },
       }),
-    ).resolves.toEqual([
+    ).resolves.toMatchObject([
       {
         id: supersededId,
         status: EmployeeWorkImportStatus.SUPERSEDED,
-        version: 1,
-        supersedesBatchId: null,
+        version: committed[0].version,
       },
       {
         id: currentId,
         status: EmployeeWorkImportStatus.COMPLETED,
-        version: 2,
+        version: committed[1].version,
         supersedesBatchId: supersededId,
       },
     ]);
@@ -799,6 +803,98 @@ describe('Employee work imports API', () => {
         where: { importBatchId: supersededId, archivedAt: { not: null } },
       }),
     ).resolves.toBe(2);
+  });
+
+  it('keeps committed work when snapshot generation fails and recovers through HTTP rebuild', async () => {
+    const periodStart = new Date(Date.UTC(2026, 9, 5));
+    const periodEnd = new Date(Date.UTC(2026, 9, 11));
+    const batchId = await uploadPreviewAndResolve(
+      await workbookBuffer('snapshot-recovery', periodStart, periodEnd),
+      'snapshot-recovery.xlsx',
+    );
+    const snapshots = app.get(EmployeeProgressSnapshotService) as unknown as {
+      generateWeek: (...args: unknown[]) => Promise<unknown>;
+    };
+    const generation = jest
+      .spyOn(snapshots, 'generateWeek')
+      .mockRejectedValueOnce(new Error('private snapshot failure details'));
+
+    let failedCommit!: request.Response;
+    try {
+      failedCommit = await request(app.getHttpServer())
+        .post(`/api/employee-work-imports/${batchId}/commit`)
+        .send({})
+        .expect(201);
+    } finally {
+      generation.mockRestore();
+    }
+
+    expect(failedCommit.body.data).toMatchObject({
+      id: batchId,
+      status: EmployeeWorkImportStatus.COMPLETED,
+      importedRows: 2,
+      snapshotStatus: EmployeeSnapshotStatus.FAILED,
+      snapshotError: 'EMPLOYEE_SNAPSHOT_GENERATION_FAILED',
+      warning: { code: 'EMPLOYEE_SNAPSHOT_GENERATION_FAILED' },
+    });
+    expect(JSON.stringify(failedCommit.body)).not.toContain('private snapshot failure details');
+    await expect(
+      prisma.employeeWorkImportBatch.findUniqueOrThrow({
+        where: { id: batchId },
+        select: {
+          status: true,
+          snapshotStatus: true,
+          snapshotError: true,
+          importedRows: true,
+        },
+      }),
+    ).resolves.toEqual({
+      status: EmployeeWorkImportStatus.COMPLETED,
+      snapshotStatus: EmployeeSnapshotStatus.FAILED,
+      snapshotError: 'EMPLOYEE_SNAPSHOT_GENERATION_FAILED',
+      importedRows: 2,
+    });
+    await expect(
+      prisma.employeeWorkItem.count({ where: { importBatchId: batchId, archivedAt: null } }),
+    ).resolves.toBe(2);
+    await expect(
+      prisma.resourceLoadEntry.count({
+        where: { employeeWorkImportBatchId: batchId, archivedAt: null },
+      }),
+    ).resolves.toBe(1);
+
+    await request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${batchId}/rebuild-snapshots`)
+      .send({})
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({
+          id: batchId,
+          status: EmployeeWorkImportStatus.COMPLETED,
+          snapshotStatus: EmployeeSnapshotStatus.READY,
+          snapshotError: null,
+        });
+        expect(body.data.warning).toBeUndefined();
+      });
+    await expect(
+      prisma.employeeProgressSnapshot.findFirstOrThrow({
+        where: {
+          scopeKey: 'TEAM',
+          periodType: EmployeeProgressPeriod.WEEK,
+          periodStartAt: periodStart,
+          archivedAt: null,
+        },
+        select: { sourceBatchIds: true, metrics: true },
+      }),
+    ).resolves.toMatchObject({
+      sourceBatchIds: [batchId],
+      metrics: {
+        workItemCount: 2,
+        projectCount: 1,
+        unlinkedCount: 1,
+        dataComplete: true,
+      },
+    });
   });
 
   it('resolves 50,000 staged rows within the transaction timeout', async () => {

@@ -166,7 +166,7 @@ export class EmployeeProgressSnapshotService {
       const batch = await this.snapshotTransaction(async (tx) => {
         await this.lock(tx, `employee-import:${id}`);
         let current = await tx.employeeWorkImportBatch.findUnique({ where: { id } });
-        this.assertCompleted(current);
+        current = await this.assertCurrentCompleted(tx, current, id);
         await this.lock(
           tx,
           `employee-import-period:${current.periodType}:${this.dateOnly(current.periodStartAt)}`,
@@ -178,7 +178,7 @@ export class EmployeeProgressSnapshotService {
           )}`,
         );
         current = await tx.employeeWorkImportBatch.findUnique({ where: { id } });
-        this.assertCompleted(current);
+        current = await this.assertCurrentCompleted(tx, current, id);
         fallbackBatch = current;
         generationRevision = this.generationRevision(current);
         if (!force && current.snapshotStatus === EmployeeSnapshotStatus.READY) {
@@ -557,13 +557,39 @@ export class EmployeeProgressSnapshotService {
         statusCode: HttpStatus.NOT_FOUND,
       });
     }
-    if (batch.status !== EmployeeWorkImportStatus.COMPLETED) {
-      throw new AppError({
-        code: ErrorCodes.EMPLOYEE_IMPORT_STATE_INVALID,
-        message: 'Snapshots can only be rebuilt for the current completed import batch',
-        statusCode: HttpStatus.CONFLICT,
-      });
+    if (batch.status !== EmployeeWorkImportStatus.COMPLETED || batch.archivedAt !== null) {
+      throw this.currentBatchInvalid();
     }
+  }
+
+  private async assertCurrentCompleted(
+    tx: Prisma.TransactionClient,
+    batch: EmployeeWorkImportBatch | null,
+    id: string,
+  ): Promise<EmployeeWorkImportBatch> {
+    this.assertCompleted(batch);
+    const current = await tx.employeeWorkImportBatch.findMany({
+      where: {
+        periodType: batch.periodType,
+        periodStartAt: batch.periodStartAt,
+        status: EmployeeWorkImportStatus.COMPLETED,
+        archivedAt: null,
+      },
+      select: { id: true },
+      take: 2,
+    });
+    if (current.length !== 1 || current[0].id !== id) {
+      throw this.currentBatchInvalid();
+    }
+    return batch;
+  }
+
+  private currentBatchInvalid(): AppError {
+    return new AppError({
+      code: ErrorCodes.EMPLOYEE_IMPORT_STATE_INVALID,
+      message: 'Snapshots can only be rebuilt for the current completed import batch',
+      statusCode: HttpStatus.CONFLICT,
+    });
   }
 
   private expectedWeeks(monthStart: Date, monthEnd: Date): string[] {

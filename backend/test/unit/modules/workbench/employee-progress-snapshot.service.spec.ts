@@ -31,6 +31,7 @@ function createService(options: {
   snapshotCreateFailure?: Error;
   targetBatchOverrides?: Record<string, unknown>;
   beforeTransaction?: (transactionNumber: number) => Promise<void>;
+  currentBatchIds?: string[][];
 }) {
   const batches = options.batches ?? [
     {
@@ -58,6 +59,7 @@ function createService(options: {
       }),
     );
   const createdSnapshots: Array<Record<string, unknown>> = [];
+  let currentBatchLookup = 0;
   let targetBatch = {
     id: 'batch-jul-20',
     periodType: EmployeeProgressPeriod.WEEK,
@@ -75,7 +77,15 @@ function createService(options: {
     $executeRaw: jest.fn().mockResolvedValue(1),
     $queryRaw: jest.fn().mockResolvedValue([]),
     employeeWorkImportBatch: {
-      findMany: jest.fn().mockResolvedValue(batches),
+      findMany: jest.fn().mockImplementation(async ({ select }) => {
+        if (select && Object.keys(select).length === 1 && select.id === true) {
+          const ids = options.currentBatchIds?.[currentBatchLookup] ??
+            options.currentBatchIds?.at(-1) ?? [targetBatch.id];
+          currentBatchLookup += 1;
+          return ids.map((id) => ({ id }));
+        }
+        return batches;
+      }),
       findUnique: jest.fn().mockImplementation(async () => targetBatch),
       update: jest.fn().mockImplementation(async ({ data }) => {
         targetBatch = { ...targetBatch, ...data };
@@ -487,6 +497,42 @@ describe('EmployeeProgressSnapshotService', () => {
       statusCode: 409,
     });
     expect(dependencies.prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an archived COMPLETED batch before replacing snapshots', async () => {
+    const dependencies = createService({
+      targetBatchOverrides: { archivedAt: new Date('2026-07-24T07:30:00.000Z') },
+    });
+
+    await expect(dependencies.service.rebuildBatch('batch-jul-20')).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_STATE_INVALID',
+      statusCode: 409,
+    });
+    expect(dependencies.tx.employeeProgressSnapshot.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects a COMPLETED batch when another batch is current for the same period', async () => {
+    const dependencies = createService({
+      currentBatchIds: [['batch-jul-27']],
+    });
+
+    await expect(dependencies.service.rebuildBatch('batch-jul-20')).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_STATE_INVALID',
+      statusCode: 409,
+    });
+    expect(dependencies.tx.employeeProgressSnapshot.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('revalidates the current COMPLETED batch after acquiring period and month locks', async () => {
+    const dependencies = createService({
+      currentBatchIds: [['batch-jul-20'], ['batch-jul-27']],
+    });
+
+    await expect(dependencies.service.ensureBatch('batch-jul-20')).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_STATE_INVALID',
+      statusCode: 409,
+    });
+    expect(dependencies.tx.employeeProgressSnapshot.updateMany).not.toHaveBeenCalled();
   });
 
   it('does not demote a concurrent winning READY revision during FAILED recovery', async () => {
