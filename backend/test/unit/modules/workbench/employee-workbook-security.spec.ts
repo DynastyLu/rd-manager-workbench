@@ -1,5 +1,6 @@
 import { deflateRawSync } from 'node:zlib';
 import ExcelJS from 'exceljs';
+import unzipper from 'unzipper';
 import { EmployeeWorkbookService } from '../../../../src/modules/workbench/employees/application/employee-workbook.service';
 
 interface ZipEntryFixture {
@@ -100,6 +101,37 @@ describe('EmployeeWorkbookService ZIP preflight', () => {
       xlsxGetter.mockRestore();
     }
   }
+
+  async function expectRejectedBeforeZipOpen(buffer: Buffer): Promise<void> {
+    const openBuffer = jest.spyOn(unzipper.Open, 'buffer');
+    try {
+      await expectRejectedBeforeExcelLoad(buffer);
+      expect(openBuffer).not.toHaveBeenCalled();
+    } finally {
+      openBuffer.mockRestore();
+    }
+  }
+
+  it('rejects a forged huge EOCD record count before opening the ZIP directory', async () => {
+    const buffer = createZip([{ path: 'xl/workbook.xml', data: Buffer.from('<x/>') }]);
+    const eocdOffset = buffer.length - 22;
+    buffer.writeUInt16LE(60_000, eocdOffset + 8);
+    buffer.writeUInt16LE(60_000, eocdOffset + 10);
+
+    await expectRejectedBeforeZipOpen(buffer);
+  });
+
+  it('rejects an EOCD record count smaller than the actual central directory before ZIP open', async () => {
+    const buffer = createZip([
+      { path: 'xl/workbook.xml', data: Buffer.from('<x/>') },
+      { path: 'xl/styles.xml', data: Buffer.from('<x/>') },
+    ]);
+    const eocdOffset = buffer.length - 22;
+    buffer.writeUInt16LE(1, eocdOffset + 8);
+    buffer.writeUInt16LE(1, eocdOffset + 10);
+
+    await expectRejectedBeforeZipOpen(buffer);
+  });
 
   it('rejects a highly compressed 32 MiB XML payload before ExcelJS load', async () => {
     const payload = Buffer.alloc(32 * 1024 * 1024, 0x61);

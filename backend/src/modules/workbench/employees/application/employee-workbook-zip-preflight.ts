@@ -9,6 +9,11 @@ const MAX_TOTAL_INFLATED_BYTES = 64 * 1024 * 1024;
 const MAX_COMPRESSION_RATIO = 250;
 const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const CENTRAL_FILE_HEADER_SIGNATURE = 0x02014b50;
+const END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
+const END_OF_CENTRAL_DIRECTORY_LENGTH = 22;
+const MAX_ZIP_COMMENT_LENGTH = 0xffff;
+const ZIP64_UINT16_SENTINEL = 0xffff;
+const ZIP64_UINT32_SENTINEL = 0xffffffff;
 const DATA_DESCRIPTOR_FLAG = 0x08;
 
 const ALLOWED_FILE_PATHS = [
@@ -26,6 +31,8 @@ interface LocalRange {
 }
 
 export async function preflightEmployeeWorkbookZip(buffer: Buffer): Promise<void> {
+  assertBoundedCentralDirectoryMetadata(buffer);
+
   let directory: Awaited<ReturnType<typeof unzipper.Open.buffer>>;
   try {
     directory = await unzipper.Open.buffer(buffer);
@@ -103,6 +110,108 @@ export async function preflightEmployeeWorkbookZip(buffer: Buffer): Promise<void
     }
     assertCompressionRatio(actualEntry, file.compressedSize, file.path);
   }
+}
+
+function assertBoundedCentralDirectoryMetadata(buffer: Buffer): void {
+  const eocdOffset = findEndOfCentralDirectory(buffer);
+  const diskNumber = buffer.readUInt16LE(eocdOffset + 4);
+  const centralDirectoryDisk = buffer.readUInt16LE(eocdOffset + 6);
+  const recordsOnDisk = buffer.readUInt16LE(eocdOffset + 8);
+  const totalRecords = buffer.readUInt16LE(eocdOffset + 10);
+  const centralDirectorySize = buffer.readUInt32LE(eocdOffset + 12);
+  const centralDirectoryOffset = buffer.readUInt32LE(eocdOffset + 16);
+
+  if (
+    diskNumber === ZIP64_UINT16_SENTINEL ||
+    centralDirectoryDisk === ZIP64_UINT16_SENTINEL ||
+    recordsOnDisk === ZIP64_UINT16_SENTINEL ||
+    totalRecords === ZIP64_UINT16_SENTINEL ||
+    centralDirectorySize === ZIP64_UINT32_SENTINEL ||
+    centralDirectoryOffset === ZIP64_UINT32_SENTINEL
+  ) {
+    throw zipInvalid('ZIP64 XLSX archives are not supported');
+  }
+  if (diskNumber !== 0 || centralDirectoryDisk !== 0 || recordsOnDisk !== totalRecords) {
+    throw zipInvalid('Multi-disk XLSX ZIP archives are not supported');
+  }
+  if (totalRecords > MAX_ZIP_ENTRIES) {
+    throw zipInvalid(`XLSX ZIP contains more than ${MAX_ZIP_ENTRIES} entries`);
+  }
+
+  const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
+  if (
+    centralDirectoryOffset > eocdOffset ||
+    centralDirectoryEnd !== eocdOffset ||
+    centralDirectoryEnd > buffer.length
+  ) {
+    throw zipInvalid('XLSX ZIP central directory range does not match EOCD metadata');
+  }
+
+  let cursor = centralDirectoryOffset;
+  let actualRecords = 0;
+  while (cursor < centralDirectoryEnd) {
+    actualRecords += 1;
+    if (actualRecords > MAX_ZIP_ENTRIES) {
+      throw zipInvalid(`XLSX ZIP contains more than ${MAX_ZIP_ENTRIES} entries`);
+    }
+    if (
+      cursor + 46 > centralDirectoryEnd ||
+      buffer.readUInt32LE(cursor) !== CENTRAL_FILE_HEADER_SIGNATURE
+    ) {
+      throw zipInvalid('XLSX ZIP central directory entry is invalid');
+    }
+
+    const compressedSize = buffer.readUInt32LE(cursor + 20);
+    const uncompressedSize = buffer.readUInt32LE(cursor + 24);
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    const startDisk = buffer.readUInt16LE(cursor + 34);
+    const localHeaderOffset = buffer.readUInt32LE(cursor + 42);
+    if (
+      compressedSize === ZIP64_UINT32_SENTINEL ||
+      uncompressedSize === ZIP64_UINT32_SENTINEL ||
+      startDisk === ZIP64_UINT16_SENTINEL ||
+      localHeaderOffset === ZIP64_UINT32_SENTINEL
+    ) {
+      throw zipInvalid('ZIP64 XLSX archives are not supported');
+    }
+    if (startDisk !== 0) {
+      throw zipInvalid('Multi-disk XLSX ZIP archives are not supported');
+    }
+
+    const nextCursor = cursor + 46 + nameLength + extraLength + commentLength;
+    if (nextCursor > centralDirectoryEnd) {
+      throw zipInvalid('XLSX ZIP central directory entry exceeds its declared range');
+    }
+    cursor = nextCursor;
+  }
+
+  if (actualRecords !== totalRecords || cursor - centralDirectoryOffset !== centralDirectorySize) {
+    throw zipInvalid('XLSX ZIP central directory record count does not match EOCD metadata');
+  }
+}
+
+function findEndOfCentralDirectory(buffer: Buffer): number {
+  if (buffer.length < END_OF_CENTRAL_DIRECTORY_LENGTH) {
+    throw zipInvalid('XLSX ZIP end-of-central-directory record is missing');
+  }
+  const minimumOffset = Math.max(
+    0,
+    buffer.length - END_OF_CENTRAL_DIRECTORY_LENGTH - MAX_ZIP_COMMENT_LENGTH,
+  );
+  for (
+    let offset = buffer.length - END_OF_CENTRAL_DIRECTORY_LENGTH;
+    offset >= minimumOffset;
+    offset -= 1
+  ) {
+    if (buffer.readUInt32LE(offset) !== END_OF_CENTRAL_DIRECTORY_SIGNATURE) continue;
+    const commentLength = buffer.readUInt16LE(offset + 20);
+    if (offset + END_OF_CENTRAL_DIRECTORY_LENGTH + commentLength === buffer.length) {
+      return offset;
+    }
+  }
+  throw zipInvalid('XLSX ZIP end-of-central-directory record is invalid');
 }
 
 function validateLocalHeader(
