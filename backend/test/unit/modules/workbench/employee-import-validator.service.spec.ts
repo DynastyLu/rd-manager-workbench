@@ -218,4 +218,125 @@ describe('EmployeeImportValidatorService', () => {
       errors: [expect.objectContaining({ field: '项目编号', code: 'PROJECT_NOT_FOUND' })],
     });
   });
+
+  it('does not duplicate name and code parameters when every row has explicit commit resolutions', async () => {
+    const prisma = {
+      resourceProfile: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'employee-1', displayName: '张明' }]),
+      },
+      project: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'project-1', code: 'RD-026' }]),
+      },
+      workTask: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'task-1', code: 'TASK-001', projectId: 'project-1' }]),
+      },
+    };
+    const validator = new EmployeeImportValidatorService(prisma as never);
+    const resolutions = new Map<number, EmployeeImportResolution>([
+      [2, { employeeId: 'employee-1', projectId: 'project-1', taskId: 'task-1' }],
+      [3, { employeeId: 'employee-1', projectId: 'project-1', taskId: 'task-1' }],
+    ]);
+
+    await validator.validate(
+      [
+        row({ projectCode: 'RD-026', taskCode: 'TASK-001' }),
+        row({ rowNumber: 3, projectCode: 'RD-026', taskCode: 'TASK-001' }),
+      ],
+      resolutions,
+    );
+
+    expect(prisma.resourceProfile.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ['employee-1'] },
+        }),
+      }),
+    );
+    expect(prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ['project-1'] },
+        }),
+      }),
+    );
+    expect(prisma.workTask.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: { in: ['task-1'] },
+        }),
+      }),
+    );
+  });
+
+  it('validates 50,000 high-cardinality resolutions in deterministic chunks', async () => {
+    const rowCount = 50_000;
+    const prisma = {
+      resourceProfile: {
+        findMany: jest
+          .fn()
+          .mockImplementation(async ({ where }) =>
+            (where.id.in as string[]).map((id) => ({ id, displayName: `name-${id}` })),
+          ),
+      },
+      project: {
+        findMany: jest
+          .fn()
+          .mockImplementation(async ({ where }) =>
+            (where.id.in as string[]).map((id) => ({ id, code: `code-${id}` })),
+          ),
+      },
+      workTask: {
+        findMany: jest.fn().mockImplementation(async ({ where }) =>
+          (where.id.in as string[]).map((id) => ({
+            id,
+            code: `code-${id}`,
+            projectId: id.replace('task-', 'project-'),
+          })),
+        ),
+      },
+    };
+    const validator = new EmployeeImportValidatorService(prisma as never);
+    const rows = Array.from({ length: rowCount }, (_, index) => {
+      const suffix = String(index).padStart(5, '0');
+      return row({
+        rowNumber: index + 2,
+        employeeName: `Employee ${suffix}`,
+        projectCode: `P-${suffix}`,
+        taskCode: `T-${suffix}`,
+      });
+    });
+    const resolutions = new Map<number, EmployeeImportResolution>(
+      rows.map((input, index) => {
+        const suffix = String(index).padStart(5, '0');
+        return [
+          input.rowNumber,
+          {
+            employeeId: `employee-${suffix}`,
+            projectId: `project-${suffix}`,
+            taskId: `task-${suffix}`,
+          },
+        ];
+      }),
+    );
+
+    const result = await validator.validate(rows, resolutions);
+
+    expect(result).toHaveLength(rowCount);
+    expect(result.every(({ status }) => status === EmployeeImportRowStatus.VALID)).toBe(true);
+    for (const delegate of [
+      prisma.resourceProfile.findMany,
+      prisma.project.findMany,
+      prisma.workTask.findMany,
+    ]) {
+      expect(delegate).toHaveBeenCalledTimes(50);
+      expect(
+        delegate.mock.calls.every(([{ where }]) => {
+          const values = where.id.in as string[];
+          return values.length > 0 && values.length <= 1_000;
+        }),
+      ).toBe(true);
+    }
+  });
 });

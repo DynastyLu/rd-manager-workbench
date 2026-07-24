@@ -3,6 +3,8 @@ import { EmployeeImportRowStatus, EmploymentStatus, Prisma } from '@prisma/clien
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { NormalizedEmployeeWorkRow } from '../domain/employee-work.types';
 
+const VALIDATION_QUERY_CHUNK_SIZE = 1_000;
+
 export type EmployeeImportReferenceErrorCode =
   | 'EMPLOYEE_NOT_FOUND'
   | 'PROJECT_NOT_FOUND'
@@ -43,11 +45,24 @@ export class EmployeeImportValidatorService {
     client: Pick<Prisma.TransactionClient, 'resourceProfile' | 'project' | 'workTask'> = this
       .prisma,
   ): Promise<ValidatedEmployeeImportRow[]> {
-    const employeeNames = this.unique(rows.map(({ employeeName }) => employeeName));
-    const projectCodes = this.unique(
-      rows.flatMap(({ projectCode }) => (projectCode ? [projectCode] : [])),
+    const employeeNames = this.unique(
+      rows.flatMap((row) =>
+        resolutions.get(row.rowNumber)?.employeeId === undefined ? [row.employeeName] : [],
+      ),
     );
-    const taskCodes = this.unique(rows.flatMap(({ taskCode }) => (taskCode ? [taskCode] : [])));
+    const projectCodes = this.unique(
+      rows.flatMap((row) => {
+        const resolution = resolutions.get(row.rowNumber);
+        return !resolution?.keepUnlinked && resolution?.projectId === undefined && row.projectCode
+          ? [row.projectCode]
+          : [];
+      }),
+    );
+    const taskCodes = this.unique(
+      rows.flatMap((row) =>
+        resolutions.get(row.rowNumber)?.taskId === undefined && row.taskCode ? [row.taskCode] : [],
+      ),
+    );
     const resolutionValues = [...resolutions.values()];
     const employeeIds = this.unique(
       resolutionValues.flatMap(({ employeeId }) => (employeeId ? [employeeId] : [])),
@@ -57,30 +72,62 @@ export class EmployeeImportValidatorService {
     );
     const taskIds = this.unique(resolutionValues.flatMap(({ taskId }) => (taskId ? [taskId] : [])));
 
-    const [employees, projects, tasks] = await Promise.all([
-      client.resourceProfile.findMany({
-        where: {
-          archivedAt: null,
-          employmentStatus: { not: EmploymentStatus.LEFT },
-          OR: [{ displayName: { in: employeeNames } }, { id: { in: employeeIds } }],
-        },
-        select: { id: true, displayName: true },
-      }),
-      client.project.findMany({
-        where: {
-          archivedAt: null,
-          OR: [{ code: { in: projectCodes } }, { id: { in: projectIds } }],
-        },
-        select: { id: true, code: true },
-      }),
-      client.workTask.findMany({
-        where: {
-          archivedAt: null,
-          OR: [{ code: { in: taskCodes } }, { id: { in: taskIds } }],
-        },
-        select: { id: true, code: true, projectId: true },
-      }),
+    const [
+      employeesByNameResult,
+      employeesByIdResult,
+      projectsByCodeResult,
+      projectsByIdResult,
+      tasksByCodeResult,
+      tasksByIdResult,
+    ] = await Promise.all([
+      this.queryChunks(employeeNames, (chunk) =>
+        client.resourceProfile.findMany({
+          where: {
+            archivedAt: null,
+            employmentStatus: { not: EmploymentStatus.LEFT },
+            displayName: { in: chunk },
+          },
+          select: { id: true, displayName: true },
+        }),
+      ),
+      this.queryChunks(employeeIds, (chunk) =>
+        client.resourceProfile.findMany({
+          where: {
+            archivedAt: null,
+            employmentStatus: { not: EmploymentStatus.LEFT },
+            id: { in: chunk },
+          },
+          select: { id: true, displayName: true },
+        }),
+      ),
+      this.queryChunks(projectCodes, (chunk) =>
+        client.project.findMany({
+          where: { archivedAt: null, code: { in: chunk } },
+          select: { id: true, code: true },
+        }),
+      ),
+      this.queryChunks(projectIds, (chunk) =>
+        client.project.findMany({
+          where: { archivedAt: null, id: { in: chunk } },
+          select: { id: true, code: true },
+        }),
+      ),
+      this.queryChunks(taskCodes, (chunk) =>
+        client.workTask.findMany({
+          where: { archivedAt: null, code: { in: chunk } },
+          select: { id: true, code: true, projectId: true },
+        }),
+      ),
+      this.queryChunks(taskIds, (chunk) =>
+        client.workTask.findMany({
+          where: { archivedAt: null, id: { in: chunk } },
+          select: { id: true, code: true, projectId: true },
+        }),
+      ),
     ]);
+    const employees = this.uniqueById([...employeesByNameResult, ...employeesByIdResult]);
+    const projects = this.uniqueById([...projectsByCodeResult, ...projectsByIdResult]);
+    const tasks = this.uniqueById([...tasksByCodeResult, ...tasksByIdResult]);
 
     const employeesByName = new Map(employees.map((employee) => [employee.displayName, employee]));
     const employeesById = new Map(employees.map((employee) => [employee.id, employee]));
@@ -171,5 +218,20 @@ export class EmployeeImportValidatorService {
 
   private unique(values: string[]): string[] {
     return [...new Set(values)];
+  }
+
+  private uniqueById<T extends { id: string }>(values: T[]): T[] {
+    return [...new Map(values.map((value) => [value.id, value])).values()];
+  }
+
+  private async queryChunks<T>(
+    values: string[],
+    query: (chunk: string[]) => Promise<T[]>,
+  ): Promise<T[]> {
+    const result: T[] = [];
+    for (let offset = 0; offset < values.length; offset += VALIDATION_QUERY_CHUNK_SIZE) {
+      result.push(...(await query(values.slice(offset, offset + VALIDATION_QUERY_CHUNK_SIZE))));
+    }
+    return result;
   }
 }

@@ -6,6 +6,7 @@ import {
   EmployeeImportRowStatus,
   EmployeeWorkImportStatus,
   EmployeeWorkStatus,
+  LoadEntryKind,
   PrismaClient,
 } from '@prisma/client';
 import ExcelJS from 'exceljs';
@@ -72,6 +73,9 @@ describe('Employee work imports API', () => {
           }
         }
       }
+      await prisma.resourceLoadEntry.deleteMany({
+        where: { employeeWorkImportBatchId: { in: batchIds } },
+      });
       await prisma.employeeWorkItem.deleteMany({ where: { importBatchId: { in: batchIds } } });
       await prisma.employeeWorkImportRow.deleteMany({ where: { batchId: { in: batchIds } } });
       await prisma.employeeWorkImportBatch.deleteMany({ where: { id: { in: batchIds } } });
@@ -87,7 +91,7 @@ describe('Employee work imports API', () => {
     }
   });
 
-  async function workbookBuffer(): Promise<Buffer> {
+  async function workbookBuffer(label = ''): Promise<Buffer> {
     const template = await new EmployeeWorkbookService().template();
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(template as unknown as Parameters<typeof workbook.xlsx.load>[0], {
@@ -100,7 +104,7 @@ describe('Employee work imports API', () => {
     instructions.getCell('B5').value = new Date(Date.UTC(2026, 6, 26));
     details.addRow([
       employeeName,
-      '实现员工周报导入',
+      `实现员工周报导入${label ? ` ${label}` : ''}`,
       '完成接口设计',
       '完成开发',
       90,
@@ -129,6 +133,39 @@ describe('Employee work imports API', () => {
       null,
     ]);
     return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  async function uploadPreviewAndResolve(source: Buffer, filename: string): Promise<string> {
+    const uploaded = await request(app.getHttpServer())
+      .post('/api/employee-work-imports')
+      .attach('file', source, {
+        filename,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+    const batchId = uploaded.body.data.id as string;
+    batchIds.push(batchId);
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${batchId}/preview`)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${batchId}/resolutions`)
+      .send({
+        rows: [
+          {
+            rowNumber: 3,
+            projectId: null,
+            taskId: null,
+            keepUnlinked: true,
+          },
+        ],
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.status).toBe(EmployeeWorkImportStatus.READY);
+      });
+    return batchId;
   }
 
   function binaryParser(
@@ -313,6 +350,181 @@ describe('Employee work imports API', () => {
       .expect(400);
   });
 
+  it('commits idempotently, replaces the current week, and safely retries reference drift', async () => {
+    const expiredId = await uploadPreviewAndResolve(
+      await workbookBuffer('expired-ready'),
+      'expired-ready.xlsx',
+    );
+    await prisma.employeeWorkImportBatch.update({
+      where: { id: expiredId },
+      data: { expiresAt: new Date('2026-07-23T00:00:00.000Z') },
+    });
+    await request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${expiredId}/commit`)
+      .send({})
+      .expect(410);
+    await expect(
+      prisma.employeeWorkImportBatch.findUniqueOrThrow({
+        where: { id: expiredId },
+        select: { status: true },
+      }),
+    ).resolves.toEqual({ status: EmployeeWorkImportStatus.READY });
+    await expect(
+      prisma.employeeWorkItem.count({ where: { importBatchId: expiredId } }),
+    ).resolves.toBe(0);
+
+    const v1Id = await uploadPreviewAndResolve(await workbookBuffer('commit-v1'), 'commit-v1.xlsx');
+    const firstCommit = await request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${v1Id}/commit`)
+      .send({})
+      .expect(201);
+    expect(firstCommit.body.data).toMatchObject({
+      id: v1Id,
+      status: EmployeeWorkImportStatus.COMPLETED,
+      version: 1,
+      importedRows: 2,
+    });
+    await expect(
+      prisma.employeeWorkItem.count({ where: { importBatchId: v1Id, archivedAt: null } }),
+    ).resolves.toBe(2);
+    await expect(
+      prisma.resourceLoadEntry.count({
+        where: { employeeWorkImportBatchId: v1Id, archivedAt: null },
+      }),
+    ).resolves.toBe(1);
+
+    const idempotent = await request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${v1Id}/commit`)
+      .send({})
+      .expect(201);
+    expect(idempotent.body.data).toMatchObject({
+      id: v1Id,
+      status: EmployeeWorkImportStatus.COMPLETED,
+      version: 1,
+    });
+    await expect(prisma.employeeWorkItem.count({ where: { importBatchId: v1Id } })).resolves.toBe(
+      2,
+    );
+
+    const v2Id = await uploadPreviewAndResolve(await workbookBuffer('commit-v2'), 'commit-v2.xlsx');
+    await request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${v2Id}/commit`)
+      .send({})
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({
+          id: v2Id,
+          status: EmployeeWorkImportStatus.COMPLETED,
+          version: 2,
+          supersedesBatchId: v1Id,
+        });
+      });
+    await expect(
+      prisma.employeeWorkImportBatch.findUniqueOrThrow({
+        where: { id: v1Id },
+        select: { status: true },
+      }),
+    ).resolves.toEqual({ status: EmployeeWorkImportStatus.SUPERSEDED });
+    await expect(
+      prisma.employeeWorkItem.count({
+        where: { importBatchId: v1Id, archivedAt: { not: null } },
+      }),
+    ).resolves.toBe(2);
+    await expect(
+      prisma.resourceLoadEntry.count({
+        where: { employeeWorkImportBatchId: v1Id, archivedAt: { not: null } },
+      }),
+    ).resolves.toBe(1);
+
+    const driftId = await uploadPreviewAndResolve(
+      await workbookBuffer('reference-drift'),
+      'reference-drift.xlsx',
+    );
+    let releaseTaskUpdate!: () => void;
+    let taskUpdateLocked!: () => void;
+    const taskUpdateIsLocked = new Promise<void>((resolve) => {
+      taskUpdateLocked = resolve;
+    });
+    const releaseTaskUpdateBarrier = new Promise<void>((resolve) => {
+      releaseTaskUpdate = resolve;
+    });
+    const archiveTask = prisma.$transaction(async (tx) => {
+      await tx.workTask.update({
+        where: { id: taskId },
+        data: { archivedAt: new Date() },
+      });
+      taskUpdateLocked();
+      await releaseTaskUpdateBarrier;
+    });
+    await taskUpdateIsLocked;
+    const driftCommit = request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${driftId}/commit`)
+      .send({})
+      .then((response) => response);
+    const lockOutcome = await Promise.race([
+      driftCommit.then(() => 'completed'),
+      new Promise<'waiting'>((resolve) => setTimeout(() => resolve('waiting'), 300)),
+    ]);
+    releaseTaskUpdate();
+    await archiveTask;
+    expect(lockOutcome).toBe('waiting');
+    expect((await driftCommit).status).toBe(422);
+    await expect(
+      prisma.employeeWorkImportBatch.findUniqueOrThrow({
+        where: { id: driftId },
+        select: { status: true },
+      }),
+    ).resolves.toEqual({ status: EmployeeWorkImportStatus.FAILED });
+    await expect(
+      prisma.employeeWorkImportBatch.findUniqueOrThrow({
+        where: { id: v2Id },
+        select: { status: true },
+      }),
+    ).resolves.toEqual({ status: EmployeeWorkImportStatus.COMPLETED });
+    await expect(
+      prisma.employeeWorkItem.count({ where: { importBatchId: driftId } }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.resourceLoadEntry.count({
+        where: { employeeWorkImportBatchId: driftId },
+      }),
+    ).resolves.toBe(0);
+
+    await prisma.workTask.update({
+      where: { id: taskId },
+      data: { archivedAt: null },
+    });
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${driftId}/preview`)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${driftId}/resolutions`)
+      .send({
+        rows: [
+          {
+            rowNumber: 3,
+            projectId: null,
+            taskId: null,
+            keepUnlinked: true,
+          },
+        ],
+      })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${driftId}/commit`)
+      .send({})
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({
+          id: driftId,
+          status: EmployeeWorkImportStatus.COMPLETED,
+          version: 3,
+          supersedesBatchId: v2Id,
+        });
+      });
+  });
+
   it('resolves 50,000 staged rows within the transaction timeout', async () => {
     const rowCount = 50_000;
     const batchId = randomUUID();
@@ -342,6 +554,7 @@ describe('Employee work imports API', () => {
           const rawValues = {
             员工姓名: employeeName,
             工作内容: `容量行 ${rowNumber}`,
+            计划工时: 1,
           };
           return {
             id: randomUUID(),
@@ -358,7 +571,7 @@ describe('Employee work imports API', () => {
               status: EmployeeWorkStatus.NOT_STARTED,
               nextPlanText: null,
               riskText: null,
-              plannedHours: null,
+              plannedHours: 1,
               actualHours: null,
               projectCode: null,
               taskCode: null,
@@ -400,6 +613,40 @@ describe('Employee work imports API', () => {
         where: { batchId, status: EmployeeImportRowStatus.VALID },
       }),
     ).resolves.toBe(rowCount);
-    console.info(`employee import 50k resolution elapsed: ${Math.round(elapsedMs)}ms`);
+    const commitStartedAt = performance.now();
+    await request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${batchId}/commit`)
+      .send({})
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({
+          status: EmployeeWorkImportStatus.COMPLETED,
+          importedRows: rowCount,
+        });
+      });
+    const commitElapsedMs = performance.now() - commitStartedAt;
+    expect(commitElapsedMs).toBeLessThan(120_000);
+    await expect(
+      prisma.employeeWorkItem.count({ where: { importBatchId: batchId, archivedAt: null } }),
+    ).resolves.toBe(rowCount);
+    await expect(
+      prisma.resourceLoadEntry.count({
+        where: { employeeWorkImportBatchId: batchId, archivedAt: null },
+      }),
+    ).resolves.toBe(rowCount);
+    await expect(
+      prisma.resourceLoadEntry.findFirstOrThrow({
+        where: { employeeWorkImportBatchId: batchId, archivedAt: null },
+        select: { kind: true, employeeWorkItemId: true },
+      }),
+    ).resolves.toEqual({
+      kind: LoadEntryKind.OTHER,
+      employeeWorkItemId: expect.any(String),
+    });
+    console.info(
+      `employee import 50k resolution/commit elapsed: ${Math.round(elapsedMs)}ms/${Math.round(
+        commitElapsedMs,
+      )}ms`,
+    );
   });
 });

@@ -5,11 +5,9 @@ import {
   EmployeeImportRowStatus,
   EmployeeWorkImportBatch,
   EmployeeWorkImportStatus,
-  EmployeeWorkStatus,
   Prisma,
 } from '@prisma/client';
 import ExcelJS from 'exceljs';
-import { z } from 'zod';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { StoragePort } from '../../../../infrastructure/storage/storage.port';
 import { AppError } from '../../../../shared/errors/app-error';
@@ -27,6 +25,11 @@ import {
   ValidatedEmployeeImportRow,
 } from './employee-import-validator.service';
 import { employeeImportFingerprint } from './employee-import-fingerprint';
+import { EmployeeImportCommitService } from './employee-import-commit.service';
+import {
+  isNormalizedEmployeeImportRow,
+  parseStoredEmployeeImportRow,
+} from './employee-import-staged-row';
 import { EmployeeWorkbookService } from './employee-workbook.service';
 
 const IMPORT_TTL_MS = 24 * 60 * 60 * 1_000;
@@ -44,44 +47,6 @@ const IMPORT_TRANSACTION_OPTIONS = {
   maxWait: 30_000,
   timeout: 120_000,
 } as const;
-
-const persistedTextSchema = z.string().max(10_000);
-const persistedNullableTextSchema = persistedTextSchema.nullable();
-const persistedHoursSchema = z.number().finite().min(0).max(9_999.99).multipleOf(0.01).nullable();
-const rawValuesSchema = z.record(
-  z.string().max(200),
-  z.union([z.string().max(10_000), z.number().finite(), z.null()]),
-);
-const normalizedRowSchema = z
-  .object({
-    rowNumber: z.number().int().min(2).max(1_048_576),
-    employeeName: z.string().min(1).max(10_000),
-    title: z.string().min(1).max(10_000),
-    planText: persistedNullableTextSchema,
-    summaryText: persistedNullableTextSchema,
-    completionRate: z.number().int().min(0).max(100).nullable(),
-    status: z.nativeEnum(EmployeeWorkStatus),
-    nextPlanText: persistedNullableTextSchema,
-    riskText: persistedNullableTextSchema,
-    plannedHours: persistedHoursSchema,
-    actualHours: persistedHoursSchema,
-    projectCode: persistedNullableTextSchema,
-    taskCode: persistedNullableTextSchema,
-    note: persistedNullableTextSchema,
-    rawValues: rawValuesSchema,
-  })
-  .strict();
-const emptyNormalizedRowSchema = z.object({}).strict();
-const rowErrorsSchema = z.array(
-  z
-    .object({
-      field: z.string().min(1).max(200),
-      code: z.string().min(1).max(120),
-      rawValue: z.union([z.string().max(256), z.number().finite(), z.null()]).optional(),
-      reason: z.string().max(1_000).optional(),
-    })
-    .strict(),
-);
 
 const ERROR_HEADERS = [
   '员工姓名',
@@ -144,8 +109,17 @@ export class EmployeeImportsService {
     @Optional()
     @Inject(EMPLOYEE_IMPORT_CLOCK)
     clock?: () => Date,
+    @Optional()
+    private readonly commitService?: EmployeeImportCommitService,
   ) {
     this.now = clock ?? (() => new Date());
+  }
+
+  commit(id: string) {
+    if (!this.commitService) {
+      throw new Error('Employee import commit service is unavailable');
+    }
+    return this.commitService.commit(id);
   }
 
   async upload(file: UploadedContentFile | undefined) {
@@ -701,42 +675,13 @@ export class EmployeeImportsService {
     resolvedTaskId: string | null;
     keepUnlinked: boolean;
   }): StagedRowData {
-    const rawValues = rawValuesSchema.safeParse(row.rawValues);
-    const normalizedValues = z
-      .union([normalizedRowSchema, emptyNormalizedRowSchema])
-      .safeParse(row.normalizedValues);
-    const errors = rowErrorsSchema.safeParse(row.errors);
-    if (
-      !rawValues.success ||
-      !normalizedValues.success ||
-      !errors.success ||
-      ('rowNumber' in normalizedValues.data && normalizedValues.data.rowNumber !== row.rowNumber)
-    ) {
-      throw this.integrityFailed(`Persisted employee import row ${row.rowNumber} is malformed`);
-    }
-    return {
-      id: row.id,
-      batchId: row.batchId,
-      rowNumber: row.rowNumber,
-      rawValues: rawValues.data,
-      normalizedValues: normalizedValues.data,
-      status: row.status,
-      errors: errors.data,
-      resolvedEmployeeId: row.resolvedEmployeeId,
-      resolvedProjectId: row.resolvedProjectId,
-      resolvedTaskId: row.resolvedTaskId,
-      keepUnlinked: row.keepUnlinked,
-    };
+    return parseStoredEmployeeImportRow(row);
   }
 
   private isNormalizedRow(
     value: NormalizedEmployeeWorkRow | Record<string, never>,
   ): value is NormalizedEmployeeWorkRow {
-    return (
-      typeof value === 'object' &&
-      typeof (value as Partial<NormalizedEmployeeWorkRow>).rowNumber === 'number' &&
-      typeof (value as Partial<NormalizedEmployeeWorkRow>).employeeName === 'string'
-    );
+    return isNormalizedEmployeeImportRow(value);
   }
 
   private async requireBatch(id: string) {

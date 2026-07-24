@@ -59,6 +59,11 @@ export class EmployeeImportsController {
     return this.imports.resolve(id, dto);
   }
 
+  @Post(':id/commit')
+  commit(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.imports.commit(id);
+  }
+
   @Get(':id/errors')
   async errors(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
