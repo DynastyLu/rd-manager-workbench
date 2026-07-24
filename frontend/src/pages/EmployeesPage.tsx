@@ -12,7 +12,7 @@ import {
   Tabs,
   Tag,
 } from '@douyinfe/semi-ui'
-import { IconPlus, IconSearch } from '@douyinfe/semi-icons'
+import { IconDownload, IconPlus, IconSearch } from '@douyinfe/semi-icons'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -21,6 +21,9 @@ import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import {
   archiveEmployee,
   createEmployee,
+  exportEmployeeWorkItems,
+  getTeamProgress,
+  listEmployeeWorkItems,
   listEmployees,
   updateEmployee,
 } from '@/modules/employees/api'
@@ -31,12 +34,19 @@ import {
 } from '@/modules/employees/components/EmployeeProfileForm'
 import { EmployeeImportHistory } from '@/modules/employees/components/EmployeeImportHistory'
 import { EmployeeImportWizard } from '@/modules/employees/components/EmployeeImportWizard'
+import { EmployeeProgressFilters } from '@/modules/employees/components/EmployeeProgressFilters'
+import { EmployeeProgressMetrics } from '@/modules/employees/components/EmployeeProgressMetrics'
+import { EmployeeWorkTable } from '@/modules/employees/components/EmployeeWorkTable'
+import { EMPLOYEE_WORK_STATUS_COLORS, EMPLOYEE_WORK_STATUS_LABELS } from '@/modules/employees/labels'
+import { defaultPeriodStart } from '@/modules/employees/periods'
 import { employeeQueryKeys } from '@/modules/employees/queryKeys'
 import type {
   CreateEmployeeInput,
   Employee,
   EmployeeFilters,
+  EmployeeWorkStatus,
   EmploymentStatus,
+  ProgressFilters,
   UpdateEmployeeInput,
 } from '@/modules/employees/types'
 import './EmployeesPage.less'
@@ -110,13 +120,9 @@ function employmentStatusLabel(status: EmploymentStatus) {
   return EMPLOYMENT_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
 }
 
-function PlannedTabState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="employees-page__planned">
-      <Empty title={title} description={description} />
-    </div>
-  )
-}
+const percentage = (value: number | null) => (value === null ? '暂无数据' : `${value}%`)
+
+const WORK_STATUS_VALUES = ['ALL', 'NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'AT_RISK', 'BLOCKED'] as const
 
 export default function EmployeesPage() {
   const queryClient = useQueryClient()
@@ -136,6 +142,12 @@ export default function EmployeesPage() {
   )
   const employmentStatus = statusParam === 'ALL' ? undefined : statusParam
   const page = searchParams.getPositiveInt('page', 1)
+  const periodType = searchParams.getEnum('periodType', ['WEEK', 'MONTH'] as const, 'WEEK')
+  const periodStart = searchParams.getString('periodStart') || defaultPeriodStart(periodType)
+  const projectId = searchParams.getString('projectId') || undefined
+  const workStatusParam = searchParams.getEnum('status', WORK_STATUS_VALUES, 'ALL')
+  const workStatus: EmployeeWorkStatus | undefined =
+    workStatusParam === 'ALL' ? undefined : workStatusParam
   const [editor, setEditor] = useState<EmployeeEditor | null>(null)
   const [draft, setDraft] = useState<EmployeeProfileDraft>(EMPTY_DRAFT)
   const [formError, setFormError] = useState<EmployeeProfileError | null>(null)
@@ -169,6 +181,52 @@ export default function EmployeesPage() {
     queryFn: () => listEmployees(filters),
     enabled: tab === 'directory',
   })
+
+  const progressFilters: ProgressFilters = {
+    periodType,
+    periodStart,
+    department: department || undefined,
+    projectId,
+    status: workStatus,
+  }
+  const workItemFilters = { ...progressFilters, employeeId: undefined }
+  const teamProgressQuery = useQuery({
+    queryKey: employeeQueryKeys.teamProgress(progressFilters),
+    queryFn: () => getTeamProgress(progressFilters),
+    enabled: tab === 'overview',
+  })
+  const workItemsQuery = useQuery({
+    queryKey: employeeQueryKeys.workItems({ ...workItemFilters, page, pageSize: PAGE_SIZE }),
+    queryFn: () => listEmployeeWorkItems({ ...workItemFilters, page, pageSize: PAGE_SIZE }),
+    enabled: tab === 'work-items',
+  })
+  const exportMutation = useMutation({
+    mutationFn: () => exportEmployeeWorkItems(workItemFilters),
+    onSuccess: () => toast.success('已按当前筛选导出工作明细'),
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : '导出失败，请重试。')
+    },
+  })
+
+  function updateProgressFilters(next: {
+    periodType: ProgressFilters['periodType']
+    periodStart: string
+    department?: string
+    projectId?: string
+    status?: EmployeeWorkStatus
+  }) {
+    searchParams.update(
+      {
+        periodType: next.periodType,
+        periodStart: next.periodStart,
+        department: next.department,
+        projectId: next.projectId,
+        status: next.status,
+        page: 1,
+      },
+      { defaults: { page: 1 } }
+    )
+  }
 
   async function invalidateEmployeeWorkspace() {
     await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all })
@@ -222,6 +280,26 @@ export default function EmployeesPage() {
     if (department) values.add(department)
     return [...values].sort((left, right) => left.localeCompare(right, 'zh-CN'))
   }, [department, employees])
+
+  const teamProgress = teamProgressQuery.data
+  const progressDepartmentOptions = useMemo(() => {
+    const values = new Set(
+      (teamProgress?.employees.data ?? []).flatMap((entry) =>
+        entry.department ? [entry.department] : []
+      )
+    )
+    if (department) values.add(department)
+    return [...values].sort((left, right) => left.localeCompare(right, 'zh-CN'))
+  }, [department, teamProgress])
+  const progressProjectOptions = useMemo(
+    () =>
+      (teamProgress?.projects.data ?? []).map((project) => ({
+        id: project.projectId,
+        code: project.projectCode,
+        name: project.projectName,
+      })),
+    [teamProgress]
+  )
 
   function openCreateEditor() {
     setDraft({ ...EMPTY_DRAFT })
@@ -417,10 +495,142 @@ export default function EmployeesPage() {
           }
         >
           <TabPane tab="团队概览" itemKey="overview">
-            <PlannedTabState
-              title="团队进展看板将在后续阶段接入"
-              description="员工档案与工作计划数据会在这里聚合为周报和月报。"
+            <EmployeeProgressFilters
+              value={{
+                periodType,
+                periodStart,
+                department: department || undefined,
+                projectId,
+                status: workStatus,
+              }}
+              departmentOptions={progressDepartmentOptions}
+              projectOptions={progressProjectOptions}
+              onChange={updateProgressFilters}
             />
+
+            {teamProgressQuery.isPending ? (
+              <p role="status" className="workspace-visually-hidden">
+                正在加载团队进展
+              </p>
+            ) : null}
+
+            {teamProgressQuery.isError ? (
+              <div className="employees-page__feedback">
+                <Banner
+                  type="danger"
+                  fullMode={false}
+                  title="无法读取团队进展"
+                  description="请确认本地服务已启动后重试。"
+                  closeIcon={null}
+                >
+                  <Button onClick={() => void teamProgressQuery.refetch()}>重试</Button>
+                </Banner>
+              </div>
+            ) : null}
+
+            {teamProgress ? (
+              <div className="employees-page__overview">
+                {teamProgress.metrics.missingWeeks.length > 0 ? (
+                  <div className="employees-page__feedback">
+                    <Banner
+                      type="warning"
+                      fullMode={false}
+                      title="数据不完整"
+                      description={`以下周期缺少已提交的计划数据：${teamProgress.metrics.missingWeeks.join('、')}`}
+                      closeIcon={null}
+                    />
+                  </div>
+                ) : null}
+
+                <EmployeeProgressMetrics metrics={teamProgress.metrics} />
+
+                <div className="employees-page__overview-grid">
+                  <section className="employees-page__panel" aria-label="员工进展">
+                    <header>
+                      <h2>员工进展</h2>
+                      <span>{teamProgress.employees.total}</span>
+                    </header>
+                    {teamProgress.employees.data.length ? (
+                      <ul>
+                        {teamProgress.employees.data.map((entry) => (
+                          <li key={entry.employeeId}>
+                            <div>
+                              <Link
+                                to={`${ROUTES.employeeDetail(entry.employeeId)}?periodType=${teamProgress.period.type}&periodStart=${teamProgress.period.start}`}
+                              >
+                                {entry.displayName}
+                              </Link>
+                              <span>{entry.department || '未设置部门'}</span>
+                            </div>
+                            <span>
+                              完成度 {percentage(entry.metrics.averageCompletionRate)} · 工时{' '}
+                              {entry.metrics.plannedHours}/{entry.metrics.actualHours} · 风险{' '}
+                              {entry.metrics.riskCount}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="employees-page__muted">当前周期没有员工进展数据。</p>
+                    )}
+                  </section>
+
+                  <section className="employees-page__panel" aria-label="项目投入">
+                    <header>
+                      <h2>项目投入</h2>
+                      <span>{teamProgress.projects.total}</span>
+                    </header>
+                    {teamProgress.projects.data.length ? (
+                      <ul>
+                        {teamProgress.projects.data.map((project) => (
+                          <li key={project.projectId}>
+                            <div>
+                              <Link to={ROUTES.projectWorkspace(project.projectId, 'overview')}>
+                                {project.projectCode} {project.projectName}
+                              </Link>
+                              <span>参与 {project.participantCount} 人</span>
+                            </div>
+                            <span>
+                              完成度 {percentage(project.metrics.averageCompletionRate)} · 工时{' '}
+                              {project.metrics.plannedHours}/{project.metrics.actualHours}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="employees-page__muted">当前周期没有项目投入数据。</p>
+                    )}
+                  </section>
+
+                  <section className="employees-page__panel" aria-label="风险与阻塞">
+                    <header>
+                      <h2>风险与阻塞</h2>
+                      <span>
+                        风险 {teamProgress.metrics.riskCount} · 阻塞 {teamProgress.metrics.blockedCount}
+                      </span>
+                    </header>
+                    {teamProgress.risks.data.length ? (
+                      <ul>
+                        {teamProgress.risks.data.map((risk) => (
+                          <li key={risk.id}>
+                            <div>
+                              <strong>{risk.title}</strong>
+                              <span>{risk.employeeName}</span>
+                            </div>
+                            <span>{risk.riskText || '未填写风险说明'}</span>
+                            <Tag size="small" color={EMPLOYEE_WORK_STATUS_COLORS[risk.status]}>
+                              {EMPLOYEE_WORK_STATUS_LABELS[risk.status]}
+                            </Tag>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="employees-page__muted">当前周期没有风险或阻塞。</p>
+                    )}
+                  </section>
+                </div>
+              </div>
+            ) : null}
           </TabPane>
           <TabPane tab="员工目录" itemKey="directory">
             <div className="employees-page__toolbar">
@@ -515,10 +725,62 @@ export default function EmployeesPage() {
             )}
           </TabPane>
           <TabPane tab="工作明细" itemKey="work-items">
-            <PlannedTabState
-              title="员工工作明细将在后续阶段接入"
-              description="计划、总结和项目关联会在这里统一查看。"
+            <EmployeeProgressFilters
+              value={{
+                periodType,
+                periodStart,
+                department: department || undefined,
+                projectId,
+                status: workStatus,
+              }}
+              departmentOptions={progressDepartmentOptions}
+              projectOptions={progressProjectOptions}
+              onChange={updateProgressFilters}
             />
+            <div className="employees-page__work-items-toolbar">
+              <Button
+                icon={<IconDownload />}
+                aria-label="导出当前筛选"
+                loading={exportMutation.isPending}
+                onClick={() => exportMutation.mutate()}
+              >
+                导出当前筛选
+              </Button>
+            </div>
+
+            {workItemsQuery.isPending ? (
+              <p role="status" className="workspace-visually-hidden">
+                正在加载工作明细
+              </p>
+            ) : null}
+
+            {workItemsQuery.isError ? (
+              <div className="employees-page__feedback">
+                <Banner
+                  type="danger"
+                  fullMode={false}
+                  title="无法读取工作明细"
+                  description="请确认本地服务已启动后重试。"
+                  closeIcon={null}
+                >
+                  <Button onClick={() => void workItemsQuery.refetch()}>重试</Button>
+                </Banner>
+              </div>
+            ) : (
+              <EmployeeWorkTable
+                items={workItemsQuery.data?.data ?? []}
+                showEmployee
+                pagination={{
+                  currentPage: page,
+                  pageSize: PAGE_SIZE,
+                  total: workItemsQuery.data?.meta.total ?? 0,
+                  showTotal: true,
+                  showSizeChanger: false,
+                  onPageChange: (nextPage: number) =>
+                    searchParams.update({ page: nextPage }, { defaults: { page: 1 } }),
+                }}
+              />
+            )}
           </TabPane>
           <TabPane tab="计划导入" itemKey="imports">
             <div className="employees-page__imports">

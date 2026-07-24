@@ -17,6 +17,8 @@ const SEARCH_TYPE_LABELS: Record<SearchType, string> = {
   NON_PROJECT_RD: '非项目研发',
   INTELLIGENCE_ITEM: '行业情报',
   BASE_RECORD: '多维表格',
+  EMPLOYEE: '员工',
+  EMPLOYEE_WORK: '员工工作',
 }
 
 interface SearchFiltersProps {

@@ -64,20 +64,13 @@ const ReportsPage = lazy(() => import('@/pages/ReportsPage'))
 const IntelligencePage = lazy(() => import('@/pages/IntelligencePage'))
 const IntelligenceBriefsPage = lazy(() => import('@/pages/IntelligenceBriefsPage'))
 const EmployeesPage = lazy(() => import('@/pages/EmployeesPage'))
+const EmployeeDetailPage = lazy(() => import('@/pages/EmployeeDetailPage'))
 
 function PlannedGovernancePage() {
   return createElement(PlannedModuleState, {
     title: '业务库',
     description: '该业务库模块尚未开放。',
     nextStep: '下一步：确认该模块的本地记录范围。',
-  })
-}
-
-function EmployeeDetailPlaceholder() {
-  return createElement(PlannedModuleState, {
-    title: '员工进展',
-    description: '员工档案与周期进展页面正在接入。',
-    nextStep: '返回员工页面查看团队入口。',
   })
 }
 
@@ -204,7 +197,7 @@ const canonicalRoutes: RouteDefinition[] = [
     path: '/employees/:employeeId',
     title: '员工进展',
     icon: 'employees',
-    component: EmployeeDetailPlaceholder,
+    component: EmployeeDetailPage,
     navigationKey: 'employees',
     availability: 'AVAILABLE',
   },

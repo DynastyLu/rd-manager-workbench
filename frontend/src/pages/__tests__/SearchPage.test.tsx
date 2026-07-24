@@ -313,6 +313,44 @@ describe('SearchPage', () => {
 
     expect(input).toHaveFocus()
   })
+
+  it('offers employee and employee-work category chips', async () => {
+    searchWorkbench.mockResolvedValue(result)
+    renderSearchPage()
+
+    await submitQuery('搜索')
+
+    expect(screen.getByRole('button', { name: '仅搜索员工' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '仅搜索员工工作' })).toBeInTheDocument()
+  })
+
+  it('labels employee work results and opens the employee period path', async () => {
+    const employeeWorkHit = {
+      type: 'EMPLOYEE_WORK' as const,
+      id: 'work-1',
+      title: '权限模型联调',
+      snippet: '张明 · 研发一组',
+      path: '/employees/employee-1?periodType=WEEK&periodStart=2026-07-20&workItemId=work-1',
+      updatedAt: '2026-07-22T08:00:00.000Z',
+      score: 120,
+      matches: [],
+      actions: ['OPEN', 'COPY_LINK'] as const,
+    }
+    searchWorkbench.mockResolvedValue({
+      ...result,
+      data: [employeeWorkHit],
+      groups: [{ type: 'EMPLOYEE_WORK' as const, count: 1 }],
+    })
+    renderSearchPage()
+
+    const user = await submitQuery('权限')
+    const item = await screen.findByRole('article', { name: '员工工作：权限模型联调' })
+    await user.click(within(item).getByRole('link', { name: '打开：权限模型联调' }))
+
+    expect(screen.getByRole('status', { name: '当前位置' })).toHaveTextContent(
+      '/employees/employee-1?periodType=WEEK&periodStart=2026-07-20&workItemId=work-1'
+    )
+  })
 })
 
 async function submitQueryWithPage(query: string) {

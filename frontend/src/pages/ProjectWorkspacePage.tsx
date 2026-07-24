@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Banner, Button, Modal, Progress, Skeleton, Tag } from '@douyinfe/semi-ui'
 import {
@@ -18,6 +18,9 @@ import { listMeetings, listPartners, listRisks } from '@/modules/workbench/api/m
 import { archiveTask } from '@/modules/workbench/api/tasks'
 import { listNonProjectRd } from '@/modules/workbench/api/operations'
 import { request } from '@/lib/http'
+import { getProjectTeamProgress } from '@/modules/employees/api'
+import { defaultPeriodStart } from '@/modules/employees/periods'
+import { employeeQueryKeys } from '@/modules/employees/queryKeys'
 import type {
   MilestoneStatus,
   ProjectDetail,
@@ -542,6 +545,90 @@ function ProjectRisksSection({ projectId }: { projectId: string }) {
   )
 }
 
+function ProjectTeamProgressSection({ projectId }: { projectId: string }) {
+  const filters = useMemo(
+    () => ({ periodType: 'WEEK' as const, periodStart: defaultPeriodStart('WEEK') }),
+    []
+  )
+  const teamQuery = useQuery({
+    queryKey: employeeQueryKeys.projectProgress(projectId, filters),
+    queryFn: () => getProjectTeamProgress(projectId, filters),
+  })
+
+  if (teamQuery.isPending) return <Skeleton.Paragraph rows={3} />
+  if (teamQuery.isError || !teamQuery.data) {
+    return (
+      <EmptySection
+        title="无法读取团队进展"
+        description="本地服务暂时没有返回团队进展数据。"
+        action={<Button onClick={() => void teamQuery.refetch()}>重试</Button>}
+      />
+    )
+  }
+
+  const team = teamQuery.data
+  const employees = team.employees?.data ?? []
+  const employeeDetailUrl = (employeeId: string) =>
+    `${ROUTES.employeeDetail(employeeId)}?periodType=${team.period.type}&periodStart=${team.period.start}`
+
+  return (
+    <section className="project-workspace__panel project-workspace__panel--section project-workspace__team-progress">
+      <header>
+        <div>
+          <h2>团队进展</h2>
+          <span>
+            {team.period.start} — {team.period.end}
+          </span>
+        </div>
+        <Link
+          aria-label="打开团队概览"
+          to={`${ROUTES.EMPLOYEES}?tab=overview&periodType=${team.period.type}&periodStart=${team.period.start}`}
+        >
+          团队概览
+        </Link>
+      </header>
+      <p className="project-workspace__team-summary">
+        参与 {team.employees?.total ?? employees.length} 人 · 计划 {team.metrics.plannedHours} 小时 /
+        实际 {team.metrics.actualHours} 小时 · 完成 {team.metrics.completedCount}/
+        {team.metrics.workItemCount} 项 · 风险 {team.metrics.riskCount}
+      </p>
+      {employees.length ? (
+        <ul className="project-workspace__team-list">
+          {employees.map((employee) => (
+            <li key={employee.employeeId}>
+              <div className="project-workspace__team-person">
+                <Link to={employeeDetailUrl(employee.employeeId)}>{employee.displayName}</Link>
+                <span>{employee.department || '未设置部门'}</span>
+              </div>
+              <div className="project-workspace__team-cell">
+                <strong>完成</strong>
+                <span>
+                  {employee.completedItems.data.map((item) => item.title).join('、') || '—'}
+                </span>
+              </div>
+              <div className="project-workspace__team-cell">
+                <strong>下步计划</strong>
+                <span>{employee.nextPlans.data.map((item) => item.text).join('、') || '—'}</span>
+              </div>
+              <div className="project-workspace__team-cell">
+                <strong>风险</strong>
+                <span>
+                  {employee.risks.data
+                    .map((item) => item.text)
+                    .filter(Boolean)
+                    .join('、') || '—'}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="project-workspace__muted">当前周期还没有员工填报该项目的工作。</p>
+      )}
+    </section>
+  )
+}
+
 function ProjectSectionContent({
   section,
   project,
@@ -572,7 +659,14 @@ function ProjectSectionContent({
   focusedFileId?: string
 }) {
   if (section === 'work-items') return <WorkItemsSection project={project} onCreate={onCreateTask} onEdit={onEditTask} onDelete={onDeleteTask} />
-  if (section === 'progress') return <ProgressSection project={project} onCreate={onCreateProgress} onEdit={onEditProgress} onDelete={onDeleteProgress} />
+  if (section === 'progress') {
+    return (
+      <>
+        <ProgressSection project={project} onCreate={onCreateProgress} onEdit={onEditProgress} onDelete={onDeleteProgress} />
+        <ProjectTeamProgressSection projectId={project.id} />
+      </>
+    )
+  }
   if (section === 'risks') {
     return <ProjectRisksSection projectId={project.id} />
   }

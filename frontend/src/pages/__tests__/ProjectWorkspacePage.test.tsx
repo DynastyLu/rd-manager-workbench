@@ -76,6 +76,75 @@ function renderWorkspace(path = '/spaces/projects/project-1/overview') {
   )
 }
 
+const teamProgressFixture = {
+  project: { id: 'project-1', code: 'RD-001', name: '耐盐材料筛选', status: 'ACTIVE' },
+  period: { type: 'WEEK', start: '2026-07-20', end: '2026-07-26' },
+  metrics: {
+    workItemCount: 2,
+    completedCount: 1,
+    completionRate: 50,
+    averageCompletionRate: 75,
+    plannedHours: 20,
+    actualHours: 18,
+    riskCount: 1,
+    blockedCount: 0,
+    projectCount: 1,
+    unlinkedCount: 0,
+    dataComplete: true,
+    missingWeeks: [],
+  },
+  sourceBatchIds: ['batch-1'],
+  employees: {
+    data: [
+      {
+        employeeId: 'employee-1',
+        displayName: '张明',
+        department: '研发一组',
+        metrics: {
+          workItemCount: 2,
+          completedCount: 1,
+          completionRate: 50,
+          averageCompletionRate: 75,
+          plannedHours: 20,
+          actualHours: 18,
+          riskCount: 1,
+          blockedCount: 0,
+          projectCount: 1,
+          unlinkedCount: 0,
+          dataComplete: true,
+          missingWeeks: [],
+        },
+        completedItems: {
+          data: [{ workItemId: 'work-1', title: '完成权限模型设计' }],
+          total: 1,
+          limit: 5,
+          hasMore: false,
+        },
+        nextPlans: {
+          data: [{ workItemId: 'work-1', text: '联调准备' }],
+          total: 1,
+          limit: 5,
+          hasMore: false,
+        },
+        risks: {
+          data: [{ workItemId: 'work-2', text: '依赖方接口未冻结' }],
+          total: 1,
+          limit: 5,
+          hasMore: false,
+        },
+        sourceBatchIds: ['batch-1'],
+        employeeProgressUrl: '/employees/employee-1/progress?periodType=WEEK&periodStart=2026-07-20',
+        workItemsUrl: '/employee-work-items?periodType=WEEK&periodStart=2026-07-20',
+      },
+    ],
+    total: 1,
+    limit: 10,
+    hasMore: false,
+  },
+  risks: { data: [], total: 0, limit: 10, hasMore: false },
+  links: { workItemsUrl: '/employee-work-items?periodType=WEEK&periodStart=2026-07-20' },
+}
+
 const project = {
   id: 'project-1',
   code: 'RD-001',
@@ -179,7 +248,11 @@ describe('ProjectWorkspacePage', () => {
     listNonProjectRd.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
     listPartners.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
     listRisks.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 100, total: 0 } })
-    request.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
+    request.mockImplementation((url: string) =>
+      typeof url === 'string' && url.includes('team-progress')
+        ? Promise.resolve(teamProgressFixture)
+        : Promise.resolve({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
+    )
     updateProject.mockResolvedValue(project)
     updateTask.mockResolvedValue(project.tasks[0])
   })
@@ -409,5 +482,30 @@ describe('ProjectWorkspacePage', () => {
       'href',
       '/library/operations?tab=non-project-rd&recordId=rd-1&projectId=project-1',
     )
+  })
+
+  it('shows project team progress and links back to the employee period', async () => {
+    renderWorkspace('/spaces/projects/project-1/progress')
+
+    expect(await screen.findByRole('heading', { name: '团队进展' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '张明' })).toHaveAttribute(
+      'href',
+      '/employees/employee-1?periodType=WEEK&periodStart=2026-07-20',
+    )
+    expect(screen.getByText('完成权限模型设计')).toBeInTheDocument()
+    expect(screen.getByText('联调准备')).toBeInTheDocument()
+    expect(screen.getByText('依赖方接口未冻结')).toBeInTheDocument()
+    expect(screen.getByText(/参与 1 人/)).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: '打开团队概览' })
+    ).toHaveAttribute('href', '/employees?tab=overview&periodType=WEEK&periodStart=2026-07-20')
+  })
+
+  it('fetches team progress only when the progress section is visible', async () => {
+    renderWorkspace()
+
+    await screen.findByRole('heading', { name: '耐盐材料筛选' })
+
+    expect(request).not.toHaveBeenCalledWith(expect.stringContaining('team-progress'))
   })
 })

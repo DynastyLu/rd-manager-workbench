@@ -14,8 +14,11 @@ const employeesApi = vi.hoisted(() => ({
   downloadEmployeeImportErrors: vi.fn(),
   downloadEmployeeImportSource: vi.fn(),
   downloadEmployeeWorkImportTemplate: vi.fn(),
+  exportEmployeeWorkItems: vi.fn(),
   getEmployeeWorkImport: vi.fn(),
+  getTeamProgress: vi.fn(),
   listEmployeeWorkImports: vi.fn(),
+  listEmployeeWorkItems: vi.fn(),
   listEmployees: vi.fn(),
   previewEmployeeWorkImport: vi.fn(),
   rebuildEmployeeWorkImportSnapshots: vi.fn(),
@@ -90,6 +93,125 @@ function renderEmployees(path = '/employees?tab=directory') {
   }
 }
 
+const teamMetrics = {
+  workItemCount: 4,
+  completedCount: 2,
+  completionRate: null,
+  averageCompletionRate: 88,
+  plannedHours: 40,
+  actualHours: 36,
+  riskCount: 1,
+  blockedCount: 1,
+  projectCount: 1,
+  unlinkedCount: 0,
+  dataComplete: false,
+  missingWeeks: ['2026-07-13'],
+}
+
+const teamProgressFixture = {
+  period: { type: 'WEEK' as const, start: '2026-07-20', end: '2026-07-26' },
+  metrics: teamMetrics,
+  sourceBatchIds: ['batch-1'],
+  employees: {
+    data: [
+      {
+        employeeId: 'employee-1',
+        displayName: '林晓',
+        department: '研发一组',
+        roleTitle: '高级研发工程师',
+        metrics: { ...teamMetrics, completionRate: 50, dataComplete: true, missingWeeks: [] },
+        sourceBatchIds: ['batch-1'],
+        employeeProgressUrl: '/employees/employee-1/progress?periodType=WEEK&periodStart=2026-07-20',
+        workItemsUrl: '/employee-work-items?periodType=WEEK&periodStart=2026-07-20',
+      },
+    ],
+    total: 1,
+    limit: 10,
+    hasMore: false,
+  },
+  projects: {
+    data: [
+      {
+        projectId: 'project-1',
+        projectCode: 'RD-026',
+        projectName: '权限平台',
+        participantCount: 3,
+        metrics: { ...teamMetrics, averageCompletionRate: 75 },
+        sourceBatchIds: ['batch-1'],
+        projectProgressUrl: '/projects/project-1/team-progress?periodType=WEEK&periodStart=2026-07-20',
+        workItemsUrl: '/employee-work-items?periodType=WEEK&periodStart=2026-07-20',
+      },
+    ],
+    total: 1,
+    limit: 10,
+    hasMore: false,
+  },
+  risks: {
+    data: [
+      {
+        id: 'work-1',
+        title: '权限模型联调',
+        employeeId: 'employee-1',
+        employeeName: '林晓',
+        projectId: 'project-1',
+        projectCode: 'RD-026',
+        status: 'AT_RISK' as const,
+        riskText: '依赖方接口未冻结',
+        sourceBatchIds: ['batch-1'],
+        links: {
+          selfUrl: '/employee-work-items/work-1',
+          employeeProgressUrl: '/employees/employee-1/progress?periodType=WEEK&periodStart=2026-07-20',
+          sourceBatchUrl: '/employee-work-imports/batch-1',
+        },
+      },
+    ],
+    total: 1,
+    limit: 10,
+    hasMore: false,
+  },
+  links: { workItemsUrl: '/employee-work-items?periodType=WEEK&periodStart=2026-07-20' },
+}
+
+const workItemsFixture = {
+  period: { type: 'WEEK' as const, start: '2026-07-20', end: '2026-07-26' },
+  data: [
+    {
+      id: 'work-1',
+      employeeId: 'employee-1',
+      employeeName: '林晓',
+      department: '研发一组',
+      importBatchId: 'batch-1',
+      importVersion: 2,
+      sourceRowId: 'row-1',
+      sourceRowNumber: 3,
+      sourceBatchIds: ['batch-1'],
+      periodStart: '2026-07-20',
+      periodEnd: '2026-07-26',
+      title: '权限模型联调',
+      planText: '完成权限模型联调',
+      summaryText: '整体进度 80%',
+      completionRate: 80,
+      status: 'AT_RISK' as const,
+      nextPlanText: '联调准备',
+      riskText: '依赖方接口未冻结',
+      plannedHours: 16,
+      actualHours: 14,
+      project: { id: 'project-1', code: 'RD-026', name: '权限平台' },
+      task: { id: 'task-1', code: 'RD-026-T01', title: '权限模型设计' },
+      riskId: null,
+      note: null,
+      links: {
+        selfUrl: '/employee-work-items/work-1',
+        employeeProgressUrl: '/employees/employee-1/progress?periodType=WEEK&periodStart=2026-07-20',
+        sourceBatchUrl: '/employee-work-imports/batch-1',
+      },
+    },
+  ],
+  meta: { page: 1, pageSize: 20, total: 1 },
+  sourceBatchIds: ['batch-1'],
+  links: { progressUrl: '/employee-progress?periodType=WEEK&periodStart=2026-07-20' },
+}
+
 describe('EmployeesPage', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -101,6 +223,9 @@ describe('EmployeesPage', () => {
       data: [employee],
       meta: { page: 1, pageSize: 20, total: 1 },
     })
+    employeesApi.getTeamProgress.mockResolvedValue(teamProgressFixture)
+    employeesApi.listEmployeeWorkItems.mockResolvedValue(workItemsFixture)
+    employeesApi.exportEmployeeWorkItems.mockResolvedValue(undefined)
   })
 
   it('loads the directory from URL filters and exposes profile detail actions', async () => {
@@ -386,16 +511,80 @@ describe('EmployeesPage', () => {
     expect(await screen.findByText('还没有符合条件的员工')).toBeInTheDocument()
   })
 
-  it('keeps unfinished employee workspace tabs honest and URL-backed', async () => {
+  it('serves the overview tab with team metrics, a missing-week warning and drill-through links', async () => {
+    renderEmployees('/employees?tab=overview&periodType=WEEK&periodStart=2026-07-20')
+
+    expect(await screen.findByText('平均完成度')).toBeInTheDocument()
+    expect(employeesApi.getTeamProgress).toHaveBeenCalledWith({
+      periodType: 'WEEK',
+      periodStart: '2026-07-20',
+      department: undefined,
+      projectId: undefined,
+      status: undefined,
+    })
+    expect(screen.getAllByText('88%').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('暂无数据').length).toBeGreaterThan(0)
+    expect(screen.getByText(/2026-07-13/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '林晓' })).toHaveAttribute(
+      'href',
+      '/employees/employee-1?periodType=WEEK&periodStart=2026-07-20'
+    )
+    expect(screen.getByRole('link', { name: 'RD-026 权限平台' })).toHaveAttribute(
+      'href',
+      '/spaces/projects/project-1/overview'
+    )
+    expect(screen.getByText('参与 3 人')).toBeInTheDocument()
+    expect(screen.getAllByText('权限模型联调').length).toBeGreaterThan(0)
+    expect(screen.getByText('依赖方接口未冻结')).toBeInTheDocument()
+  })
+
+  it('keeps overview filters in the URL and re-queries team progress when the period switches', async () => {
     const user = userEvent.setup()
-    renderEmployees('/employees?tab=overview&periodType=MONTH&periodStart=2026-07-01')
+    renderEmployees('/employees?tab=overview&periodType=WEEK&periodStart=2026-07-20')
 
-    expect(await screen.findByText('团队进展看板将在后续阶段接入')).toBeInTheDocument()
-    await user.click(screen.getByRole('tab', { name: '工作明细' }))
+    await screen.findByRole('link', { name: '林晓' })
+    await user.click(screen.getByRole('button', { name: '月' }))
 
-    expect(screen.getByText('员工工作明细将在后续阶段接入')).toBeInTheDocument()
-    expect(screen.getByLabelText('当前员工路径')).toHaveTextContent(
-      '/employees?tab=work-items&periodType=MONTH&periodStart=2026-07-01'
+    expect(screen.getByLabelText('当前员工路径')).toHaveTextContent('periodType=MONTH')
+    await waitFor(() =>
+      expect(employeesApi.getTeamProgress).toHaveBeenLastCalledWith(
+        expect.objectContaining({ periodType: 'MONTH', periodStart: '2026-07-01' })
+      )
+    )
+  })
+
+  it('serves the work-items tab with filterable traceable rows and export', async () => {
+    const user = userEvent.setup()
+    renderEmployees('/employees?tab=work-items&periodType=WEEK&periodStart=2026-07-20')
+
+    expect(await screen.findByText('权限模型联调')).toBeInTheDocument()
+    expect(employeesApi.listEmployeeWorkItems).toHaveBeenCalledWith({
+      periodType: 'WEEK',
+      periodStart: '2026-07-20',
+      department: undefined,
+      projectId: undefined,
+      status: undefined,
+      employeeId: undefined,
+      page: 1,
+      pageSize: 20,
+    })
+    expect(screen.getByRole('link', { name: 'RD-026 权限平台' })).toHaveAttribute(
+      'href',
+      '/spaces/projects/project-1/overview'
+    )
+    expect(screen.getByText(/第 3 行/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '导出当前筛选' }))
+
+    await waitFor(() =>
+      expect(employeesApi.exportEmployeeWorkItems).toHaveBeenCalledWith({
+        periodType: 'WEEK',
+        periodStart: '2026-07-20',
+        department: undefined,
+        projectId: undefined,
+        status: undefined,
+        employeeId: undefined,
+      })
     )
   })
 
