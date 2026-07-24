@@ -24,7 +24,11 @@ import {
   EmployeeImportValidatorService,
   ValidatedEmployeeImportRow,
 } from './employee-import-validator.service';
-import { employeeImportFingerprint } from './employee-import-fingerprint';
+import { canonicalJson, employeeImportFingerprint } from './employee-import-fingerprint';
+import {
+  isEmployeeImportBatchExpired,
+  isEmployeeImportDraftStatus,
+} from './employee-import-lifecycle';
 import { EmployeeImportCommitService } from './employee-import-commit.service';
 import {
   isNormalizedEmployeeImportRow,
@@ -34,15 +38,13 @@ import { EmployeeWorkbookService } from './employee-workbook.service';
 
 const IMPORT_TTL_MS = 24 * 60 * 60 * 1_000;
 const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-const DRAFT_STATUSES = new Set<EmployeeWorkImportStatus>([
-  EmployeeWorkImportStatus.UPLOADED,
-  EmployeeWorkImportStatus.PREVIEWED,
-  EmployeeWorkImportStatus.RESOLVING,
-  EmployeeWorkImportStatus.READY,
-  EmployeeWorkImportStatus.FAILED,
+const RESTORABLE_STATUSES = new Set<EmployeeWorkImportStatus>([
+  EmployeeWorkImportStatus.COMPLETED,
+  EmployeeWorkImportStatus.SUPERSEDED,
 ]);
 const EMPLOYEE_IMPORT_CLOCK = Symbol('EMPLOYEE_IMPORT_CLOCK');
 const RESOLUTION_UPDATE_CHUNK_SIZE = 1_000;
+const RESTORE_ROW_CHUNK_SIZE = 1_000;
 const IMPORT_TRANSACTION_OPTIONS = {
   maxWait: 30_000,
   timeout: 120_000,
@@ -127,6 +129,143 @@ export class EmployeeImportsService {
       throw new Error('Employee import commit service is unavailable');
     }
     return this.commitService.rebuildSnapshots(id);
+  }
+
+  async restore(id: string) {
+    if (!this.commitService) {
+      throw new Error('Employee import commit service is unavailable');
+    }
+    const restoreLockKey = `employee-import-restore:${id}`;
+    let restoreAttempt: { id: string; sourceStorageKey: string } | null = null;
+    let restored: EmployeeWorkImportBatch;
+    try {
+      restored = await this.prisma.$transaction(async (tx) => {
+        await this.lock(tx, restoreLockKey);
+        await this.lock(tx, `employee-import:${id}`);
+        const source = await this.requireBatchFrom(tx, id, false);
+        if (!RESTORABLE_STATUSES.has(source.status)) {
+          throw new AppError({
+            code: ErrorCodes.EMPLOYEE_IMPORT_STATE_INVALID,
+            message: `Employee work import batch cannot be restored from ${source.status}`,
+            statusCode: HttpStatus.CONFLICT,
+          });
+        }
+        await this.lock(
+          tx,
+          `employee-import-period:${source.periodType}:${this.dateOnly(source.periodStartAt)}`,
+        );
+        const existing = await tx.employeeWorkImportBatch.findFirst({
+          where: {
+            restoredFromBatchId: id,
+            archivedAt: null,
+            status: {
+              in: [
+                EmployeeWorkImportStatus.READY,
+                EmployeeWorkImportStatus.IMPORTING,
+                EmployeeWorkImportStatus.COMPLETED,
+              ],
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (existing) return existing;
+
+        this.assertRestorableBatch(source);
+        const stored = await this.readStoredFile(source.sourceStorageKey);
+        if (this.sha256(stored.content) !== source.fileHash) {
+          throw this.integrityFailed('Stored employee import restore source hash does not match');
+        }
+
+        const newId = randomUUID();
+        const sourceStorageKey = `employee-imports/${newId}/source.xlsx`;
+        restoreAttempt = { id: newId, sourceStorageKey };
+        try {
+          await this.storage.write({
+            key: sourceStorageKey,
+            content: stored.content,
+            mimeType: stored.mimeType || XLSX_MIME_TYPE,
+          });
+        } catch (cause) {
+          throw new AppError({
+            code: ErrorCodes.EMPLOYEE_IMPORT_INTEGRITY_FAILED,
+            message: 'Employee import restore source could not be stored',
+            statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+            cause,
+          });
+        }
+        const created = await tx.employeeWorkImportBatch.create({
+          data: {
+            id: newId,
+            periodType: source.periodType,
+            periodStartAt: source.periodStartAt,
+            periodEndAt: source.periodEndAt,
+            status: EmployeeWorkImportStatus.READY,
+            originalName: source.originalName,
+            fileHash: source.fileHash,
+            sourceStorageKey,
+            templateVersion: source.templateVersion,
+            previewFingerprint: source.previewFingerprint,
+            totalRows: source.totalRows,
+            validRows: source.totalRows,
+            errorRows: 0,
+            unresolvedRows: 0,
+            importedRows: 0,
+            restoredFromBatchId: source.id,
+            expiresAt: new Date(this.now().getTime() + IMPORT_TTL_MS),
+          },
+        });
+        const fingerprint = this.restoreFingerprint(source);
+        let restoredRowCount = 0;
+        let afterRowNumber = 1;
+        while (true) {
+          const rows = (
+            await tx.employeeWorkImportRow.findMany({
+              where: {
+                batchId: id,
+                rowNumber: { gt: afterRowNumber },
+              },
+              orderBy: [{ rowNumber: 'asc' }, { id: 'asc' }],
+              take: RESTORE_ROW_CHUNK_SIZE,
+            })
+          ).map(parseStoredEmployeeImportRow);
+          if (rows.length === 0) break;
+          this.assertRestorableRowChunk(rows);
+          fingerprint.update(rows);
+          await tx.employeeWorkImportRow.createMany({
+            data: rows.map((row) =>
+              this.rowCreateData({
+                ...row,
+                id: undefined,
+                batchId: newId,
+              }),
+            ),
+          });
+          restoredRowCount += rows.length;
+          afterRowNumber = rows[rows.length - 1].rowNumber;
+        }
+        if (
+          restoredRowCount !== source.totalRows ||
+          fingerprint.digest() !== source.previewFingerprint
+        ) {
+          throw this.integrityFailed('Restored employee import preview fingerprint does not match');
+        }
+        return created;
+      }, IMPORT_TRANSACTION_OPTIONS);
+    } catch (error) {
+      if (restoreAttempt) {
+        await this.cleanupUnreferencedUpload(restoreLockKey, restoreAttempt);
+      }
+      throw error;
+    }
+    const committed = await this.commitService.commit(restored.id);
+    return {
+      ...committed,
+      sourceBatchIds: [restored.id],
+      links: {
+        self: `/employee-work-imports/${restored.id}`,
+        source: `/employee-work-imports/${restored.id}/source`,
+      },
+    };
   }
 
   async upload(file: UploadedContentFile | undefined) {
@@ -231,7 +370,7 @@ export class EmployeeImportsService {
   async preview(id: string) {
     const snapshot = await this.requireBatch(id);
     this.assertDraft(snapshot.status);
-    const source = await this.storage.read(snapshot.sourceStorageKey);
+    const source = await this.readStoredFile(snapshot.sourceStorageKey);
     if (this.sha256(source.content) !== snapshot.fileHash) {
       throw this.integrityFailed('Stored employee import source hash does not match');
     }
@@ -449,11 +588,25 @@ export class EmployeeImportsService {
         statusCode: HttpStatus.NOT_FOUND,
       });
     }
-    const stored = await this.storage.read(batch.errorStorageKey);
+    const stored = await this.readStoredFile(batch.errorStorageKey);
     return {
       fileName: `${this.safeDownloadStem(batch.originalName)}-错误行.xlsx`,
       content: stored.content,
       mimeType: stored.mimeType || XLSX_MIME_TYPE,
+    };
+  }
+
+  async sourceFile(id: string) {
+    const batch = await this.requireBatch(id);
+    const stored = await this.readStoredFile(batch.sourceStorageKey);
+    if (this.sha256(stored.content) !== batch.fileHash) {
+      throw this.integrityFailed('Stored employee import source hash does not match');
+    }
+    return {
+      fileName: this.safeOriginalName(batch.originalName),
+      content: stored.content,
+      mimeType: stored.mimeType || XLSX_MIME_TYPE,
+      sourceBatchIds: [id],
     };
   }
 
@@ -563,6 +716,57 @@ export class EmployeeImportsService {
     });
   }
 
+  private assertRestorableBatch(batch: EmployeeWorkImportBatch): void {
+    if (
+      batch.totalRows === 0 ||
+      batch.validRows !== batch.totalRows ||
+      batch.errorRows !== 0 ||
+      batch.unresolvedRows !== 0 ||
+      !batch.previewFingerprint
+    ) {
+      throw this.integrityFailed('Restored employee import rows are not complete and resolved');
+    }
+  }
+
+  private assertRestorableRowChunk(rows: ReturnType<typeof parseStoredEmployeeImportRow>[]): void {
+    if (
+      rows.some(
+        (row) =>
+          row.status !== EmployeeImportRowStatus.VALID ||
+          row.errors.length !== 0 ||
+          !row.resolvedEmployeeId ||
+          !isNormalizedEmployeeImportRow(row.normalizedValues),
+      )
+    ) {
+      throw this.integrityFailed('Restored employee import rows are not complete and resolved');
+    }
+  }
+
+  private restoreFingerprint(batch: EmployeeWorkImportBatch) {
+    const hash = createHash('sha256');
+    hash.update(
+      `{"fileHash":${canonicalJson(batch.fileHash)},"periodEnd":${canonicalJson(
+        this.dateOnly(batch.periodEndAt),
+      )},"periodStart":${canonicalJson(
+        this.dateOnly(batch.periodStartAt),
+      )},"periodType":${canonicalJson(batch.periodType)},"rows":[`,
+    );
+    let firstRow = true;
+    return {
+      update: (rows: StagedRowData[]) => {
+        for (const row of rows) {
+          hash.update(firstRow ? '' : ',');
+          hash.update(canonicalJson(this.fingerprintRow(row)));
+          firstRow = false;
+        }
+      },
+      digest: () => {
+        hash.update(`],"templateVersion":${canonicalJson(batch.templateVersion)}}`);
+        return hash.digest('hex');
+      },
+    };
+  }
+
   private validatedStageRow(
     batchId: string,
     validated: ValidatedEmployeeImportRow,
@@ -655,18 +859,22 @@ export class EmployeeImportsService {
   }): string {
     return employeeImportFingerprint({
       ...input,
-      rows: input.rows.map((row) => ({
-        rowNumber: row.rowNumber,
-        rawValues: row.rawValues,
-        normalizedValues: row.normalizedValues,
-        status: row.status,
-        errors: row.errors,
-        resolvedEmployeeId: row.resolvedEmployeeId,
-        resolvedProjectId: row.resolvedProjectId,
-        resolvedTaskId: row.resolvedTaskId,
-        keepUnlinked: row.keepUnlinked,
-      })),
+      rows: input.rows.map((row) => this.fingerprintRow(row)),
     });
+  }
+
+  private fingerprintRow(row: StagedRowData) {
+    return {
+      rowNumber: row.rowNumber,
+      rawValues: row.rawValues,
+      normalizedValues: row.normalizedValues,
+      status: row.status,
+      errors: row.errors,
+      resolvedEmployeeId: row.resolvedEmployeeId,
+      resolvedProjectId: row.resolvedProjectId,
+      resolvedTaskId: row.resolvedTaskId,
+      keepUnlinked: row.keepUnlinked,
+    };
   }
 
   private storedRow(row: {
@@ -702,10 +910,7 @@ export class EmployeeImportsService {
         statusCode: HttpStatus.NOT_FOUND,
       });
     }
-    if (
-      batch.status === EmployeeWorkImportStatus.EXPIRED ||
-      (DRAFT_STATUSES.has(batch.status) && batch.expiresAt <= this.now())
-    ) {
+    if (isEmployeeImportBatchExpired(batch, this.now())) {
       throw new AppError({
         code: ErrorCodes.EMPLOYEE_IMPORT_EXPIRED,
         message: 'Employee work import batch has expired',
@@ -730,10 +935,7 @@ export class EmployeeImportsService {
         statusCode: HttpStatus.NOT_FOUND,
       });
     }
-    if (
-      (enforceExpiry && batch.status === EmployeeWorkImportStatus.EXPIRED) ||
-      (enforceExpiry && DRAFT_STATUSES.has(batch.status) && batch.expiresAt <= this.now())
-    ) {
+    if (enforceExpiry && isEmployeeImportBatchExpired(batch, this.now())) {
       throw new AppError({
         code: ErrorCodes.EMPLOYEE_IMPORT_EXPIRED,
         message: 'Employee work import batch has expired',
@@ -869,6 +1071,19 @@ export class EmployeeImportsService {
     }
   }
 
+  private async readStoredFile(storageKey: string) {
+    try {
+      return await this.storage.read(storageKey);
+    } catch (cause) {
+      throw new AppError({
+        code: ErrorCodes.EMPLOYEE_IMPORT_INTEGRITY_FAILED,
+        message: 'Stored employee import file is unavailable',
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        cause,
+      });
+    }
+  }
+
   private async lock(client: Prisma.TransactionClient, key: string): Promise<void> {
     await client.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
   }
@@ -962,7 +1177,7 @@ export class EmployeeImportsService {
   }
 
   private assertDraft(status: EmployeeWorkImportStatus): void {
-    if (!DRAFT_STATUSES.has(status)) {
+    if (!isEmployeeImportDraftStatus(status)) {
       throw new AppError({
         code: ErrorCodes.EMPLOYEE_IMPORT_STATE_INVALID,
         message: `Employee work import batch cannot be changed from ${status}`,
@@ -986,11 +1201,19 @@ export class EmployeeImportsService {
           key !== 'sourceStorageKey' &&
           key !== 'errorStorageKey' &&
           key !== 'previewFingerprint' &&
+          key !== 'periodStartAt' &&
+          key !== 'periodEndAt' &&
           key !== 'rows',
       ),
     );
     const errorStorageKey = batch.errorStorageKey;
-    return { ...safe, hasErrors: Boolean(errorStorageKey) };
+    return {
+      ...safe,
+      periodStart:
+        batch.periodStartAt instanceof Date ? this.dateOnly(batch.periodStartAt) : undefined,
+      periodEnd: batch.periodEndAt instanceof Date ? this.dateOnly(batch.periodEndAt) : undefined,
+      hasErrors: Boolean(errorStorageKey),
+    };
   }
 
   private safeOriginalName(name: string): string {

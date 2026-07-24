@@ -1,3 +1,4 @@
+import { EmployeeWorkImportStatus } from '@prisma/client';
 import { AuditLogService } from '../../../../src/modules/workbench/governance/application/audit-log.service';
 
 describe('AuditLogService', () => {
@@ -48,5 +49,38 @@ describe('AuditLogService', () => {
         metadata: {},
       }),
     ).rejects.toThrow('insert failed');
+  });
+
+  it('preserves safe employee import restore metadata after allowlist filtering', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'audit-restore' });
+    const service = new AuditLogService({ auditLog: { create } } as never);
+
+    await service.record({
+      action: 'EMPLOYEE_IMPORT_RESTORED',
+      entityType: 'employeeWorkImportBatch',
+      entityId: 'restored-batch',
+      outcome: 'SUCCEEDED',
+      changedFields: ['status', 'version', 'restoredFromBatchId'],
+      metadata: {
+        status: EmployeeWorkImportStatus.COMPLETED,
+        version: 3,
+        restoredFromBatchId: 'source-batch',
+        rowCount: 50_000,
+        snapshotStatus: 'READY',
+        sourceStorageKey: 'private/source.xlsx',
+      },
+    });
+
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        metadata: {
+          status: EmployeeWorkImportStatus.COMPLETED,
+          version: 3,
+          restoredFromBatchId: 'source-batch',
+          rowCount: 50_000,
+          snapshotStatus: 'READY',
+        },
+      }),
+    });
   });
 });

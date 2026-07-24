@@ -7,6 +7,10 @@ import {
 } from '@prisma/client';
 import { EmployeeImportsService } from '../../../../src/modules/workbench/employees/application/employee-imports.service';
 import {
+  canonicalJson,
+  employeeImportFingerprint,
+} from '../../../../src/modules/workbench/employees/application/employee-import-fingerprint';
+import {
   EmployeeWorkbookInspectionResult,
   NormalizedEmployeeWorkRow,
 } from '../../../../src/modules/workbench/employees/domain/employee-work.types';
@@ -55,6 +59,49 @@ function normalizedRow(
   };
 }
 
+function restorableStoredRow(rowNumber: number) {
+  const normalized = normalizedRow({ rowNumber });
+  return {
+    id: `row-${rowNumber}`,
+    batchId: 'batch-1',
+    rowNumber,
+    rawValues: normalized.rawValues,
+    normalizedValues: normalized,
+    status: EmployeeImportRowStatus.VALID,
+    errors: [],
+    resolvedEmployeeId: 'employee-1',
+    resolvedProjectId: 'project-1',
+    resolvedTaskId: 'task-1',
+    keepUnlinked: false,
+  };
+}
+
+function largeRestoreFingerprint(rowCount: number): string {
+  const hash = createHash('sha256');
+  hash.update(
+    `{"fileHash":${canonicalJson(SOURCE_HASH)},"periodEnd":"2026-07-26","periodStart":"2026-07-20","periodType":"WEEK","rows":[`,
+  );
+  for (let offset = 0; offset < rowCount; offset += 1) {
+    const stored = restorableStoredRow(offset + 2);
+    hash.update(offset === 0 ? '' : ',');
+    hash.update(
+      canonicalJson({
+        rowNumber: stored.rowNumber,
+        rawValues: stored.rawValues,
+        normalizedValues: stored.normalizedValues,
+        status: stored.status,
+        errors: stored.errors,
+        resolvedEmployeeId: stored.resolvedEmployeeId,
+        resolvedProjectId: stored.resolvedProjectId,
+        resolvedTaskId: stored.resolvedTaskId,
+        keepUnlinked: stored.keepUnlinked,
+      }),
+    );
+  }
+  hash.update('],"templateVersion":1}');
+  return hash.digest('hex');
+}
+
 function batch(overrides: Record<string, unknown> = {}) {
   return {
     id: 'batch-1',
@@ -88,14 +135,23 @@ function createService(options: {
   inspection?: ReturnType<typeof inspection>;
   validation?: unknown[];
   auditFailure?: Error;
+  commitService?: { commit: jest.Mock; rebuildSnapshots: jest.Mock };
 }) {
   const foundBatch = options.foundBatch ?? batch();
+  const foundRows = ((foundBatch as any)?.rows ?? []) as Array<{ rowNumber: number }>;
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
     employeeWorkImportRow: {
       deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       createMany: jest.fn().mockResolvedValue({ count: 0 }),
-      findMany: jest.fn().mockResolvedValue((foundBatch as any)?.rows ?? []),
+      findMany: jest.fn().mockImplementation(({ where = {}, take }: any = {}) => {
+        const after = where.rowNumber?.gt;
+        const rows =
+          typeof after === 'number'
+            ? foundRows.filter(({ rowNumber }) => rowNumber > after)
+            : foundRows;
+        return take ? rows.slice(0, take) : rows;
+      }),
       update: jest.fn().mockResolvedValue({}),
     },
     employeeWorkImportBatch: {
@@ -154,6 +210,7 @@ function createService(options: {
       validator as never,
       audit as never,
       () => NOW,
+      options.commitService as never,
     ),
     prisma,
     storage,
@@ -215,6 +272,12 @@ describe('EmployeeImportsService', () => {
     expect(result).not.toHaveProperty('sourceStorageKey');
     expect(result).not.toHaveProperty('errorStorageKey');
     expect(result).not.toHaveProperty('previewFingerprint');
+    expect(result).toMatchObject({
+      periodStart: '2026-07-20',
+      periodEnd: '2026-07-26',
+    });
+    expect(result).not.toHaveProperty('periodStartAt');
+    expect(result).not.toHaveProperty('periodEndAt');
   });
 
   it('returns a non-expired batch for the same period and hash without storing twice', async () => {
@@ -1486,5 +1549,218 @@ describe('EmployeeImportsService', () => {
       fileName: 'weekly-错误行.xlsx',
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
+  });
+
+  it('downloads the immutable source workbook without exposing its storage key', async () => {
+    const dependencies = createService({
+      foundBatch: batch({ status: EmployeeWorkImportStatus.SUPERSEDED }),
+    });
+
+    const result = await dependencies.service.sourceFile('batch-1');
+
+    expect(dependencies.storage.read).toHaveBeenCalledWith('employee-imports/batch-1/source.xlsx');
+    expect(result).toEqual({
+      fileName: 'weekly.xlsx',
+      content: SOURCE,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      sourceBatchIds: ['batch-1'],
+    });
+  });
+
+  it('copies a completed source and resolved rows to a private READY batch before normal commit', async () => {
+    const staged = {
+      id: 'row-1',
+      batchId: 'batch-1',
+      rowNumber: 2,
+      rawValues: normalizedRow().rawValues,
+      normalizedValues: normalizedRow(),
+      status: EmployeeImportRowStatus.VALID,
+      errors: [],
+      resolvedEmployeeId: 'employee-1',
+      resolvedProjectId: 'project-1',
+      resolvedTaskId: 'task-1',
+      keepUnlinked: false,
+    };
+    const previewFingerprint = employeeImportFingerprint({
+      fileHash: SOURCE_HASH,
+      templateVersion: 1,
+      periodType: 'WEEK',
+      periodStart: '2026-07-20',
+      periodEnd: '2026-07-26',
+      rows: [
+        {
+          rowNumber: staged.rowNumber,
+          rawValues: staged.rawValues,
+          normalizedValues: staged.normalizedValues,
+          status: staged.status,
+          errors: staged.errors,
+          resolvedEmployeeId: staged.resolvedEmployeeId,
+          resolvedProjectId: staged.resolvedProjectId,
+          resolvedTaskId: staged.resolvedTaskId,
+          keepUnlinked: staged.keepUnlinked,
+        },
+      ],
+    });
+    const source = batch({
+      version: 1,
+      status: EmployeeWorkImportStatus.SUPERSEDED,
+      previewFingerprint,
+      totalRows: 1,
+      validRows: 1,
+      importedRows: 1,
+      rows: [staged],
+    });
+    const commitService = {
+      commit: jest.fn().mockImplementation(async (id) => ({
+        id,
+        status: EmployeeWorkImportStatus.COMPLETED,
+        version: 3,
+        restoredFromBatchId: 'batch-1',
+      })),
+      rebuildSnapshots: jest.fn(),
+    };
+    const dependencies = createService({ foundBatch: source, commitService });
+    dependencies.tx.employeeWorkImportBatch.findUnique.mockResolvedValue(source);
+    dependencies.tx.employeeWorkImportRow.findMany
+      .mockResolvedValueOnce([staged])
+      .mockResolvedValueOnce([]);
+
+    const result = await dependencies.service.restore('batch-1');
+
+    const createdBatch = dependencies.tx.employeeWorkImportBatch.create.mock.calls[0][0].data;
+    expect(createdBatch).toMatchObject({
+      status: EmployeeWorkImportStatus.READY,
+      restoredFromBatchId: 'batch-1',
+      sourceStorageKey: expect.stringMatching(/^employee-imports\/.+\/source\.xlsx$/),
+      fileHash: SOURCE_HASH,
+      previewFingerprint,
+      totalRows: 1,
+      validRows: 1,
+      errorRows: 0,
+      unresolvedRows: 0,
+      importedRows: 0,
+    });
+    expect(createdBatch.id).not.toBe('batch-1');
+    expect(createdBatch.sourceStorageKey).not.toBe(source.sourceStorageKey);
+    expect(dependencies.storage.write).toHaveBeenCalledWith({
+      key: createdBatch.sourceStorageKey,
+      content: SOURCE,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    expect(dependencies.tx.employeeWorkImportRow.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          batchId: createdBatch.id,
+          rowNumber: 2,
+          resolvedEmployeeId: 'employee-1',
+          resolvedProjectId: 'project-1',
+          resolvedTaskId: 'task-1',
+        }),
+      ],
+    });
+    expect(commitService.commit).toHaveBeenCalledWith(createdBatch.id);
+    expect(dependencies.audit.record).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'EMPLOYEE_IMPORT_RESTORED', outcome: 'SUCCEEDED' }),
+      expect.anything(),
+    );
+    expect(dependencies.tx.$executeRaw).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({
+      id: createdBatch.id,
+      restoredFromBatchId: 'batch-1',
+      sourceBatchIds: [createdBatch.id],
+    });
+  });
+
+  it('reads and copies 50000 restored rows in chunks of at most 1000', async () => {
+    const rowCount = 50_000;
+    const source = batch({
+      version: 1,
+      status: EmployeeWorkImportStatus.SUPERSEDED,
+      previewFingerprint: largeRestoreFingerprint(rowCount),
+      totalRows: rowCount,
+      validRows: rowCount,
+      importedRows: rowCount,
+    });
+    const commitService = {
+      commit: jest.fn().mockImplementation(async (id) => ({
+        id,
+        status: EmployeeWorkImportStatus.COMPLETED,
+        restoredFromBatchId: 'batch-1',
+      })),
+      rebuildSnapshots: jest.fn(),
+    };
+    const dependencies = createService({ foundBatch: source, commitService });
+    dependencies.tx.employeeWorkImportBatch.findUnique.mockResolvedValue(source);
+    dependencies.tx.employeeWorkImportRow.findMany.mockImplementation(
+      async ({ where, take }: { where: any; take?: number }) => {
+        expect(take).toBeDefined();
+        expect(take).toBeLessThanOrEqual(1_000);
+        const after = where.rowNumber?.gt ?? 1;
+        if (after >= rowCount + 1) return [];
+        const start = after + 1;
+        const size = Math.min(take!, rowCount + 2 - start);
+        return Array.from({ length: size }, (_, index) => restorableStoredRow(start + index));
+      },
+    );
+
+    await dependencies.service.restore('batch-1');
+
+    expect(dependencies.tx.employeeWorkImportRow.createMany).toHaveBeenCalledTimes(50);
+    expect(
+      dependencies.tx.employeeWorkImportRow.createMany.mock.calls.every(
+        ([{ data }]) => data.length <= 1_000,
+      ),
+    ).toBe(true);
+    expect(
+      dependencies.tx.employeeWorkImportRow.createMany.mock.calls.reduce(
+        (total, [{ data }]) => total + data.length,
+        0,
+      ),
+    ).toBe(rowCount);
+  });
+
+  it('reuses an in-flight restored batch under idempotent retries', async () => {
+    const source = batch({ status: EmployeeWorkImportStatus.SUPERSEDED });
+    const existing = batch({
+      id: 'restored-batch',
+      status: EmployeeWorkImportStatus.READY,
+      restoredFromBatchId: 'batch-1',
+    });
+    const commitService = {
+      commit: jest.fn().mockResolvedValue({
+        id: 'restored-batch',
+        status: EmployeeWorkImportStatus.COMPLETED,
+        restoredFromBatchId: 'batch-1',
+      }),
+      rebuildSnapshots: jest.fn(),
+    };
+    const dependencies = createService({
+      foundBatch: source,
+      existingBatch: existing,
+      commitService,
+    });
+
+    await expect(dependencies.service.restore('batch-1')).resolves.toMatchObject({
+      id: 'restored-batch',
+      sourceBatchIds: ['restored-batch'],
+    });
+    expect(dependencies.storage.read).not.toHaveBeenCalled();
+    expect(dependencies.storage.write).not.toHaveBeenCalled();
+    expect(dependencies.tx.employeeWorkImportBatch.create).not.toHaveBeenCalled();
+    expect(commitService.commit).toHaveBeenCalledWith('restored-batch');
+  });
+
+  it('rejects restore from a draft batch before reading or copying source storage', async () => {
+    const dependencies = createService({
+      foundBatch: batch({ status: EmployeeWorkImportStatus.READY }),
+      commitService: { commit: jest.fn(), rebuildSnapshots: jest.fn() },
+    });
+
+    await expect(dependencies.service.restore('batch-1')).rejects.toMatchObject({
+      code: 'EMPLOYEE_IMPORT_STATE_INVALID',
+      statusCode: 409,
+    });
+    expect(dependencies.storage.read).not.toHaveBeenCalled();
+    expect(dependencies.storage.write).not.toHaveBeenCalled();
   });
 });

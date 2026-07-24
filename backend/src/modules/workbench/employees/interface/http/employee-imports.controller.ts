@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseInterceptors,
@@ -17,8 +18,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { UploadedContentFile } from '../../../content/application/files.service';
 import { EmployeeImportsService } from '../../application/employee-imports.service';
+import { EmployeeProgressQueryService } from '../../application/employee-progress-query.service';
 import { EmployeeWorkbookService } from '../../application/employee-workbook.service';
 import { ResolveEmployeeImportDto } from './dto/employee-imports.dto';
+import { EmployeeImportDetailQueryDto, ListEmployeeImportsQueryDto } from './dto/employees.dto';
 
 const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const importUploadOptions = {
@@ -30,6 +33,7 @@ export class EmployeeImportsController {
   constructor(
     private readonly imports: EmployeeImportsService,
     private readonly workbook: EmployeeWorkbookService,
+    private readonly progress: EmployeeProgressQueryService,
   ) {}
 
   @Get('template')
@@ -40,10 +44,23 @@ export class EmployeeImportsController {
     response.status(HttpStatus.OK).send(content);
   }
 
+  @Get()
+  list(@Query() query: ListEmployeeImportsQueryDto) {
+    return this.progress.listImports(query);
+  }
+
   @Post()
   @UseInterceptors(FileInterceptor('file', importUploadOptions))
   upload(@UploadedFile() file: UploadedContentFile | undefined) {
     return this.imports.upload(file);
+  }
+
+  @Get(':id')
+  get(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Query() query: EmployeeImportDetailQueryDto,
+  ) {
+    return this.progress.getImport(id, query);
   }
 
   @Patch(':id/preview')
@@ -69,13 +86,31 @@ export class EmployeeImportsController {
     return this.imports.rebuildSnapshots(id);
   }
 
+  @Post(':id/restore')
+  restore(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.imports.restore(id);
+  }
+
   @Get(':id/errors')
   async errors(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Res() response: Response,
   ) {
     const file = await this.imports.errorFile(id);
-    this.setDownloadHeaders(response, file.fileName);
+    this.setDownloadHeaders(response, file.fileName, file.mimeType);
+    response.setHeader('X-Source-Batch-Ids', id);
+    response.setHeader('Content-Length', file.content.length);
+    response.status(HttpStatus.OK).send(file.content);
+  }
+
+  @Get(':id/source')
+  async source(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Res() response: Response,
+  ) {
+    const file = await this.imports.sourceFile(id);
+    this.setDownloadHeaders(response, file.fileName, file.mimeType);
+    response.setHeader('X-Source-Batch-Ids', file.sourceBatchIds.join(','));
     response.setHeader('Content-Length', file.content.length);
     response.status(HttpStatus.OK).send(file.content);
   }
@@ -86,10 +121,14 @@ export class EmployeeImportsController {
     return this.imports.remove(id);
   }
 
-  private setDownloadHeaders(response: Response, fileName: string): void {
+  private setDownloadHeaders(
+    response: Response,
+    fileName: string,
+    mimeType = XLSX_MIME_TYPE,
+  ): void {
     const encodedName = encodeURIComponent(fileName);
     const fallbackName = fileName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
-    response.setHeader('Content-Type', XLSX_MIME_TYPE);
+    response.setHeader('Content-Type', mimeType);
     response.setHeader(
       'Content-Disposition',
       `attachment; filename="${fallbackName}"; filename*=UTF-8''${encodedName}`,

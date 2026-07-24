@@ -1,15 +1,33 @@
-import { EmploymentStatus } from '@prisma/client';
+import {
+  EmployeeImportRowStatus,
+  EmployeeProgressPeriod,
+  EmployeeWorkImportStatus,
+  EmployeeWorkStatus,
+  EmploymentStatus,
+} from '@prisma/client';
 import { PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsInt, IsNotEmpty, IsString, Max, Min, ValidateIf } from 'class-validator';
+import {
+  IsDateString,
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsString,
+  Matches,
+  Max,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 
 const trimString = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
 const toNumber = ({ value }: { value: unknown }) =>
-  value === null || (typeof value === 'string' && value.trim() === '')
-    ? value
-    : Number(value);
+  value === null || (typeof value === 'string' && value.trim() === '') ? value : Number(value);
+
+const toBoolean = ({ value }: { value: unknown }) =>
+  value === 'true' ? true : value === 'false' ? false : value;
 
 const isDefined = (_object: object, value: unknown) => value !== undefined;
 
@@ -92,3 +110,101 @@ export class CreateEmployeeDto {
 export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto, {
   skipNullProperties: false,
 }) {}
+
+export class ProgressPeriodQueryDto {
+  @IsEnum(EmployeeProgressPeriod)
+  periodType!: EmployeeProgressPeriod;
+
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  periodStart!: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  department?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  projectId?: string;
+
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeeWorkStatus)
+  status?: EmployeeWorkStatus;
+}
+
+export class ListEmployeeWorkItemsQueryDto extends ProgressPeriodQueryDto {
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  employeeId?: string;
+
+  @Transform(toNumber)
+  @ValidateIf(isDefined)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE)
+  page?: number;
+
+  @Transform(toNumber)
+  @ValidateIf(isDefined)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE_SIZE)
+  pageSize?: number;
+}
+
+export class ListEmployeeImportsQueryDto {
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeeProgressPeriod)
+  periodType?: EmployeeProgressPeriod;
+
+  @ValidateIf(isDefined)
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  periodStart?: string;
+
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeeWorkImportStatus)
+  status?: EmployeeWorkImportStatus;
+
+  @Transform(toNumber)
+  @ValidateIf(isDefined)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE)
+  page?: number;
+
+  @Transform(toNumber)
+  @ValidateIf(isDefined)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE_SIZE)
+  pageSize?: number;
+}
+
+export class EmployeeImportDetailQueryDto {
+  @Transform(toNumber)
+  @ValidateIf(isDefined)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE)
+  rowsPage?: number;
+
+  @Transform(toNumber)
+  @ValidateIf(isDefined)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE_SIZE)
+  rowsPageSize?: number;
+
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeeImportRowStatus)
+  rowStatus?: EmployeeImportRowStatus;
+
+  @Transform(toBoolean)
+  @ValidateIf(isDefined)
+  @IsBoolean()
+  issuesOnly?: boolean;
+}

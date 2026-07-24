@@ -228,6 +228,33 @@ export class EmployeeImportCommitService {
           },
           tx,
         );
+        if (batch.restoredFromBatchId) {
+          await this.audit.record(
+            {
+              action: 'EMPLOYEE_IMPORT_RESTORED',
+              entityType: 'employeeWorkImportBatch',
+              entityId: id,
+              outcome: 'SUCCEEDED',
+              changedFields: [
+                'status',
+                'version',
+                'importedRows',
+                'supersedesBatchId',
+                'restoredFromBatchId',
+              ],
+              metadata: {
+                status: EmployeeWorkImportStatus.COMPLETED,
+                restoredFromBatchId: batch.restoredFromBatchId,
+                version,
+                itemCount: rows.length,
+                periodType: batch.periodType,
+                periodStart: this.dateOnly(batch.periodStartAt),
+                periodEnd: this.dateOnly(batch.periodEndAt),
+              },
+            },
+            tx,
+          );
+        }
         return this.publicBatch(completed);
       }, IMPORT_TRANSACTION_OPTIONS);
     } catch (error) {
@@ -598,10 +625,18 @@ export class EmployeeImportCommitService {
           key !== 'sourceStorageKey' &&
           key !== 'errorStorageKey' &&
           key !== 'previewFingerprint' &&
+          key !== 'periodStartAt' &&
+          key !== 'periodEndAt' &&
           key !== 'rows',
       ),
     );
-    return { ...safe, hasErrors: Boolean(batch.errorStorageKey) };
+    return {
+      ...safe,
+      periodStart:
+        batch.periodStartAt instanceof Date ? this.dateOnly(batch.periodStartAt) : undefined,
+      periodEnd: batch.periodEndAt instanceof Date ? this.dateOnly(batch.periodEndAt) : undefined,
+      hasErrors: Boolean(batch.errorStorageKey),
+    };
   }
 
   private publicSnapshotResult(

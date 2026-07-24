@@ -318,8 +318,39 @@ describe('EmployeeImportCommitService', () => {
       status: EmployeeWorkImportStatus.COMPLETED,
       version: 2,
       snapshotStatus: EmployeeSnapshotStatus.READY,
+      periodStart: '2026-07-20',
+      periodEnd: '2026-07-26',
     });
+    expect(result).not.toHaveProperty('periodStartAt');
+    expect(result).not.toHaveProperty('periodEndAt');
     expect(dependencies.snapshots.ensureBatch).toHaveBeenCalledWith('batch-v2');
+  });
+
+  it('records restore success only inside the normal commit transaction', async () => {
+    const dependencies = createService({
+      batchOverrides: { restoredFromBatchId: 'batch-v1' },
+    });
+
+    await dependencies.service.commit('batch-v2');
+
+    expect(dependencies.audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'EMPLOYEE_IMPORT_RESTORED',
+        entityType: 'employeeWorkImportBatch',
+        entityId: 'batch-v2',
+        outcome: 'SUCCEEDED',
+        metadata: expect.objectContaining({
+          restoredFromBatchId: 'batch-v1',
+          version: 2,
+          itemCount: dependencies.rows.length,
+        }),
+      }),
+      dependencies.tx,
+    );
+    const restoredCall = dependencies.audit.record.mock.calls.find(
+      ([event]) => event.action === 'EMPLOYEE_IMPORT_RESTORED',
+    );
+    expect(restoredCall?.[1]).toBe(dependencies.tx);
   });
 
   it('returns an already completed batch without claiming or writing rows', async () => {
