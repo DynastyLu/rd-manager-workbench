@@ -120,6 +120,33 @@
     font-size: 13px;
     line-height: 1.6;
   }
+
+  &__imports {
+    display: grid;
+    gap: 0;
+  }
+
+  &__imports-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--workspace-border);
+
+    h2 {
+      margin: 0;
+      color: var(--workspace-text);
+      font-size: 15px;
+      font-weight: 620;
+    }
+
+    p {
+      margin: 4px 0 0;
+      color: var(--workspace-text-secondary);
+      font-size: 12px;
+    }
+  }
 }
 
 .employee-name-cell {
@@ -174,6 +201,212 @@
 
   .semi-input-number {
     width: 100%;
+  }
+}
+
+.employee-import-wizard {
+  display: grid;
+  gap: 16px;
+
+  h3 {
+    margin: 0 0 10px;
+    color: var(--workspace-text);
+    font-size: 15px;
+    font-weight: 620;
+  }
+
+  &__select {
+    display: grid;
+    justify-items: start;
+    gap: 14px;
+  }
+
+  &__dropzone {
+    display: grid;
+    width: 100%;
+    justify-items: center;
+    gap: 8px;
+    padding: 34px 20px;
+    border: 1px dashed var(--workspace-border);
+    border-radius: var(--workspace-radius-lg);
+    background: #fafbfc;
+    color: var(--workspace-text-secondary);
+    cursor: pointer;
+    text-align: center;
+
+    strong {
+      color: var(--workspace-text);
+      font-size: 14px;
+    }
+
+    span {
+      font-size: 12px;
+    }
+
+    &:hover {
+      border-color: var(--workspace-brand);
+    }
+  }
+
+  &__file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  &__recognition {
+    dl {
+      display: grid;
+      gap: 8px;
+      margin: 0 0 12px;
+
+      > div {
+        display: flex;
+        gap: 12px;
+      }
+
+      dt {
+        width: 72px;
+        color: var(--workspace-text-muted);
+        font-size: 13px;
+      }
+
+      dd {
+        margin: 0;
+        color: var(--workspace-text);
+        font-size: 13px;
+      }
+    }
+  }
+
+  &__pending {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--workspace-text-secondary);
+    font-size: 13px;
+  }
+
+  &__period {
+    margin: -4px 0 12px;
+    color: var(--workspace-text-secondary);
+    font-size: 12px;
+  }
+
+  &__counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+
+    > span {
+      padding: 4px 12px;
+      border-radius: 999px;
+      background: #f2f4f7;
+      color: var(--workspace-text);
+      font-size: 12px;
+      font-weight: 560;
+    }
+  }
+
+  &__rows {
+    display: grid;
+    max-height: 320px;
+    gap: 10px;
+    overflow-y: auto;
+  }
+
+  &__row {
+    display: grid;
+    justify-items: start;
+    gap: 8px;
+    padding: 12px 14px;
+    border: 1px solid var(--workspace-border);
+    border-radius: 10px;
+  }
+
+  &__row-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+  }
+
+  &__row-errors {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--workspace-danger);
+    font-size: 12px;
+  }
+
+  &__row-hint {
+    margin: 0;
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+  }
+
+  &__resolver {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--workspace-brand);
+    border-radius: 10px;
+    background: #f6f9ff;
+
+    h4 {
+      margin: 0;
+      font-size: 13px;
+    }
+  }
+
+  &__resolver-fields {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  &__resolver-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  &__confirm p,
+  &__result p {
+    margin: 0 0 12px;
+    color: var(--workspace-text-secondary);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  &__footer {
+    padding: 14px 4px 2px;
+    border-top: 1px solid var(--workspace-border);
+  }
+}
+
+.employee-import-history {
+  &__file,
+  &__version,
+  &__counts,
+  &__timestamps {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+
+    > span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    small {
+      color: var(--workspace-text-muted);
+      font-size: 12px;
+    }
   }
 }
 

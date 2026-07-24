@@ -8,9 +8,21 @@ import EmployeesPage from '../EmployeesPage'
 
 const employeesApi = vi.hoisted(() => ({
   archiveEmployee: vi.fn(),
+  archiveEmployeeWorkImport: vi.fn(),
+  commitEmployeeWorkImport: vi.fn(),
   createEmployee: vi.fn(),
+  downloadEmployeeImportErrors: vi.fn(),
+  downloadEmployeeImportSource: vi.fn(),
+  downloadEmployeeWorkImportTemplate: vi.fn(),
+  getEmployeeWorkImport: vi.fn(),
+  listEmployeeWorkImports: vi.fn(),
   listEmployees: vi.fn(),
+  previewEmployeeWorkImport: vi.fn(),
+  rebuildEmployeeWorkImportSnapshots: vi.fn(),
+  resolveEmployeeWorkImport: vi.fn(),
+  restoreEmployeeWorkImport: vi.fn(),
   updateEmployee: vi.fn(),
+  uploadEmployeeWorkImport: vi.fn(),
 }))
 
 vi.mock('@/modules/employees/api', () => employeesApi)
@@ -385,5 +397,52 @@ describe('EmployeesPage', () => {
     expect(screen.getByLabelText('当前员工路径')).toHaveTextContent(
       '/employees?tab=work-items&periodType=MONTH&periodStart=2026-07-01'
     )
+  })
+
+  it('serves the imports tab with import history and the wizard entry', async () => {
+    employeesApi.listEmployeeWorkImports.mockResolvedValue({
+      data: [
+        {
+          id: 'batch-3',
+          periodType: 'WEEK' as const,
+          periodStart: '2026-07-06',
+          periodEnd: '2026-07-12',
+          version: 3,
+          status: 'COMPLETED' as const,
+          snapshotStatus: 'READY' as const,
+          snapshotError: null,
+          originalName: '第七周计划与总结.xlsx',
+          fileHash: 'hash-3',
+          templateVersion: 2,
+          totalRows: 20,
+          validRows: 20,
+          errorRows: 0,
+          unresolvedRows: 0,
+          importedRows: 20,
+          supersedesBatchId: null,
+          restoredFromBatchId: null,
+          committedAt: '2026-07-20T09:05:00.000Z',
+          expiresAt: '2026-07-31T00:00:00.000Z',
+          archivedAt: null,
+          createdAt: '2026-07-20T08:00:00.000Z',
+          updatedAt: '2026-07-20T09:05:00.000Z',
+          hasErrors: false,
+        },
+      ],
+      meta: { page: 1, pageSize: 10, total: 1 },
+      sourceBatchIds: ['batch-3'],
+    })
+    const user = userEvent.setup()
+    renderEmployees('/employees?tab=imports')
+
+    expect(await screen.findByText('第七周计划与总结.xlsx')).toBeInTheDocument()
+    expect(employeesApi.listEmployeeWorkImports).toHaveBeenCalledWith({ page: 1, pageSize: 10 })
+    expect(screen.getByText('v3')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '导入工作计划' }))
+
+    expect(await screen.findByLabelText('选择员工计划与总结 Excel')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '下载导入模板' })).toBeInTheDocument()
+    expect(employeesApi.uploadEmployeeWorkImport).not.toHaveBeenCalled()
   })
 })

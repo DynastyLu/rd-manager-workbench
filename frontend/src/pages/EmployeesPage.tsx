@@ -29,6 +29,8 @@ import {
   type EmployeeProfileDraft,
   type EmployeeProfileError,
 } from '@/modules/employees/components/EmployeeProfileForm'
+import { EmployeeImportHistory } from '@/modules/employees/components/EmployeeImportHistory'
+import { EmployeeImportWizard } from '@/modules/employees/components/EmployeeImportWizard'
 import { employeeQueryKeys } from '@/modules/employees/queryKeys'
 import type {
   CreateEmployeeInput,
@@ -138,6 +140,7 @@ export default function EmployeesPage() {
   const [draft, setDraft] = useState<EmployeeProfileDraft>(EMPTY_DRAFT)
   const [formError, setFormError] = useState<EmployeeProfileError | null>(null)
   const [searchDraft, setSearchDraft] = useState(search)
+  const [importWizardOpen, setImportWizardOpen] = useState(false)
 
   useEffect(() => {
     setSearchDraft(search)
@@ -518,9 +521,27 @@ export default function EmployeesPage() {
             />
           </TabPane>
           <TabPane tab="计划导入" itemKey="imports">
-            <PlannedTabState
-              title="工作计划导入将在后续阶段接入"
-              description="下一阶段会提供 Excel 模板、预检、纠错和导入结果。"
+            <div className="employees-page__imports">
+              <div className="employees-page__imports-header">
+                <div>
+                  <h2>工作计划导入</h2>
+                  <p>使用 Excel 模板批量导入员工计划与总结，支持预检纠错、版本替换与历史恢复。</p>
+                </div>
+                <Button
+                  theme="solid"
+                  type="primary"
+                  icon={<IconPlus />}
+                  aria-label="导入工作计划"
+                  onClick={() => setImportWizardOpen(true)}
+                >
+                  导入工作计划
+                </Button>
+              </div>
+              <EmployeeImportHistory />
+            </div>
+            <EmployeeImportWizard
+              visible={importWizardOpen}
+              onClose={() => setImportWizardOpen(false)}
             />
           </TabPane>
         </Tabs>
