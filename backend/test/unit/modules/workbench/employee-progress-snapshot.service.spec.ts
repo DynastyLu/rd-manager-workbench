@@ -139,6 +139,9 @@ function createService(options: {
   };
   let transactionNumber = 0;
   const prisma = {
+    employeeWorkImportBatch: {
+      findUnique: jest.fn().mockImplementation(async () => targetBatch),
+    },
     $transaction: jest.fn().mockImplementation(async (work) => {
       transactionNumber += 1;
       const batchBeforeTransaction = targetBatch;
@@ -357,6 +360,18 @@ describe('EmployeeProgressSnapshotService', () => {
         ({ periodType }) => periodType === EmployeeProgressPeriod.MONTH,
       ),
     ).toBe(true);
+    expect(
+      dependencies.tx.$executeRaw.mock.calls.map(
+        ([query]) => (query as { values: unknown[] }).values[0],
+      ),
+    ).toEqual([
+      'employee-import:batch-jul-20',
+      'employee-import-period:WEEK:2026-06-29',
+      'employee-import-period:WEEK:2026-07-06',
+      'employee-import-period:WEEK:2026-07-13',
+      'employee-import-period:WEEK:2026-07-20',
+      'employee-progress-snapshot:month:2026-07-01',
+    ]);
   });
 
   it('marks snapshot generation FAILED with a safe warning without changing COMPLETED import state', async () => {
@@ -408,6 +423,36 @@ describe('EmployeeProgressSnapshotService', () => {
     expect(dependencies.tx.employeeProgressSnapshot.create).not.toHaveBeenCalled();
   });
 
+  it('chunks version lookups when the snapshot contains at least 65,533 scopes', async () => {
+    const scopeCount = 65_533;
+    const items = Array.from({ length: scopeCount - 1 }, (_, index) =>
+      workItem(`work-${index}`, {
+        employeeId: `employee-${String(index).padStart(5, '0')}`,
+        projectId: null,
+      }),
+    );
+    const dependencies = createService({
+      batches: [
+        {
+          id: 'batch-jul-20',
+          periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+          periodEndAt: new Date('2026-07-26T00:00:00.000Z'),
+        },
+      ],
+      items,
+    });
+
+    await dependencies.service.rebuildMonth(new Date('2026-07-26T00:00:00.000Z'));
+
+    expect(dependencies.createdSnapshots).toHaveLength(scopeCount);
+    expect(dependencies.tx.employeeProgressSnapshot.groupBy.mock.calls.length).toBeGreaterThan(1);
+    expect(
+      dependencies.tx.employeeProgressSnapshot.groupBy.mock.calls.every(
+        ([{ where }]) => where.scopeKey.in.length <= 10_000,
+      ),
+    ).toBe(true);
+  });
+
   it('creates a new auditable version on retry while archiving the prior active snapshot', async () => {
     const dependencies = createService({});
 
@@ -422,7 +467,7 @@ describe('EmployeeProgressSnapshotService', () => {
     expect(dependencies.prisma.$transaction).toHaveBeenLastCalledWith(
       expect.any(Function),
       expect.objectContaining({
-        isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       }),
     );
   });
@@ -439,7 +484,7 @@ describe('EmployeeProgressSnapshotService', () => {
     expect(dependencies.tx.employeeWorkImportBatch.update).not.toHaveBeenCalled();
   });
 
-  it('retries a stale repeatable-read waiter and observes the winning READY batch', async () => {
+  it('retries a transaction conflict and observes the winning READY batch', async () => {
     let dependencies!: ReturnType<typeof createService>;
     dependencies = createService({
       beforeTransaction: async (transactionNumber) => {
@@ -576,6 +621,39 @@ describe('EmployeeProgressSnapshotService', () => {
       expect.objectContaining({ action: 'EMPLOYEE_PROGRESS_SNAPSHOT_REBUILD_FAILED' }),
       dependencies.tx,
     );
+  });
+
+  it('retries a recovery conflict and returns the concurrent winning READY revision', async () => {
+    let dependencies!: ReturnType<typeof createService>;
+    dependencies = createService({
+      snapshotCreateFailure: new Error('snapshot write failed'),
+      beforeTransaction: async (transactionNumber) => {
+        if (transactionNumber === 2) {
+          throw new Prisma.PrismaClientKnownRequestError('recovery serialization conflict', {
+            code: 'P2034',
+            clientVersion: 'test',
+          });
+        }
+        if (transactionNumber === 3) {
+          dependencies.setTargetBatch({
+            ...dependencies.targetBatch,
+            snapshotStatus: EmployeeSnapshotStatus.READY,
+            updatedAt: new Date('2026-07-24T08:00:00.000Z'),
+          });
+        }
+      },
+    });
+
+    await expect(dependencies.service.rebuildBatch('batch-jul-20')).resolves.toMatchObject({
+      batch: {
+        id: 'batch-jul-20',
+        status: EmployeeWorkImportStatus.COMPLETED,
+        snapshotStatus: EmployeeSnapshotStatus.READY,
+      },
+      warning: { code: 'EMPLOYEE_SNAPSHOT_GENERATION_FAILED' },
+    });
+    expect(dependencies.prisma.$transaction).toHaveBeenCalledTimes(3);
+    expect(dependencies.tx.employeeWorkImportBatch.updateMany).not.toHaveBeenCalled();
   });
 
   it('returns a warning without overwriting a batch superseded before FAILED recovery', async () => {

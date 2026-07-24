@@ -19,10 +19,11 @@ const EMPLOYEE_PROGRESS_SNAPSHOT_CLOCK = Symbol('EMPLOYEE_PROGRESS_SNAPSHOT_CLOC
 const SNAPSHOT_TRANSACTION_OPTIONS = {
   maxWait: 30_000,
   timeout: 120_000,
-  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+  isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
 } as const;
 const DAY_MS = 86_400_000;
 const SNAPSHOT_WRITE_CHUNK_SIZE = 500;
+const SNAPSHOT_VERSION_LOOKUP_CHUNK_SIZE = 10_000;
 const SNAPSHOT_TRANSACTION_ATTEMPTS = 3;
 
 export interface EmployeeProgressMetrics {
@@ -130,6 +131,7 @@ export class EmployeeProgressSnapshotService {
   async rebuildMonth(monthContaining: Date) {
     return this.snapshotTransaction(async (tx) => {
       const { start } = this.monthBounds(monthContaining);
+      await this.lockMonthPeriods(tx, monthContaining);
       await this.lock(tx, `employee-progress-snapshot:month:${this.dateOnly(start)}`);
       const snapshots = await this.generateMonth(tx, monthContaining);
       await this.audit.record(
@@ -167,10 +169,7 @@ export class EmployeeProgressSnapshotService {
         await this.lock(tx, `employee-import:${id}`);
         let current = await tx.employeeWorkImportBatch.findUnique({ where: { id } });
         current = await this.assertCurrentCompleted(tx, current, id);
-        await this.lock(
-          tx,
-          `employee-import-period:${current.periodType}:${this.dateOnly(current.periodStartAt)}`,
-        );
+        await this.lockMonthPeriods(tx, current.periodEndAt);
         await this.lock(
           tx,
           `employee-progress-snapshot:month:${this.dateOnly(
@@ -343,15 +342,23 @@ export class EmployeeProgressSnapshotService {
       data: { archivedAt: generatedAt },
     });
     const scopes = this.scopes(items);
-    const versions = await tx.employeeProgressSnapshot.groupBy({
-      by: ['scopeKey'],
-      where: {
-        scopeKey: { in: scopes.map(({ scopeKey }) => scopeKey) },
-        periodType,
-        periodStartAt,
-      },
-      _max: { version: true },
-    });
+    const versions: Array<{ scopeKey: string; _max: { version: number | null } }> = [];
+    const scopeKeys = scopes.map(({ scopeKey }) => scopeKey);
+    for (let offset = 0; offset < scopeKeys.length; offset += SNAPSHOT_VERSION_LOOKUP_CHUNK_SIZE) {
+      versions.push(
+        ...(await tx.employeeProgressSnapshot.groupBy({
+          by: ['scopeKey'],
+          where: {
+            scopeKey: {
+              in: scopeKeys.slice(offset, offset + SNAPSHOT_VERSION_LOOKUP_CHUNK_SIZE),
+            },
+            periodType,
+            periodStartAt,
+          },
+          _max: { version: true },
+        })),
+      );
+    }
     const versionsByScope = new Map(
       versions.map(({ scopeKey, _max }) => [scopeKey, _max.version ?? 0]),
     );
@@ -432,14 +439,11 @@ export class EmployeeProgressSnapshotService {
     revision: SnapshotGenerationRevision,
   ): Promise<EmployeeWorkImportBatch | null> {
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      return await this.snapshotTransaction(async (tx) => {
         await this.lock(tx, `employee-import:${revision.id}`);
         let batch = await tx.employeeWorkImportBatch.findUnique({ where: { id: revision.id } });
         if (!this.isGenerationRevision(batch, revision)) return batch;
-        await this.lock(
-          tx,
-          `employee-import-period:${revision.periodType}:${this.dateOnly(revision.periodStartAt)}`,
-        );
+        await this.lockMonthPeriods(tx, revision.periodEndAt);
         await this.lock(
           tx,
           `employee-progress-snapshot:month:${this.dateOnly(
@@ -489,9 +493,15 @@ export class EmployeeProgressSnapshotService {
           tx,
         );
         return failed;
-      }, SNAPSHOT_TRANSACTION_OPTIONS);
+      });
     } catch {
-      return null;
+      try {
+        return await this.prisma.employeeWorkImportBatch.findUnique({
+          where: { id: revision.id },
+        });
+      } catch {
+        return null;
+      }
     }
   }
 
@@ -630,6 +640,16 @@ export class EmployeeProgressSnapshotService {
 
   private async lock(tx: Prisma.TransactionClient, key: string): Promise<void> {
     await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
+  }
+
+  private async lockMonthPeriods(
+    tx: Prisma.TransactionClient,
+    monthContaining: Date,
+  ): Promise<void> {
+    const { start, end } = this.monthBounds(monthContaining);
+    for (const weekStart of this.expectedWeeks(start, end)) {
+      await this.lock(tx, `employee-import-period:${EmployeeProgressPeriod.WEEK}:${weekStart}`);
+    }
   }
 
   private dateOnly(value: Date): string {

@@ -10,6 +10,7 @@ import {
   EmployeeWorkImportStatus,
   EmployeeWorkStatus,
   LoadEntryKind,
+  Prisma,
   PrismaClient,
 } from '@prisma/client';
 import ExcelJS from 'exceljs';
@@ -24,6 +25,7 @@ import { ResponseInterceptor } from '../../../../src/shared/interceptors/respons
 describe('Employee work imports API', () => {
   jest.setTimeout(240_000);
 
+  const DAY_MS = 86_400_000;
   const prisma = new PrismaClient();
   const prefix = `TEST-EMPLOYEE-IMPORT-${Date.now()}`;
   const employeeName = `${prefix}-张明`;
@@ -34,6 +36,7 @@ describe('Employee work imports API', () => {
   let projectId: string;
   let taskId: string;
   const batchIds: string[] = [];
+  let isolatedWeekOffset = 0;
 
   beforeAll(async () => {
     const { AppModule } = await import('../../../../src/app.module');
@@ -177,6 +180,34 @@ describe('Employee work imports API', () => {
         expect(body.data.status).toBe(EmployeeWorkImportStatus.READY);
       });
     return batchId;
+  }
+
+  function isolatedWeek(): { start: Date; end: Date } {
+    const runOffset = (Date.now() % 100_000) + isolatedWeekOffset;
+    isolatedWeekOffset += 1;
+    const start = new Date(Date.UTC(2030, 0, 7) + runOffset * 7 * DAY_MS);
+    return { start, end: new Date(start.getTime() + 6 * DAY_MS) };
+  }
+
+  async function withBarrierTimeout<T>(
+    promise: Promise<T>,
+    stage: string,
+    timeoutMs = 10_000,
+  ): Promise<T> {
+    let timeout!: NodeJS.Timeout;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error(`Timed out at PostgreSQL barrier stage: ${stage}`)),
+            timeoutMs,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   function binaryParser(
@@ -803,6 +834,200 @@ describe('Employee work imports API', () => {
         where: { importBatchId: supersededId, archivedAt: { not: null } },
       }),
     ).resolves.toBe(2);
+  });
+
+  it('rejects a READY batch that stops being current while ensure waits for the period lock', async () => {
+    const { start: periodStart, end: periodEnd } = isolatedWeek();
+    const staleId = randomUUID();
+    const winnerId = randomUUID();
+    batchIds.push(staleId, winnerId);
+    await prisma.employeeWorkImportBatch.create({
+      data: {
+        id: staleId,
+        periodType: EmployeeProgressPeriod.WEEK,
+        periodStartAt: periodStart,
+        periodEndAt: periodEnd,
+        version: 1,
+        status: EmployeeWorkImportStatus.COMPLETED,
+        snapshotStatus: EmployeeSnapshotStatus.READY,
+        originalName: 'stale-ready.xlsx',
+        fileHash: `stale-ready-${staleId}`,
+        sourceStorageKey: `employee-imports/${staleId}/source.xlsx`,
+        templateVersion: 1,
+        committedAt: new Date(),
+        expiresAt: new Date(Date.now() + DAY_MS),
+      },
+    });
+
+    let periodLocked!: () => void;
+    let releasePeriod!: () => void;
+    const periodIsLocked = new Promise<void>((resolve) => {
+      periodLocked = resolve;
+    });
+    const releasePeriodBarrier = new Promise<void>((resolve) => {
+      releasePeriod = resolve;
+    });
+    const periodKey = `employee-import-period:${EmployeeProgressPeriod.WEEK}:${periodStart
+      .toISOString()
+      .slice(0, 10)}`;
+    const snapshots = app.get(EmployeeProgressSnapshotService) as unknown as {
+      ensureBatch: EmployeeProgressSnapshotService['ensureBatch'];
+      lock: (tx: Prisma.TransactionClient, key: string) => Promise<void>;
+    };
+    const originalLock = snapshots.lock.bind(snapshots);
+    let periodWaitStarted!: () => void;
+    const periodWaitIsStarted = new Promise<void>((resolve) => {
+      periodWaitStarted = resolve;
+    });
+    const snapshotLock = jest.spyOn(snapshots, 'lock').mockImplementation(async (tx, key) => {
+      if (key === periodKey) periodWaitStarted();
+      return originalLock(tx, key);
+    });
+    const holderPrisma = new PrismaClient();
+    const supersede = holderPrisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${periodKey}))`;
+      periodLocked();
+      await releasePeriodBarrier;
+      await tx.employeeWorkImportBatch.update({
+        where: { id: staleId },
+        data: { status: EmployeeWorkImportStatus.SUPERSEDED },
+      });
+      await tx.employeeWorkImportBatch.create({
+        data: {
+          id: winnerId,
+          periodType: EmployeeProgressPeriod.WEEK,
+          periodStartAt: periodStart,
+          periodEndAt: periodEnd,
+          version: 2,
+          status: EmployeeWorkImportStatus.COMPLETED,
+          snapshotStatus: EmployeeSnapshotStatus.READY,
+          originalName: 'current-ready.xlsx',
+          fileHash: `current-ready-${winnerId}`,
+          sourceStorageKey: `employee-imports/${winnerId}/source.xlsx`,
+          templateVersion: 1,
+          supersedesBatchId: staleId,
+          committedAt: new Date(),
+          expiresAt: new Date(Date.now() + DAY_MS),
+        },
+      });
+    });
+    try {
+      await withBarrierTimeout(periodIsLocked, 'period holder acquired');
+      const ensuring = snapshots.ensureBatch(staleId);
+      await withBarrierTimeout(periodWaitIsStarted, 'ensure requested held period lock');
+      releasePeriod();
+      await withBarrierTimeout(supersede, 'winner superseded stale batch');
+
+      await expect(
+        withBarrierTimeout(ensuring, 'ensure observed current winner'),
+      ).rejects.toMatchObject({
+        code: 'EMPLOYEE_IMPORT_STATE_INVALID',
+        statusCode: 409,
+      });
+    } finally {
+      releasePeriod();
+      await supersede.catch(() => undefined);
+      snapshotLock.mockRestore();
+      await holderPrisma.$disconnect();
+    }
+  });
+
+  it('returns the concurrent READY winner when FAILED recovery waits on its batch lock', async () => {
+    const { start: periodStart, end: periodEnd } = isolatedWeek();
+    const batchId = randomUUID();
+    batchIds.push(batchId);
+    const batch = await prisma.employeeWorkImportBatch.create({
+      data: {
+        id: batchId,
+        periodType: EmployeeProgressPeriod.WEEK,
+        periodStartAt: periodStart,
+        periodEndAt: periodEnd,
+        version: 1,
+        status: EmployeeWorkImportStatus.COMPLETED,
+        snapshotStatus: EmployeeSnapshotStatus.NOT_STARTED,
+        originalName: 'recovery-race.xlsx',
+        fileHash: `recovery-race-${batchId}`,
+        sourceStorageKey: `employee-imports/${batchId}/source.xlsx`,
+        templateVersion: 1,
+        committedAt: new Date(),
+        expiresAt: new Date(Date.now() + DAY_MS),
+      },
+    });
+    const snapshots = app.get(EmployeeProgressSnapshotService) as unknown as {
+      markFailed: (revision: {
+        id: string;
+        status: EmployeeWorkImportStatus;
+        snapshotStatus: EmployeeSnapshotStatus;
+        updatedAt: Date;
+        version: number | null;
+        periodType: EmployeeProgressPeriod;
+        periodStartAt: Date;
+        periodEndAt: Date;
+      }) => Promise<typeof batch | null>;
+      lock: (tx: Prisma.TransactionClient, key: string) => Promise<void>;
+    };
+    const batchKey = `employee-import:${batchId}`;
+    let winnerLocked!: () => void;
+    let releaseWinner!: () => void;
+    const winnerIsLocked = new Promise<void>((resolve) => {
+      winnerLocked = resolve;
+    });
+    const releaseWinnerBarrier = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+    const originalLock = snapshots.lock.bind(snapshots);
+    let recoveryWaitStarted!: () => void;
+    const recoveryWaitIsStarted = new Promise<void>((resolve) => {
+      recoveryWaitStarted = resolve;
+    });
+    const snapshotLock = jest.spyOn(snapshots, 'lock').mockImplementation(async (tx, key) => {
+      if (key === batchKey) recoveryWaitStarted();
+      return originalLock(tx, key);
+    });
+    const holderPrisma = new PrismaClient();
+    const winner = holderPrisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${batchKey}))`;
+      winnerLocked();
+      await releaseWinnerBarrier;
+      return tx.employeeWorkImportBatch.update({
+        where: { id: batchId },
+        data: {
+          snapshotStatus: EmployeeSnapshotStatus.READY,
+          snapshotError: null,
+        },
+      });
+    });
+
+    try {
+      await withBarrierTimeout(winnerIsLocked, 'READY winner acquired batch lock');
+      const recovering = snapshots.markFailed({
+        id: batch.id,
+        status: batch.status,
+        snapshotStatus: batch.snapshotStatus,
+        updatedAt: batch.updatedAt,
+        version: batch.version,
+        periodType: batch.periodType,
+        periodStartAt: batch.periodStartAt,
+        periodEndAt: batch.periodEndAt,
+      });
+      await withBarrierTimeout(recoveryWaitIsStarted, 'FAILED recovery requested held batch lock');
+      releaseWinner();
+      await withBarrierTimeout(winner, 'READY winner committed');
+
+      await expect(
+        withBarrierTimeout(recovering, 'FAILED recovery read READY winner'),
+      ).resolves.toMatchObject({
+        id: batchId,
+        status: EmployeeWorkImportStatus.COMPLETED,
+        snapshotStatus: EmployeeSnapshotStatus.READY,
+        snapshotError: null,
+      });
+    } finally {
+      snapshotLock.mockRestore();
+      releaseWinner();
+      await winner.catch(() => undefined);
+      await holderPrisma.$disconnect();
+    }
   });
 
   it('keeps committed work when snapshot generation fails and recovers through HTTP rebuild', async () => {
