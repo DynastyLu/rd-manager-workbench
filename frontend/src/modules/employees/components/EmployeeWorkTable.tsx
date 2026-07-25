@@ -9,6 +9,11 @@ import './employee-progress.less'
 
 const percentage = (value: number | null) => (value === null ? '暂无数据' : `${value}%`)
 
+const hours = (item: EmployeeWorkItem) => {
+  if (item.plannedHours === null && item.actualHours === null) return '暂无数据'
+  return `${item.plannedHours ?? '—'} / ${item.actualHours ?? '—'}`
+}
+
 interface EmployeeWorkTableProps {
   items: EmployeeWorkItem[]
   showEmployee?: boolean
@@ -104,7 +109,7 @@ export function EmployeeWorkTable({
       title: '工时(计划/实际)',
       dataIndex: 'plannedHours',
       width: 130,
-      render: (_value, item) => `${item.plannedHours} / ${item.actualHours}`,
+      render: (_value, item) => hours(item),
     },
     {
       title: '下步计划',

@@ -105,6 +105,9 @@ export function EmployeeImportHistory() {
     mutationFn: (batchId: string) => restoreEmployeeWorkImport(batchId),
     onSuccess: async () => {
       await invalidateImports()
+      // Restores commit a new version, which rewrites resource load entries.
+      await queryClient.invalidateQueries({ queryKey: ['resource-load-summary'] })
+      await queryClient.invalidateQueries({ queryKey: ['reports'] })
       toast.success('已恢复为新版本')
     },
     onError: (error) => toast.error(errorMessage(error, '恢复版本失败，请重试。')),

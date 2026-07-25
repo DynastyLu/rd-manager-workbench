@@ -402,6 +402,21 @@ describe('EmployeeProgressQueryService', () => {
     expect(rawValues).toContainEqual(new Date('2026-07-31T00:00:00.000Z'));
   });
 
+  it('preserves null planned and actual hours instead of fabricating zeros', async () => {
+    prisma.employeeWorkItem.findMany.mockResolvedValue([
+      { ...firstItem, plannedHours: null, actualHours: null },
+    ]);
+    prisma.employeeWorkItem.count.mockResolvedValue(1);
+    const service = createService();
+
+    const result = await service.workItems({
+      periodType: EmployeeProgressPeriod.WEEK,
+      periodStart: '2026-07-20',
+    });
+
+    expect(result.data[0]).toMatchObject({ plannedHours: null, actualHours: null });
+  });
+
   it('retains archived project and task labels without publishing stale resource links', async () => {
     prisma.employeeWorkItem.findMany.mockResolvedValue([
       {

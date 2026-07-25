@@ -293,6 +293,8 @@ describe('EmployeeImportWizard', () => {
     expect(screen.getByText(/成功导入 20 行/)).toBeInTheDocument()
     expect(screen.getByText(/版本 v3/)).toBeInTheDocument()
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['employees'] })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['resource-load-summary'] })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['reports'] })
 
     await user.click(screen.getByRole('button', { name: '完成' }))
     expect(onClose).toHaveBeenCalledTimes(1)

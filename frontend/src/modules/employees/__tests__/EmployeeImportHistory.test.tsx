@@ -266,6 +266,8 @@ describe('EmployeeImportHistory', () => {
     await waitFor(() =>
       expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['employees'] })
     )
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['resource-load-summary'] })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['reports'] })
   })
 
   it('rebuilds failed snapshots and archives expired drafts', async () => {

@@ -37,6 +37,7 @@ import { EmployeeImportWizard } from '@/modules/employees/components/EmployeeImp
 import { EmployeeProgressFilters } from '@/modules/employees/components/EmployeeProgressFilters'
 import { EmployeeProgressMetrics } from '@/modules/employees/components/EmployeeProgressMetrics'
 import { EmployeeWorkTable } from '@/modules/employees/components/EmployeeWorkTable'
+import { saveDownloadedFile } from '@/modules/employees/download'
 import { EMPLOYEE_WORK_STATUS_COLORS, EMPLOYEE_WORK_STATUS_LABELS } from '@/modules/employees/labels'
 import { defaultPeriodStart } from '@/modules/employees/periods'
 import { employeeQueryKeys } from '@/modules/employees/queryKeys'
@@ -202,7 +203,10 @@ export default function EmployeesPage() {
   })
   const exportMutation = useMutation({
     mutationFn: () => exportEmployeeWorkItems(workItemFilters),
-    onSuccess: () => toast.success('已按当前筛选导出工作明细'),
+    onSuccess: (file) => {
+      saveDownloadedFile(file)
+      toast.success('已按当前筛选导出工作明细')
+    },
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : '导出失败，请重试。')
     },

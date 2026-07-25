@@ -370,6 +370,14 @@ test.describe('employee work progress acceptance', () => {
     }, page)
     await expect(page.getByText('完成员工导入联调', { exact: true })).toHaveCount(0)
 
+    // Exporting the current filter must save a workbook with its real filename;
+    // this catches both a missing download trigger and CORS hiding
+    // Content-Disposition (which would degrade the filename to "download").
+    const exportDownloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: '导出当前筛选' }).click()
+    const exportDownload = await exportDownloadPromise
+    expect(exportDownload.suggestedFilename()).toMatch(/\.xlsx$/)
+
     // 12. Month view surfaces the missing-week warning.
     await page.goto(
       `/#/employees?tab=overview&periodType=MONTH&periodStart=${MONTH_START}`

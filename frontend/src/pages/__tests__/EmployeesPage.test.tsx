@@ -206,6 +206,68 @@ const workItemsFixture = {
         sourceBatchUrl: '/employee-work-imports/batch-1',
       },
     },
+    {
+      id: 'work-2',
+      employeeId: 'employee-1',
+      employeeName: '林晓',
+      department: '研发一组',
+      importBatchId: 'batch-1',
+      importVersion: 2,
+      sourceRowId: 'row-2',
+      sourceRowNumber: 4,
+      sourceBatchIds: ['batch-1'],
+      periodStart: '2026-07-20',
+      periodEnd: '2026-07-26',
+      title: '未填报工时的任务',
+      planText: null,
+      summaryText: null,
+      completionRate: null,
+      status: 'NOT_STARTED' as const,
+      nextPlanText: null,
+      riskText: null,
+      plannedHours: null,
+      actualHours: null,
+      project: null,
+      task: null,
+      riskId: null,
+      note: null,
+      links: {
+        selfUrl: '/employee-work-items/work-2',
+        employeeProgressUrl: '/employees/employee-1/progress?periodType=WEEK&periodStart=2026-07-20',
+        sourceBatchUrl: '/employee-work-imports/batch-1',
+      },
+    },
+    {
+      id: 'work-3',
+      employeeId: 'employee-1',
+      employeeName: '林晓',
+      department: '研发一组',
+      importBatchId: 'batch-1',
+      importVersion: 2,
+      sourceRowId: 'row-3',
+      sourceRowNumber: 5,
+      sourceBatchIds: ['batch-1'],
+      periodStart: '2026-07-20',
+      periodEnd: '2026-07-26',
+      title: '零工时快速任务',
+      planText: null,
+      summaryText: null,
+      completionRate: 100,
+      status: 'COMPLETED' as const,
+      nextPlanText: null,
+      riskText: null,
+      plannedHours: 0,
+      actualHours: 0,
+      project: null,
+      task: null,
+      riskId: null,
+      note: null,
+      links: {
+        selfUrl: '/employee-work-items/work-3',
+        employeeProgressUrl: '/employees/employee-1/progress?periodType=WEEK&periodStart=2026-07-20',
+        sourceBatchUrl: '/employee-work-imports/batch-1',
+      },
+    },
   ],
   meta: { page: 1, pageSize: 20, total: 1 },
   sourceBatchIds: ['batch-1'],
@@ -215,6 +277,7 @@ const workItemsFixture = {
 describe('EmployeesPage', () => {
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   beforeEach(() => {
@@ -554,6 +617,14 @@ describe('EmployeesPage', () => {
   })
 
   it('serves the work-items tab with filterable traceable rows and export', async () => {
+    const createObjectURL = vi.fn(() => 'blob:export')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+    const exportedFile = {
+      blob: new Blob(['work-items']),
+      fileName: '员工工作明细-2026-07-20.xlsx',
+    }
+    employeesApi.exportEmployeeWorkItems.mockResolvedValue(exportedFile)
     const user = userEvent.setup()
     renderEmployees('/employees?tab=work-items&periodType=WEEK&periodStart=2026-07-20')
 
@@ -573,6 +644,12 @@ describe('EmployeesPage', () => {
       '/spaces/projects/project-1/overview'
     )
     expect(screen.getByText(/第 3 行/)).toBeInTheDocument()
+    expect(screen.getByText('16 / 14')).toBeInTheDocument()
+    // Unreported hours stay distinguishable from real zeros.
+    const unreportedRow = screen.getByText('未填报工时的任务').closest('tr')
+    expect(unreportedRow).not.toBeNull()
+    expect(within(unreportedRow as HTMLElement).getAllByText('暂无数据')).toHaveLength(2)
+    expect(screen.getByText('0 / 0')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '导出当前筛选' }))
 
@@ -586,6 +663,7 @@ describe('EmployeesPage', () => {
         employeeId: undefined,
       })
     )
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledWith(exportedFile.blob))
   })
 
   it('keeps the active project filter present in the work-items project options', async () => {

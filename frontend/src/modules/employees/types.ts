@@ -180,8 +180,8 @@ export interface EmployeeWorkItem {
   status: EmployeeWorkStatus
   nextPlanText: string | null
   riskText: string | null
-  plannedHours: number
-  actualHours: number
+  plannedHours: number | null
+  actualHours: number | null
   project: { id: string; code: string; name: string } | null
   task: { id: string; code: string; title: string } | null
   riskId: string | null

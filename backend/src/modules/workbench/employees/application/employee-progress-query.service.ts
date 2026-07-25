@@ -1186,8 +1186,8 @@ export class EmployeeProgressQueryService {
     return value === null || value === undefined ? 0 : Number(value);
   }
 
-  private decimalNumber(value: Prisma.Decimal | number | null): number {
-    return value === null ? 0 : Number(value);
+  private decimalNumber(value: Prisma.Decimal | number | null): number | null {
+    return value === null ? null : Number(value);
   }
 
   private round(value: number): number {

@@ -127,6 +127,9 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
       setBatch(nextBatch)
       setStep('result')
       await queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all })
+      // Commits create/archive resource load entries surfaced outside the employees module.
+      await queryClient.invalidateQueries({ queryKey: ['resource-load-summary'] })
+      await queryClient.invalidateQueries({ queryKey: ['reports'] })
     },
   })
 
