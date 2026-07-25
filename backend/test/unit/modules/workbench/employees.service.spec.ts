@@ -230,10 +230,60 @@ describe('EmployeesService', () => {
 
     await service.archive('employee-1');
 
+    expect(transactionClient.resourceLoadEntry.count).toHaveBeenCalledWith({
+      where: { resourceId: 'employee-1', archivedAt: null, employeeWorkItemId: null },
+    });
     expect(transactionClient.resourceProfile.update).toHaveBeenCalledWith({
       where: { id: 'employee-1' },
       data: { archivedAt },
     });
+  });
+
+  it('archives an employee whose only active load entries are import-owned', async () => {
+    const transactionClient = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'employee-1' }]),
+      resourceLoadEntry: {
+        // One import-owned active entry exists; the guard must exclude it from the blocking count.
+        count: jest.fn(({ where }: { where: { employeeWorkItemId?: string | null } }) =>
+          Promise.resolve(where.employeeWorkItemId === null ? 0 : 1),
+        ),
+      },
+      resourceProfile: { update: jest.fn().mockResolvedValue({ id: 'employee-1' }) },
+    };
+    const prisma = {
+      $transaction: jest.fn((work: (client: typeof transactionClient) => unknown) =>
+        work(transactionClient),
+      ),
+    } as unknown as PlatformPrismaService;
+    const service = new EmployeesService(prisma);
+
+    await expect(service.archive('employee-1')).resolves.toBeUndefined();
+    expect(transactionClient.resourceProfile.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks archiving an employee with an active manual load entry', async () => {
+    const transactionClient = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'employee-1' }]),
+      resourceLoadEntry: {
+        count: jest.fn(({ where }: { where: { employeeWorkItemId?: string | null } }) =>
+          Promise.resolve(where.employeeWorkItemId === null ? 1 : 0),
+        ),
+      },
+      resourceProfile: { update: jest.fn() },
+    };
+    const prisma = {
+      $transaction: jest.fn((work: (client: typeof transactionClient) => unknown) =>
+        work(transactionClient),
+      ),
+    } as unknown as PlatformPrismaService;
+    const service = new EmployeesService(prisma);
+
+    await expect(service.archive('employee-1')).rejects.toMatchObject({
+      code: 'RESOURCE_LOAD_REFERENCE_INVALID',
+      message: 'Archive load entries before archiving employee',
+      statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+    });
+    expect(transactionClient.resourceProfile.update).not.toHaveBeenCalled();
   });
 
   it('blocks archiving an employee with active resource load entries', async () => {
@@ -253,6 +303,9 @@ describe('EmployeesService', () => {
       code: 'RESOURCE_LOAD_REFERENCE_INVALID',
       message: 'Archive load entries before archiving employee',
       statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+    });
+    expect(transactionClient.resourceLoadEntry.count).toHaveBeenCalledWith({
+      where: { resourceId: 'employee-1', archivedAt: null, employeeWorkItemId: null },
     });
     expect(transactionClient.resourceProfile.update).not.toHaveBeenCalled();
   });

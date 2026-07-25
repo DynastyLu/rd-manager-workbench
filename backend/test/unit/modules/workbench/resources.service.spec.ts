@@ -106,6 +106,23 @@ describe('ResourcesService', () => {
     expect(resource.weeks[0]).toEqual(expect.objectContaining({ percent: null, overloaded: true }));
   });
 
+  it('excludes import-owned load entries from the archive guard', async () => {
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'resource-1' }]),
+      resourceLoadEntry: { count: jest.fn().mockResolvedValue(0) },
+      resourceProfile: { update: jest.fn().mockResolvedValue({ id: 'resource-1' }) },
+    };
+    const prisma = { $transaction: jest.fn((work: (client: typeof tx) => unknown) => work(tx)) } as unknown as PlatformPrismaService;
+    const service = new ResourcesService(prisma);
+
+    await service.archive('resource-1');
+
+    expect(tx.resourceLoadEntry.count).toHaveBeenCalledWith({
+      where: { resourceId: 'resource-1', archivedAt: null, employeeWorkItemId: null },
+    });
+    expect(tx.resourceProfile.update).toHaveBeenCalledTimes(1);
+  });
+
   it('locks and validates the active resource and reference in the same transaction as load creation', async () => {
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ id: 'active' }]),

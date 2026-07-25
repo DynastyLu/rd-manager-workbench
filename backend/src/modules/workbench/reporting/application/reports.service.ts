@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
+import { safeExportText } from '../../../../shared/export/safe-export-text';
 import { AuditLogService } from '../../governance/application/audit-log.service';
 import { ExportReportQueryDto, ReportBucket, ReportKind, ReportQueryDto, ResourceReportQueryDto } from '../interface/http/dto/reports.dto';
 
@@ -19,8 +20,7 @@ function countBy(values: string[]) {
 }
 
 function csvCell(value: ExportCell) {
-  let text = String(value);
-  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  const text = safeExportText(String(value));
   return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

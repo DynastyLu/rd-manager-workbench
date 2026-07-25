@@ -136,6 +136,12 @@ describe('EmployeeWorkExportService', () => {
     expect(sheet?.getCell('D2').value).toBe(`'=HYPERLINK("https://example.invalid")`);
     expect(sheet?.getCell('E2').value).toBe(`'+危险计划`);
     expect(sheet?.getCell('J2').value).toBe(`'@危险风险`);
+    // Column widths must stay aligned with the header row (no positional drift).
+    const headerRow = sheet?.getRow(1);
+    expect(headerRow?.cellCount).toBe(17);
+    headerRow?.eachCell((_, colNumber) => {
+      expect(sheet?.getColumn(colNumber).width).toBeGreaterThan(0);
+    });
 
     prisma.employeeWorkItem.findMany.mockRejectedValueOnce(new Error('database unavailable'));
     await expect(

@@ -3,33 +3,82 @@ import {
   EmployeeProgressPeriod,
   EmployeeWorkImportStatus,
   EmployeeWorkStatus,
+  Prisma,
 } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
+import { safeExportText } from '../../../../shared/export/safe-export-text';
 import { AuditLogService } from '../../governance/application/audit-log.service';
 
 const DAY_MS = 86_400_000;
-const HEADERS = [
-  '员工姓名',
-  '部门',
-  '周期开始',
-  '工作内容',
-  '本期计划',
-  '本期完成情况',
-  '完成度',
-  '工作状态',
-  '下期计划',
-  '风险与阻塞',
-  '计划工时',
-  '实际工时',
-  '项目编号',
-  '项目名称',
-  '任务编号',
-  '来源批次',
-  '备注',
-] as const;
+
+const ITEM_SELECT = {
+  id: true,
+  periodStartAt: true,
+  periodEndAt: true,
+  title: true,
+  planText: true,
+  summaryText: true,
+  completionRate: true,
+  status: true,
+  nextPlanText: true,
+  riskText: true,
+  plannedHours: true,
+  actualHours: true,
+  note: true,
+  importBatchId: true,
+  employee: { select: { displayName: true, department: true } },
+  project: { select: { code: true, name: true } },
+  task: { select: { code: true, title: true } },
+} satisfies Prisma.EmployeeWorkItemSelect;
+
+type EmployeeWorkExportItem = Prisma.EmployeeWorkItemGetPayload<{ select: typeof ITEM_SELECT }>;
+
+type ExportCell = string | number | null;
+
+interface EmployeeWorkExportColumn {
+  header: string;
+  width: number;
+  value: (item: EmployeeWorkExportItem) => ExportCell;
+}
+
+// Single source of truth: header, column width, and cell extractor per column
+// so the three can never drift apart.
+const COLUMNS: readonly EmployeeWorkExportColumn[] = [
+  { header: '员工姓名', width: 16, value: (item) => item.employee.displayName },
+  { header: '部门', width: 16, value: (item) => item.employee.department },
+  { header: '周期开始', width: 14, value: (item) => dateOnly(item.periodStartAt) },
+  { header: '工作内容', width: 32, value: (item) => item.title },
+  { header: '本期计划', width: 32, value: (item) => item.planText },
+  { header: '本期完成情况', width: 32, value: (item) => item.summaryText },
+  { header: '完成度', width: 12, value: (item) => item.completionRate },
+  { header: '工作状态', width: 14, value: (item) => item.status },
+  { header: '下期计划', width: 32, value: (item) => item.nextPlanText },
+  { header: '风险与阻塞', width: 32, value: (item) => item.riskText },
+  {
+    header: '计划工时',
+    width: 12,
+    value: (item) => (item.plannedHours === null ? null : Number(item.plannedHours)),
+  },
+  {
+    header: '实际工时',
+    width: 12,
+    value: (item) => (item.actualHours === null ? null : Number(item.actualHours)),
+  },
+  { header: '项目编号', width: 16, value: (item) => item.project?.code ?? null },
+  { header: '项目名称', width: 24, value: (item) => item.project?.name ?? null },
+  { header: '任务编号', width: 16, value: (item) => item.task?.code ?? null },
+  { header: '来源批次', width: 40, value: (item) => item.importBatchId },
+  { header: '备注', width: 28, value: (item) => item.note },
+];
+
+const LAST_COLUMN_LETTER = String.fromCharCode('A'.charCodeAt(0) + COLUMNS.length - 1);
+
+function dateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
 
 export interface EmployeeWorkExportQuery {
   periodType: EmployeeProgressPeriod;
@@ -40,8 +89,6 @@ export interface EmployeeWorkExportQuery {
   status?: EmployeeWorkStatus;
   format?: 'csv' | 'xlsx';
 }
-
-type ExportCell = string | number | null;
 
 @Injectable()
 export class EmployeeWorkExportService {
@@ -82,48 +129,12 @@ export class EmployeeWorkExportService {
             archivedAt: null,
           },
         },
-        select: {
-          id: true,
-          periodStartAt: true,
-          periodEndAt: true,
-          title: true,
-          planText: true,
-          summaryText: true,
-          completionRate: true,
-          status: true,
-          nextPlanText: true,
-          riskText: true,
-          plannedHours: true,
-          actualHours: true,
-          note: true,
-          importBatchId: true,
-          employee: { select: { displayName: true, department: true } },
-          project: { select: { code: true, name: true } },
-          task: { select: { code: true, title: true } },
-        },
+        select: ITEM_SELECT,
         orderBy: [{ periodStartAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
       });
       const rows: ExportCell[][] = [
-        [...HEADERS],
-        ...items.map((item) => [
-          item.employee.displayName,
-          item.employee.department,
-          this.dateOnly(item.periodStartAt),
-          item.title,
-          item.planText,
-          item.summaryText,
-          item.completionRate,
-          item.status,
-          item.nextPlanText,
-          item.riskText,
-          item.plannedHours === null ? null : Number(item.plannedHours),
-          item.actualHours === null ? null : Number(item.actualHours),
-          item.project?.code ?? null,
-          item.project?.name ?? null,
-          item.task?.code ?? null,
-          item.importBatchId,
-          item.note,
-        ]),
+        COLUMNS.map(({ header }) => header),
+        ...items.map((item) => COLUMNS.map(({ value }) => value(item))),
       ];
       const sourceBatchIds = [...new Set(items.map(({ importBatchId }) => importBatchId))].sort();
       const result = format === 'csv' ? this.csv(rows) : await this.xlsx(rows, query.periodStart);
@@ -187,10 +198,10 @@ export class EmployeeWorkExportService {
     });
     sheet.addRows(
       rows.map((row) =>
-        row.map((value) => (typeof value === 'string' ? this.safeText(value) : value)),
+        row.map((value) => (typeof value === 'string' ? safeExportText(value) : value)),
       ),
     );
-    sheet.autoFilter = { from: 'A1', to: `Q${Math.max(1, rows.length)}` };
+    sheet.autoFilter = { from: 'A1', to: `${LAST_COLUMN_LETTER}${Math.max(1, rows.length)}` };
     sheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
     sheet.getRow(1).fill = {
       type: 'pattern',
@@ -198,7 +209,7 @@ export class EmployeeWorkExportService {
       fgColor: { argb: 'FF1F4E78' },
     };
     sheet.columns.forEach((column, index) => {
-      column.width = [16, 16, 14, 32, 32, 32, 12, 14, 32, 32, 12, 12, 16, 24, 16, 40, 28][index];
+      column.width = COLUMNS[index]?.width;
     });
     workbook.subject = `员工工作明细 ${periodStart}`;
     return {
@@ -209,12 +220,8 @@ export class EmployeeWorkExportService {
   }
 
   private csvCell(value: ExportCell): string {
-    const text = typeof value === 'string' ? this.safeText(value) : String(value ?? '');
+    const text = typeof value === 'string' ? safeExportText(value) : String(value ?? '');
     return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  }
-
-  private safeText(value: string): string {
-    return /^[=+\-@]/.test(value) ? `'${value}` : value;
   }
 
   private periodBounds(type: EmployeeProgressPeriod, start: string) {
@@ -241,12 +248,8 @@ export class EmployeeWorkExportService {
       endAt,
       batchWindowStart,
       start,
-      end: this.dateOnly(endAt),
+      end: dateOnly(endAt),
     };
-  }
-
-  private dateOnly(value: Date): string {
-    return value.toISOString().slice(0, 10);
   }
 
   private invalid(message: string): AppError {

@@ -95,8 +95,10 @@ export class EmployeesService {
   async archive(id: string) {
     await this.prisma.$transaction(async (transaction) => {
       await this.lockActiveEmployee(transaction, id);
+      // Import-owned load entries (linked to an employee work item) are historical import
+      // data and must not block archiving; only manually-created active entries do.
       const activeLoadEntryCount = await transaction.resourceLoadEntry.count({
-        where: { resourceId: id, archivedAt: null },
+        where: { resourceId: id, archivedAt: null, employeeWorkItemId: null },
       });
       if (activeLoadEntryCount > 0) {
         throw new AppError({

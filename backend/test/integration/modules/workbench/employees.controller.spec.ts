@@ -1,16 +1,28 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { EmploymentStatus, LoadEntryKind, PrismaClient } from '@prisma/client';
+import {
+  EmployeeWorkImportStatus,
+  EmploymentStatus,
+  LoadEntryKind,
+  PrismaClient,
+} from '@prisma/client';
+import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
+import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
+import { EmployeeWorkbookService } from '../../../../src/modules/workbench/employees/application/employee-workbook.service';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
 
 describe('Employees API', () => {
+  jest.setTimeout(120_000);
+
+  const DAY_MS = 86_400_000;
   const prefix = `TEST-EMPLOYEES-${Date.now()}`;
   const primaryName = `${prefix}-研发主管`;
   const secondaryName = `${prefix}-平台工程师`;
   const prisma = new PrismaClient();
+  const importBatchIds: string[] = [];
   let app: INestApplication;
 
   beforeAll(async () => {
@@ -29,6 +41,36 @@ describe('Employees API', () => {
 
   afterAll(async () => {
     try {
+      if (importBatchIds.length > 0) {
+        const batches = await prisma.employeeWorkImportBatch.findMany({
+          where: { id: { in: importBatchIds } },
+          select: { sourceStorageKey: true, errorStorageKey: true },
+        });
+        if (app) {
+          const storage = app.get(StoragePort);
+          for (const batch of batches) {
+            await storage.delete(batch.sourceStorageKey).catch(() => undefined);
+            if (batch.errorStorageKey) {
+              await storage.delete(batch.errorStorageKey).catch(() => undefined);
+            }
+          }
+        }
+        await prisma.resourceLoadEntry.deleteMany({
+          where: { employeeWorkImportBatchId: { in: importBatchIds } },
+        });
+        await prisma.employeeProgressSnapshot.deleteMany({
+          where: { sourceBatchIds: { hasSome: importBatchIds } },
+        });
+        await prisma.employeeWorkItem.deleteMany({
+          where: { importBatchId: { in: importBatchIds } },
+        });
+        await prisma.employeeWorkImportRow.deleteMany({
+          where: { batchId: { in: importBatchIds } },
+        });
+        await prisma.employeeWorkImportBatch.deleteMany({
+          where: { id: { in: importBatchIds } },
+        });
+      }
       const employees = await prisma.resourceProfile.findMany({
         where: { displayName: { startsWith: prefix } },
         select: { id: true },
@@ -50,6 +92,92 @@ describe('Employees API', () => {
       }
     }
   });
+
+  async function importWorkbookBuffer(
+    employeeName: string,
+    periodStart: Date,
+    periodEnd: Date,
+  ): Promise<Buffer> {
+    const template = await new EmployeeWorkbookService().template();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(template as unknown as Parameters<typeof workbook.xlsx.load>[0], {
+      ignoreNodes: ['dataValidations'],
+    });
+    const instructions = workbook.getWorksheet('说明');
+    const details = workbook.getWorksheet('工作明细');
+    if (!instructions || !details) throw new Error('Employee workbook sheets are missing');
+    instructions.getCell('B4').value = periodStart;
+    instructions.getCell('B5').value = periodEnd;
+    details.addRow([
+      employeeName,
+      '实现员工周报导入',
+      '完成接口设计',
+      '完成开发',
+      90,
+      '进行中',
+      '联调',
+      null,
+      8,
+      7,
+      null,
+      null,
+      null,
+    ]);
+    details.addRow([
+      employeeName,
+      '处理未关联工作',
+      null,
+      null,
+      null,
+      '未开始',
+      null,
+      null,
+      null,
+      null,
+      `${prefix}-UNKNOWN`,
+      null,
+      null,
+    ]);
+    return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  async function commitImportWithPlannedHours(employeeName: string): Promise<string> {
+    // Isolated far-future week so the commit never supersedes other specs' batches.
+    const runOffset = Date.now() % 500;
+    const periodStart = new Date(Date.UTC(2030, 0, 7) + runOffset * 7 * DAY_MS);
+    const periodEnd = new Date(periodStart.getTime() + 6 * DAY_MS);
+    const source = await importWorkbookBuffer(employeeName, periodStart, periodEnd);
+    const uploaded = await request(app.getHttpServer())
+      .post('/api/employee-work-imports')
+      .attach('file', source, {
+        filename: 'archive-import-owned.xlsx',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+    const batchId = uploaded.body.data.id as string;
+    importBatchIds.push(batchId);
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${batchId}/preview`)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${batchId}/resolutions`)
+      .send({
+        rows: [{ rowNumber: 3, projectId: null, taskId: null, keepUnlinked: true }],
+      })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data.status).toBe(EmployeeWorkImportStatus.READY);
+      });
+    await request(app.getHttpServer())
+      .post(`/api/employee-work-imports/${batchId}/commit`)
+      .send({})
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data.status).toBe(EmployeeWorkImportStatus.COMPLETED);
+      });
+    return batchId;
+  }
 
   it('creates, filters, searches, retrieves, updates, and archives employee profiles', async () => {
     const created = await request(app.getHttpServer())
@@ -318,6 +446,36 @@ describe('Employees API', () => {
       .delete(`/api/resources/${employeeId}/load-entries/${loadEntry.body.data.id}`)
       .expect(204);
     await request(app.getHttpServer()).delete(`/api/employees/${employeeId}`).expect(204);
+  });
+
+  it('archives an employee whose only active load entries are import-owned', async () => {
+    const employee = await request(app.getHttpServer())
+      .post('/api/employees')
+      .send({ displayName: `${prefix}-IMPORT-OWNED-LOAD` })
+      .expect(201);
+    const employeeId = employee.body.data.id as string;
+    const employeeName = employee.body.data.displayName as string;
+
+    const batchId = await commitImportWithPlannedHours(employeeName);
+    const importLoadEntries = await prisma.resourceLoadEntry.findMany({
+      where: { resourceId: employeeId, archivedAt: null },
+    });
+    expect(importLoadEntries).toHaveLength(1);
+    expect(importLoadEntries[0].employeeWorkItemId).not.toBeNull();
+    expect(Number(importLoadEntries[0].plannedHours)).toBe(8);
+
+    await request(app.getHttpServer()).delete(`/api/employees/${employeeId}`).expect(204);
+    await request(app.getHttpServer()).get(`/api/employees/${employeeId}`).expect(404);
+
+    // Historical import data is preserved untouched by the archive.
+    const preservedLoadEntries = await prisma.resourceLoadEntry.findMany({
+      where: { resourceId: employeeId },
+    });
+    expect(preservedLoadEntries).toHaveLength(1);
+    expect(preservedLoadEntries[0].archivedAt).toBeNull();
+    await expect(
+      prisma.employeeWorkItem.count({ where: { importBatchId: batchId, archivedAt: null } }),
+    ).resolves.toBe(2);
   });
 
   it('returns RESOURCE_NOT_FOUND for unknown employee IDs', async () => {

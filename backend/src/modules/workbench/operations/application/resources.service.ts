@@ -46,7 +46,7 @@ export class ResourcesService {
   async archive(id: string) {
     await this.prisma.$transaction(async (tx) => {
       await this.lockActiveResource(tx, id, true);
-      const active = await tx.resourceLoadEntry.count({ where: { resourceId: id, archivedAt: null } });
+      const active = await tx.resourceLoadEntry.count({ where: { resourceId: id, archivedAt: null, employeeWorkItemId: null } });
       if (active) throw this.invalidReference('Archive load entries before archiving resource');
       await tx.resourceProfile.update({ where: { id }, data: { archivedAt: new Date() } });
     });
