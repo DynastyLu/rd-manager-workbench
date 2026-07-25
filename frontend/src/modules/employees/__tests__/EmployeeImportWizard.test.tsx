@@ -240,6 +240,14 @@ describe('EmployeeImportWizard', () => {
     await user.upload(screen.getByLabelText('选择员工计划与总结 Excel'), workbook)
     expect(employeesApi.uploadEmployeeWorkImport).toHaveBeenCalledWith(workbook)
     await screen.findByText('错误 1 行')
+    // The backend rejects rowsPageSize above 100, which would leave the
+    // resolutions step stuck without any problem rows.
+    await waitFor(() => expect(employeesApi.getEmployeeWorkImport).toHaveBeenCalled())
+    const detailFilters = employeesApi.getEmployeeWorkImport.mock.calls[0]?.[1] as {
+      rowsPageSize?: number
+    }
+    expect(detailFilters.rowsPageSize ?? 0).toBeGreaterThan(0)
+    expect(detailFilters.rowsPageSize).toBeLessThanOrEqual(100)
     expect(screen.getByText('共 20 行')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '确认导入' })).toBeDisabled()
 

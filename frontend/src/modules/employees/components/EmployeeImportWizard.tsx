@@ -32,7 +32,9 @@ interface EmployeeImportWizardProps {
   onClose: () => void
 }
 
-const DETAIL_FILTERS = { rowsPageSize: 200 }
+// Backend caps rowsPageSize at MAX_EMPLOYEE_PAGE_SIZE (100); a larger value
+// makes the detail request fail validation and problem rows never render.
+const DETAIL_FILTERS = { rowsPageSize: 100 }
 const OPTION_PAGE_SIZE = 100
 
 const PERIOD_TYPE_LABELS = { WEEK: '周报', MONTH: '月报' } as const
