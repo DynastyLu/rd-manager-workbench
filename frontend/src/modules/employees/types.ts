@@ -108,6 +108,7 @@ export interface ImportFilters {
 export interface EmployeeImportDetailFilters {
   rowsPage?: number
   rowsPageSize?: number
+  issuesOnly?: boolean
 }
 
 export interface PaginationMeta {

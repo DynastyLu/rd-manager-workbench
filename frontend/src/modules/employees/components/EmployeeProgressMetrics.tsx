@@ -1,7 +1,6 @@
+import { percentage } from '../format'
 import type { EmployeeProgressMetrics as EmployeeProgressMetricsValue } from '../types'
 import './employee-progress.less'
-
-const percentage = (value: number | null) => (value === null ? '暂无数据' : `${value}%`)
 
 export function EmployeeProgressMetrics({ metrics }: { metrics: EmployeeProgressMetricsValue }) {
   const cards: Array<{ label: string; value: string; tone?: 'danger' | 'warning' }> = [

@@ -38,6 +38,7 @@ import { EmployeeProgressFilters } from '@/modules/employees/components/Employee
 import { EmployeeProgressMetrics } from '@/modules/employees/components/EmployeeProgressMetrics'
 import { EmployeeWorkTable } from '@/modules/employees/components/EmployeeWorkTable'
 import { saveDownloadedFile } from '@/modules/employees/download'
+import { percentage } from '@/modules/employees/format'
 import { EMPLOYEE_WORK_STATUS_COLORS, EMPLOYEE_WORK_STATUS_LABELS } from '@/modules/employees/labels'
 import { defaultPeriodStart } from '@/modules/employees/periods'
 import { employeeQueryKeys } from '@/modules/employees/queryKeys'
@@ -120,8 +121,6 @@ function draftToUpdateInput(draft: EmployeeProfileDraft): UpdateEmployeeInput {
 function employmentStatusLabel(status: EmploymentStatus) {
   return EMPLOYMENT_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status
 }
-
-const percentage = (value: number | null) => (value === null ? '暂无数据' : `${value}%`)
 
 const WORK_STATUS_VALUES = ['ALL', 'NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'AT_RISK', 'BLOCKED'] as const
 
@@ -302,7 +301,7 @@ export default function EmployeesPage() {
       name: project.projectName,
     }))
     if (projectId && !options.some((option) => option.id === projectId)) {
-      options.push({ id: projectId, code: projectId, name: '' })
+      options.push({ id: projectId, code: projectId, name: '已选项目' })
     }
     return options
   }, [projectId, teamProgress])
@@ -362,7 +361,7 @@ export default function EmployeesPage() {
       okText: '确认归档',
       cancelText: '取消',
       okButtonProps: { type: 'danger', 'aria-label': '确认归档' },
-      onOk: () => archiveMutation.mutateAsync(employee.id),
+      onOk: () => archiveMutation.mutate(employee.id),
     })
   }
 

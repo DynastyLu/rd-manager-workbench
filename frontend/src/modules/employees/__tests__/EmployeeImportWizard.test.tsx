@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { selectSemiOption } from '@/test-utils/selectSemiOption'
@@ -12,6 +12,7 @@ const employeesApi = vi.hoisted(() => ({
   downloadEmployeeImportErrors: vi.fn(),
   downloadEmployeeImportSource: vi.fn(),
   downloadEmployeeWorkImportTemplate: vi.fn(),
+  getEmployee: vi.fn(),
   getEmployeeWorkImport: vi.fn(),
   listEmployees: vi.fn(),
   previewEmployeeWorkImport: vi.fn(),
@@ -20,10 +21,12 @@ const employeesApi = vi.hoisted(() => ({
 }))
 
 const projectsApi = vi.hoisted(() => ({
+  getProject: vi.fn(),
   listProjects: vi.fn(),
 }))
 
 const tasksApi = vi.hoisted(() => ({
+  getTask: vi.fn(),
   listTasks: vi.fn(),
 }))
 
@@ -156,13 +159,14 @@ const unresolvedRow = makeRow({
 
 function makeDetail(
   batch: EmployeeWorkImportBatch,
-  rows: EmployeeWorkImportDetail['rows']
+  rows: EmployeeWorkImportDetail['rows'],
+  rowMeta: EmployeeWorkImportDetail['rowMeta'] = { page: 1, pageSize: 200, total: rows.length }
 ): EmployeeWorkImportDetail {
   return {
     ...batch,
     sourceBatchIds: [batch.id],
     rows,
-    rowMeta: { page: 1, pageSize: 200, total: rows.length },
+    rowMeta,
   }
 }
 
@@ -221,9 +225,23 @@ describe('EmployeeImportWizard', () => {
       data: [],
       meta: { page: 1, pageSize: 100, total: 0 },
     })
+    projectsApi.getProject.mockResolvedValue({
+      id: 'project-1',
+      code: 'RD-2026-001',
+      name: '权限平台',
+    })
     tasksApi.listTasks.mockResolvedValue({
       data: [],
       meta: { page: 1, pageSize: 100, total: 0 },
+    })
+    tasksApi.getTask.mockResolvedValue({
+      id: 'task-1',
+      code: 'RD-2026-001-T01',
+      title: '权限模型设计',
+    })
+    employeesApi.getEmployee.mockResolvedValue({
+      id: 'emp-9',
+      displayName: '陈雨',
     })
   })
 
@@ -255,15 +273,104 @@ describe('EmployeeImportWizard', () => {
     await waitFor(() =>
       expect(screen.queryByText('正在加载可选项…')).not.toBeInTheDocument()
     )
-    await selectSemiOption(screen.getByLabelText('第 18 行员工'), '张明')
+    // The previously saved project resolution is prefilled even though the
+    // project list came back empty (outside the first option page).
+    expect(
+      await screen.findByText('RD-2026-001 · 权限平台')
+    ).toBeInTheDocument()
+    await selectSemiOption(screen.getByLabelText('第 18 行员工'), 'emp-1')
     await user.click(screen.getByRole('button', { name: '保存关联' }))
 
     await waitFor(() =>
       expect(employeesApi.resolveEmployeeWorkImport).toHaveBeenCalledWith('batch-1', {
-        rows: [{ rowNumber: 18, employeeId: 'emp-1' }],
+        rows: [{ rowNumber: 18, employeeId: 'emp-1', projectId: 'project-1' }],
       })
     )
     expect(await screen.findByRole('button', { name: '确认导入' })).toBeEnabled()
+  })
+
+  it('paginates problem rows beyond the first rows page', async () => {
+    const crowdedBatch = makeBatch({
+      status: 'RESOLVING',
+      totalRows: 150,
+      validRows: 0,
+      errorRows: 150,
+      hasErrors: true,
+    })
+    const pageOneDetail = makeDetail(
+      crowdedBatch,
+      [unresolvedRow],
+      { page: 1, pageSize: 100, total: 150 }
+    )
+    const pageTwoDetail = makeDetail(
+      crowdedBatch,
+      [makeRow({ ...unresolvedRow, id: 'row-105', rowNumber: 105 })],
+      { page: 2, pageSize: 100, total: 150 }
+    )
+    employeesApi.uploadEmployeeWorkImport.mockResolvedValue(uploadedBatch)
+    employeesApi.previewEmployeeWorkImport.mockResolvedValue(crowdedBatch)
+    employeesApi.getEmployeeWorkImport.mockImplementation(
+      (_id: string, filters: { rowsPage?: number }) =>
+        Promise.resolve(filters.rowsPage === 2 ? pageTwoDetail : pageOneDetail)
+    )
+    const user = userEvent.setup()
+    renderWizard()
+
+    await user.upload(screen.getByLabelText('选择员工计划与总结 Excel'), workbook)
+    await screen.findByText('错误 150 行')
+    expect(screen.getByText('第 18 行')).toBeInTheDocument()
+    expect(screen.queryByText('第 105 行')).not.toBeInTheDocument()
+
+    await user.click(screen.getByText('2'))
+
+    expect(await screen.findByText('第 105 行')).toBeInTheDocument()
+    expect(employeesApi.getEmployeeWorkImport).toHaveBeenCalledWith(
+      'batch-1',
+      expect.objectContaining({ rowsPage: 2, rowsPageSize: 100, issuesOnly: true })
+    )
+    expect(
+      screen.getByRole('button', { name: '为第 105 行选择员工' })
+    ).toBeInTheDocument()
+  })
+
+  it('prefills saved resolutions and re-saves them together with new choices', async () => {
+    const partiallyResolvedRow = makeRow({
+      ...unresolvedRow,
+      resolvedEmployeeId: 'emp-1',
+      resolvedProjectId: 'project-1',
+    })
+    employeesApi.uploadEmployeeWorkImport.mockResolvedValue(uploadedBatch)
+    employeesApi.previewEmployeeWorkImport.mockResolvedValue(resolvingBatch)
+    employeesApi.getEmployeeWorkImport.mockResolvedValue(
+      makeDetail(resolvingBatch, [partiallyResolvedRow])
+    )
+    employeesApi.resolveEmployeeWorkImport.mockResolvedValue(readyBatch)
+    const user = userEvent.setup()
+    renderWizard()
+
+    await user.upload(screen.getByLabelText('选择员工计划与总结 Excel'), workbook)
+    await screen.findByText('错误 1 行')
+    await user.click(screen.getByRole('button', { name: '为第 18 行选择员工' }))
+    await waitFor(() =>
+      expect(screen.queryByText('正在加载可选项…')).not.toBeInTheDocument()
+    )
+
+    const resolver = screen.getByRole('region', { name: '第 18 行关联' })
+    // emp-1 张明 is on the first option page; the saved project is not, so it
+    // is injected once fetched by id.
+    expect(await within(resolver).findByText('张明')).toBeInTheDocument()
+    expect(
+      await within(resolver).findByText('RD-2026-001 · 权限平台')
+    ).toBeInTheDocument()
+    expect(projectsApi.getProject).toHaveBeenCalledWith('project-1')
+    expect(employeesApi.getEmployee).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '保存关联' }))
+    await waitFor(() =>
+      expect(employeesApi.resolveEmployeeWorkImport).toHaveBeenCalledWith('batch-1', {
+        rows: [{ rowNumber: 18, employeeId: 'emp-1', projectId: 'project-1' }],
+      })
+    )
   })
 
   it('confirms version replacement before committing and shows the import result', async () => {

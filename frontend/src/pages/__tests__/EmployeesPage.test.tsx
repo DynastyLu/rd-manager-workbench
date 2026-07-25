@@ -679,7 +679,11 @@ describe('EmployeesPage', () => {
 
     await user.click(screen.getByRole('combobox', { name: '项目' }))
 
-    expect(await screen.findByRole('option', { name: /project-9/ })).toBeInTheDocument()
+    // The fallback option for an unloaded project renders a clean label
+    // instead of a bare UUID with a trailing space.
+    expect(
+      await screen.findByRole('option', { name: /project-9 已选项目/ })
+    ).toBeInTheDocument()
   })
 
   it('serves the imports tab with import history and the wizard entry', async () => {

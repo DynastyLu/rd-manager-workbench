@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent, DragEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banner, Button, Modal, Spin, Tag } from '@douyinfe/semi-ui'
+import { Banner, Button, Modal, Pagination, Spin, Tag } from '@douyinfe/semi-ui'
 import { IconDownload, IconUpload } from '@douyinfe/semi-icons'
 import { toast } from 'sonner'
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect'
@@ -9,17 +9,19 @@ import {
   archiveEmployeeWorkImport,
   commitEmployeeWorkImport,
   downloadEmployeeWorkImportTemplate,
+  getEmployee,
   getEmployeeWorkImport,
   listEmployees,
   previewEmployeeWorkImport,
   resolveEmployeeWorkImport,
   uploadEmployeeWorkImport,
 } from '../api'
-import { listProjects } from '@/modules/workbench/api/projects'
-import { listTasks } from '@/modules/workbench/api/tasks'
+import { getProject, listProjects } from '@/modules/workbench/api/projects'
+import { getTask, listTasks } from '@/modules/workbench/api/tasks'
 import { saveDownloadedFile } from '../download'
 import { employeeQueryKeys } from '../queryKeys'
 import type {
+  EmployeeImportDetailFilters,
   EmployeeWorkImportBatch,
   EmployeeWorkImportRow,
   ResolveEmployeeImportRowInput,
@@ -34,7 +36,7 @@ interface EmployeeImportWizardProps {
 
 // Backend caps rowsPageSize at MAX_EMPLOYEE_PAGE_SIZE (100); a larger value
 // makes the detail request fail validation and problem rows never render.
-const DETAIL_FILTERS = { rowsPageSize: 100 }
+const DETAIL_ROWS_PAGE_SIZE = 100
 const OPTION_PAGE_SIZE = 100
 
 const PERIOD_TYPE_LABELS = { WEEK: '周报', MONTH: '月报' } as const
@@ -56,16 +58,21 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
   const [step, setStep] = useState<WizardStep>('select')
   const [batch, setBatch] = useState<EmployeeWorkImportBatch | null>(null)
   const [resolvingRow, setResolvingRow] = useState<EmployeeWorkImportRow | null>(null)
-  const [employeeName, setEmployeeName] = useState('')
-  const [projectCode, setProjectCode] = useState('')
-  const [taskCode, setTaskCode] = useState('')
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
+  const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [selectedTaskId, setSelectedTaskId] = useState('')
+  const [rowsPage, setRowsPage] = useState(1)
   const [templatePending, setTemplatePending] = useState(false)
 
+  const detailFilters = useMemo<EmployeeImportDetailFilters>(
+    () => ({ rowsPage, rowsPageSize: DETAIL_ROWS_PAGE_SIZE, issuesOnly: true }),
+    [rowsPage]
+  )
   const detailQuery = useQuery({
     queryKey: batch
-      ? employeeQueryKeys.importDetail(batch.id, DETAIL_FILTERS)
+      ? employeeQueryKeys.importDetail(batch.id, detailFilters)
       : ['employees', 'import', 'idle'],
-    queryFn: () => getEmployeeWorkImport(batch!.id, DETAIL_FILTERS),
+    queryFn: () => getEmployeeWorkImport(batch!.id, detailFilters),
     enabled: Boolean(batch) && (step === 'preflight' || step === 'resolutions'),
   })
 
@@ -84,6 +91,41 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     queryKey: ['tasks', 'list', { pageSize: OPTION_PAGE_SIZE }],
     queryFn: () => listTasks({ pageSize: OPTION_PAGE_SIZE }),
     enabled: resolverOpen,
+  })
+
+  // A partially-resolved row can reference entities outside the first option
+  // page; fetch those by id so the prefilled selects show real labels.
+  const savedEmployeeMissing =
+    resolverOpen &&
+    Boolean(selectedEmployeeId) &&
+    employeesQuery.isSuccess &&
+    !(employeesQuery.data?.data ?? []).some((employee) => employee.id === selectedEmployeeId)
+  const savedEmployeeQuery = useQuery({
+    queryKey: savedEmployeeMissing
+      ? employeeQueryKeys.detail(selectedEmployeeId)
+      : ['employees', 'detail', 'resolver-idle'],
+    queryFn: () => getEmployee(selectedEmployeeId),
+    enabled: savedEmployeeMissing,
+  })
+  const savedProjectMissing =
+    resolverOpen &&
+    Boolean(selectedProjectId) &&
+    projectsQuery.isSuccess &&
+    !(projectsQuery.data?.data ?? []).some((project) => project.id === selectedProjectId)
+  const savedProjectQuery = useQuery({
+    queryKey: savedProjectMissing ? ['project', selectedProjectId] : ['project', 'resolver-idle'],
+    queryFn: () => getProject(selectedProjectId),
+    enabled: savedProjectMissing,
+  })
+  const savedTaskMissing =
+    resolverOpen &&
+    Boolean(selectedTaskId) &&
+    tasksQuery.isSuccess &&
+    !(tasksQuery.data?.data ?? []).some((task) => task.id === selectedTaskId)
+  const savedTaskQuery = useQuery({
+    queryKey: savedTaskMissing ? ['task', selectedTaskId] : ['task', 'resolver-idle'],
+    queryFn: () => getTask(selectedTaskId),
+    enabled: savedTaskMissing,
   })
 
   const previewMutation = useMutation({
@@ -113,7 +155,7 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
         setStep('preflight')
       }
       await queryClient.invalidateQueries({
-        queryKey: employeeQueryKeys.importDetail(nextBatch.id, DETAIL_FILTERS),
+        queryKey: ['employees', 'import', nextBatch.id],
       })
     },
     onError: (error) => {
@@ -141,9 +183,10 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     setStep('select')
     setBatch(null)
     setResolvingRow(null)
-    setEmployeeName('')
-    setProjectCode('')
-    setTaskCode('')
+    setSelectedEmployeeId('')
+    setSelectedProjectId('')
+    setSelectedTaskId('')
+    setRowsPage(1)
     uploadMutation.reset()
     previewMutation.reset()
     resolveMutation.reset()
@@ -162,6 +205,8 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
   }
 
   function requestClose() {
+    // Closing mid-upload would strand the batch created on the server.
+    if (uploadMutation.isPending) return
     if (!batch || COMMITTED_STATUSES.has(batch.status) || step === 'result') {
       finish()
       return
@@ -211,43 +256,47 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     }
   }
 
-  const employeeOptions = useMemo(
-    () =>
-      (employeesQuery.data?.data ?? []).map((employee) => ({
-        value: employee.displayName,
-        label: employee.displayName,
-      })),
-    [employeesQuery.data]
-  )
-  const employeeIdByName = useMemo(
-    () =>
-      new Map((employeesQuery.data?.data ?? []).map((employee) => [employee.displayName, employee.id])),
-    [employeesQuery.data]
-  )
-  const projectOptions = useMemo(
-    () =>
-      (projectsQuery.data?.data ?? []).map((project) => ({
-        value: project.code,
-        label: `${project.code} · ${project.name}`,
-      })),
-    [projectsQuery.data]
-  )
-  const projectIdByCode = useMemo(
-    () => new Map((projectsQuery.data?.data ?? []).map((project) => [project.code, project.id])),
-    [projectsQuery.data]
-  )
-  const taskOptions = useMemo(
-    () =>
-      (tasksQuery.data?.data ?? []).map((task) => ({
-        value: task.code,
-        label: `${task.code} · ${task.title}`,
-      })),
-    [tasksQuery.data]
-  )
-  const taskIdByCode = useMemo(
-    () => new Map((tasksQuery.data?.data ?? []).map((task) => [task.code, task.id])),
-    [tasksQuery.data]
-  )
+  const employeeOptions = useMemo(() => {
+    const options = (employeesQuery.data?.data ?? []).map((employee) => ({
+      value: employee.id,
+      label: employee.displayName,
+    }))
+    if (selectedEmployeeId && !options.some((option) => option.value === selectedEmployeeId)) {
+      options.push({
+        value: selectedEmployeeId,
+        label: savedEmployeeQuery.data?.displayName ?? '已选员工',
+      })
+    }
+    return options
+  }, [employeesQuery.data, selectedEmployeeId, savedEmployeeQuery.data])
+  const projectOptions = useMemo(() => {
+    const options = (projectsQuery.data?.data ?? []).map((project) => ({
+      value: project.id,
+      label: `${project.code} · ${project.name}`,
+    }))
+    if (selectedProjectId && !options.some((option) => option.value === selectedProjectId)) {
+      const saved = savedProjectQuery.data
+      options.push({
+        value: selectedProjectId,
+        label: saved ? `${saved.code} · ${saved.name}` : '已选项目',
+      })
+    }
+    return options
+  }, [projectsQuery.data, selectedProjectId, savedProjectQuery.data])
+  const taskOptions = useMemo(() => {
+    const options = (tasksQuery.data?.data ?? []).map((task) => ({
+      value: task.id,
+      label: `${task.code} · ${task.title}`,
+    }))
+    if (selectedTaskId && !options.some((option) => option.value === selectedTaskId)) {
+      const saved = savedTaskQuery.data
+      options.push({
+        value: selectedTaskId,
+        label: saved ? `${saved.code} · ${saved.title}` : '已选任务',
+      })
+    }
+    return options
+  }, [tasksQuery.data, selectedTaskId, savedTaskQuery.data])
 
   const problemRows = useMemo(
     () => (detailQuery.data?.rows ?? []).filter((row) => row.status !== 'VALID'),
@@ -266,9 +315,9 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
 
   function openResolver(row: EmployeeWorkImportRow) {
     setResolvingRow(row)
-    setEmployeeName('')
-    setProjectCode('')
-    setTaskCode('')
+    setSelectedEmployeeId(row.resolvedEmployeeId ?? '')
+    setSelectedProjectId(row.resolvedProjectId ?? '')
+    setSelectedTaskId(row.resolvedTaskId ?? '')
   }
 
   const resolverNeeds = useMemo(() => {
@@ -282,20 +331,17 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
 
   const canSaveResolution =
     resolvingRow !== null &&
-    (employeeName !== '' || projectCode !== '' || taskCode !== '') &&
-    (!resolverNeeds.employee || employeeName !== '') &&
-    (!resolverNeeds.project || projectCode !== '') &&
-    (!resolverNeeds.task || taskCode !== '')
+    (selectedEmployeeId !== '' || selectedProjectId !== '' || selectedTaskId !== '') &&
+    (!resolverNeeds.employee || selectedEmployeeId !== '') &&
+    (!resolverNeeds.project || selectedProjectId !== '') &&
+    (!resolverNeeds.task || selectedTaskId !== '')
 
   function saveResolution() {
     if (!resolvingRow) return
     const resolution: ResolveEmployeeImportRowInput = { rowNumber: resolvingRow.rowNumber }
-    const employeeId = employeeName ? employeeIdByName.get(employeeName) : undefined
-    const projectId = projectCode ? projectIdByCode.get(projectCode) : undefined
-    const taskId = taskCode ? taskIdByCode.get(taskCode) : undefined
-    if (employeeId) resolution.employeeId = employeeId
-    if (projectId) resolution.projectId = projectId
-    if (taskId) resolution.taskId = taskId
+    if (selectedEmployeeId) resolution.employeeId = selectedEmployeeId
+    if (selectedProjectId) resolution.projectId = selectedProjectId
+    if (selectedTaskId) resolution.taskId = selectedTaskId
     resolveMutation.mutate({ rows: [resolution] })
   }
 
@@ -348,9 +394,9 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
               placeholder="选择员工"
               filter
               showClear
-              value={employeeName}
+              value={selectedEmployeeId}
               options={employeeOptions}
-              onChange={(value) => setEmployeeName(value)}
+              onChange={(value) => setSelectedEmployeeId(value)}
             />
           </div>
           <div className="employee-import-wizard__resolver-field">
@@ -359,9 +405,9 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
               placeholder="选择项目（可选）"
               filter
               showClear
-              value={projectCode}
+              value={selectedProjectId}
               options={projectOptions}
-              onChange={(value) => setProjectCode(value)}
+              onChange={(value) => setSelectedProjectId(value)}
             />
           </div>
           <div className="employee-import-wizard__resolver-field">
@@ -370,9 +416,9 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
               placeholder="选择任务（可选）"
               filter
               showClear
-              value={taskCode}
+              value={selectedTaskId}
               options={taskOptions}
-              onChange={(value) => setTaskCode(value)}
+              onChange={(value) => setSelectedTaskId(value)}
             />
           </div>
         </div>
@@ -496,6 +542,16 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
                   )}
                 </div>
               ))}
+              {detailQuery.data && detailQuery.data.rowMeta.total > DETAIL_ROWS_PAGE_SIZE ? (
+                <Pagination
+                  className="employee-import-wizard__pagination"
+                  currentPage={rowsPage}
+                  pageSize={DETAIL_ROWS_PAGE_SIZE}
+                  total={detailQuery.data.rowMeta.total}
+                  showSizeChanger={false}
+                  onPageChange={(nextPage) => setRowsPage(nextPage)}
+                />
+              ) : null}
               {renderResolver()}
             </div>
           ) : null}
@@ -536,11 +592,15 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
 
   function renderFooter() {
     if (step === 'select') {
-      return <Button onClick={requestClose}>取消</Button>
+      return (
+        <Button disabled={uploadMutation.isPending} onClick={requestClose}>
+          取消
+        </Button>
+      )
     }
     if (step === 'recognition') {
       return (
-        <Button disabled={previewMutation.isPending} onClick={requestClose}>
+        <Button disabled={uploadMutation.isPending || previewMutation.isPending} onClick={requestClose}>
           取消
         </Button>
       )
@@ -548,7 +608,7 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     if (step === 'preflight' || step === 'resolutions') {
       return (
         <>
-          <Button onClick={requestClose}>取消</Button>
+          <Button disabled={uploadMutation.isPending} onClick={requestClose}>取消</Button>
           <Button
             theme="solid"
             type="primary"

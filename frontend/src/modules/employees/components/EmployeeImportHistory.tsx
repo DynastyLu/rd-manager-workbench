@@ -141,7 +141,7 @@ export function EmployeeImportHistory() {
       okText: '确认恢复',
       cancelText: '取消',
       okButtonProps: { type: 'primary', 'aria-label': '确认恢复' },
-      onOk: () => restoreMutation.mutateAsync(batch.id),
+      onOk: () => restoreMutation.mutate(batch.id),
     })
   }
 

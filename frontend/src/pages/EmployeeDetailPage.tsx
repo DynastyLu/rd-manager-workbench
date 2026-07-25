@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Banner, Button, Skeleton, Tag } from '@douyinfe/semi-ui'
 import { IconChevronLeft } from '@douyinfe/semi-icons'
@@ -15,6 +15,7 @@ import { EmployeeProgressFilters } from '@/modules/employees/components/Employee
 import { EmployeeProgressMetrics } from '@/modules/employees/components/EmployeeProgressMetrics'
 import { EmployeeProgressTrend } from '@/modules/employees/components/EmployeeProgressTrend'
 import { EmployeeWorkTable } from '@/modules/employees/components/EmployeeWorkTable'
+import { percentage } from '@/modules/employees/format'
 import { EMPLOYEE_WORK_STATUS_COLORS, EMPLOYEE_WORK_STATUS_LABELS, EMPLOYMENT_STATUS_LABELS } from '@/modules/employees/labels'
 import { defaultPeriodStart, recentPeriodStarts, trendPeriodLabel } from '@/modules/employees/periods'
 import { employeeQueryKeys } from '@/modules/employees/queryKeys'
@@ -23,8 +24,6 @@ import './EmployeeDetailPage.less'
 
 const PAGE_SIZE = 10
 const WORK_STATUS_VALUES = ['ALL', 'NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'AT_RISK', 'BLOCKED'] as const
-
-const percentage = (value: number | null) => (value === null ? '暂无数据' : `${value}%`)
 
 export default function EmployeeDetailPage() {
   const { employeeId = '' } = useParams<{ employeeId: string }>()
@@ -49,6 +48,52 @@ export default function EmployeeDetailPage() {
       listEmployeeWorkItems({ ...filters, employeeId, page, pageSize: PAGE_SIZE }),
     enabled: Boolean(employeeId),
   })
+
+  // A deep-linked work item (?workItemId=) may live on a later page; scan the
+  // remaining pages and move there so the row renders and gets highlighted.
+  const updateSearchParams = searchParams.update
+  useEffect(() => {
+    if (!focusedWorkItemId || !employeeId) return
+    const result = workItemsQuery.data
+    if (!result) return
+    if (result.data.some((item) => item.id === focusedWorkItemId)) return
+    const totalPages = Math.ceil(result.meta.total / PAGE_SIZE)
+    if (page >= totalPages) return
+    let cancelled = false
+    void (async () => {
+      try {
+        for (let nextPage = page + 1; nextPage <= totalPages; nextPage += 1) {
+          const next = await listEmployeeWorkItems({
+            periodType,
+            periodStart,
+            status,
+            employeeId,
+            page: nextPage,
+            pageSize: PAGE_SIZE,
+          })
+          if (cancelled) return
+          if (next.data.some((item) => item.id === focusedWorkItemId)) {
+            updateSearchParams({ page: nextPage })
+            return
+          }
+        }
+      } catch {
+        // Best-effort locating; stay on the requested page when it fails.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    focusedWorkItemId,
+    employeeId,
+    workItemsQuery.data,
+    page,
+    periodType,
+    periodStart,
+    status,
+    updateSearchParams,
+  ])
 
   const trendStarts = useMemo(
     () => recentPeriodStarts(periodType, periodStart, 4).reverse(),
@@ -83,6 +128,7 @@ export default function EmployeeDetailPage() {
         queryClient.invalidateQueries({ queryKey: ['project', item.project?.id ?? null] }),
         queryClient.invalidateQueries({ queryKey: ['projects'] }),
         queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['search'] }),
       ])
     },
     onError: (error) => {
@@ -163,12 +209,15 @@ export default function EmployeeDetailPage() {
           value={{ periodType, periodStart, status }}
           showScopeFilters={false}
           onChange={(next) =>
-            searchParams.update({
-              periodType: next.periodType,
-              periodStart: next.periodStart,
-              status: next.status,
-              page: 1,
-            })
+            searchParams.update(
+              {
+                periodType: next.periodType,
+                periodStart: next.periodStart,
+                status: next.status,
+                page: 1,
+              },
+              { defaults: { page: 1 } }
+            )
           }
         />
 
@@ -225,7 +274,10 @@ export default function EmployeeDetailPage() {
           )}
         </section>
 
-        <EmployeeProgressTrend points={trendPoints} />
+        <EmployeeProgressTrend
+          points={trendPoints}
+          hint={status ? '趋势不受状态筛选影响' : undefined}
+        />
 
         <div className="employee-detail__grid">
           <section className="employee-detail__section" aria-label="项目投入分布">

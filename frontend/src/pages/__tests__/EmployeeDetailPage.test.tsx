@@ -267,6 +267,8 @@ describe('EmployeeDetailPage', () => {
     await user.click(screen.getByRole('button', { name: '月' }))
 
     expect(screen.getByTestId('location')).toHaveTextContent('periodType=MONTH')
+    // Resetting to the first page goes through defaults, so the URL stays clean.
+    expect(screen.getByTestId('location')).not.toHaveTextContent('page=')
     await waitFor(() =>
       expect(employeesApi.getEmployeeProgress).toHaveBeenCalledWith(
         'employee-1',
@@ -313,6 +315,43 @@ describe('EmployeeDetailPage', () => {
     expect(title.closest('tr')).toHaveClass('employee-work-table__row--focused')
   })
 
+  it('locates a deep-linked work item on a later page and highlights it there', async () => {
+    const pageTwoItem = {
+      ...workItemsFixture.data[0],
+      id: 'work-12',
+      title: '二期联调收尾',
+    }
+    employeesApi.listEmployeeWorkItems.mockImplementation(({ page }: { page?: number }) =>
+      Promise.resolve(
+        page === 2
+          ? { ...workItemsFixture, data: [pageTwoItem], meta: { page: 2, pageSize: 10, total: 12 } }
+          : { ...workItemsFixture, meta: { page: 1, pageSize: 10, total: 12 } }
+      )
+    )
+    renderPage('/employees/employee-1?periodType=WEEK&periodStart=2026-07-20&workItemId=work-12')
+
+    const title = await screen.findByText('二期联调收尾')
+    expect(title.closest('tr')).toHaveClass('employee-work-table__row--focused')
+    expect(screen.getByTestId('location')).toHaveTextContent('page=2')
+    expect(employeesApi.listEmployeeWorkItems).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 2, pageSize: 10 })
+    )
+  })
+
+  it('notes that the trend is not affected by the status filter', async () => {
+    renderPage('/employees/employee-1?periodType=WEEK&periodStart=2026-07-20&status=AT_RISK')
+
+    const trend = await screen.findByRole('region', { name: '完成度趋势' })
+    expect(trend).toHaveTextContent('趋势不受状态筛选影响')
+  })
+
+  it('omits the trend caption when no status filter is active', async () => {
+    renderPage('/employees/employee-1?periodType=WEEK&periodStart=2026-07-20')
+
+    const trend = await screen.findByRole('region', { name: '完成度趋势' })
+    expect(trend).not.toHaveTextContent('趋势不受状态筛选影响')
+  })
+
   it('converts a reported risk only when it has a project and no linked risk', async () => {
     const user = userEvent.setup()
     const { queryClient } = renderPage(
@@ -335,6 +374,7 @@ describe('EmployeeDetailPage', () => {
     )
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['risks'] })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['project', 'project-1'] })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['search'] })
   })
 
   it('shows a retry state when the employee progress cannot be loaded', async () => {

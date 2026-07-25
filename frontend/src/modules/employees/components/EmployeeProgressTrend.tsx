@@ -1,6 +1,5 @@
+import { percentage } from '../format'
 import './employee-progress.less'
-
-const percentage = (value: number | null) => (value === null ? '暂无数据' : `${value}%`)
 
 export interface EmployeeProgressTrendPoint {
   periodStart: string
@@ -10,10 +9,11 @@ export interface EmployeeProgressTrendPoint {
 
 interface EmployeeProgressTrendProps {
   title?: string
+  hint?: string
   points: EmployeeProgressTrendPoint[]
 }
 
-export function EmployeeProgressTrend({ title = '完成度趋势', points }: EmployeeProgressTrendProps) {
+export function EmployeeProgressTrend({ title = '完成度趋势', hint, points }: EmployeeProgressTrendProps) {
   if (points.length === 0) return null
 
   return (
@@ -33,6 +33,7 @@ export function EmployeeProgressTrend({ title = '完成度趋势', points }: Emp
           )
         })}
       </ul>
+      {hint ? <p className="employee-progress-trend__hint">{hint}</p> : null}
     </section>
   )
 }

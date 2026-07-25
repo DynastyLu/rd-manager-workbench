@@ -3,11 +3,10 @@ import { Link } from 'react-router-dom'
 import { Button, Empty, Table, Tag } from '@douyinfe/semi-ui'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
 import { ROUTES } from '@/constants/routes'
+import { percentage } from '../format'
 import { EMPLOYEE_WORK_STATUS_COLORS, EMPLOYEE_WORK_STATUS_LABELS } from '../labels'
 import type { EmployeeWorkItem } from '../types'
 import './employee-progress.less'
-
-const percentage = (value: number | null) => (value === null ? '暂无数据' : `${value}%`)
 
 const hours = (item: EmployeeWorkItem) => {
   if (item.plannedHours === null && item.actualHours === null) return '暂无数据'
