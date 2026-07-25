@@ -183,7 +183,10 @@ describe('Employee work imports API', () => {
   }
 
   function isolatedWeek(): { start: Date; end: Date } {
-    const runOffset = (Date.now() % 100_000) + isolatedWeekOffset;
+    // Keep the offset small: the workbook validator rejects period years
+    // outside 2000-2100, and Date.now() % 100_000 weeks from 2030 overshoots
+    // 2100. 500 weeks still isolates concurrent runs while staying in range.
+    const runOffset = (Date.now() % 500) + isolatedWeekOffset;
     isolatedWeekOffset += 1;
     const start = new Date(Date.UTC(2030, 0, 7) + runOffset * 7 * DAY_MS);
     return { start, end: new Date(start.getTime() + 6 * DAY_MS) };

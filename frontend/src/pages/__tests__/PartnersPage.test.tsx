@@ -7,6 +7,11 @@ import { selectSemiOption } from '@/test-utils/selectSemiOption'
 
 import PartnersPage from '../PartnersPage'
 
+// Partner management dialogs chain five user-event interactions — even a
+// single flow (open → fill → submit → confirm → close) exceeds the global
+// 30s testTimeout under full parallelism on CPU-constrained machines.
+vi.setConfig({ testTimeout: 60_000 })
+
 const management = vi.hoisted(() => ({
   archiveAgreement: vi.fn(),
   archiveCommunication: vi.fn(),

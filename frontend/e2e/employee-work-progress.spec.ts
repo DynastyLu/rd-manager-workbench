@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { readFile, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { expect, test, type APIRequestContext, type Page, type TestInfo } from '@playwright/test'
 
@@ -10,48 +10,260 @@ import { expect, test, type APIRequestContext, type Page, type TestInfo } from '
  * frontend (or reuses the one on 4312) and expects the NestJS backend on
  * 4311 with the seeded project RD-111 and its task TASK-5B29A48D65.
  *
- * Fixture workbooks live in backend/test/fixtures and cover the week
- * 2026-07-20 ~ 2026-07-26 (the current week at authoring time). The project
- * workspace team-progress panel always shows the current week, so when this
- * spec runs in a later week the fixture period must be regenerated with
- * backend/test/fixtures/generate-employee-fixtures.ts.
+ * Time independence: both workbooks are generated at runtime (via the
+ * backend's exceljs) for the week containing the CURRENT date, derived with
+ * the same week-boundary rules the frontend and backend use (local Monday
+ * start, UTC date-only strings). The project workspace team-progress panel
+ * always shows the current week, so hardcoding a fixture week breaks the
+ * scenario once that week passes. The committed binary fixtures in
+ * backend/test/fixtures remain available for backend-side regeneration via
+ * test/fixtures/generate-employee-fixtures.ts but are no longer read here.
  *
  * Re-run safety: committed batches deduplicate by file hash for 24h, so the
  * valid workbook is stamped with a unique run marker (a 备注 cell) before
- * upload. The invalid fixture is discarded during the scenario and can be
+ * upload. The invalid workbook is discarded during the scenario and can be
  * re-uploaded byte-identical.
  */
 
 const API_BASE = process.env['E2E_API_BASE_URL'] ?? 'http://127.0.0.1:4311/api'
-const FIXTURE_DIR = path.resolve(import.meta.dirname, '../../backend/test/fixtures')
-const VALID_FIXTURE = path.join(FIXTURE_DIR, 'employee-work-progress-valid.xlsx')
-const INVALID_FIXTURE = path.join(FIXTURE_DIR, 'employee-work-progress-invalid.xlsx')
 
 const EMPLOYEE_A = '验收员工甲'
 const EMPLOYEE_B = '验收员工乙'
 const DEPARTMENT = '验收部'
 const PROJECT_CODE = 'RD-111'
 const PROJECT_NAME = '测试-1'
-const PERIOD_START = '2026-07-20'
-const MONTH_START = '2026-07-01'
+const TASK_CODE = 'TASK-5B29A48D65'
+
+// --- Period derivation (mirrors frontend/src/modules/employees/periods.ts) ---
+
+function pad(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+function formatLocalDate(date: Date): string {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+const TODAY = new Date()
+const WEEK_MONDAY = (() => {
+  const day = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate())
+  const offset = (day.getDay() + 6) % 7
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() - offset)
+})()
+const PERIOD_START = formatLocalDate(WEEK_MONDAY)
+const PERIOD_END = formatLocalDate(
+  new Date(WEEK_MONDAY.getFullYear(), WEEK_MONDAY.getMonth(), WEEK_MONDAY.getDate() + 6)
+)
+const MONTH_START = `${TODAY.getFullYear()}-${pad(TODAY.getMonth() + 1)}-01`
+
+/**
+ * Weeks the backend flags as missing for a month view, mirroring
+ * employee-progress-query.service.ts missingWeeks(): weeks are anchored by
+ * their Sunday, and every Sunday inside the month contributes one week.
+ */
+function expectedMissingWeeks(monthStart: string, committedWeekStart: string): string[] {
+  const DAY_MS = 86_400_000
+  const start = new Date(`${monthStart}T00:00:00.000Z`)
+  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0))
+  const format = (date: Date) => date.toISOString().slice(0, 10)
+  const firstWeekEnd = new Date(start.getTime() + ((7 - start.getUTCDay()) % 7) * DAY_MS)
+  const missing: string[] = []
+  for (
+    let weekEnd = firstWeekEnd;
+    weekEnd <= end;
+    weekEnd = new Date(weekEnd.getTime() + 7 * DAY_MS)
+  ) {
+    const weekStart = format(new Date(weekEnd.getTime() - 6 * DAY_MS))
+    if (weekStart !== committedWeekStart) missing.push(weekStart)
+  }
+  return missing
+}
+
+const FIRST_MISSING_WEEK = expectedMissingWeeks(MONTH_START, PERIOD_START)[0]
+expect(
+  FIRST_MISSING_WEEK,
+  'a month always contains weeks other than the committed one'
+).toBeTruthy()
+
+// --- Runtime workbook generation (structure enforced by EmployeeWorkbookService) ---
 
 const backendRequire = createRequire(path.resolve(import.meta.dirname, '../../backend/package.json'))
 // eslint is not applied to e2e specs; exceljs ships its own types via backend deps
+interface ExcelCell {
+  value: unknown
+}
+interface ExcelRow {
+  getCell(n: number): ExcelCell
+}
+interface ExcelWorksheet {
+  getCell(address: string): ExcelCell
+  getRow(n: number): ExcelRow
+  addRow(row: Array<string | number | null>): void
+}
+interface ExcelWorkbookInstance {
+  xlsx: { writeBuffer: () => Promise<Buffer | Uint8Array> }
+  addWorksheet(name: string): ExcelWorksheet
+  getWorksheet(name: string): ExcelWorksheet | undefined
+}
 const ExcelJS = backendRequire('exceljs') as {
-  Workbook: new () => {
-    xlsx: {
-      load: (buffer: Buffer) => Promise<unknown>
-      writeBuffer: () => Promise<Buffer | Uint8Array>
-    }
-    getWorksheet(name: string):
-      | {
-          getRow(n: number): { getCell(n: number): { value: unknown } }
-        }
-      | undefined
-  }
+  Workbook: new () => ExcelWorkbookInstance
 }
 
+const HEADERS = [
+  '员工姓名',
+  '工作内容',
+  '本期计划',
+  '本期完成情况',
+  '完成度',
+  '工作状态',
+  '下期计划',
+  '风险与阻塞',
+  '计划工时',
+  '实际工时',
+  '项目编号',
+  '任务编号',
+  '备注',
+] as const
+
+type DetailRow = Array<string | number | null>
+
+const VALID_ROWS: DetailRow[] = [
+  [
+    '验收员工甲',
+    '完成员工导入联调',
+    '完成接口联调',
+    '联调完成 90%',
+    90,
+    '进行中',
+    '收尾联调',
+    null,
+    8,
+    7,
+    PROJECT_CODE,
+    TASK_CODE,
+    null,
+  ],
+  [
+    '验收员工甲',
+    '修复权限校验缺陷',
+    '修复缺陷',
+    '缺陷已修复',
+    100,
+    '已完成',
+    '回归验证',
+    null,
+    6,
+    6,
+    PROJECT_CODE,
+    TASK_CODE,
+    null,
+  ],
+  [
+    '验收员工乙',
+    '梳理依赖接口',
+    '完成依赖梳理',
+    '接口尚未完全冻结',
+    60,
+    '有风险',
+    '推动接口冻结',
+    '依赖方接口未冻结',
+    10,
+    8,
+    PROJECT_CODE,
+    TASK_CODE,
+    null,
+  ],
+  [
+    '验收员工乙',
+    '整理团队周报',
+    '汇总周报素材',
+    null,
+    null,
+    '未开始',
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ],
+]
+
+const INVALID_ROWS: DetailRow[] = [
+  [
+    '不存在的员工丙',
+    '提交无法归属的工作',
+    '计划',
+    '完成一半',
+    50,
+    '进行中',
+    null,
+    null,
+    4,
+    4,
+    PROJECT_CODE,
+    TASK_CODE,
+    null,
+  ],
+  [
+    '验收员工甲',
+    '关联不存在的项目',
+    null,
+    null,
+    20,
+    '进行中',
+    null,
+    null,
+    null,
+    null,
+    'NO-SUCH-PROJECT',
+    null,
+    null,
+  ],
+]
+
 const runId = new Date().toISOString()
+
+/**
+ * Builds a workbook that satisfies EmployeeWorkbookService.parse(): exactly
+ * two sheets in order (说明, 工作明细), the meta cells in 说明!B1:B5, and the
+ * exact 13-column header row. Dates are written as YYYY-MM-DD strings so no
+ * Excel serial/timezone conversion can shift them off UTC midnight.
+ */
+async function buildWorkbook(rows: DetailRow[]): Promise<ExcelWorkbookInstance> {
+  const workbook = new ExcelJS.Workbook()
+  const instructions = workbook.addWorksheet('说明')
+  instructions.getCell('B1').value = '周计划与总结'
+  instructions.getCell('B2').value = 'WEEK'
+  instructions.getCell('B3').value = 1
+  instructions.getCell('B4').value = PERIOD_START
+  instructions.getCell('B5').value = PERIOD_END
+  const details = workbook.addWorksheet('工作明细')
+  details.addRow([...HEADERS])
+  for (const row of rows) details.addRow(row)
+  return workbook
+}
+
+async function saveWorkbook(
+  workbook: ExcelWorkbookInstance,
+  testInfo: TestInfo,
+  fileName: string
+): Promise<string> {
+  const target = testInfo.outputPath(fileName)
+  await writeFile(target, Buffer.from(await workbook.xlsx.writeBuffer()))
+  return target
+}
+
+/** Valid workbook stamped with the unique run marker to dodge the 24h hash dedup. */
+async function buildStampedValidWorkbook(testInfo: TestInfo, fileName: string) {
+  const workbook = await buildWorkbook(VALID_ROWS)
+  const details = workbook.getWorksheet('工作明细')
+  expect(details, 'workbook must contain the 工作明细 sheet').toBeTruthy()
+  details!.getRow(2).getCell(13).value = `验收运行 ${runId}`
+  const target = await saveWorkbook(workbook, testInfo, fileName)
+  return { workbook, details: details!, target }
+}
 
 interface ApiEnvelope<T> {
   success: boolean
@@ -133,17 +345,6 @@ async function ensureEmployee(
   return created!
 }
 
-async function stampWorkbook(sourcePath: string, testInfo: TestInfo, fileName: string) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(await readFile(sourcePath))
-  const details = workbook.getWorksheet('工作明细')
-  expect(details, 'fixture must contain the 工作明细 sheet').toBeTruthy()
-  details!.getRow(2).getCell(13).value = `验收运行 ${runId}`
-  const target = testInfo.outputPath(fileName)
-  await writeFile(target, Buffer.from(await workbook.xlsx.writeBuffer()))
-  return { workbook, details: details!, target }
-}
-
 async function reloadUntil(assertion: () => Promise<void>, page: Page) {
   await expect(async () => {
     await page.reload()
@@ -166,7 +367,7 @@ test.describe('employee work progress acceptance', () => {
   test('creates employees, downloads the template, and blocks commit on an invalid upload', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     test.setTimeout(240_000)
 
     // 1. Open /employees.
@@ -192,8 +393,13 @@ test.describe('employee work progress acceptance', () => {
     const templateDownload = await downloadPromise
     expect(templateDownload.suggestedFilename()).toMatch(/\.xlsx$/)
 
-    // 4. Upload the invalid fixture.
-    await wizard.getByLabel('选择员工计划与总结 Excel').setInputFiles(INVALID_FIXTURE)
+    // 4. Upload the invalid workbook.
+    const invalidTarget = await saveWorkbook(
+      await buildWorkbook(INVALID_ROWS),
+      testInfo,
+      'invalid.xlsx'
+    )
+    await wizard.getByLabel('选择员工计划与总结 Excel').setInputFiles(invalidTarget)
 
     // 5. Unknown employee/project errors surface and commit stays disabled.
     await expect(wizard.getByRole('heading', { name: '处理错误与待关联行' })).toBeVisible({
@@ -222,7 +428,7 @@ test.describe('employee work progress acceptance', () => {
     await expect(wizard.getByRole('heading', { name: '预检通过' })).toBeVisible()
     await expect(wizard.getByRole('button', { name: '确认导入' })).toBeEnabled()
 
-    // Discard the corrected invalid upload; the valid fixture is committed next.
+    // Discard the corrected invalid upload; the valid workbook is committed next.
     await wizard.getByRole('button', { name: '取消' }).click()
     await expect(page.getByText('放弃本次导入？')).toBeVisible()
     await page.getByRole('button', { name: '删除并关闭' }).click()
@@ -230,14 +436,14 @@ test.describe('employee work progress acceptance', () => {
     await expect(wizard).not.toBeVisible({ timeout: 15_000 })
   })
 
-  test('commits the valid fixture and serves team, employee, and project dashboards', async ({
+  test('commits the valid workbook and serves team, employee, and project dashboards', async ({
     page,
   }, testInfo) => {
     test.setTimeout(240_000)
 
-    const stamped = await stampWorkbook(VALID_FIXTURE, testInfo, 'valid-stamped.xlsx')
+    const stamped = await buildStampedValidWorkbook(testInfo, 'valid-stamped.xlsx')
 
-    // 7. Commit the valid fixture.
+    // 7. Commit the valid workbook.
     await page.goto('/#/employees?tab=imports')
     await page.getByRole('button', { name: '导入工作计划' }).click()
     // Semi renders duplicate semi-modal-title ids, so the discard confirm also
@@ -319,10 +525,10 @@ test.describe('employee work progress acceptance', () => {
     request,
   }, testInfo) => {
     test.setTimeout(300_000)
-    expect(firstVersion, 'the valid fixture commit must run first').toBeGreaterThan(0)
+    expect(firstVersion, 'the valid workbook commit must run first').toBeGreaterThan(0)
 
     // 10. Upload a second version for the same week (same base rows, updated content).
-    const second = await stampWorkbook(VALID_FIXTURE, testInfo, 'valid-v2-stamped.xlsx')
+    const second = await buildStampedValidWorkbook(testInfo, 'valid-v2-stamped.xlsx')
     second.details.getRow(2).getCell(2).value = '联调收尾与验收（第二版）'
     second.details.getRow(2).getCell(5).value = 100
     second.details.getRow(2).getCell(6).value = '已完成'
@@ -378,13 +584,16 @@ test.describe('employee work progress acceptance', () => {
     const exportDownload = await exportDownloadPromise
     expect(exportDownload.suggestedFilename()).toMatch(/\.xlsx$/)
 
-    // 12. Month view surfaces the missing-week warning.
+    // 12. Month view surfaces the missing-week warning for the other weeks of
+    // the current month (derived with the backend's Sunday-anchored rule).
     await page.goto(
       `/#/employees?tab=overview&periodType=MONTH&periodStart=${MONTH_START}`
     )
     await reloadUntil(async () => {
       await expect(page.getByText(/缺少已提交的计划数据/)).toBeVisible({ timeout: 5_000 })
-      await expect(page.getByText(/2026-07-(06|13)/).first()).toBeVisible({ timeout: 5_000 })
+      await expect(page.getByText(new RegExp(FIRST_MISSING_WEEK)).first()).toBeVisible({
+        timeout: 5_000,
+      })
     }, page)
 
     // 13. Convert one work risk into a project risk.

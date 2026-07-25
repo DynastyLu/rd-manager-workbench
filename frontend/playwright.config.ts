@@ -14,7 +14,11 @@ export default defineConfig({
     ? [['github'], ['html', { open: 'never' }], ['list']]
     : [['list'], ['html', { open: 'on-failure' }]],
   timeout: 30_000,
-  expect: { timeout: 5_000 },
+  // 5s is too tight when the whole suite runs fullyParallel locally: 15
+  // chromium workers contend for the dev API, and data-dependent assertions
+  // (e.g. the /base grid search box) miss the window even though the page is
+  // healthy. 10s covers loaded runs without masking real regressions.
+  expect: { timeout: 10_000 },
   use: {
     baseURL,
     actionTimeout: 10_000,

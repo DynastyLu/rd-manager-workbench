@@ -589,3 +589,10 @@
 - 最终门禁：backend lint、unit 632、integration 185、build；frontend lint、typecheck、contracts、test 463、build、e2e 15 全部通过；迁移在克隆的填充库验证（任务编码回填唯一非空、档案/负荷数据无损）。
 - 文档已同步：计划文件全部勾选并标注 COMPLETE 与勘误（RiskLikelihood 无 POSSIBLE，实现用 MEDIUM）；`task_plan.md` 新增阶段 10；README 与功能 backlog 由 Task 13 更新。
 - 遗留跟进（不阻塞，待产品决策）：员工归档会被已提交导入产生的有效负荷条目阻止（归档守卫 × 导入条目仅同期替换时归档）；E2E fixture 周期硬编码 2026-07-20~26，过期按 README 命令重新生成；向导问题行上限 100 行无分页。
+
+## 2026-07-26 最终收口
+
+- 测试硬化结果：前端全量从 11 条 load-flake 降至 1 条（base/ComputedFields — Semi SideSheet 在满载并行下渲染延迟，与员工模块无关，pre-existing）。
+- E2E 已时间无关化（运行时按当前日期计算周范围）；isolatedWeek 年界修正；Playwright expect timeout 5→10s；vitest testTimeout 15→30s + asyncUtilTimeout 15s；PartnersPage 设 per-file 60s。
+- 全量门禁：backend unit 632、integration 185（仅受本机 50k 容量限制的 1 条失败，pristine tree 同样）；frontend typecheck/contracts/build 通过、e2e 15/15 通过、test 467/468。`docs/superpowers/plans/2026-07-23-employee-work-progress.md` 全部勾选，状态 COMPLETE。
+- 提交范围 `28e5dd9`..`fc02bce`（含 doc commit 共 12 个），员工模块完整闭环。

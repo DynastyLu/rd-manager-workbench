@@ -1,9 +1,7 @@
 # Employee Work Progress Implementation Plan
 
-> **整体状态（2026-07-25）：COMPLETE。** Task 1–13 全部完成并通过逐任务评审；最终全分支评审发现的 1 Critical + 2 Important + 1 Minor 已修复并复审 APPROVED（修复提交 `5b1e129`）。员工模块相关提交：`eba2bc9`…`5b1e129`。全量门禁：backend lint/unit 632/integration 185/build，frontend lint/typecheck/contracts/test 463/build/e2e 15，均通过；迁移已在克隆的填充库验证无损。
-> **遗留跟进（不阻塞）：** 员工归档会被“已提交导入产生的有效负荷条目”阻止（`employees.service.ts` 归档守卫 × `employee-import-commit.service.ts` 只为同期替换归档条目）——需要产品决策（归档时忽略或级联导入来源条目），未改动守卫。
-> **已知限制：** E2E fixture 周期硬编码 2026-07-20~26，过期后需按 README 的命令重新生成；导入向导问题行上限 100 行无分页。
-> 执行过程台账与逐任务报告在 `.superpowers/sdd/`（git 忽略，不提交）。
+> **整体状态（2026-07-26）：COMPLETE。** Task 1–13 全部完成并通过逐任务评审；三波收口修复（commit `4ce881a` `538f2cf` `11a565f`）覆盖：归档守卫（忽略导入来源负荷条目）、导出列定义漂移、公式注入 guard 提取、向导问题行分页/回填/取消防护、深链翻页定位、缓存失效补齐、percentage 去重、E2E 时间无关化、测试 flake 加固。员工模块相关提交 `eba2bc9`…`11a565f` 共 11 个。
+> **已知限制：** 50k 行容量集成测试在本机超出 Prisma 120s 交互事务超时（pristine tree 同样失败，环境相关，与本次改动无关）。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

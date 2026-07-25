@@ -2,7 +2,7 @@ import '@douyinfe/semi-ui/lib/es/react19-adapter'
 import '@testing-library/jest-dom'
 import { configure } from '@testing-library/react'
 
-configure({ defaultHidden: true })
+configure({ defaultHidden: true, asyncUtilTimeout: 15_000 })
 
 // jsdom does not implement ResizeObserver — provide a no-op stub
 global.ResizeObserver = class ResizeObserver {

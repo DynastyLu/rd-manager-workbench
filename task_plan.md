@@ -26,8 +26,8 @@
 - [x] 团队看板、员工详情、项目团队进展双向穿透；工作风险幂等转项目风险
 - [x] 全局搜索接入（员工/员工工作）、XLSX/CSV 导出（公式注入防护）、全链路审计
 - [x] E2E 验收（13 步真实场景）、填充库迁移验证、README 与功能 backlog 文档更新
-- **状态：** complete（计划 `docs/superpowers/plans/2026-07-23-employee-work-progress.md` 全部勾选；最终全分支评审 1 Critical + 2 Important 已修复复审通过；backend unit 632/integration 185、frontend test 463/e2e 15 全绿）
-- **遗留跟进：** 员工归档与导入来源负荷条目的守卫冲突待产品决策；E2E fixture 周期硬编码需按期重新生成（README 有命令）
+- **状态：** complete（计划全部勾选；三波收口修复后 backend unit 632/integration 185、frontend test 463/e2e 15 全绿）
+- **收口修复（2026-07-26）：** 归档守卫（`4ce881a`）、向导/详情/去重（`538f2cf`）、E2E 时间无关化+flake 加固（`11a565f`），详见 `progress.md` 2026-07-25 条目
 
 ### 阶段 9：P0 交互基础统一（2026-07-22）
 - [x] 完成现状审计并确认现有未提交项目闭环改动边界

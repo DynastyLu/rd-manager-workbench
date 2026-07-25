@@ -84,7 +84,7 @@ pnpm dev                     # 监听 http://127.0.0.1:4312
 pnpm test:e2e                # Chromium 端到端验收（需后端已启动）
 ```
 
-员工端到端验收用例为 `frontend/e2e/employee-work-progress.spec.ts`，使用 `backend/test/fixtures/` 下的有效/无效两个工作簿；如需变更周期，可用 `pnpm exec tsx test/fixtures/generate-employee-fixtures.ts`（在 `backend/` 下）重新生成。
+员工端到端验收用例为 `frontend/e2e/employee-work-progress.spec.ts`，它在运行时按当前周动态生成有效/无效两个工作簿（结构对齐后端导入模板），因此任意日期运行均可通过。`backend/test/fixtures/` 下的提交版工作簿保留给后端侧使用，可用 `pnpm exec tsx test/fixtures/generate-employee-fixtures.ts`（在 `backend/` 下）重新生成。
 
 ## 本地文件
 
