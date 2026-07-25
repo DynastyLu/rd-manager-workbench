@@ -575,3 +575,17 @@
 - 已将任务调度弹窗、多维表格日期单元格编辑器、视图日期筛选器全部迁移到共享 Semi `DateTimePickerField`。
 - focused 验证通过：3 files / 28 tests、lint、typecheck；真实浏览器确认任务弹窗 0 个原生日期 input、1 个 Semi DatePicker、1 个可见 Semi 日期弹层。
 - 已新增 Chromium smoke 回归；完整门禁通过：83 files / 392 tests、lint、typecheck、production build、8/8 Chromium E2E，`git diff --check` 无错误。
+
+## 2026-07-25 员工工作进展模块收口（Claude Code 接续 Codex 未完成部分）
+
+- 接手时 Task 8（风险转换/审计/搜索/导出）与 Task 10（员工目录）代码已在工作区未提交、Task 11/12/13 未开始；按 `docs/superpowers/plans/2026-07-23-employee-work-progress.md` 逐任务执行并逐任务评审（规格 ✅ / 质量 Approved）。
+- Task 8 收口提交 `7698d92`；Task 10 收口提交 `6eff58e`；Task 11 五步导入向导与导入历史 `d42b1c7`；Task 12 看板/员工详情/项目穿透/搜索标签 `73155e7`；Task 13 E2E+文档 `e7c317c`、`7ac455e`、`6623da0`。
+- E2E 暴露并修复真实 bug：导入向导 `rowsPageSize=200` 超过后端上限 100 导致问题行永不渲染（`7ac455e`，含回归断言）。
+- 最终全分支评审（fable）发现 1 Critical + 2 Important + 1 Minor，修复提交 `5b1e129` 并复审 APPROVED：
+  - C1：员工页“导出当前筛选”只 toast 不落盘 → onSuccess 调用 `saveDownloadedFile`，E2E 新增 `waitForEvent('download')` 文件名 `.xlsx` 断言。
+  - I1：CORS 未暴露 `Content-Disposition`，跨源下载全部丢失文件名 → `exposedHeaders: ['Content-Disposition','X-Source-Batch-Ids']`。
+  - M1：导入提交/恢复后未失效 `resource-load-summary` 与 `reports` 查询缓存 → 已补。
+  - M2：明细行计划/实际工时 null 被伪造成 0 → 后端 DTO 到前端渲染全链路保留 null（显示 暂无数据），真实 0 仍显示 0。
+- 最终门禁：backend lint、unit 632、integration 185、build；frontend lint、typecheck、contracts、test 463、build、e2e 15 全部通过；迁移在克隆的填充库验证（任务编码回填唯一非空、档案/负荷数据无损）。
+- 文档已同步：计划文件全部勾选并标注 COMPLETE 与勘误（RiskLikelihood 无 POSSIBLE，实现用 MEDIUM）；`task_plan.md` 新增阶段 10；README 与功能 backlog 由 Task 13 更新。
+- 遗留跟进（不阻塞，待产品决策）：员工归档会被已提交导入产生的有效负荷条目阻止（归档守卫 × 导入条目仅同期替换时归档）；E2E fixture 周期硬编码 2026-07-20~26，过期按 README 命令重新生成；向导问题行上限 100 行无分页。

@@ -1,5 +1,10 @@
 # Employee Work Progress Implementation Plan
 
+> **整体状态（2026-07-25）：COMPLETE。** Task 1–13 全部完成并通过逐任务评审；最终全分支评审发现的 1 Critical + 2 Important + 1 Minor 已修复并复审 APPROVED（修复提交 `5b1e129`）。员工模块相关提交：`eba2bc9`…`5b1e129`。全量门禁：backend lint/unit 632/integration 185/build，frontend lint/typecheck/contracts/test 463/build/e2e 15，均通过；迁移已在克隆的填充库验证无损。
+> **遗留跟进（不阻塞）：** 员工归档会被“已提交导入产生的有效负荷条目”阻止（`employees.service.ts` 归档守卫 × `employee-import-commit.service.ts` 只为同期替换归档条目）——需要产品决策（归档时忽略或级联导入来源条目），未改动守卫。
+> **已知限制：** E2E fixture 周期硬编码 2026-07-20~26，过期后需按 README 的命令重新生成；导入向导问题行上限 100 行无分页。
+> 执行过程台账与逐任务报告在 `.superpowers/sdd/`（git 忽略，不提交）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an employee management workspace where an administrator uploads a standard weekly Excel plan/summary, resolves validation errors, and obtains traceable weekly/monthly team, employee, and project progress dashboards.
@@ -81,7 +86,7 @@
 - Create: `backend/test/integration/prisma/employee-work-progress-catalog.spec.ts`
 - Modify: `backend/test/integration/modules/workbench/tasks.controller.spec.ts`
 
-- [ ] **Step 1: Write the failing schema catalog test**
+- [x] **Step 1: Write the failing schema catalog test**
 
 ```ts
 import { readFileSync } from 'node:fs';
@@ -106,7 +111,7 @@ describe('employee work progress Prisma catalog', () => {
 });
 ```
 
-- [ ] **Step 2: Run the catalog test and verify failure**
+- [x] **Step 2: Run the catalog test and verify failure**
 
 Run:
 
@@ -117,7 +122,7 @@ pnpm test:integration -- --runInBand test/integration/prisma/employee-work-progr
 
 Expected: FAIL because the new enums and models do not exist.
 
-- [ ] **Step 3: Add the Prisma models and relations**
+- [x] **Step 3: Add the Prisma models and relations**
 
 Add these enums and models to `schema.prisma`, using the exact names below:
 
@@ -352,7 +357,7 @@ model Risk {
 }
 ```
 
-- [ ] **Step 4: Add an API regression test for database-generated task codes**
+- [x] **Step 4: Add an API regression test for database-generated task codes**
 
 Extend `tasks.controller.spec.ts`:
 
@@ -369,7 +374,7 @@ await expect(prisma.workTask.findUniqueOrThrow({
 
 The create and update DTOs must not expose `code`.
 
-- [ ] **Step 5: Write and apply the SQL migration**
+- [x] **Step 5: Write and apply the SQL migration**
 
 The migration must:
 
@@ -408,7 +413,7 @@ pnpm build
 
 Expected: Prisma generation succeeds, migration deploys once, the catalog and task-controller tests pass, and the backend still builds.
 
-- [ ] **Step 6: Commit the catalog**
+- [x] **Step 6: Commit the catalog**
 
 ```bash
 git add backend/prisma backend/test/integration/prisma/employee-work-progress-catalog.spec.ts backend/test/integration/modules/workbench/tasks.controller.spec.ts
@@ -427,7 +432,7 @@ git commit -m "feat: add employee progress data catalog and task codes"
 - Create: `backend/test/unit/modules/workbench/employees.service.spec.ts`
 - Create: `backend/test/integration/modules/workbench/employees.controller.spec.ts`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Test employee-name uniqueness, status filtering, update, and archive behavior:
 
@@ -449,7 +454,7 @@ it('lists active employees and preserves the employee profile vocabulary', async
 
 ```
 
-- [ ] **Step 2: Run focused tests and verify failure**
+- [x] **Step 2: Run focused tests and verify failure**
 
 ```bash
 cd backend
@@ -458,7 +463,7 @@ pnpm test:unit -- --runInBand test/unit/modules/workbench/employees.service.spec
 
 Expected: FAIL because `EmployeesService` is missing.
 
-- [ ] **Step 3: Implement DTOs and employee service**
+- [x] **Step 3: Implement DTOs and employee service**
 
 `employees.dto.ts` must define:
 
@@ -487,7 +492,7 @@ export class UpdateEmployeeDto extends PartialType(CreateEmployeeDto) {}
 
 `EmployeesService` must query `resourceProfile`, include skills, translate Prisma `P2002` into `RESOURCE_NAME_EXISTS`, and reuse the existing archive guard for active load entries.
 
-- [ ] **Step 4: Add controllers and module wiring**
+- [x] **Step 4: Add controllers and module wiring**
 
 Expose:
 
@@ -509,7 +514,7 @@ export class EmployeesController {
 
 Register `EmployeesModule` in `WorkbenchModule`.
 
-- [ ] **Step 5: Add and run the integration lifecycle test**
+- [x] **Step 5: Add and run the integration lifecycle test**
 
 The integration test must create, list, update, read, and archive an employee through `/api/employees`.
 
@@ -521,7 +526,7 @@ pnpm test:integration -- --runInBand test/integration/modules/workbench/employee
 
 Expected: all focused tests pass.
 
-- [ ] **Step 6: Commit employee master data**
+- [x] **Step 6: Commit employee master data**
 
 ```bash
 git add backend/src/modules/workbench/employees backend/src/modules/workbench/workbench.module.ts backend/src/shared/errors/error-codes.ts backend/test
@@ -536,7 +541,7 @@ git commit -m "feat: add employee profiles"
 - Create: `backend/test/unit/modules/workbench/employee-workbook.service.spec.ts`
 - Modify: `backend/src/modules/workbench/employees/employees.module.ts`
 
-- [ ] **Step 1: Write failing template and parser tests**
+- [x] **Step 1: Write failing template and parser tests**
 
 ```ts
 it('generates the approved two-sheet workbook and parses one work item', async () => {
@@ -566,7 +571,7 @@ it.each([
 });
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```bash
 cd backend
@@ -575,7 +580,7 @@ pnpm test:unit -- --runInBand test/unit/modules/workbench/employee-workbook.serv
 
 Expected: FAIL because the workbook service is absent.
 
-- [ ] **Step 3: Implement the workbook contract**
+- [x] **Step 3: Implement the workbook contract**
 
 Define the normalized row as:
 
@@ -606,7 +611,7 @@ export interface NormalizedEmployeeWorkRow {
 
 `parse()` must reject non-XLSX signatures, files above 20 MiB, missing sheets, unsupported template versions, missing/duplicate headers, over 50,000 data rows, and cell text above 10,000 characters.
 
-- [ ] **Step 4: Run parser tests**
+- [x] **Step 4: Run parser tests**
 
 ```bash
 cd backend
@@ -615,7 +620,7 @@ pnpm test:unit -- --runInBand test/unit/modules/workbench/employee-workbook.serv
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit workbook support**
+- [x] **Step 5: Commit workbook support**
 
 ```bash
 git add backend/src/modules/workbench/employees backend/test/unit/modules/workbench/employee-workbook.service.spec.ts
@@ -635,7 +640,7 @@ git commit -m "feat: add employee work workbook contract"
 - Create: `backend/test/unit/modules/workbench/employee-imports.service.spec.ts`
 - Create: `backend/test/integration/modules/workbench/employee-imports.controller.spec.ts`
 
-- [ ] **Step 1: Write failing validator tests**
+- [x] **Step 1: Write failing validator tests**
 
 Cover exact employee/project/task matching and field errors:
 
@@ -657,7 +662,7 @@ it('marks unknown employees and projects unresolved and rejects a task outside t
 });
 ```
 
-- [ ] **Step 2: Run the validator test and verify failure**
+- [x] **Step 2: Run the validator test and verify failure**
 
 ```bash
 cd backend
@@ -666,7 +671,7 @@ pnpm test:unit -- --runInBand test/unit/modules/workbench/employee-import-valida
 
 Expected: FAIL because the validator does not exist.
 
-- [ ] **Step 3: Implement upload and preview**
+- [x] **Step 3: Implement upload and preview**
 
 `POST /employee-work-imports` must:
 
@@ -690,7 +695,7 @@ Expected: FAIL because the validator does not exist.
 
 Update `EmployeesModule` to import `StorageModule` and `GovernanceModule`, then register the workbook, validator, import service, and import controller. Use the existing `StoragePort`; do not read or write upload paths directly.
 
-- [ ] **Step 4: Implement explicit resolutions**
+- [x] **Step 4: Implement explicit resolutions**
 
 Use this DTO:
 
@@ -713,11 +718,11 @@ export class ResolveEmployeeImportDto {
 
 `PATCH /employee-work-imports/:id/resolutions` must revalidate every changed row and then recompute batch counts and fingerprint. It may allow an unknown project to become intentionally unlinked, but it may not allow an unknown employee or project/task mismatch.
 
-- [ ] **Step 5: Add safe draft cleanup**
+- [x] **Step 5: Add safe draft cleanup**
 
 Expose `DELETE /employee-work-imports/:id`. It may remove stored source/error files and mark a batch `EXPIRED` only when status is `UPLOADED`, `PREVIEWED`, `RESOLVING`, `READY`, or `FAILED`. It must reject `IMPORTING`, `COMPLETED`, and `SUPERSEDED`.
 
-- [ ] **Step 6: Add integration coverage**
+- [x] **Step 6: Add integration coverage**
 
 Use an in-memory ExcelJS workbook to verify upload, preview, unresolved rows, resolution, error download, and no writes to `EmployeeWorkItem`.
 
@@ -729,7 +734,7 @@ pnpm test:integration -- --runInBand test/integration/modules/workbench/employee
 
 Expected: all tests pass; preview leaves formal work items at zero.
 
-- [ ] **Step 7: Commit staged imports**
+- [x] **Step 7: Commit staged imports**
 
 ```bash
 git add backend/src/modules/workbench/employees backend/src/modules/workbench/governance/application/audit-log.service.ts backend/test
@@ -746,7 +751,7 @@ git commit -m "feat: add employee work import preflight"
 - Create: `backend/test/unit/modules/workbench/employee-import-commit.service.spec.ts`
 - Modify: `backend/test/integration/modules/workbench/employee-imports.controller.spec.ts`
 
-- [ ] **Step 1: Write failing commit tests**
+- [x] **Step 1: Write failing commit tests**
 
 ```ts
 it('replaces the current week in one transaction and archives derived load from the old version', async () => {
@@ -769,7 +774,7 @@ it('returns the completed batch when commit is retried', async () => {
 });
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```bash
 cd backend
@@ -778,7 +783,7 @@ pnpm test:unit -- --runInBand test/unit/modules/workbench/employee-import-commit
 
 Expected: FAIL because commit orchestration is absent.
 
-- [ ] **Step 3: Implement the transactional claim and write**
+- [x] **Step 3: Implement the transactional claim and write**
 
 `commit(batchId)` must:
 
@@ -804,7 +809,7 @@ function loadKind(input: { projectId: string | null; taskId: string | null }) {
 }
 ```
 
-- [ ] **Step 4: Verify transaction rollback and retry**
+- [x] **Step 4: Verify transaction rollback and retry**
 
 Extend integration tests to force one invalid task after preview, expect `422`, and assert:
 
@@ -822,7 +827,7 @@ pnpm test:integration -- --runInBand test/integration/modules/workbench/employee
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit atomic period replacement**
+- [x] **Step 5: Commit atomic period replacement**
 
 ```bash
 git add backend/src/modules/workbench/employees backend/test
@@ -840,7 +845,7 @@ git commit -m "feat: commit employee work imports atomically"
 - Create: `backend/test/unit/modules/workbench/employee-progress-snapshot.service.spec.ts`
 - Modify: `backend/test/integration/modules/workbench/employee-imports.controller.spec.ts`
 
-- [ ] **Step 1: Write failing metric tests**
+- [x] **Step 1: Write failing metric tests**
 
 ```ts
 it('uses null rather than a misleading zero percent when the denominator is empty', () => {
@@ -861,7 +866,7 @@ it('builds month data from current weekly batches and reports missing weeks', as
 });
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```bash
 cd backend
@@ -870,7 +875,7 @@ pnpm test:unit -- --runInBand test/unit/modules/workbench/employee-progress-snap
 
 Expected: FAIL because snapshot generation does not exist.
 
-- [ ] **Step 3: Implement deterministic snapshot metrics**
+- [x] **Step 3: Implement deterministic snapshot metrics**
 
 Create a pure metric reducer returning:
 
@@ -895,7 +900,7 @@ Generate `TEAM`, every affected `EMPLOYEE`, and every affected `PROJECT` weekly 
 
 For each scope and period, lock existing active snapshots, archive them, and create `version = max(version) + 1`. Build `scopeKey` exactly as `TEAM`, `EMPLOYEE:<employeeId>`, or `PROJECT:<projectId>` so retrying rebuild produces one new auditable version rather than conflicting nullable team keys.
 
-- [ ] **Step 4: Connect generation to commit and rebuild**
+- [x] **Step 4: Connect generation to commit and rebuild**
 
 After the database transaction:
 
@@ -907,7 +912,7 @@ After the database transaction:
 
 Expose `POST /employee-work-imports/:id/rebuild-snapshots`; it must be idempotent.
 
-- [ ] **Step 5: Run unit and integration tests**
+- [x] **Step 5: Run unit and integration tests**
 
 ```bash
 cd backend
@@ -917,7 +922,7 @@ pnpm test:integration -- --runInBand test/integration/modules/workbench/employee
 
 Expected: snapshot metrics and rebuild lifecycle pass.
 
-- [ ] **Step 6: Commit snapshot generation**
+- [x] **Step 6: Commit snapshot generation**
 
 ```bash
 git add backend/src/modules/workbench/employees backend/test
@@ -935,7 +940,7 @@ git commit -m "feat: generate employee progress snapshots"
 - Create: `backend/test/unit/modules/workbench/employee-progress-query.service.spec.ts`
 - Create: `backend/test/integration/modules/workbench/employee-progress.controller.spec.ts`
 
-- [ ] **Step 1: Write failing query tests**
+- [x] **Step 1: Write failing query tests**
 
 ```ts
 it('returns team metrics, employee rows, project contribution, and completeness for one week', async () => {
@@ -949,7 +954,7 @@ it('returns team metrics, employee rows, project contribution, and completeness 
 });
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```bash
 cd backend
@@ -958,7 +963,7 @@ pnpm test:unit -- --runInBand test/unit/modules/workbench/employee-progress-quer
 
 Expected: FAIL because the query service is absent.
 
-- [ ] **Step 3: Implement DTOs and projections**
+- [x] **Step 3: Implement DTOs and projections**
 
 Add:
 
@@ -990,7 +995,7 @@ Expose:
 
 Every response must include source batch IDs and work-item links needed for drill-through.
 
-- [ ] **Step 4: Add restore lifecycle**
+- [x] **Step 4: Add restore lifecycle**
 
 `POST /employee-work-imports/:id/restore` must:
 
@@ -1000,7 +1005,7 @@ Every response must include source batch IDs and work-item links needed for dril
 - run the normal commit and snapshot path,
 - preserve every prior version.
 
-- [ ] **Step 5: Run query integration tests**
+- [x] **Step 5: Run query integration tests**
 
 ```bash
 cd backend
@@ -1010,7 +1015,7 @@ pnpm test:integration -- --runInBand test/integration/modules/workbench/employee
 
 Expected: team, employee, project, work-detail, history, and restore queries pass.
 
-- [ ] **Step 6: Commit progress queries**
+- [x] **Step 6: Commit progress queries**
 
 ```bash
 git add backend/src/modules/workbench/employees backend/test
@@ -1031,7 +1036,7 @@ git commit -m "feat: expose employee progress dashboards"
 - Create: `backend/test/unit/modules/workbench/employees-search.adapter.spec.ts`
 - Modify: `backend/test/integration/modules/workbench/employee-progress.controller.spec.ts`
 
-- [ ] **Step 1: Write failing risk-conversion and search tests**
+- [x] **Step 1: Write failing risk-conversion and search tests**
 
 ```ts
 it('creates one linked project risk and returns it on retry', async () => {
@@ -1049,7 +1054,7 @@ it('finds employees and confirmed work content', async () => {
 });
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```bash
 cd backend
@@ -1058,7 +1063,7 @@ pnpm test:unit -- --runInBand test/unit/modules/workbench/employee-work-risk.ser
 
 Expected: FAIL because both services are absent.
 
-- [ ] **Step 3: Implement idempotent risk conversion**
+- [x] **Step 3: Implement idempotent risk conversion**
 
 The conversion endpoint is `POST /employee-work-items/:id/convert-risk`. It must reject:
 
@@ -1072,7 +1077,7 @@ Use `RisksService.createRiskInTransaction()` with:
 {
   title: workItem.title,
   description: workItem.riskText ?? undefined,
-  likelihood: RiskLikelihood.POSSIBLE,
+  likelihood: RiskLikelihood.MEDIUM, // 计划原文写 POSSIBLE，但 Prisma 枚举仅 LOW/MEDIUM/HIGH；实现按 MEDIUM 落地（2026-07-25 勘误）
   impact: RiskImpact.MEDIUM,
   level: RiskLevel.MEDIUM,
   ownerName: workItem.employee.displayName,
@@ -1085,11 +1090,11 @@ Persist `riskId` in the same transaction and return `{ risk, alreadyExists }`.
 
 Import `ManagementModule` into `EmployeesModule` so the employee module reuses the exported `RisksService` instead of duplicating project-health recalculation.
 
-- [ ] **Step 4: Register employee search and export**
+- [x] **Step 4: Register employee search and export**
 
 Add `EMPLOYEE` and `EMPLOYEE_WORK` to `SEARCH_TYPES`, register `EmployeesSearchAdapter`, and add employee/work labels in the search response contract. Add an XLSX export method for `GET /employee-work-items/export` using the current filters and the approved columns. Prefix formula-like text with an apostrophe, matching `ReportsService`.
 
-- [ ] **Step 5: Complete audit coverage**
+- [x] **Step 5: Complete audit coverage**
 
 Allow only safe scalar metadata keys:
 
@@ -1099,7 +1104,7 @@ Allow only safe scalar metadata keys:
 
 Record succeeded/failed events for upload, preview, resolution, commit, snapshot rebuild, restore, export, and risk conversion.
 
-- [ ] **Step 6: Run tests and commit**
+- [x] **Step 6: Run tests and commit**
 
 ```bash
 cd backend
@@ -1125,7 +1130,7 @@ Expected: focused tests pass and the commit succeeds.
 - Create: `frontend/src/modules/employees/__tests__/api.test.ts`
 - Modify: `frontend/src/modules/workbench/api/__tests__/contracts.test.ts`
 
-- [ ] **Step 1: Write failing route and API tests**
+- [x] **Step 1: Write failing route and API tests**
 
 ```ts
 it('places employees after projects in primary navigation', () => {
@@ -1146,7 +1151,7 @@ it('uploads and previews the employee workbook', async () => {
 });
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```bash
 cd frontend
@@ -1155,7 +1160,7 @@ pnpm test -- src/router/__tests__/routes.test.ts src/components/AppShell/__tests
 
 Expected: FAIL because employee routes and API files are absent.
 
-- [ ] **Step 3: Define frontend contracts**
+- [x] **Step 3: Define frontend contracts**
 
 `types.ts` must include:
 
@@ -1169,7 +1174,7 @@ The property names must exactly match backend DTO outputs. Add compile-time cont
 
 `EmployeeWorkImportBatch.version` is `number | null` while staged; frontend code may display a version only for completed, superseded, or restored batches.
 
-- [ ] **Step 4: Implement API and routes**
+- [x] **Step 4: Implement API and routes**
 
 Use `request` for JSON, `download` for template/source/error/export, and `FormData` for upload. Define:
 
@@ -1193,7 +1198,7 @@ employeeDetail: (employeeId: string) => `/employees/${encodeURIComponent(employe
 
 Use `IconUserGroup` for the employee navigation icon.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```bash
 cd frontend
@@ -1214,7 +1219,7 @@ Expected: all focused tests and contract typecheck pass.
 - Create: `frontend/src/pages/__tests__/EmployeesPage.test.tsx`
 - Modify: `frontend/src/router/routes.ts`
 
-- [ ] **Step 1: Write the failing directory test**
+- [x] **Step 1: Write the failing directory test**
 
 ```tsx
 it('lists employees, filters by department, and edits a profile', async () => {
@@ -1231,7 +1236,7 @@ it('lists employees, filters by department, and edits a profile', async () => {
 });
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```bash
 cd frontend
@@ -1240,7 +1245,7 @@ pnpm test -- src/pages/__tests__/EmployeesPage.test.tsx
 
 Expected: FAIL because `EmployeesPage` does not exist.
 
-- [ ] **Step 3: Implement directory and URL-backed tabs**
+- [x] **Step 3: Implement directory and URL-backed tabs**
 
 Use Semi `Tabs`, `Table`, `Input`, `Select`, `Tag`, `Modal`, `Button`, `Empty`, `Banner`, and the shared workspace spacing tokens. Tabs are:
 
@@ -1251,7 +1256,7 @@ Use Semi `Tabs`, `Table`, `Input`, `Select`, `Tag`, `Modal`, `Button`, `Empty`, 
 
 Persist `tab`, `query`, `department`, `employmentStatus`, `periodType`, and `periodStart` through `useWorkspaceSearchParams`. The directory table must expose name, department, role, manager, status, capacity, skills, and actions.
 
-- [ ] **Step 4: Implement the shared profile form**
+- [x] **Step 4: Implement the shared profile form**
 
 Use controlled Semi inputs/selects and a standard modal footer:
 
@@ -1275,7 +1280,7 @@ Use controlled Semi inputs/selects and a standard modal footer:
 
 Do not use native date or select controls.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```bash
 cd frontend
@@ -1297,7 +1302,7 @@ Expected: focused test and typecheck pass.
 - Modify: `frontend/src/pages/EmployeesPage.tsx`
 - Modify: `frontend/src/pages/EmployeesPage.less`
 
-- [ ] **Step 1: Write failing wizard tests**
+- [x] **Step 1: Write failing wizard tests**
 
 ```tsx
 it('blocks commit until every employee and project error is resolved', async () => {
@@ -1312,7 +1317,7 @@ it('blocks commit until every employee and project error is resolved', async () 
 });
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```bash
 cd frontend
@@ -1321,7 +1326,7 @@ pnpm test -- src/modules/employees/__tests__/EmployeeImportWizard.test.tsx src/m
 
 Expected: FAIL because the components do not exist.
 
-- [ ] **Step 3: Implement the five states**
+- [x] **Step 3: Implement the five states**
 
 Render:
 
@@ -1333,7 +1338,7 @@ Render:
 
 Use one `Modal` with `footer={null}` and an internal padded footer. Keep pending/error state in React Query mutations. On close, delete only uncommitted import sessions after explicit confirmation.
 
-- [ ] **Step 4: Implement history and recovery**
+- [x] **Step 4: Implement history and recovery**
 
 History must show file, period, version, import status, snapshot status, counts, timestamps, replacement/restoration links, and actions:
 
@@ -1345,7 +1350,7 @@ History must show file, period, version, import status, snapshot status, counts,
 
 Require `Modal.confirm` for restore and explain that restore creates a new version.
 
-- [ ] **Step 5: Run tests and commit**
+- [x] **Step 5: Run tests and commit**
 
 ```bash
 cd frontend
@@ -1373,7 +1378,7 @@ Expected: focused tests and typecheck pass.
 - Modify: `frontend/src/pages/__tests__/ProjectWorkspacePage.test.tsx`
 - Modify: `frontend/src/pages/SearchPage.tsx`
 
-- [ ] **Step 1: Write failing dashboard tests**
+- [x] **Step 1: Write failing dashboard tests**
 
 ```tsx
 it('switches week/month in the URL and drills from one employee work item to its project', async () => {
@@ -1398,7 +1403,7 @@ it('shows project team progress and links back to the employee period', async ()
 });
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 ```bash
 cd frontend
@@ -1407,7 +1412,7 @@ pnpm test -- src/pages/__tests__/EmployeeDetailPage.test.tsx src/pages/__tests__
 
 Expected: FAIL because the dashboard components and project section are absent.
 
-- [ ] **Step 3: Implement team overview and filters**
+- [x] **Step 3: Implement team overview and filters**
 
 The overview must render null percentages as “暂无数据”, a missing-week warning, employee progress, project contribution, and risk/blocked cards. Keep period/filter state in the URL and query keys.
 
@@ -1417,19 +1422,19 @@ The overview must render null percentages as “暂无数据”, a missing-week 
 const percentage = (value: number | null) => value === null ? '暂无数据' : `${value}%`;
 ```
 
-- [ ] **Step 4: Implement employee detail**
+- [x] **Step 4: Implement employee detail**
 
 Display profile metadata, period metrics, work rows, trend, project distribution, risks, source batch, and original row. Add a risk-conversion action only when `riskText` exists, a project exists, and `riskId` is null.
 
-- [ ] **Step 5: Implement project team progress**
+- [x] **Step 5: Implement project team progress**
 
 Fetch `/projects/:id/team-progress` only when the project progress section is visible. Render participants, hours, completions, next plans, and risks with links back to employee detail. Invalidate project health/risk queries after risk conversion.
 
-- [ ] **Step 6: Update global search labels**
+- [x] **Step 6: Update global search labels**
 
 Add “员工”和“员工工作” to search filters and ensure returned paths open the appropriate employee and work row.
 
-- [ ] **Step 7: Run tests and commit**
+- [x] **Step 7: Run tests and commit**
 
 ```bash
 cd frontend
@@ -1450,7 +1455,7 @@ Expected: all focused UI tests and typecheck pass.
 - Modify: `README.md`
 - Modify: `docs/product/2026-07-18-local-feishu-style-functional-backlog.md`
 
-- [ ] **Step 1: Add the end-to-end scenario**
+- [x] **Step 1: Add the end-to-end scenario**
 
 The Playwright test must:
 
@@ -1468,7 +1473,7 @@ The Playwright test must:
 12. Switch to month view and verify missing-week warning.
 13. Convert one work risk into a project risk.
 
-- [ ] **Step 2: Run backend verification**
+- [x] **Step 2: Run backend verification**
 
 ```bash
 cd backend
@@ -1481,7 +1486,7 @@ pnpm build
 
 Expected: every command exits `0`.
 
-- [ ] **Step 3: Run frontend verification**
+- [x] **Step 3: Run frontend verification**
 
 ```bash
 cd frontend
@@ -1495,7 +1500,7 @@ pnpm test:e2e -- employee-work-progress.spec.ts
 
 Expected: every command exits `0`; the employee E2E scenario passes.
 
-- [ ] **Step 4: Verify migration from a populated database**
+- [x] **Step 4: Verify migration from a populated database**
 
 Use a disposable database cloned from the current schema:
 
@@ -1512,7 +1517,7 @@ Verify:
 - existing load reports are unchanged,
 - no old business data was deleted.
 
-- [ ] **Step 5: Update user-facing documentation**
+- [x] **Step 5: Update user-facing documentation**
 
 Document:
 
@@ -1527,7 +1532,7 @@ Document:
 
 Mark the employee plan/summary dashboard backlog items complete only after the preceding verification passes.
 
-- [ ] **Step 6: Review the complete diff**
+- [x] **Step 6: Review the complete diff**
 
 ```bash
 git status --short
@@ -1537,7 +1542,7 @@ git log --oneline --decorate -15
 
 Expected: no whitespace errors, no generated Excel fixtures outside `backend/test/fixtures`, and only intended source/test/doc changes.
 
-- [ ] **Step 7: Commit final verification assets**
+- [x] **Step 7: Commit final verification assets**
 
 ```bash
 git add frontend/e2e backend/test/fixtures README.md docs/product
@@ -1546,19 +1551,19 @@ git commit -m "test: verify employee work progress workflow"
 
 ## Final acceptance checklist
 
-- [ ] Employee names are globally unique and existing resource profiles are reused.
-- [ ] Every task has an immutable business code.
-- [ ] The standard Excel template contains one work item per row.
-- [ ] Upload never writes formal work data before successful preflight and confirmation.
-- [ ] Unknown employees and invalid project/task references block commit.
-- [ ] Repeated commit calls are idempotent.
-- [ ] Same-period re-upload creates a new version and preserves history.
-- [ ] Period replacement updates imported resource-load entries without touching manual entries.
-- [ ] Weekly and monthly TEAM/EMPLOYEE/PROJECT snapshots use only current completed versions.
-- [ ] Missing weeks are visible and percentages with no denominator are null.
-- [ ] Team, employee, and project pages drill through in both directions.
-- [ ] Risk conversion is idempotent and preserves the source work item.
-- [ ] Import source, errors, versions, restore, audit, search, and export are usable.
-- [ ] No native date/select controls are introduced.
-- [ ] Backend lint, unit, integration, and build pass.
-- [ ] Frontend lint, typecheck, contracts, unit, build, and employee E2E pass.
+- [x] Employee names are globally unique and existing resource profiles are reused.
+- [x] Every task has an immutable business code.
+- [x] The standard Excel template contains one work item per row.
+- [x] Upload never writes formal work data before successful preflight and confirmation.
+- [x] Unknown employees and invalid project/task references block commit.
+- [x] Repeated commit calls are idempotent.
+- [x] Same-period re-upload creates a new version and preserves history.
+- [x] Period replacement updates imported resource-load entries without touching manual entries.
+- [x] Weekly and monthly TEAM/EMPLOYEE/PROJECT snapshots use only current completed versions.
+- [x] Missing weeks are visible and percentages with no denominator are null.
+- [x] Team, employee, and project pages drill through in both directions.
+- [x] Risk conversion is idempotent and preserves the source work item.
+- [x] Import source, errors, versions, restore, audit, search, and export are usable.
+- [x] No native date/select controls are introduced.
+- [x] Backend lint, unit, integration, and build pass.
+- [x] Frontend lint, typecheck, contracts, unit, build, and employee E2E pass.
