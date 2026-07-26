@@ -94,9 +94,14 @@ export class DocumentImportService {
     // --- PDF ---
     if (mime === 'application/pdf') {
       try {
-        const pdfParse = await import('pdf-parse');
-        const data = await pdfParse.default(buffer) as { text: string };
-        return { title: name, plainText: data.text, wordCount: data.text.length };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pdfParseModule = await import('pdf-parse') as any;
+        const { PDFParse } = pdfParseModule;
+        const parser = new PDFParse(new Uint8Array(buffer));
+        await parser.load();
+        const result = await parser.getText();
+        const text: string = typeof result.text === 'string' ? result.text : String(result);
+        return { title: name, plainText: text, wordCount: text.length };
       } catch {
         this.logger.warn('pdf-parse not available, trying fallback');
         return { title: name, plainText: `[PDF 文件: ${name}]`, wordCount: 0 };
