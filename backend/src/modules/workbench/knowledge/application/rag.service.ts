@@ -9,7 +9,7 @@ const SYSTEM_PROMPT = `你是一个本地研发知识库助手，服务于研发
 规则：
 1. 只根据 <context></context> 中提供的内容回答
 2. 如果上下文中没有足够信息，诚实说明"知识库中未找到相关信息"
-3. 回答末尾列出引用的文档标题
+3. 回答末尾列出引用的文档标题和所在知识空间
 4. 用中文回答，简洁专业
 5. 不要编造内容，不要使用外部知识`;
 
@@ -25,6 +25,7 @@ interface ChunkRow {
   content: string;
   metadata: Record<string, unknown>;
   document_title: string;
+  space_name: string | null;
   similarity: number;
 }
 
@@ -39,13 +40,14 @@ export class RagService {
     question: string;
     history: Array<{ role: string; content: string }>;
   }): Promise<{ stream: ReadableStream<Uint8Array>; citations: ChunkCitation[] }> {
-    // Use pg_trgm similarity for text-based retrieval (no external embedding API needed)
     const chunks = await this.prisma.$queryRawUnsafe<ChunkRow[]>(
       `SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
               cd.title as document_title,
+              ks.name as space_name,
               public.similarity(dc.content, $1) AS similarity
        FROM app.document_chunks dc
        JOIN app.content_documents cd ON cd.id = dc.document_id
+       LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
        WHERE cd.status = 'ACTIVE'
          AND cd.trashed_at IS NULL
          AND dc.content IS NOT NULL
@@ -64,12 +66,16 @@ export class RagService {
     for (const chunk of relevant) {
       const chunkTokens = Math.ceil(chunk.content.length / 2);
       if (contextUsed + chunkTokens > MAX_CONTEXT_TOKENS) break;
-      contextParts.push(`[来源: ${chunk.document_title}]\n${chunk.content}`);
+      const location = chunk.space_name ? `[${chunk.space_name}] ${chunk.document_title}` : chunk.document_title;
+      contextParts.push(`[来源: ${location}]\n${chunk.content}`);
       citations.push({
         documentId: chunk.document_id,
         title: chunk.document_title,
         chunkIndex: chunk.chunk_index,
         text: chunk.content.slice(0, 200),
+        content: chunk.content,
+        spaceName: chunk.space_name || undefined,
+        similarity: Number(chunk.similarity),
       });
       contextUsed += chunkTokens;
     }

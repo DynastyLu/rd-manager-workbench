@@ -1,120 +1,43 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, expect, it, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
 import { KnowledgeCitationCard } from '../components/KnowledgeCitationCard';
 import type { ChunkCitation } from '../types';
 
 function makeCitation(overrides: Partial<ChunkCitation> = {}): ChunkCitation {
-  return {
-    documentId: 'doc-1',
-    title: '测试文档',
-    chunkIndex: 0,
-    text: '这是一段测试文本',
-    ...overrides,
-  };
+  return { documentId: 'doc-1', title: '测试文档', chunkIndex: 0, text: '文本片段', content: '完整内容', spaceName: '我的空间', ...overrides };
 }
 
 describe('KnowledgeCitationCard', () => {
-  let hashSetter: ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    hashSetter = vi.fn();
-    Object.defineProperty(window, 'location', {
-      value: {
-        ...window.location,
-        hash: '',
-      },
-      writable: true,
-      configurable: true,
-    });
-    // Spy on hash setter
-    let hashValue = '';
-    Object.defineProperty(window.location, 'hash', {
-      get() {
-        return hashValue;
-      },
-      set(value: string) {
-        hashValue = value;
-        hashSetter(value);
-      },
-      configurable: true,
-    });
-  });
-
-  it('renders citation tags for each citation', () => {
-    const citations = [
-      makeCitation({ documentId: 'doc-1', title: '文档A' }),
-      makeCitation({ documentId: 'doc-2', title: '文档B' }),
-      makeCitation({ documentId: 'doc-3', title: '文档C' }),
-    ];
-
+  it('renders source count header', () => {
+    const citations = [makeCitation({ documentId: 'd1', title: '文档A' }), makeCitation({ documentId: 'd2', title: '文档B' })];
     render(<KnowledgeCitationCard citations={citations} />);
-
-    expect(screen.getByText('文档A')).toBeInTheDocument();
-    expect(screen.getByText('文档B')).toBeInTheDocument();
-    expect(screen.getByText('文档C')).toBeInTheDocument();
-    expect(screen.getByText('引用来源：')).toBeInTheDocument();
+    expect(screen.getByText('2 个来源')).toBeInTheDocument();
   });
 
-  it('clicking a tag navigates to the correct URL', () => {
-    const citations = [makeCitation({ documentId: 'abc-123', title: '测试文档' })];
-
+  it('deduplicates by documentId', () => {
+    const citations = [makeCitation({ documentId: 'd1', title: 'A' }), makeCitation({ documentId: 'd1', title: 'A' })];
     render(<KnowledgeCitationCard citations={citations} />);
-
-    const tag = screen.getByText('测试文档');
-    fireEvent.click(tag);
-
-    expect(hashSetter).toHaveBeenCalledWith('#/docs?documentId=abc-123');
+    expect(screen.getByText('1 个来源')).toBeInTheDocument();
   });
 
-  it('deleted citation is greyed out and not clickable', () => {
-    const citations = [makeCitation({ documentId: 'deleted-doc', title: '已删除文档' })];
-    const deletedIds = new Set(['deleted-doc']);
-
-    render(<KnowledgeCitationCard citations={citations} deletedIds={deletedIds} />);
-
-    // Semi Tag renders: <div class="semi-tag ..."><div class="semi-tag-content">text</div></div>
-    // The style is on the outer .semi-tag element
-    const tagContent = screen.getByText('已删除文档');
-    const tag = tagContent.closest('.semi-tag') as HTMLElement;
-
-    // Should be greyed out with strikethrough
-    expect(tag.style.color).toBe('rgb(153, 153, 153)');
-    expect(tag.style.textDecoration).toBe('line-through');
-    expect(tag.style.cursor).toBe('not-allowed');
-
-    // Clicking should not navigate
-    fireEvent.click(tag);
-    expect(hashSetter).not.toHaveBeenCalled();
+  it('shows document title and space name', () => {
+    render(<KnowledgeCitationCard citations={[makeCitation({ title: '项目计划书', spaceName: '项目文档' })]} />);
+    expect(screen.getByText('项目计划书')).toBeInTheDocument();
+    expect(screen.getByText('项目文档')).toBeInTheDocument();
   });
 
-  it('renders nothing when citations array is empty', () => {
+  it('shows content snippet', () => {
+    render(<KnowledgeCitationCard citations={[makeCitation({ text: '预览', content: '这是匹配的文本内容' })]} />);
+    expect(screen.getByText(/匹配的文本内容/)).toBeInTheDocument();
+  });
+
+  it('renders nothing for empty citations', () => {
     const { container } = render(<KnowledgeCitationCard citations={[]} />);
     expect(container.innerHTML).toBe('');
   });
 
-  it('renders nothing when citations is undefined', () => {
-    const { container } = render(<KnowledgeCitationCard />);
+  it('renders nothing for undefined citations', () => {
+    const { container } = render(<KnowledgeCitationCard citations={undefined} />);
     expect(container.innerHTML).toBe('');
-  });
-
-  it('long titles are truncated with "..."', () => {
-    const longTitle = '这是一个非常非常非常长的文档标题超过二十个字符';
-    const citations = [makeCitation({ title: longTitle })];
-
-    render(<KnowledgeCitationCard citations={citations} />);
-
-    // Title should be truncated to 20 chars + "..."
-    const expected = longTitle.slice(0, 20) + '...';
-    expect(screen.getByText(expected)).toBeInTheDocument();
-    expect(screen.queryByText(longTitle)).toBeNull();
-  });
-
-  it('titles at exactly 20 characters are not truncated', () => {
-    const exactTitle = '一二三四五六七八九十一二三四五六七八九十'; // Exactly 20 chars
-    const citations = [makeCitation({ title: exactTitle })];
-
-    render(<KnowledgeCitationCard citations={citations} />);
-
-    expect(screen.getByText(exactTitle)).toBeInTheDocument();
   });
 });

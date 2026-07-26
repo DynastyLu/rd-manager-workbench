@@ -8,6 +8,9 @@ export interface KnowledgeMessage {
 }
 export interface ChunkCitation {
   documentId: string; title: string; chunkIndex: number; text: string;
+  content?: string;      // full chunk content
+  spaceName?: string;    // knowledge space name
+  similarity?: number;   // pg_trgm score
 }
 export interface IndexStatus {
   indexedDocuments: number; totalDocuments: number;

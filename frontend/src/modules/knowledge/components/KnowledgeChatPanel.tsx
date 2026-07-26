@@ -1,9 +1,12 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Spin } from '@douyinfe/semi-ui';
+import { Spin, Tooltip } from '@douyinfe/semi-ui';
+import { IconCopy, IconStop } from '@douyinfe/semi-icons';
 import { chatStream, createSession, getSession } from '../api';
 import { knowledgeQueryKeys } from '../queryKeys';
 import { KnowledgeMarkdown } from './KnowledgeMarkdown';
+import { KnowledgeCitationCard } from './KnowledgeCitationCard';
+import { copyToClipboard, extractHighlightTerms } from '../format';
 import type { KnowledgeMessage, ChunkCitation } from '../types';
 
 interface Props { sessionId: string | null; onSessionCreated: (id: string) => void; }
@@ -13,6 +16,7 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
   const [streamingCitations, setStreamingCitations] = useState<ChunkCitation[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastQuestion, setLastQuestion] = useState('');
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -24,11 +28,14 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     enabled: !!sessionId,
   });
 
+  const highlightTerms = useMemo(() => extractHighlightTerms(lastQuestion), [lastQuestion]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [session?.messages, streamingContent]);
 
   const send = useCallback(async (question: string) => {
+    setLastQuestion(question);
     let sid = sessionId;
     if (!sid) {
       try {
@@ -72,24 +79,14 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         const lines = buf.split('\n');
         buf = lines.pop() || '';
         for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            const eventType = line.slice(7).trim();
-            if (eventType === 'error') {
-              // The error data will be on the next data: line
-              // We don't break here because there might be more events in the buffer
-            }
-            continue;
-          }
+          if (line.startsWith('event: ')) continue;
           if (!line.startsWith('data: ')) continue;
           const raw = line.slice(6);
           try {
             const parsed: unknown = JSON.parse(raw);
             if (typeof parsed === 'object' && parsed !== null) {
               const obj = parsed as Record<string, unknown>;
-              if (typeof obj.error === 'string') {
-                setError(obj.error);
-                return;
-              }
+              if (typeof obj.error === 'string') { setError(obj.error); return; }
               if (typeof obj.content === 'string' && typeof obj.index === 'number') {
                 content += obj.content;
                 setStreamingContent(content);
@@ -111,9 +108,10 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     } finally {
       setStreaming(false);
       abortRef.current = null;
-      const finalSid = sid;
-      void qc.invalidateQueries({ queryKey: knowledgeQueryKeys.session(finalSid) });
-      void qc.invalidateQueries({ queryKey: knowledgeQueryKeys.sessions });
+      if (sid) {
+        void qc.invalidateQueries({ queryKey: knowledgeQueryKeys.session(sid) });
+        void qc.invalidateQueries({ queryKey: knowledgeQueryKeys.sessions });
+      }
     }
   }, [sessionId, onSessionCreated, qc]);
 
@@ -125,10 +123,7 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
       const el = inputRef.current;
       if (!el) return;
       const text = el.value.trim();
-      if (text && !streaming) {
-        el.value = '';
-        void send(text);
-      }
+      if (text && !streaming) { el.value = ''; void send(text); }
     }
   }, [send, streaming]);
 
@@ -136,30 +131,20 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     const el = inputRef.current;
     if (!el) return;
     const text = el.value.trim();
-    if (text && !streaming) {
-      el.value = '';
-      void send(text);
-    }
+    if (text && !streaming) { el.value = ''; void send(text); }
   }, [send, streaming]);
 
+  // Empty state (no session)
   if (!sessionId) {
     return (
       <div className="kb-chat-main">
         <div className="kb-chat-main__empty">
           <div style={{ fontSize: 48, marginBottom: 8 }}>💬</div>
           <h2>知识库 AI 问答</h2>
-          <p>在左侧新建或选择一个对话，基于你的本地文档获取答案</p>
-          <textarea
-            ref={inputRef}
-            className="kb-chat-input-bar__textarea"
-            style={{ width: 400, marginTop: 16 }}
-            placeholder="输入问题，回车发送..."
-            rows={2}
-            onKeyDown={handleKeyDown}
-          />
-          <p style={{ fontSize: 12, color: '#bbb', marginTop: 8 }}>
-            新对话将自动创建 · DeepSeek 驱动
-          </p>
+          <p>基于本地文档的智能问答，自动检索相关内容</p>
+          <textarea ref={inputRef} className="kb-chat-input-bar__textarea" style={{ width: 400, marginTop: 16 }}
+            placeholder="输入问题，回车发送..." rows={2} onKeyDown={handleKeyDown} />
+          <p style={{ fontSize: 12, color: '#bbb', marginTop: 8 }}>新对话将自动创建 · DeepSeek 驱动</p>
         </div>
       </div>
     );
@@ -173,55 +158,29 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     <div className="kb-chat-main">
       <div className="kb-chat-main__messages">
         {messages.length === 0 && !streaming && (
-          <div className="kb-chat-main__empty">
-            <p>开始提问吧</p>
-          </div>
+          <div className="kb-chat-main__empty"><p>输入问题开始搜索本地知识库</p></div>
         )}
         {messages.map((msg: KnowledgeMessage) => (
-          <div key={msg.id} className={`kb-message kb-message--${msg.role === 'USER' ? 'user' : 'assistant'}`}>
-            <div className="kb-message__avatar">{msg.role === 'USER' ? 'U' : 'AI'}</div>
-            <div>
-              <div className="kb-message__bubble">
-                <KnowledgeMarkdown text={msg.content} />
-              </div>
-              {msg.citations && msg.citations.length > 0 && (
-                <div className="kb-message__citations">
-                  {msg.citations.map((c, i) => (
-                    <span key={i} className="kb-message__citation" role="button" tabIndex={0}
-                      onClick={() => { window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; }}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; } }}>
-                      {c.title}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <MessageBubble key={msg.id} msg={msg} highlightTerms={highlightTerms} />
         ))}
+        {/* Streaming bubble */}
         {streaming && (
           <div className="kb-message kb-message--assistant">
             <div className="kb-message__avatar">AI</div>
-            <div>
+            <div className="kb-message__body">
               <div className="kb-message__bubble">
-                <KnowledgeMarkdown text={streamingContent || '思考中...'} />
+                <KnowledgeMarkdown text={streamingContent || '正在检索知识库...'} />
                 {streamingContent && <span className="kb-streaming-indicator" />}
               </div>
               {streamingCitations.length > 0 && (
-                <div className="kb-message__citations">
-                  {streamingCitations.map((c, i) => (
-                    <span key={i} className="kb-message__citation" role="button" tabIndex={0}
-                      onClick={() => { window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; }}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; } }}>
-                      {c.title}
-                    </span>
-                  ))}
-                </div>
+                <KnowledgeCitationCard citations={streamingCitations} highlightTerms={highlightTerms} />
               )}
             </div>
           </div>
         )}
+        {/* Error */}
         {error && (
-          <div className="kb-message kb-message--assistant">
+          <div className="kb-message kb-message--error">
             <div className="kb-message__bubble" style={{ background: '#fff3f3', color: '#e65050', border: '1px solid #fdd' }}>
               {error}
             </div>
@@ -229,29 +188,110 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Input bar */}
       <div className="kb-chat-input-bar">
-        <textarea
-          ref={inputRef}
-          className="kb-chat-input-bar__textarea"
+        <textarea ref={inputRef} className="kb-chat-input-bar__textarea"
           placeholder={streaming ? '等待回复完成...' : '输入问题，Enter 发送，Shift+Enter 换行'}
-          rows={1}
-          disabled={streaming}
-          onKeyDown={handleKeyDown}
-        />
+          rows={1} disabled={streaming} onKeyDown={handleKeyDown} />
         {streaming ? (
-          <button className="kb-chat-input-bar__stop" onClick={stop} style={{
-            padding: '8px 18px', borderRadius: 8, border: '1px solid #e65050',
-            background: '#fff', color: '#e65050', cursor: 'pointer', fontWeight: 500,
-          }}>
-            停止
+          <button className="kb-chat-input-bar__stop" onClick={stop}>
+            <IconStop size="small" style={{ marginRight: 4 }} />停止
           </button>
         ) : (
-          <button className="kb-chat-input-bar__send" onClick={handleSendClick} style={{
-            padding: '8px 18px', borderRadius: 8, border: 0,
-            background: '#1456f0', color: '#fff', cursor: 'pointer', fontWeight: 500,
-          }}>
-            发送
-          </button>
+          <button className="kb-chat-input-bar__send" onClick={handleSendClick}>发送</button>
+        )}
+      </div>
+
+      <style>{`
+        .kb-chat-main { flex: 1; display: flex; flex-direction: column; height: 100%; min-width: 0; }
+        .kb-chat-main__empty {
+          flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+          color: #8f959e; text-align: center; padding: 40px;
+        }
+        .kb-chat-main__empty h2 { margin: 0 0 8px; font-size: 20px; color: #4e5969; }
+        .kb-chat-main__messages { flex: 1; overflow-y: auto; padding: 16px 20px; }
+
+        .kb-message { display: flex; gap: 10px; margin-bottom: 20px; }
+        .kb-message--user { flex-direction: row-reverse; }
+        .kb-message--assistant { flex-direction: row; }
+        .kb-message__avatar {
+          flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 12px; font-weight: 700;
+        }
+        .kb-message--user .kb-message__avatar { background: #1456f0; color: #fff; }
+        .kb-message--assistant .kb-message__avatar { background: #e8f0fe; color: #1456f0; }
+        .kb-message__body { flex: 1; min-width: 0; }
+        .kb-message__bubble {
+          padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.7;
+          word-break: break-word;
+        }
+        .kb-message--user .kb-message__bubble { background: #e8f0fe; }
+        .kb-message--assistant .kb-message__bubble { background: #f5f6f8; }
+        .kb-message__copy-btn {
+          display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
+          font-size: 12px; color: #8f959e; border: 0; background: none; cursor: pointer;
+        }
+        .kb-message__copy-btn:hover { color: #1456f0; }
+
+        .kb-chat-input-bar {
+          display: flex; gap: 10px; align-items: flex-end;
+          padding: 16px 20px; border-top: 1px solid #e5e6eb; background: #fff;
+        }
+        .kb-chat-input-bar__textarea {
+          flex: 1; border: 1px solid #ddd; border-radius: 12px; padding: 10px 16px;
+          font-size: 14px; resize: none; line-height: 1.5; min-height: 44px; max-height: 150px;
+          font-family: inherit;
+        }
+        .kb-chat-input-bar__textarea:focus { border-color: #1456f0; }
+        .kb-chat-input-bar__send, .kb-chat-input-bar__stop {
+          padding: 10px 20px; border-radius: 10px; border: 0; cursor: pointer; font-weight: 500; font-size: 14px;
+          white-space: nowrap;
+        }
+        .kb-chat-input-bar__send { background: #1456f0; color: #fff; }
+        .kb-chat-input-bar__stop { background: #fff; color: #e65050; border: 1px solid #e65050; }
+        .kb-streaming-indicator {
+          display: inline-block; width: 8px; height: 16px; background: #1456f0;
+          animation: kb-blink 0.8s infinite; vertical-align: text-bottom; margin-left: 2px; border-radius: 2px;
+        }
+        @keyframes kb-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+      `}</style>
+    </div>
+  );
+}
+
+/** Single message bubble with copy and citations */
+function MessageBubble({ msg, highlightTerms }: {
+  msg: KnowledgeMessage;
+  highlightTerms: string[];
+}) {
+  const [copied, setCopied] = useState(false);
+  const isUser = msg.role === 'USER';
+
+  const handleCopy = () => {
+    void copyToClipboard(msg.content).then((ok) => {
+      if (ok) { setCopied(true); setTimeout(() => setCopied(false), 1500); }
+    });
+  };
+
+  return (
+    <div className={`kb-message kb-message--${isUser ? 'user' : 'assistant'}`}>
+      <div className="kb-message__avatar">{isUser ? 'U' : 'AI'}</div>
+      <div className="kb-message__body">
+        <div className="kb-message__bubble">
+          {isUser ? msg.content : <KnowledgeMarkdown text={msg.content} />}
+        </div>
+        {!isUser && (
+          <Tooltip content={copied ? '已复制' : '复制回答'}>
+            <button className="kb-message__copy-btn" onClick={handleCopy} type="button">
+              <IconCopy size="small" style={{ marginRight: 2 }} />
+              {copied ? '已复制' : '复制'}
+            </button>
+          </Tooltip>
+        )}
+        {!isUser && msg.citations && msg.citations.length > 0 && (
+          <KnowledgeCitationCard citations={msg.citations} highlightTerms={highlightTerms} />
         )}
       </div>
     </div>

@@ -214,12 +214,10 @@ describe('KnowledgeChatPanel', () => {
 
       renderPanel('s1');
 
-      // Wait for messages to appear (they go through KnowledgeMarkdown which
-      // renders them inside a span[data-testid="markdown-content"]).
-      const contents = await screen.findAllByTestId('markdown-content');
-      expect(contents).toHaveLength(2);
-      expect(contents[0]).toHaveTextContent('什么是 RAG？');
-      expect(contents[1]).toHaveTextContent('RAG 是检索增强生成...');
+      await waitFor(() => {
+        expect(screen.getByText('什么是 RAG？')).toBeInTheDocument();
+      });
+      expect(screen.getByText('RAG 是检索增强生成...')).toBeInTheDocument();
     });
 
     it('shows empty prompt when session has no messages and not streaming', async () => {
@@ -235,7 +233,7 @@ describe('KnowledgeChatPanel', () => {
       renderPanel('s2');
 
       await waitFor(() => {
-        expect(screen.getByText('开始提问吧')).toBeInTheDocument();
+        expect(screen.getByText('输入问题开始搜索本地知识库')).toBeInTheDocument();
       });
     });
 
@@ -472,7 +470,7 @@ describe('KnowledgeChatPanel', () => {
 
       // streamingContent is '' so the fallback text is rendered.
       await waitFor(() => {
-        expect(screen.getByText('思考中...')).toBeInTheDocument();
+        expect(screen.getByText('正在检索知识库...')).toBeInTheDocument();
       });
     });
 
@@ -548,13 +546,8 @@ describe('KnowledgeChatPanel', () => {
       });
       expect(screen.getByText('Beta')).toBeInTheDocument();
 
-      // Citation elements have role="button" — scope to the citations container
-      // so the send <button> is not included.
-      const citationsContainer = document.querySelector(
-        '.kb-message__citations',
-      )!;
-      const citationBtns =
-        citationsContainer.querySelectorAll('[role="button"]');
+      // Citation source items have role="button"
+      const citationBtns = document.querySelectorAll('.kb-source-item[role="button"]');
       expect(citationBtns).toHaveLength(2);
       expect(citationBtns[0]).toHaveTextContent('Alpha');
       expect(citationBtns[1]).toHaveTextContent('Beta');
