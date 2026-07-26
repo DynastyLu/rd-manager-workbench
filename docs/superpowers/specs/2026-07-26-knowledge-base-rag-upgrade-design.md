@@ -1,7 +1,7 @@
 # 知识库 RAG 全面升级 + DeepSeek 全量迁移 设计规格
 
 **日期：** 2026-07-26  
-**版本：** v3.0（补全错误降级、初始索引、健康监控、流式摘要、协议改造、浏览器直接模式）  
+**版本：** v4.0（完整规格：RAG 问答 + DeepSeek 迁移 + 流式 + 降级 + 文档导入 + 用量追踪 + 浏览器直连）  
 **状态：** 待用户审阅  
 **依赖：** 现有知识库(content)、AI 扩展(extensions)、搜索(search)、Electron 凭据桥(desktop)
 
@@ -49,6 +49,11 @@
 | 14 | AI 摘要流式化 | 文档/会议摘要改为流式输出，采纳逻辑不变 |
 | 15 | 流式协议改造 | Electron 扩展桥新增 `extension.stream` 事件 + SSE 中继 |
 | 16 | 浏览器直接模式 | 无 Electron 时后端从 `.env` 读 key 直调 DeepSeek，前端无感知 |
+| 17 | 用量追踪 | 每次 API 调用记录 token 消耗 + 估算费用，设置页仪表盘 |
+| 18 | 并发控制 | 单会话同时只一个生成，支持停止中断，不同会话互不影响 |
+| 19 | Markdown 安全渲染 | react-markdown 渲染 AI 回答，XSS 防护 + 代码高亮 + 引用跳转 |
+| 20 | 引用失效处理 | 文档删除/归档后旧引用自动标记，不显示死链 |
+| 21 | 文件上传与管理 | 上传 TXT/MD/DOCX/PDF → 自动提取文本 → 创建文档 → 索引 |
 
 ---
 
@@ -708,11 +713,217 @@ CREATE INDEX ON app.document_chunks USING hnsw (embedding vector_cosine_ops);
 
 ---
 
-## 17. 不做的
+## 17. 用量追踪
+
+### 17.1 记录粒度
+
+每次 API 调用记录到新表 `app.ai_usage_logs`：
+
+```prisma
+model AiUsageLog {
+  id          String   @id @default(cuid())
+  operation   String                           // EMBED | CHAT | SUMMARIZE_DOCUMENT | SUMMARIZE_MEETING | KNOWLEDGE_QA
+  model       String                           // deepseek-chat
+  tokenCount  Int                              // 本次消耗 token 数
+  estimatedCost Float?                         // 估算费用（USD），按 DeepSeek 官方定价计算
+  documentId  String?                          // 关联文档（摘要操作时）
+  sessionId   String?                          // 关联会话（问答时）
+  success     Boolean                          // 是否成功
+  errorCode   String?                          // 失败时的错误码
+  createdAt   DateTime  @default(now())
+  
+  @@index([createdAt])
+  @@map("ai_usage_logs")
+  @@schema("app")
+}
+```
+
+### 17.2 计费估算
+
+DeepSeek API 价格（按官方定价，实施时更新）：
+
+| 模型 | 输入价格 | 输出价格 |
+|------|---------|---------|
+| deepseek-chat | $0.27/1M tokens | $1.10/1M tokens |
+| deepseek-chat (embedding) | $0.14/1M tokens | — |
+
+每次调用后写入估算费用，前端展示**今日/本周/本月/总计**聚合。
+
+### 17.3 展示位置
+
+在设置页的"扩展管理"卡片下方新增"AI 用量"卡片（不添加到顶级导航）：
+
+```
+AI 用量                            [重置统计]
+├── 今日：12.3K tokens ≈ $0.004
+├── 本周：89.1K tokens ≈ $0.031
+├── 本月：356K tokens ≈ $0.124
+└── 总计：1.2M tokens ≈ $0.420
+```
+
+经济仪表盘，不制造焦虑。DeepSeek 的价格极低（百万 token 才几毛钱），正常使用月费用不会超过一两美元。
+
+---
+
+## 18. 并发控制
+
+### 18.1 规则
+
+同一会话内，**同一时间只允许一个正在生成的回答**。用户发送新消息时的行为：
+
+```
+如果 AI 正在生成回答：
+  → 「停止生成」按钮变成主要操作（中断当前流）
+  → 输入框禁用，提示"等待当前回复完成"
+  → 发送按钮显示为 ⏹ 停止
+
+用户点击「停止」：
+  → 前端 abort fetch + 关闭 SSE 连接
+  → 后端收到 abort → 中断对 DeepSeek 的流式请求
+  → 已接收的部分内容保留在聊天记录中（标记为"已中断"）
+  → 输入框恢复可用，发送按钮变回 ✈ 发送
+```
+
+### 18.2 实现
+
+- 后端用 `AbortController` 串联：前端 abort → HTTP 请求取消 → DeepSeek 流中断
+- 不同会话之间互不影响（可以一边等 A 会话回答，一边在 B 会话发问）
+- 被中断的回答不会进入采纳流程（摘要场景）
+
+---
+
+## 19. Markdown 安全渲染
+
+### 19.1 需求
+
+AI 回答包含 Markdown 格式（标题、列表、粗体、代码块、链接、表格），但必须：
+- 不执行 JavaScript（XSS 防护）
+- 不加载外部图片（隐私）
+- 代码块有语法高亮
+- 引用链接 `[文档标题](/docs?documentId=xxx)` 转换为应用内跳转
+
+### 19.2 方案
+
+使用 `react-markdown` + `remark-gfm`（表格/删除线/任务列表）+ `rehype-highlight`（代码高亮）。渲染管线：
+
+```
+AI 回答原文 → react-markdown → 安全 HTML
+                ↓
+         自定义组件：
+         - a 标签：内部链接走 Router，外部链接加 rel="noopener noreferrer"
+         - img 标签：不渲染（隐私）
+         - code 块：复制按钮 + 语法高亮
+         - 引用源：特殊标注类 knowledge-citation，点击跳转文档
+```
+
+### 19.3 实现
+
+- 新增 `KnowledgeMarkdown.tsx` 组件，所有 AI 消息气泡通过它渲染
+- CSS 样式跟随 Semi Design 的排版 token（字体、间距、颜色）
+- 代码块主题：浅色 GitHub 风格（匹配应用整体浅色主题）
+
+---
+
+## 20. 引用失效处理
+
+### 20.1 场景
+
+用户提问 → AI 回答引用了文档 A 的第 3 块 → 后来文档 A 被删除或归档 → 旧会话里的引用链接断了。
+
+### 20.2 处理策略
+
+| 文档状态 | 引用卡片行为 |
+|---------|------------|
+| ACTIVE | 正常显示，点击跳转 |
+| 已删除（trashedAt != null）| 引用卡片变灰 + "文档已删除"标记，不可点击 |
+| 已归档 | 引用卡片变灰 + "文档已归档"标记，不可点击 |
+| 内容已更新（chunk 被替换）| 引用卡片显示"原文已有新版本"，点击跳转文档最新位置（不保证定位到原段落） |
+
+### 20.3 实现
+
+- 每次渲染引用卡片时，用 `documentId` 查询文档状态（缓存 5 分钟）
+- `document_chunks` 表保留旧版本的 chunk（级联删除规则除外——文档真删了 chunk 也没了），但引用验证只看文档状态
+- 前端引用卡片组件：`KnowledgeCitationCard` 接收 `{ documentId, chunkIndex, title, status }`，按状态渲染不同样式
+
+---
+
+## 21. 文件上传与文档管理
+
+### 21.1 当前差距
+
+现有知识库只能通过 Tiptap 编辑器**手工创建**文档，无法：
+- 上传文件（PDF、Word、Markdown、TXT）自动转为知识库文档
+- 批量导入
+- 拖拽上传
+- 管理知识库文件（重命名、移动、批量操作）
+
+### 21.2 新增：文件导入管道
+
+```
+用户上传文件 → 后端接收 → 文件类型判断
+  ├── .txt / .md  → 直接读取文本
+  ├── .docx       → 提取正文（已有 ExcelJS，换用 mammoth 或直接解析 OOXML）
+  ├── .pdf        → pdf-parse 提取文本
+  └── 其他        → 拒绝，提示支持的文件类型
+
+→ 创建 ContentDocument（title=文件名，plainText=提取文本）
+→ 触发自动索引（分块 + embedding）
+→ 原文件作为 FileAsset 附件关联到文档
+```
+
+### 21.3 API
+
+```
+POST /api/knowledge/documents/upload
+  Content-Type: multipart/form-data
+  Body: { file, spaceId?, tags? }
+  Response: { documentId, title, plainTextPreview（前 200 字）, wordCount, fileAssetId }
+
+支持的格式：.txt .md .docx .pdf
+大小限制：20 MiB（与员工导入一致）
+批量上传：接受多个文件（一次最多 10 个）
+```
+
+### 21.4 前端界面
+
+在知识库首页增加上传入口：
+
+- **拖拽区域**：文档列表顶部有虚线框 `[拖拽文件到此处或点击上传]`
+- **上传弹窗**：Modal 中显示文件列表 + 进度条 + 目标空间选择 + 标签输入
+- **批量操作**：上传完成后显示每篇文档状态（成功/失败/跳过重复）
+- **文件原地管理**：右键文档 → 重命名、移动到空间、下载原文件、删除
+- **重复检测**：上传文件前校验 SHA-256，已存在的文件提示"该文件已导入为：[文档标题]"
+
+### 21.5 依赖
+
+```bash
+pnpm add mammoth        # DOCX 文本提取（纯 JS，无原生依赖）
+pnpm add pdf-parse      # PDF 文本提取
+```
+
+- Markdown（`.md`）：原样读入 `plainText`
+- 纯文本（`.txt`）：UTF-8 解码
+- DOCX（`.docx`）：mammoth 提取，保留段落结构
+- PDF（`.pdf`）：pdf-parse 提取，可能丢失表格和图片
+
+所有提取都是**纯文本**——不保留格式、不嵌入图片、不保留表格结构。这对于向量搜索和 RAG 是足够的（关键是语义内容），但如果用户需要精确保留格式，应该用 Tiptap 编辑器。
+
+### 21.6 后续不做的
+
+- 不做 OCR（扫描件 PDF）
+- 不做 HTML 网页抓取
+- 不做音视频转录
+- 不做文档格式互转（如 PDF→DOCX）
+- 旧文件-文档关系只在 metadata 中记录，不建立双向关联页面
+
+---
+
+## 22. 不做的
 
 - 不引入第三方向量数据库（Pinecone/Weaviate/Qdrant）— pgvector 够用
-- 不做图像/PDF 内容提取——当前知识库只有纯文本
+- 不做图像内容提取或 OCR
 - 不做多知识库/RBAC——仍是单人本地应用
 - 不做知识图谱或自动分类
 - 不做联网检索（RAG 只用本地文档）
 - 不引入 LangChain/LlamaIndex——自己实现分块和编排，依赖更少
+- 不做 HTML 网页抓取或音视频转录
