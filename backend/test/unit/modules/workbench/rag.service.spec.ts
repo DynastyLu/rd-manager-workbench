@@ -17,7 +17,7 @@ describe('RagService', () => {
 
     const result = await service.ask({ question: 'test?', history: [] });
     // Should pass the question text directly for trigram similarity search
-    expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledWith(expect.stringContaining('similarity'), 'test?', 20);
+    expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalledWith(expect.stringContaining('similarity'), 'test?', 40);
     expect(result.stream).toBeDefined();
     expect(result.citations).toHaveLength(1);
     expect(result.citations[0].title).toBe('Test Doc');
