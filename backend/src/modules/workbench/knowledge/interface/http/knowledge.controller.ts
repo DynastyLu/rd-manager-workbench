@@ -8,7 +8,7 @@ import { SessionService } from '../../application/session.service';
 import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
 import { DocumentImportService } from '../../application/document-import.service';
-import { UploadedContentFile, FilesService } from '../../../content/application/files.service';
+import type { UploadedContentFile } from '../../../content/application/files.service';
 import { CreateSessionDto, ChatMessageDto } from './dto/knowledge.dto';
 
 @Controller('knowledge')
@@ -18,7 +18,6 @@ export class KnowledgeController {
     private readonly rag: RagService,
     private readonly indexing: IndexingService,
     private readonly importer: DocumentImportService,
-    private readonly filesService: FilesService,
   ) {}
 
   @Post('sessions')
@@ -144,14 +143,13 @@ export class KnowledgeController {
   async uploadDocument(@UploadedFile() file: UploadedContentFile | undefined) {
     if (!file) throw new Error('File is required');
     const extracted = await this.importer.extract(file);
-    // Also store the original file as a FileAsset (no documentId yet - will be linked later)
-    const savedFile = await this.filesService.create(file, { name: extracted.title });
+    // Return extracted text only. The frontend creates a document from it.
+    // Users can upload the original file as a document attachment separately.
     return {
       title: extracted.title,
       plainTextPreview: extracted.plainText.slice(0, 500),
       plainText: extracted.plainText,
       wordCount: extracted.wordCount,
-      fileId: savedFile.id,
     };
   }
 }

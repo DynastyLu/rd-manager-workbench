@@ -88,7 +88,6 @@ export default function KnowledgeHomePage() {
   const setQuery = (value: string) => urlState.update({ query: value })
   const [draft, setDraft] = useState<DocumentDraft | null>(null)
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
-  const previewFileId = searchParams.get('fileId')?.trim() || undefined
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [spaceModalOpen, setSpaceModalOpen] = useState(false)
   const [spaceName, setSpaceName] = useState('')
@@ -275,7 +274,7 @@ export default function KnowledgeHomePage() {
         const body = await resp.json().catch(() => ({})) as { error?: { message?: string } }
         throw new Error(body.error?.message || 'Upload failed')
       }
-      const body = await resp.json() as { success: boolean; data: { title: string; plainText: string; wordCount: number; fileId?: string } }
+      const body = await resp.json() as { success: boolean; data: { title: string; plainText: string; wordCount: number } }
       return body.data
     },
     onSuccess: (result) => {
@@ -301,8 +300,6 @@ export default function KnowledgeHomePage() {
         setSearchParams((current) => {
           const next = new URLSearchParams(current)
           next.set('documentId', doc.id)
-          // Store file ID for download link
-          if (result.fileId) next.set('fileId', result.fileId)
           return next
         })
       }).catch(() => { Toast.error('创建文档失败'); })
@@ -470,15 +467,6 @@ export default function KnowledgeHomePage() {
             </div>
             {viewMode === 'preview' ? (
               <div>
-                {previewFileId && (
-                  <div style={{ marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ fontSize: 13, color: '#8f959e' }}>此内容来自上传的原始文件</span>
-                    <Button size="small" icon={<IconFile />} onClick={() => {
-                      const apiBase = import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : ''
-                      window.open(`${apiBase}/files/${encodeURIComponent(previewFileId)}/download`, '_blank')
-                    }}>下载原文件</Button>
-                  </div>
-                )}
                 <div style={{
                   padding: 20, minHeight: 360, fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace',
                   fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
