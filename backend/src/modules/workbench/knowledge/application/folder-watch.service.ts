@@ -3,8 +3,10 @@ import { watch, FSWatcher } from 'chokidar';
 import { readFileSync, statSync } from 'node:fs';
 import { basename, extname, relative } from 'node:path';
 import { createHash } from 'node:crypto';
+import { Subject } from 'rxjs';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { DocumentsService } from '../../content/application/documents.service';
+import { DocumentImportService } from './document-import.service';
 import { IndexingService } from './indexing.service';
 
 const SUPPORTED_EXTS = new Set([
@@ -19,21 +21,46 @@ interface ScannedFile {
   size: number;
 }
 
+export interface SyncProgress {
+  watchId: string;
+  phase: 'scanning' | 'deleting' | 'importing' | 'done' | 'error';
+  total: number;
+  current: number;
+  currentFile: string;
+  percent: number;
+  result?: { imported: number; updated: number; deleted: number; errors: number };
+  error?: string;
+}
+
 @Injectable()
 export class FolderWatchService implements OnModuleInit {
   async onModuleInit() {
-    // Resume active folder watches on app startup
     await this.resumeAll();
   }
   private readonly logger = new Logger(FolderWatchService.name);
   private readonly watchers = new Map<string, FSWatcher>();
   private readonly scanLocks = new Map<string, Promise<unknown>>();
+  private readonly progress = new Map<string, { subject: Subject<SyncProgress>; data: SyncProgress }>();
 
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly documents: DocumentsService,
+    private readonly importer: DocumentImportService,
     private readonly indexing: IndexingService,
   ) {}
+
+  /** Get an SSE stream of sync progress for a given watch */
+  getProgressStream(watchId: string): Subject<SyncProgress> {
+    let entry = this.progress.get(watchId);
+    if (!entry) {
+      entry = {
+        subject: new Subject<SyncProgress>(),
+        data: { watchId, phase: 'done', total: 0, current: 0, currentFile: '', percent: 100 },
+      };
+      this.progress.set(watchId, entry);
+    }
+    return entry.subject;
+  }
 
   /** Start watching a folder: full scan + chokidar watch */
   async startWatching(params: {
@@ -45,7 +72,6 @@ export class FolderWatchService implements OnModuleInit {
     const label = params.label || basename(params.folderPath);
     const recursive = params.recursive ?? true;
 
-    // Verify folder exists
     try {
       const folderStat = statSync(params.folderPath);
       if (!folderStat.isDirectory()) throw new Error('Path is not a directory');
@@ -53,57 +79,39 @@ export class FolderWatchService implements OnModuleInit {
       throw new Error(`无法访问文件夹: ${params.folderPath} — ${err instanceof Error ? err.message : 'Unknown'}`);
     }
 
-    // Create DB record
     const watch = await this.prisma.folderWatch.create({
-      data: {
-        label,
-        folderPath: params.folderPath,
-        spaceId: params.spaceId,
-        recursive,
-        status: 'ACTIVE',
-      },
+      data: { label, folderPath: params.folderPath, spaceId: params.spaceId, recursive, status: 'ACTIVE' },
     });
 
-    // Full scan (async, non-blocking)
     void this.fullScan(watch.id).catch((err) => {
       this.logger.error({ watchId: watch.id, err }, 'Initial full scan failed');
       this.setError(watch.id, err instanceof Error ? err.message : 'Unknown error').catch(() => {});
     });
 
-    // Set up watcher
     this.startWatcher(watch.id, params.folderPath, recursive);
-
     return watch.id;
   }
 
-  /** Stop watching a folder */
   async stopWatching(id: string): Promise<void> {
     const w = this.watchers.get(id);
-    if (w) {
-      await w.close();
-      this.watchers.delete(id);
-    }
-    await this.prisma.folderWatch.update({
-      where: { id },
-      data: { status: 'PAUSED' },
-    });
+    if (w) { await w.close(); this.watchers.delete(id); }
+    // Clean up progress
+    const entry = this.progress.get(id);
+    if (entry) { entry.subject.complete(); this.progress.delete(id); }
+    await this.prisma.folderWatch.update({ where: { id }, data: { status: 'PAUSED' } });
   }
 
-  /** Force a full rescan of an active watch */
   async rescan(id: string): Promise<{ imported: number; updated: number; deleted: number; errors: number }> {
     const watch = await this.prisma.folderWatch.findUniqueOrThrow({ where: { id } });
-    if (watch.status !== 'ACTIVE') {
-      throw new Error('只能重新扫描活跃的监听');
-    }
-    // Queue the scan (serialize per watch)
-    const promise = this.fullScan(id);
-    this.scanLocks.set(id, promise);
-    const result = await promise;
-    this.scanLocks.delete(id);
-    return result;
+    if (watch.status !== 'ACTIVE') throw new Error('只能重新扫描活跃的监听');
+    return this.fullScan(id);
   }
 
-  /** List all watched folders */
+  /** Get current progress snapshot (for polling fallback) */
+  getProgress(id: string): SyncProgress | null {
+    return this.progress.get(id)?.data ?? null;
+  }
+
   async list() {
     return this.prisma.folderWatch.findMany({
       orderBy: { createdAt: 'desc' },
@@ -114,7 +122,6 @@ export class FolderWatchService implements OnModuleInit {
     });
   }
 
-  /** Get a single watch */
   async get(id: string) {
     return this.prisma.folderWatch.findUniqueOrThrow({
       where: { id },
@@ -125,16 +132,11 @@ export class FolderWatchService implements OnModuleInit {
     });
   }
 
-  /** Resume all active watches on app startup */
   async resumeAll(): Promise<void> {
     const active = await this.prisma.folderWatch.findMany({ where: { status: 'ACTIVE' } });
     for (const w of active) {
       try {
         this.startWatcher(w.id, w.folderPath, w.recursive);
-        void this.fullScan(w.id).catch((err) => {
-          this.logger.error({ watchId: w.id, err }, 'Resume full scan failed');
-          this.setError(w.id, err instanceof Error ? err.message : 'Unknown error').catch(() => {});
-        });
         this.logger.log({ watchId: w.id, folderPath: w.folderPath }, 'Resumed folder watch');
       } catch (err) {
         this.logger.error({ watchId: w.id, err }, 'Failed to resume watch');
@@ -143,6 +145,18 @@ export class FolderWatchService implements OnModuleInit {
   }
 
   // ── private ──
+
+  private emitProgress(watchId: string, update: Partial<SyncProgress>) {
+    const entry = this.progress.get(watchId);
+    if (!entry) return;
+    entry.data = { ...entry.data, ...update };
+    entry.subject.next(entry.data);
+    if (entry.data.phase === 'done' || entry.data.phase === 'error') {
+      // Keep the subject alive for a bit so late subscribers get the final state,
+      // then complete after 30s
+      setTimeout(() => { entry.subject.complete(); this.progress.delete(watchId); }, 30_000);
+    }
+  }
 
   private startWatcher(watchId: string, folderPath: string, recursive: boolean): void {
     const w = watch(folderPath, {
@@ -166,12 +180,14 @@ export class FolderWatchService implements OnModuleInit {
 
   private async onFileAdded(watchId: string, filePath: string): Promise<void> {
     if (!this.isSupported(filePath)) return;
+    this.emitProgress(watchId, { phase: 'importing', currentFile: basename(filePath) });
     await this.importFile(watchId, filePath);
     await this.prisma.folderWatch.update({ where: { id: watchId }, data: { lastSyncAt: new Date() } });
   }
 
   private async onFileChanged(watchId: string, filePath: string): Promise<void> {
     if (!this.isSupported(filePath)) return;
+    this.emitProgress(watchId, { phase: 'importing', currentFile: basename(filePath) });
     await this.updateFile(watchId, filePath);
     await this.prisma.folderWatch.update({ where: { id: watchId }, data: { lastSyncAt: new Date() } });
   }
@@ -181,7 +197,6 @@ export class FolderWatchService implements OnModuleInit {
       where: { watchId_filePath: { watchId, filePath } },
     });
     if (!existing || existing.status === 'DELETED') return;
-    // Mark as deleted and trash the document
     await this.prisma.$transaction([
       this.prisma.folderFile.update({ where: { id: existing.id }, data: { status: 'DELETED' } }),
       this.prisma.contentDocument.update({ where: { id: existing.documentId }, data: { status: 'TRASHED', trashedAt: new Date() } }),
@@ -194,56 +209,79 @@ export class FolderWatchService implements OnModuleInit {
     const existingFiles = await this.prisma.folderFile.findMany({ where: { watchId, status: 'ACTIVE' } });
     const existingPaths = new Set(existingFiles.map((f) => f.filePath));
 
-    // Update status
     await this.prisma.folderWatch.update({ where: { id: watchId }, data: { status: 'ACTIVE', errorMessage: null } });
 
     const result = { imported: 0, updated: 0, deleted: 0, errors: 0 };
 
     try {
-      // Scan for current files
+      // Phase 1: scan folder
+      this.emitProgress(watchId, { phase: 'scanning', total: 0, current: 0, currentFile: '正在扫描文件夹...', percent: 0 });
       const currentFiles = this.scanFolder(watch.folderPath, watch.recursive);
       const currentPaths = new Set(currentFiles.map((f) => f.filePath));
 
-      // Detect deletions
+      // Phase 2: handle deletions
       const deleted = [...existingPaths].filter((p) => !currentPaths.has(p));
-      for (const filePath of deleted) {
-        try {
-          const ff = existingFiles.find((f) => f.filePath === filePath);
-          if (ff) {
-            await this.prisma.$transaction([
-              this.prisma.folderFile.update({ where: { id: ff.id }, data: { status: 'DELETED' } }),
-              this.prisma.contentDocument.update({ where: { id: ff.documentId }, data: { status: 'TRASHED', trashedAt: new Date() } }),
-            ]);
-            result.deleted++;
+      if (deleted.length > 0) {
+        this.emitProgress(watchId, { phase: 'deleting', total: deleted.length, current: 0, currentFile: '', percent: 0 });
+        for (let i = 0; i < deleted.length; i++) {
+          try {
+            const ff = existingFiles.find((f) => f.filePath === deleted[i]);
+            if (ff) {
+              await this.prisma.$transaction([
+                this.prisma.folderFile.update({ where: { id: ff.id }, data: { status: 'DELETED' } }),
+                this.prisma.contentDocument.update({ where: { id: ff.documentId }, data: { status: 'TRASHED', trashedAt: new Date() } }),
+              ]);
+              result.deleted++;
+            }
+          } catch (err) {
+            result.errors++;
+            this.logger.error({ filePath: deleted[i], err }, 'Delete handling failed');
           }
-        } catch (err) {
-          result.errors++;
-          this.logger.error({ filePath, err }, 'Delete handling failed during scan');
+          this.emitProgress(watchId, {
+            phase: 'deleting', current: i + 1, currentFile: basename(deleted[i]),
+            percent: Math.round(((i + 1) / deleted.length) * 100),
+          });
         }
       }
 
-      // Import or update
-      for (const file of currentFiles) {
-        try {
-          const existing = existingFiles.find((f) => f.filePath === file.filePath);
-          if (!existing) {
-            await this.importFile(watchId, file.filePath);
-            result.imported++;
-          } else {
-            const hash = this.hashFile(file.filePath);
-            if (hash && hash !== existing.fileHash) {
+      // Phase 3: import or update files
+      const toProcess = currentFiles.filter((f) => {
+        const existing = existingFiles.find((ef) => ef.filePath === f.filePath);
+        if (!existing) return true; // new file
+        const hash = this.hashFile(f.filePath);
+        return hash && hash !== existing.fileHash; // changed
+      });
+
+      if (toProcess.length > 0) {
+        this.emitProgress(watchId, { phase: 'importing', total: toProcess.length, current: 0, currentFile: '', percent: 0 });
+
+        for (let i = 0; i < toProcess.length; i++) {
+          const file = toProcess[i];
+          try {
+            const existing = existingFiles.find((ef) => ef.filePath === file.filePath);
+            this.emitProgress(watchId, {
+              phase: 'importing', current: i + 1, currentFile: file.fileName,
+              percent: Math.round(((i + 1) / toProcess.length) * 100),
+            });
+
+            if (!existing) {
+              await this.importFile(watchId, file.filePath);
+              result.imported++;
+            } else {
               await this.updateFile(watchId, file.filePath);
               result.updated++;
             }
+          } catch (err) {
+            result.errors++;
+            this.logger.error({ filePath: file.filePath, err }, 'Import/update failed');
           }
-        } catch (err) {
-          result.errors++;
-          this.logger.error({ filePath: file.filePath, err }, 'Import/update failed during scan');
         }
       }
     } catch (err) {
       this.logger.error({ watchId, err }, 'Full scan error');
-      await this.setError(watchId, err instanceof Error ? err.message : 'Unknown error');
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      this.emitProgress(watchId, { phase: 'error', error: msg, result });
+      await this.setError(watchId, msg);
       throw err;
     }
 
@@ -252,6 +290,7 @@ export class FolderWatchService implements OnModuleInit {
       data: { lastSyncAt: new Date(), errorMessage: null },
     });
 
+    this.emitProgress(watchId, { phase: 'done', current: result.imported + result.updated, percent: 100, result });
     this.logger.log({ watchId, ...result }, 'Full scan complete');
     return result;
   }
@@ -264,28 +303,30 @@ export class FolderWatchService implements OnModuleInit {
     const relPath = relative(watch.folderPath, filePath);
     const tags = this.pathTags(relPath);
 
-    // Extract text
+    // Read file and extract text using DocumentImportService (handles all formats including DOCX/PDF/XLSX)
     const buffer = readFileSync(filePath);
     const mime = this.mimeFromExt(ext);
-    const plainText = this.extractText(filePath, buffer, mime);
+    const extracted = await this.importer.extract({
+      originalname: basename(filePath),
+      mimetype: mime,
+      size: buffer.length,
+      buffer,
+    });
 
-    // Create document
     const doc = await this.documents.create({
       type: 'DOCUMENT',
-      title: fileName,
-      plainText,
+      title: extracted.title,
+      plainText: extracted.plainText,
       spaceId: watch.spaceId,
       tags,
     });
 
-    // Track mapping
     await this.prisma.folderFile.create({
       data: { watchId, filePath, documentId: doc.id, fileHash: hash, status: 'ACTIVE' },
     });
 
-    // Index (async, non-blocking)
-    void this.indexing.indexDocument(doc.id, plainText).catch((err) => {
-      this.logger.error({ documentId: doc.id, filePath, err }, 'Indexing failed for imported file');
+    void this.indexing.indexDocument(doc.id, extracted.plainText).catch((err) => {
+      this.logger.error({ documentId: doc.id, filePath, err }, 'Indexing failed');
     });
   }
 
@@ -299,18 +340,18 @@ export class FolderWatchService implements OnModuleInit {
     const ext = extname(filePath).toLowerCase();
     const buffer = readFileSync(filePath);
     const mime = this.mimeFromExt(ext);
-    const plainText = this.extractText(filePath, buffer, mime);
-
-    // Update document
-    const doc = await this.documents.update(existing.documentId, { plainText });
-    await this.prisma.folderFile.update({
-      where: { id: existing.id },
-      data: { fileHash: hash },
+    const extracted = await this.importer.extract({
+      originalname: basename(filePath),
+      mimetype: mime,
+      size: buffer.length,
+      buffer,
     });
 
-    // Re-index
-    void this.indexing.indexDocument(doc.id, plainText).catch((err) => {
-      this.logger.error({ documentId: doc.id, err }, 'Re-indexing failed for updated file');
+    await this.documents.update(existing.documentId, { plainText: extracted.plainText });
+    await this.prisma.folderFile.update({ where: { id: existing.id }, data: { fileHash: hash } });
+
+    void this.indexing.indexDocument(existing.documentId, extracted.plainText).catch((err) => {
+      this.logger.error({ documentId: existing.documentId, err }, 'Re-indexing failed');
     });
   }
 
@@ -333,48 +374,10 @@ export class FolderWatchService implements OnModuleInit {
         const ext = extname(entry.name).toLowerCase();
         if (SUPPORTED_EXTS.has(ext)) {
           const stat = statSync(full);
-          results.push({
-            filePath: full,
-            relativePath: relative(basePath, full),
-            fileName: entry.name,
-            ext,
-            size: stat.size,
-          });
+          results.push({ filePath: full, relativePath: relative(basePath, full), fileName: entry.name, ext, size: stat.size });
         }
       }
     }
-  }
-
-  private extractText(filePath: string, buffer: Buffer, mime: string): string {
-    // Plain text formats
-    if (['text/plain', 'text/markdown', 'text/csv', 'text/html', 'application/json'].includes(mime)) {
-      const utf8 = buffer.toString('utf-8');
-      const replacementCount = (utf8.match(/�/g) || []).length;
-      if (replacementCount > 0 && replacementCount > utf8.length * 0.01) {
-        try { return new TextDecoder('gbk').decode(buffer); } catch { /* fall through */ }
-      }
-      return utf8;
-    }
-
-    // DOCX
-    if (mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-      // Can't use async import in sync context, store placeholder and re-index async
-      return `[需要后端转换: ${basename(filePath)}]\n文件大小: ${buffer.length} bytes`;
-    }
-
-    // PDF
-    if (mime === 'application/pdf') {
-      return `[需要后端转换: ${basename(filePath)}]\n文件大小: ${buffer.length} bytes`;
-    }
-
-    // XLSX/XLS
-    if (mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || mime === 'application/vnd.ms-excel') {
-      return `[需要后端转换: ${basename(filePath)}]\n文件大小: ${buffer.length} bytes`;
-    }
-
-    // Fallback
-    const text = buffer.toString('utf-8');
-    return text.length > 0 ? text : `[二进制文件: ${basename(filePath)}]`;
   }
 
   private mimeFromExt(ext: string): string {
@@ -393,14 +396,11 @@ export class FolderWatchService implements OnModuleInit {
     try {
       const buf = readFileSync(filePath);
       return createHash('sha256').update(buf).digest('hex');
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   }
 
   private pathTags(relativePath: string): string[] {
     const parts = relativePath.replace(/\\/g, '/').split('/');
-    // Remove the filename from the last segment
     parts.pop();
     return parts.filter(Boolean);
   }

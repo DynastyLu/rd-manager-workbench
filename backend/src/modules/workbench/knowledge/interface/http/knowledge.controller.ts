@@ -1,9 +1,11 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, HttpStatus,
-  Param, Patch, Post, Res, UploadedFile, UseInterceptors,
+  Body, Controller, Delete, Get, HttpCode, HttpStatus, MessageEvent,
+  Param, Patch, Post, Res, Sse, UploadedFile, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import { Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { SessionService } from '../../application/session.service';
 import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
@@ -213,5 +215,17 @@ export class KnowledgeController {
   @Post('folders/:id/rescan')
   async rescanFolder(@Param('id') id: string) {
     return this.folderWatch.rescan(id);
+  }
+
+  @Sse('folders/:id/progress')
+  folderProgress(@Param('id') id: string): Observable<MessageEvent> {
+    return this.folderWatch.getProgressStream(id).pipe(
+      map((data) => ({ data })),
+    );
+  }
+
+  @Get('folders/:id/progress')
+  folderProgressSnapshot(@Param('id') id: string) {
+    return this.folderWatch.getProgress(id) ?? { phase: 'done', total: 0, current: 0, currentFile: '', percent: 100 };
   }
 }
