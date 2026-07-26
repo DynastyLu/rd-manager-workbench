@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Button, TextArea } from '@douyinfe/semi-ui';
 import { IconSend, IconStop } from '@douyinfe/semi-icons';
 
@@ -11,14 +11,14 @@ interface Props {
 
 export function KnowledgeChatInput({ onSend, onStop, streaming, disabled }: Props) {
   const [text, setText] = useState('');
-  const textRef = useRef(text);
-  textRef.current = text;
 
   const send = useCallback(() => {
-    const trimmed = textRef.current.trim();
-    if (!trimmed || streaming) return;
-    setText('');
-    onSend(trimmed);
+    setText((prev) => {
+      const trimmed = prev.trim();
+      if (!trimmed || streaming) return prev;
+      onSend(trimmed);
+      return '';
+    });
   }, [streaming, onSend]);
 
   return (

@@ -5,7 +5,9 @@ import { chatStream, createSession, getSession } from '../api';
 import { knowledgeQueryKeys } from '../queryKeys';
 import { KnowledgeChatInput } from './KnowledgeChatInput';
 import { KnowledgeMarkdown } from './KnowledgeMarkdown';
-import type { KnowledgeSession, KnowledgeMessage, ChunkCitation } from '../types';
+import type { KnowledgeMessage, ChunkCitation } from '../types';
+
+interface SseToken { content: string; index: number }
 
 interface Props { sessionId: string | null; onSessionCreated: (id: string) => void; }
 
@@ -49,36 +51,44 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         const lines = buf.split('\n');
         buf = lines.pop() || '';
         for (const line of lines) {
-          if (line.startsWith('event: token')) continue;
-          if (line.startsWith('data: ') && line.includes('"content"')) {
-            try {
-              const d = JSON.parse(line.slice(6));
-              if (d.content) { content += d.content; setStreamingContent(content); }
-            } catch {}
-          }
-          if (line.startsWith('event: citations')) continue;
-          if (line.startsWith('data: ') && line.includes('"documentId"')) {
-            try { setStreamingCitations(JSON.parse(line.slice(6))); } catch {}
-          }
+          if (line.startsWith('event: ')) continue;
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6);
+          try {
+            const parsed = JSON.parse(raw) as SseToken | ChunkCitation[] | { finished: boolean };
+            if (typeof parsed === 'object' && parsed !== null && 'content' in parsed) {
+              const token = parsed as unknown as SseToken;
+              content += token.content;
+              setStreamingContent(content);
+            } else if (Array.isArray(parsed) && parsed.length > 0 && 'documentId' in (parsed[0] ?? {})) {
+              setStreamingCitations(parsed as unknown as ChunkCitation[]);
+            }
+          } catch { /* skip unparseable chunks */ }
         }
       }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') console.error('Chat stream error', err);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name !== 'AbortError') {
+        console.error('Chat stream error', err);
+      }
     } finally {
       setStreaming(false);
       abortRef.current = null;
-      qc.invalidateQueries({ queryKey: knowledgeQueryKeys.session(sid) });
-      qc.invalidateQueries({ queryKey: knowledgeQueryKeys.sessions });
+      const finalSid = sid;
+      void qc.invalidateQueries({ queryKey: knowledgeQueryKeys.session(finalSid) });
+      void qc.invalidateQueries({ queryKey: knowledgeQueryKeys.sessions });
     }
   }, [sessionId, onSessionCreated, qc]);
 
   const stop = useCallback(() => { abortRef.current?.abort(); }, []);
 
+  const handleSend = useCallback((text: string) => { void send(text); }, [send]);
+  const handleStop = useCallback(() => { stop(); }, [stop]);
+
   if (!sessionId) {
     return (
       <div className="kb-chat-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
         <Empty title="知识库问答" description="在左侧新建对话，开始用自然语言提问">
-          <KnowledgeChatInput onSend={send} onStop={stop} streaming={streaming} />
+          <KnowledgeChatInput onSend={handleSend} onStop={handleStop} streaming={streaming} />
         </Empty>
       </div>
     );
@@ -125,7 +135,7 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         )}
       </div>
       <div style={{ padding: 12, borderTop: '1px solid var(--semi-color-border)' }}>
-        <KnowledgeChatInput onSend={send} onStop={stop} streaming={streaming} />
+        <KnowledgeChatInput onSend={handleSend} onStop={handleStop} streaming={streaming} />
       </div>
     </div>
   );
