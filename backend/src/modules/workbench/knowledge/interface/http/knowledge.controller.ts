@@ -8,6 +8,7 @@ import { SessionService } from '../../application/session.service';
 import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
 import { DocumentImportService } from '../../application/document-import.service';
+import { DocumentsService } from '../../../content/application/documents.service';
 import type { UploadedContentFile } from '../../../content/application/files.service';
 import { CreateSessionDto, ChatMessageDto } from './dto/knowledge.dto';
 
@@ -18,6 +19,7 @@ export class KnowledgeController {
     private readonly rag: RagService,
     private readonly indexing: IndexingService,
     private readonly importer: DocumentImportService,
+    private readonly documents: DocumentsService,
   ) {}
 
   @Post('sessions')
@@ -143,13 +145,25 @@ export class KnowledgeController {
   async uploadDocument(@UploadedFile() file: UploadedContentFile | undefined) {
     if (!file) throw new Error('File is required');
     const extracted = await this.importer.extract(file);
-    // Return extracted text only. The frontend creates a document from it.
-    // Users can upload the original file as a document attachment separately.
+
+    // Create the document and index it in one step so AI Q&A can search it immediately
+    const doc = await this.documents.create({
+      type: 'DOCUMENT' as const,
+      title: extracted.title,
+      plainText: extracted.plainText,
+    });
+
+    // Index asynchronously — the document is already created, so the user can see it
+    void this.indexing.indexDocument(doc.id, extracted.plainText).catch(() => {
+      // Indexing failure is logged but doesn't block the upload response
+    });
+
     return {
       title: extracted.title,
       plainTextPreview: extracted.plainText.slice(0, 500),
       plainText: extracted.plainText,
       wordCount: extracted.wordCount,
+      documentId: doc.id,
     };
   }
 }

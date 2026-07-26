@@ -274,35 +274,21 @@ export default function KnowledgeHomePage() {
         const body = await resp.json().catch(() => ({})) as { error?: { message?: string } }
         throw new Error(body.error?.message || 'Upload failed')
       }
-      const body = await resp.json() as { success: boolean; data: { title: string; plainText: string; wordCount: number } }
+      const body = await resp.json() as { success: boolean; data: { title: string; plainText: string; wordCount: number; documentId: string } }
       return body.data
     },
     onSuccess: (result) => {
-      const paragraphs = result.plainText.split('\n').filter((line: string) => line.trim())
-      const proseContent = {
-        type: 'doc',
-        content: paragraphs.length > 0
-          ? paragraphs.map((line: string) => ({
-              type: 'paragraph',
-              content: [{ type: 'text', text: line }],
-            }))
-          : [{ type: 'paragraph' }],
-      }
-      createDocument({
-        title: result.title,
-        type: 'DOCUMENT' as const,
-        content: proseContent,
-        plainText: result.plainText,
-      }).then((doc) => {
-        void queryClient.invalidateQueries({ queryKey: ['documents'] })
-        Toast.success(`已导入：${result.title}`)
-        setViewMode('preview')
-        setSearchParams((current) => {
-          const next = new URLSearchParams(current)
-          next.set('documentId', doc.id)
-          return next
-        })
-      }).catch(() => { Toast.error('创建文档失败'); })
+      // Backend already created the document and triggered indexing.
+      // Just refresh the list and navigate to the new document.
+      void queryClient.invalidateQueries({ queryKey: ['documents'] })
+      void queryClient.invalidateQueries({ queryKey: ['knowledge-index-status'] })
+      Toast.success(`已导入并索引：${result.title}`)
+      setViewMode('preview')
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current)
+        next.set('documentId', result.documentId)
+        return next
+      })
     },
     onError: () => { Toast.error('文件上传失败，请确认本地服务已启动。'); },
   })
