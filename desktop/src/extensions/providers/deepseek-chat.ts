@@ -47,7 +47,7 @@ export async function deepseekChat(
     : [];
 
   const body = {
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-pro',
     messages,
     max_tokens: typeof input.profile.publicConfig['maxOutputTokens'] === 'number'
       ? input.profile.publicConfig['maxOutputTokens']
@@ -95,7 +95,7 @@ export async function deepseekChat(
           summary: typeof output['summary'] === 'string' ? output['summary'] : null,
           actionItems: Array.isArray(output['actionItems']) ? output['actionItems'] : [],
         },
-        metadata: { model: 'deepseek-chat' },
+        metadata: { model: 'deepseek-v4-pro' },
       };
     } catch (error) {
       if (attempt < PROVIDER_MAX_ATTEMPTS) { await retryDelay(attempt); continue; }

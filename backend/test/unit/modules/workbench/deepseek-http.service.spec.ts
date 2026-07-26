@@ -58,7 +58,7 @@ describe('DeepSeekHttpService', () => {
     expect(callArgs[0]).toBe('https://api.deepseek.com/v1/chat/completions');
     const body = JSON.parse(callArgs[1].body);
     expect(body.stream).toBe(true);
-    expect(body.model).toBe('deepseek-chat');
+    expect(body.model).toBe('deepseek-v4-pro');
   });
 
   it('throws on non-2xx response', async () => {

@@ -2330,11 +2330,11 @@ model DocumentChunk {
 }
 
 model KnowledgeSession {
-  id        String                 @id @default(cuid())
+  id        String              @id @default(cuid())
   title     String
-  status    KnowledgeSessionStatus @default(ACTIVE)
-  createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  status    String              @default("ACTIVE")
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
   messages  KnowledgeMessage[]
 
   @@map("knowledge_sessions")
@@ -2344,7 +2344,7 @@ model KnowledgeSession {
 model KnowledgeMessage {
   id         String           @id @default(cuid())
   sessionId  String           @map("session_id")
-  role       MessageRole
+  role       String
   content    String
   citations  Json?
   tokenCount Int?             @map("token_count")

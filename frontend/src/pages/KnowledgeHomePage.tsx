@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Button, Input, Modal, Skeleton, Tag, TextArea, Toast } from '@douyinfe/semi-ui'
+import { Button, Input, Modal, Skeleton, Tag, Toast } from '@douyinfe/semi-ui'
 import {
   IconChevronRight,
   IconComment,
@@ -87,17 +87,18 @@ export default function KnowledgeHomePage() {
   )
   const setQuery = (value: string) => urlState.update({ query: value })
   const [draft, setDraft] = useState<DocumentDraft | null>(null)
+  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
+  const previewFileId = searchParams.get('fileId')?.trim() || undefined
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [spaceModalOpen, setSpaceModalOpen] = useState(false)
   const [spaceName, setSpaceName] = useState('')
-  const [qaOpen, setQaOpen] = useState(false)
-  const [qaQuestion, setQaQuestion] = useState('')
   const handledCreate = useRef<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const activeTab = urlState.getEnum('tab', ['documents', 'chat'] as const, 'documents')
   const [chatSessionId, setChatSessionId] = useState<string | null>(null)
   const selectTab = (t: string) => urlState.update({ tab: t }, { defaults: { tab: 'documents' } })
+
 
   const spacesQuery = useQuery({ queryKey: ['knowledge-spaces'], queryFn: listKnowledgeSpaces })
   const status: ContentDocumentStatus = directoryView === 'trash' ? 'TRASHED' : 'ACTIVE'
@@ -268,19 +269,42 @@ export default function KnowledgeHomePage() {
     mutationFn: async (uploadFile: File) => {
       const form = new FormData()
       form.append('file', uploadFile)
-      const resp = await fetch('http://127.0.0.1:4311/api/knowledge/documents/upload', { method: 'POST', body: form })
-      if (!resp.ok) throw new Error('Upload failed')
-      const body = await resp.json() as { data: { title: string; plainText: string; wordCount: number } }
+      const apiBase = import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : ''
+      const resp = await fetch(`${apiBase}/knowledge/documents/upload`, { method: 'POST', body: form })
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({})) as { error?: { message?: string } }
+        throw new Error(body.error?.message || 'Upload failed')
+      }
+      const body = await resp.json() as { success: boolean; data: { title: string; plainText: string; wordCount: number; fileId?: string } }
       return body.data
     },
     onSuccess: (result) => {
+      const paragraphs = result.plainText.split('\n').filter((line: string) => line.trim())
+      const proseContent = {
+        type: 'doc',
+        content: paragraphs.length > 0
+          ? paragraphs.map((line: string) => ({
+              type: 'paragraph',
+              content: [{ type: 'text', text: line }],
+            }))
+          : [{ type: 'paragraph' }],
+      }
       createDocument({
         title: result.title,
         type: 'DOCUMENT' as const,
+        content: proseContent,
         plainText: result.plainText,
-      }).then(() => {
+      }).then((doc) => {
         void queryClient.invalidateQueries({ queryKey: ['documents'] })
         Toast.success(`已导入：${result.title}`)
+        setViewMode('preview')
+        setSearchParams((current) => {
+          const next = new URLSearchParams(current)
+          next.set('documentId', doc.id)
+          // Store file ID for download link
+          if (result.fileId) next.set('fileId', result.fileId)
+          return next
+        })
       }).catch(() => { Toast.error('创建文档失败'); })
     },
     onError: () => { Toast.error('文件上传失败，请确认本地服务已启动。'); },
@@ -294,6 +318,7 @@ export default function KnowledgeHomePage() {
   }
 
   function openDocument(id: string) {
+    setViewMode('edit')
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
       next.set('documentId', id)
@@ -352,13 +377,12 @@ export default function KnowledgeHomePage() {
         <header>
           <div className="knowledge-workspace__search"><IconSearch /><input aria-label="搜索文档" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、正文和标签" /></div>
           <div>
-            <input ref={fileInputRef} type="file" accept=".txt,.md,.docx,.pdf" style={{ display: 'none' }} onChange={handleFileUpload} />
+            <input ref={fileInputRef} type="file" accept=".txt,.md,.docx,.pdf,.html,.htm,.xlsx,.xls,.csv,.json" style={{ display: 'none' }} onChange={handleFileUpload} />
             <Button icon={<IconUpload />} onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
               {uploadMutation.isPending ? '导入中...' : '上传文件'}
             </Button>
-            <Button onClick={() => setQaOpen(true)}>AI 知识问答</Button>
-            <Button icon={<IconPlus />} onClick={() => createMutation.mutate('DOCUMENT')}>新建文档</Button>
-            <Button icon={<IconPlus />} onClick={() => createMutation.mutate('KNOWLEDGE_PAGE')}>知识页</Button>
+            <Button icon={<IconPlus />} onClick={() => createMutation.mutate('DOCUMENT')} title="创建富文本文档，支持 Markdown 编辑">新建文档</Button>
+            <Button icon={<IconPlus />} onClick={() => createMutation.mutate('KNOWLEDGE_PAGE')} title="创建结构化知识页，适合沉淀技术方案和复盘">知识页</Button>
           </div>
         </header>
         {documentsQuery.isPending ? <Skeleton.Paragraph rows={6} /> : null}
@@ -440,11 +464,37 @@ export default function KnowledgeHomePage() {
                 placeholder="用逗号分隔标签"
               />
             </div>
-            <RichTextEditor
-              value={content}
-              readOnly={directoryView === 'trash'}
-              onChange={(nextContent, nextPlainText) => updateDraft({ content: nextContent, plainText: nextPlainText })}
-            />
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <Button size="small" type={viewMode === 'preview' ? 'primary' : 'tertiary'} onClick={() => setViewMode('preview')}>预览</Button>
+              <Button size="small" type={viewMode === 'edit' ? 'primary' : 'tertiary'} onClick={() => setViewMode('edit')} disabled={directoryView === 'trash'}>编辑</Button>
+            </div>
+            {viewMode === 'preview' ? (
+              <div>
+                {previewFileId && (
+                  <div style={{ marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: '#8f959e' }}>此内容来自上传的原始文件</span>
+                    <Button size="small" icon={<IconFile />} onClick={() => {
+                      const apiBase = import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : ''
+                      window.open(`${apiBase}/files/${encodeURIComponent(previewFileId)}/download`, '_blank')
+                    }}>下载原文件</Button>
+                  </div>
+                )}
+                <div style={{
+                  padding: 20, minHeight: 360, fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace',
+                  fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  background: '#fafbfc', borderRadius: 8, border: '1px solid #e5e6eb',
+                  overflow: 'auto', maxHeight: 'calc(100vh - 360px)',
+                }}>
+                  {plainText || '暂无内容'}
+                </div>
+              </div>
+            ) : (
+              <RichTextEditor
+                value={content}
+                readOnly={directoryView === 'trash'}
+                onChange={(nextContent, nextPlainText) => updateDraft({ content: nextContent, plainText: nextPlainText })}
+              />
+            )}
             <FileAttachments
               associations={{
                 documentId: documentQuery.data.id,
@@ -463,41 +513,6 @@ export default function KnowledgeHomePage() {
             <li key={version.id}><div><strong>版本 {version.versionNumber}</strong><span>{new Date(version.createdAt).toLocaleString('zh-CN')}</span></div><Button onClick={() => restoreVersionMutation.mutate(version.id)}>恢复此版本</Button></li>
           ))}
         </ol>
-      </Modal>
-      <Modal
-        title="AI 知识问答"
-        visible={qaOpen}
-        onCancel={() => setQaOpen(false)}
-        footer={(
-          <div className="workspace-modal-footer knowledge-workspace__qa-actions">
-            <Button onClick={() => setQaOpen(false)}>取消</Button>
-            <AiBusinessAction
-              operation="AI_KNOWLEDGE_QA"
-              objectLabel="知识库检索片段"
-              buttonLabel="发送问题"
-              adoptLabel="采纳为知识页"
-              question={qaQuestion}
-              title={qaQuestion.trim() ? `AI 问答：${qaQuestion.trim().slice(0, 80)}` : undefined}
-              spaceId={spaceId}
-              onAdopted={() => {
-                setQaQuestion('')
-                setQaOpen(false)
-              }}
-            />
-          </div>
-        )}
-        width={560}
-      >
-        <div className="knowledge-workspace__qa">
-          <p>只会发送与你问题相关的最多 8 篇本地知识片段；发送前会再次展示范围。</p>
-          <TextArea
-            aria-label="知识问题"
-            value={qaQuestion}
-            onChange={setQaQuestion}
-            placeholder="例如：上次架构评审确定了哪些行动项？"
-            autosize={{ minRows: 3, maxRows: 7 }}
-          />
-        </div>
       </Modal>
       <Modal
         title="新建知识空间"

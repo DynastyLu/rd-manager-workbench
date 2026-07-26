@@ -6,7 +6,6 @@ import { knowledgeQueryKeys } from '../queryKeys';
 import { KnowledgeMarkdown } from './KnowledgeMarkdown';
 import type { KnowledgeMessage, ChunkCitation } from '../types';
 
-interface SseToken { content: string; index: number }
 interface Props { sessionId: string | null; onSessionCreated: (id: string) => void; }
 
 export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
@@ -53,7 +52,12 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
       const resp = await chatStream(sid, question, abortRef.current.signal);
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '');
-        setError(`请求失败 (${resp.status})：${errText || '请确认 DeepSeek API Key 已配置'}`);
+        let errMsg = '请确认 DeepSeek API Key 已配置（在 backend/.env 中设置 DEEPSEEK_API_KEY）';
+        try {
+          const errJson = JSON.parse(errText) as { error?: { message?: string } };
+          if (errJson.error?.message) errMsg = errJson.error.message;
+        } catch { /* keep default */ }
+        setError(`请求失败 (${resp.status})：${errMsg}`);
         return;
       }
       const reader = resp.body!.getReader();
@@ -68,16 +72,34 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         const lines = buf.split('\n');
         buf = lines.pop() || '';
         for (const line of lines) {
-          if (line.startsWith('event: ')) continue;
+          if (line.startsWith('event: ')) {
+            const eventType = line.slice(7).trim();
+            if (eventType === 'error') {
+              // The error data will be on the next data: line
+              // We don't break here because there might be more events in the buffer
+            }
+            continue;
+          }
           if (!line.startsWith('data: ')) continue;
           const raw = line.slice(6);
           try {
-            const parsed = JSON.parse(raw) as SseToken | ChunkCitation[] | { finished: boolean };
-            if (typeof parsed === 'object' && parsed !== null && 'content' in parsed) {
-              content += (parsed as SseToken).content;
-              setStreamingContent(content);
-            } else if (Array.isArray(parsed) && parsed.length > 0 && 'documentId' in (parsed[0] ?? {})) {
-              setStreamingCitations(parsed as ChunkCitation[]);
+            const parsed: unknown = JSON.parse(raw);
+            if (typeof parsed === 'object' && parsed !== null) {
+              const obj = parsed as Record<string, unknown>;
+              if (typeof obj.error === 'string') {
+                setError(obj.error);
+                return;
+              }
+              if (typeof obj.content === 'string' && typeof obj.index === 'number') {
+                content += obj.content;
+                setStreamingContent(content);
+              }
+            }
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const first = parsed[0] as Record<string, unknown> | null;
+              if (first && typeof first.documentId === 'string') {
+                setStreamingCitations(parsed as unknown as ChunkCitation[]);
+              }
             }
           } catch { /* skip */ }
         }
@@ -165,9 +187,11 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
               {msg.citations && msg.citations.length > 0 && (
                 <div className="kb-message__citations">
                   {msg.citations.map((c, i) => (
-                    <a key={i} className="kb-message__citation" onClick={() => { window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; }} style={{ cursor: 'pointer' }}>
+                    <span key={i} className="kb-message__citation" role="button" tabIndex={0}
+                      onClick={() => { window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; } }}>
                       {c.title}
-                    </a>
+                    </span>
                   ))}
                 </div>
               )}
@@ -185,9 +209,11 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
               {streamingCitations.length > 0 && (
                 <div className="kb-message__citations">
                   {streamingCitations.map((c, i) => (
-                    <a key={i} className="kb-message__citation" onClick={() => { window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; }} style={{ cursor: 'pointer' }}>
+                    <span key={i} className="kb-message__citation" role="button" tabIndex={0}
+                      onClick={() => { window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; } }}>
                       {c.title}
-                    </a>
+                    </span>
                   ))}
                 </div>
               )}

@@ -42,7 +42,10 @@ export function KnowledgeSessionList({ activeId, onSelect, onNew }: Props) {
             <div
               key={s.id}
               className={`kb-chat-session-item${s.id === activeId ? ' kb-chat-session-item--active' : ''}`}
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(s)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(s); } }}
             >
               <span className="kb-chat-session-item__title">{s.title}</span>
               <button

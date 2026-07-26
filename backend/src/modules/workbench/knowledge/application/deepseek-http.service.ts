@@ -27,7 +27,7 @@ export class DeepSeekHttpService {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-pro',
         messages,
         stream: true,
         stream_options: { include_usage: true },

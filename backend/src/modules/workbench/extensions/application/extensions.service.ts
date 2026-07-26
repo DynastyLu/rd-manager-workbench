@@ -56,7 +56,7 @@ const CONFIG_SCHEMAS: Readonly<Record<string, z.ZodType<Record<string, unknown>>
     maxOutputTokens: z.number().int().min(128).max(16_384).optional(),
   }).strict(),
   DEEPSEEK_CHAT: z.object({
-    model: z.literal('deepseek-chat').default('deepseek-chat'),
+    model: z.literal('deepseek-v4-pro').default('deepseek-v4-pro'),
     maxOutputTokens: z.number().int().min(128).max(16_384).optional(),
   }).strict(),
   CALDAV: z.object({

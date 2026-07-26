@@ -8,7 +8,7 @@ import { SessionService } from '../../application/session.service';
 import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
 import { DocumentImportService } from '../../application/document-import.service';
-import { UploadedContentFile } from '../../../content/application/files.service';
+import { UploadedContentFile, FilesService } from '../../../content/application/files.service';
 import { CreateSessionDto, ChatMessageDto } from './dto/knowledge.dto';
 
 @Controller('knowledge')
@@ -18,6 +18,7 @@ export class KnowledgeController {
     private readonly rag: RagService,
     private readonly indexing: IndexingService,
     private readonly importer: DocumentImportService,
+    private readonly filesService: FilesService,
   ) {}
 
   @Post('sessions')
@@ -52,65 +53,74 @@ export class KnowledgeController {
     @Body() dto: ChatMessageDto,
     @Res() res: Response,
   ) {
-    await this.sessions.addMessage(sessionId, { role: 'USER', content: dto.question });
-    const history = await this.sessions.getHistory(sessionId);
-
-    const { stream, citations } = await this.rag.ask({
-      question: dto.question,
-      history: history.slice(0, -1),
-    });
-
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-    });
-
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let fullContent = '';
-    let buffer = '';
-
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const text = decoder.decode(value, { stream: true });
-        buffer += text;
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+      await this.sessions.addMessage(sessionId, { role: 'USER', content: dto.question });
+      const history = await this.sessions.getHistory(sessionId);
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content) {
-                fullContent += content;
-                res.write(`event: token\ndata: ${JSON.stringify({ content, index: fullContent.length })}\n\n`);
-              }
-            } catch { /* skip */ }
+      const { stream, citations } = await this.rag.ask({
+        question: dto.question,
+        history: history.slice(0, -1),
+      });
+
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      });
+
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = '';
+      let buffer = '';
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value, { stream: true });
+          buffer += text;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+              try {
+                const parsed = JSON.parse(data);
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) {
+                  fullContent += content;
+                  res.write(`event: token\ndata: ${JSON.stringify({ content, index: fullContent.length })}\n\n`);
+                }
+              } catch { /* skip */ }
+            }
           }
         }
-      }
-    } finally {
-      res.write(`event: citations\ndata: ${JSON.stringify(citations)}\n\n`);
-      res.write(`event: done\ndata: ${JSON.stringify({ finished: true })}\n\n`);
-      res.end();
+      } finally {
+        res.write(`event: citations\ndata: ${JSON.stringify(citations)}\n\n`);
+        res.write(`event: done\ndata: ${JSON.stringify({ finished: true })}\n\n`);
+        res.end();
 
-      await this.sessions.addMessage(sessionId, {
-        role: 'ASSISTANT',
-        content: fullContent,
-        citations: citations.map((c) => ({ documentId: c.documentId, title: c.title, chunkIndex: c.chunkIndex, text: c.text })),
-        tokenCount: Math.ceil(fullContent.length / 2),
-      });
-      void this.sessions.logUsage({
-        operation: 'KNOWLEDGE_QA', model: 'deepseek-chat',
-        tokenCount: Math.ceil((dto.question.length + fullContent.length) / 2),
-        success: true, sessionId,
-      });
+        if (fullContent) {
+          await this.sessions.addMessage(sessionId, {
+            role: 'ASSISTANT',
+            content: fullContent,
+            citations: citations.map((c) => ({ documentId: c.documentId, title: c.title, chunkIndex: c.chunkIndex, text: c.text })),
+            tokenCount: Math.ceil(fullContent.length / 2),
+          });
+          void this.sessions.logUsage({
+            operation: 'KNOWLEDGE_QA', model: 'deepseek-v4-pro',
+            tokenCount: Math.ceil((dto.question.length + fullContent.length) / 2),
+            success: true, sessionId,
+          });
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      res.writeHead(500, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+      res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
+      res.end();
     }
   }
 
@@ -134,11 +144,14 @@ export class KnowledgeController {
   async uploadDocument(@UploadedFile() file: UploadedContentFile | undefined) {
     if (!file) throw new Error('File is required');
     const extracted = await this.importer.extract(file);
+    // Also store the original file as a FileAsset (no documentId yet - will be linked later)
+    const savedFile = await this.filesService.create(file, { name: extracted.title });
     return {
       title: extracted.title,
       plainTextPreview: extracted.plainText.slice(0, 500),
       plainText: extracted.plainText,
       wordCount: extracted.wordCount,
+      fileId: savedFile.id,
     };
   }
 }

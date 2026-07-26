@@ -68,7 +68,7 @@ export class EmbeddingService {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.apiKey}`,
           },
-          body: JSON.stringify({ model: 'deepseek-chat', input: texts }),
+          body: JSON.stringify({ model: 'deepseek-v4-pro', input: texts }),
           signal: AbortSignal.timeout(10_000),
         });
 

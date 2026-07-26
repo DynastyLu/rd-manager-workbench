@@ -1,11 +1,10 @@
 import { IndexingService } from '../../../../src/modules/workbench/knowledge/application/indexing.service';
 
 describe('IndexingService', () => {
-  let mockPrisma: any; let mockChunking: any; let mockEmbedding: any; let service: IndexingService;
+  let mockPrisma: any; let mockChunking: any; let service: IndexingService;
 
   beforeEach(() => {
     mockChunking = { chunk: jest.fn() };
-    mockEmbedding = { embed: jest.fn() };
     const tx = {
       documentChunk: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       $executeRawUnsafe: jest.fn(),
@@ -18,15 +17,14 @@ describe('IndexingService', () => {
       $executeRawUnsafe: tx.$executeRawUnsafe,
       $queryRawUnsafe: tx.$queryRawUnsafe,
     };
-    service = new IndexingService(mockPrisma, mockChunking, mockEmbedding);
+    service = new IndexingService(mockPrisma, mockChunking);
   });
 
-  it('chunks, embeds, and writes document chunks', async () => {
+  it('chunks and writes document chunks without embeddings', async () => {
     mockChunking.chunk.mockReturnValue([
       { chunkIndex: 0, content: 'c1', tokenCount: 5, metadata: {} },
       { chunkIndex: 1, content: 'c2', tokenCount: 5, metadata: {} },
     ]);
-    mockEmbedding.embed.mockResolvedValue([Array(1536).fill(0.1), Array(1536).fill(0.2)]);
     mockPrisma.contentDocument.findUnique.mockResolvedValue({ plainText: 'text' });
 
     await service.indexDocument('doc1', 'text');

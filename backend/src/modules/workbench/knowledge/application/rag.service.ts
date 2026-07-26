@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
-import { EmbeddingService } from './embedding.service';
 import { DeepSeekHttpService } from './deepseek-http.service';
 import { ChunkCitation } from '../domain/knowledge.types';
 
@@ -15,7 +14,7 @@ const SYSTEM_PROMPT = `你是一个本地研发知识库助手，服务于研发
 5. 不要编造内容，不要使用外部知识`;
 
 const TOP_K = 20;
-const SIMILARITY_THRESHOLD = 0.7;
+const SIMILARITY_THRESHOLD = 0.08;
 const MAX_CONTEXT_TOKENS = 3500;
 const MAX_HISTORY_TOKENS = 2000;
 
@@ -33,7 +32,6 @@ interface ChunkRow {
 export class RagService {
   constructor(
     private readonly prisma: PlatformPrismaService,
-    private readonly embedding: EmbeddingService,
     private readonly deepseek: DeepSeekHttpService,
   ) {}
 
@@ -41,23 +39,20 @@ export class RagService {
     question: string;
     history: Array<{ role: string; content: string }>;
   }): Promise<{ stream: ReadableStream<Uint8Array>; citations: ChunkCitation[] }> {
-    const [questionEmbedding] = await this.embedding.embed([params.question]);
-    if (!questionEmbedding) {
-      throw new Error('Failed to embed question');
-    }
-
+    // Use pg_trgm similarity for text-based retrieval (no external embedding API needed)
     const chunks = await this.prisma.$queryRawUnsafe<ChunkRow[]>(
       `SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
               cd.title as document_title,
-              1 - (dc.embedding <=> $1::public.vector) AS similarity
+              public.similarity(dc.content, $1) AS similarity
        FROM app.document_chunks dc
        JOIN app.content_documents cd ON cd.id = dc.document_id
-       WHERE dc.embedding IS NOT NULL
-         AND cd.status = 'ACTIVE'
+       WHERE cd.status = 'ACTIVE'
          AND cd.trashed_at IS NULL
-       ORDER BY dc.embedding <=> $1::public.vector
+         AND dc.content IS NOT NULL
+         AND dc.content != ''
+       ORDER BY public.similarity(dc.content, $1) DESC
        LIMIT $2`,
-      questionEmbedding, TOP_K,
+      params.question, TOP_K,
     );
 
     const relevant = chunks.filter((c) => Number(c.similarity) >= SIMILARITY_THRESHOLD);

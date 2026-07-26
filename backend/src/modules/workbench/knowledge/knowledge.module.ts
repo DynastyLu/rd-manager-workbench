@@ -8,9 +8,10 @@ import { IndexingService } from './application/indexing.service';
 import { KnowledgeController } from './interface/http/knowledge.controller';
 import { EmbeddingCache } from './domain/embedding-cache';
 import { DocumentImportService } from './application/document-import.service';
-import { PlatformPrismaService } from '../../../infrastructure/prisma/platform-prisma.service';
+import { ContentModule } from '../content/content.module';
 
 @Module({
+  imports: [ContentModule],
   controllers: [KnowledgeController],
   providers: [
     ChunkingService,
@@ -33,7 +34,6 @@ import { PlatformPrismaService } from '../../../infrastructure/prisma/platform-p
     RagService,
     SessionService,
     IndexingService,
-    PlatformPrismaService,
     DocumentImportService,
   ],
   exports: [ChunkingService, EmbeddingService, RagService, SessionService, IndexingService],

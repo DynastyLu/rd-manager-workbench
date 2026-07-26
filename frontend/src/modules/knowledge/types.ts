@@ -11,7 +11,7 @@ export interface ChunkCitation {
 }
 export interface IndexStatus {
   indexedDocuments: number; totalDocuments: number;
-  missingEmbeddingChunks: number; lastIndexedAt?: string; complete: boolean;
+  totalChunks: number; lastIndexedAt?: string; complete: boolean;
 }
 export interface AiUsageStats {
   today: { tokens: number; cost: number }; week: { tokens: number; cost: number };
