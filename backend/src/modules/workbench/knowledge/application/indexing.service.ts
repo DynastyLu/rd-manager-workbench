@@ -50,9 +50,9 @@ export class IndexingService {
       for (const chunk of chunks) {
         await tx.$executeRawUnsafe(
           `INSERT INTO app.document_chunks (document_id, chunk_index, content, token_count, metadata)
-           VALUES ($1, $2, $3, $4, $5)
+           VALUES ($1, $2, $3, $4, $5::jsonb)
            ON CONFLICT (document_id, chunk_index) DO UPDATE
-           SET content = $3, token_count = $4, metadata = $5, updated_at = now()`,
+           SET content = $3, token_count = $4, metadata = $5::jsonb, updated_at = now()`,
           id,
           chunk.chunkIndex,
           chunk.content,
