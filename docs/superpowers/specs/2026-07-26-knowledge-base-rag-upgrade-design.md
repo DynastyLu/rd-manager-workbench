@@ -1,7 +1,7 @@
 # 知识库 RAG 全面升级 + DeepSeek 全量迁移 设计规格
 
 **日期：** 2026-07-26  
-**版本：** v2.0（补全错误降级、初始索引、健康监控、流式摘要、协议改造）  
+**版本：** v3.0（补全错误降级、初始索引、健康监控、流式摘要、协议改造、浏览器直接模式）  
 **状态：** 待用户审阅  
 **依赖：** 现有知识库(content)、AI 扩展(extensions)、搜索(search)、Electron 凭据桥(desktop)
 
@@ -48,6 +48,7 @@
 | 13 | 索引健康监控 | 仪表盘 + 自动补建 + 健康检查集成 |
 | 14 | AI 摘要流式化 | 文档/会议摘要改为流式输出，采纳逻辑不变 |
 | 15 | 流式协议改造 | Electron 扩展桥新增 `extension.stream` 事件 + SSE 中继 |
+| 16 | 浏览器直接模式 | 无 Electron 时后端从 `.env` 读 key 直调 DeepSeek，前端无感知 |
 
 ---
 
@@ -99,7 +100,59 @@ Electron 主进程 → DeepSeek API（stream: true）
 
 旧的 `extension.run`（一次性）保留，用于 `TEST_CONNECTION` 和不需要流式的操作。
 
-### 2.2 迁移影响的文件
+### 2.3 浏览器直接模式
+
+当前所有 AI 调用必须经过 Electron 桥（后端 → WebSocket → Electron 主进程 → API），浏览器模式下（`localhost:4312` 无 Electron）AI 功能完全不可用。新增**双通道 Provider 执行模式**：
+
+```
+                 ┌── Electron 可用？──→ extension.stream（安全桥，key 在保险箱）
+                 │
+RAG/Embedding ──┤
+                 │
+                 └── 浏览器模式 ──→ DirectHttpProvider（后端从 .env 读 key，直调 DeepSeek）
+```
+
+**实现：**
+
+```ts
+// embedding.service.ts / rag.service.ts
+class AiProviderRouter {
+  constructor(
+    private readonly extensionGateway: ExtensionsGateway,  // WebSocket to Electron
+    private readonly deepseekHttp: DeepSeekHttpProvider,    // Direct HTTP client
+  ) {}
+
+  async chat(params: ChatParams): Promise<ReadableStream> {
+    if (this.extensionGateway.hasActiveConnection()) {
+      // 安全桥模式：API key 在 Electron safeStorage 中，后端不可见
+      return this.extensionGateway.streamChat(params);
+    }
+    // 浏览器模式：后端从 DEEPSEEK_API_KEY 环境变量读取
+    return this.deepseekHttp.streamChat(params);
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    if (this.extensionGateway.hasActiveConnection()) {
+      return this.extensionGateway.embed(texts);
+    }
+    return this.deepseekHttp.embed(texts);
+  }
+}
+```
+
+**规则：**
+
+| 模式 | API Key 来源 | 数据出本机 | 适用场景 |
+|------|-------------|-----------|---------|
+| Electron 桥 | `safeStorage` 加密存储 | Electron 主进程发出 | 生产使用 |
+| 浏览器直接 | `.env` 中 `DEEPSEEK_API_KEY` | NestJS 后端发出 | 开发调试、纯浏览器使用 |
+
+- 检测方式：`ExtensionsGateway` 启动时设置 `hasActiveConnection` 标志（WebSocket 客户端连接后为 true）
+- 降级行为：Electron 断开时自动切到直连模式（如果 `.env` 有 key），反之亦然
+- 安全边界：浏览器模式下 API key 明文存在 `.env`（已被 `.gitignore`），不经过前端
+- 前端无感知：API 端点、SSE 格式、流式渲染完全一致
+
+### 2.4 迁移影响的文件
 
 **后端**
 - `extensions/application/extensions.service.ts` — Provider 注册、操作映射、zod schema → `DEEPSEEK_CHAT`
