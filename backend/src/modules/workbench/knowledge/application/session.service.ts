@@ -64,4 +64,34 @@ export class SessionService {
       data: { status: 'ARCHIVED' },
     });
   }
+
+  async logUsage(data: {
+    operation: string; model: string; tokenCount: number;
+    success: boolean; sessionId?: string; documentId?: string; errorCode?: string;
+  }) {
+    return this.prisma.aiUsageLog.create({ data }).catch(() => null);
+  }
+
+  async getUsageStats() {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAgo = new Date(today.getTime() - 7 * 86400000);
+    const monthAgo = new Date(today.getTime() - 30 * 86400000);
+    const sum = (rows: Array<{ tokenCount: number }>) => rows.reduce((s, r) => s + r.tokenCount, 0);
+    const cost = (tokens: number) => Math.round(tokens * 0.00000027 * 100000) / 100000;
+
+    const [todayRows, weekRows, monthRows, totalRows] = await Promise.all([
+      this.prisma.aiUsageLog.findMany({ where: { createdAt: { gte: today }, success: true } }),
+      this.prisma.aiUsageLog.findMany({ where: { createdAt: { gte: weekAgo }, success: true } }),
+      this.prisma.aiUsageLog.findMany({ where: { createdAt: { gte: monthAgo }, success: true } }),
+      this.prisma.aiUsageLog.findMany({ where: { success: true } }),
+    ].map((p) => (p as Promise<Array<{ tokenCount: number }>>).catch(() => [])));
+
+    return {
+      today: { tokens: sum(todayRows as Array<{ tokenCount: number }>), cost: cost(sum(todayRows as Array<{ tokenCount: number }>)) },
+      week: { tokens: sum(weekRows as Array<{ tokenCount: number }>), cost: cost(sum(weekRows as Array<{ tokenCount: number }>)) },
+      month: { tokens: sum(monthRows as Array<{ tokenCount: number }>), cost: cost(sum(monthRows as Array<{ tokenCount: number }>)) },
+      total: { tokens: sum(totalRows as Array<{ tokenCount: number }>), cost: cost(sum(totalRows as Array<{ tokenCount: number }>)) },
+    };
+  }
 }

@@ -5,6 +5,7 @@ export const extensionProviders = [
   'ALIYUN_SMS',
   'LOCAL_PREVIEW',
   'OPENAI_RESPONSES',
+  'DEEPSEEK_CHAT',
   'LOCAL_MANUAL',
   'CALDAV',
   'WEBDAV',

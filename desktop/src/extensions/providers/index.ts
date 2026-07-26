@@ -3,6 +3,7 @@ import { aliyunSms } from './aliyun-sms.js'
 import { calDav } from './caldav.js'
 import { localManualAi, localPreviewSms } from './local-providers.js'
 import { openAiResponses } from './openai-responses.js'
+import { deepseekChat } from './deepseek-chat.js'
 import { webDav } from './webdav.js'
 
 export function registerBuiltinProviders(registry: ProviderRegistry): ProviderRegistry {
@@ -17,6 +18,11 @@ export function registerBuiltinProviders(registry: ProviderRegistry): ProviderRe
     'OPENAI_RESPONSES',
     ['TEST_CONNECTION', 'AI_SUMMARIZE_MEETING', 'AI_SUMMARIZE_DOCUMENT', 'AI_KNOWLEDGE_QA'],
     openAiResponses,
+  )
+  registry.register(
+    'DEEPSEEK_CHAT',
+    ['TEST_CONNECTION', 'AI_SUMMARIZE_MEETING', 'AI_SUMMARIZE_DOCUMENT', 'AI_KNOWLEDGE_QA'],
+    deepseekChat,
   )
   registry.register(
     'CALDAV',

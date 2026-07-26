@@ -106,6 +106,11 @@ export class KnowledgeController {
         citations: citations.map((c) => ({ documentId: c.documentId, title: c.title, chunkIndex: c.chunkIndex, text: c.text })),
         tokenCount: Math.ceil(fullContent.length / 2),
       });
+      void this.sessions.logUsage({
+        operation: 'KNOWLEDGE_QA', model: 'deepseek-chat',
+        tokenCount: Math.ceil((dto.question.length + fullContent.length) / 2),
+        success: true, sessionId,
+      });
     }
   }
 
@@ -117,6 +122,11 @@ export class KnowledgeController {
   @Post('reindex')
   triggerReindex() {
     return this.indexing.indexAll();
+  }
+
+  @Get('usage')
+  getUsage() {
+    return this.sessions.getUsageStats();
   }
 
   @Post('documents/upload')
