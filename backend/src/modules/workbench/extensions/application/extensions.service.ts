@@ -25,7 +25,7 @@ import { ExternalSyncCompletionService } from './external-sync-completion.servic
 
 const PROVIDERS: Readonly<Record<ExtensionKind, readonly string[]>> = {
   SMS: ['LOCAL_PREVIEW', 'ALIYUN_SMS'],
-  AI: ['LOCAL_MANUAL', 'OPENAI_RESPONSES'],
+  AI: ['LOCAL_MANUAL', 'OPENAI_RESPONSES', 'DEEPSEEK_CHAT'],
   CALENDAR: ['CALDAV'],
   CLOUD_DRIVE: ['WEBDAV'],
 };
@@ -35,6 +35,7 @@ const OPERATIONS: Readonly<Record<string, readonly string[]>> = {
   ALIYUN_SMS: ['TEST_CONNECTION', 'SMS_SEND'],
   LOCAL_MANUAL: ['TEST_CONNECTION', 'AI_SUMMARIZE_MEETING', 'AI_SUMMARIZE_DOCUMENT', 'AI_KNOWLEDGE_QA'],
   OPENAI_RESPONSES: ['TEST_CONNECTION', 'AI_SUMMARIZE_MEETING', 'AI_SUMMARIZE_DOCUMENT', 'AI_KNOWLEDGE_QA'],
+  DEEPSEEK_CHAT: ['TEST_CONNECTION', 'AI_SUMMARIZE_MEETING', 'AI_SUMMARIZE_DOCUMENT', 'AI_KNOWLEDGE_QA'],
   CALDAV: ['TEST_CONNECTION', 'CALENDAR_SYNC_PREFLIGHT', 'CALENDAR_SYNC_COMMIT'],
   WEBDAV: ['TEST_CONNECTION', 'CLOUD_UPLOAD_PREFLIGHT', 'CLOUD_UPLOAD_COMMIT', 'CLOUD_DOWNLOAD_PREFLIGHT', 'CLOUD_DOWNLOAD_COMMIT'],
 };
@@ -52,6 +53,10 @@ const CONFIG_SCHEMAS: Readonly<Record<string, z.ZodType<Record<string, unknown>>
   LOCAL_MANUAL: z.object({ model: z.literal('manual').default('manual') }).strict(),
   OPENAI_RESPONSES: z.object({
     model: z.string().min(1).max(100),
+    maxOutputTokens: z.number().int().min(128).max(16_384).optional(),
+  }).strict(),
+  DEEPSEEK_CHAT: z.object({
+    model: z.literal('deepseek-chat').default('deepseek-chat'),
     maxOutputTokens: z.number().int().min(128).max(16_384).optional(),
   }).strict(),
   CALDAV: z.object({
