@@ -799,6 +799,7 @@ model ContentDocument {
   minutesForMeeting Meeting?            @relation("MeetingMinutesDocument")
   versions          DocumentVersion[]
   fileAssets        FileAsset[]
+  chunks            DocumentChunk[]
 
   @@index([status, updatedAt])
   @@index([type, status, updatedAt])
@@ -2296,5 +2297,78 @@ model ExternalSyncSession {
   @@index([profileId, status, createdAt])
   @@index([expiresAt])
   @@map("external_sync_sessions")
+  @@schema("app")
+}
+
+enum KnowledgeSessionStatus {
+  ACTIVE
+  ARCHIVED
+  @@schema("app")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  @@schema("app")
+}
+
+model DocumentChunk {
+  id          String   @id @default(cuid())
+  documentId  String   @map("document_id")
+  chunkIndex  Int      @map("chunk_index")
+  content     String
+  tokenCount  Int      @default(0) @map("token_count")
+  embedding   Unsupported("public.vector(1536)")
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  document    ContentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@map("document_chunks")
+  @@schema("app")
+}
+
+model KnowledgeSession {
+  id        String                 @id @default(cuid())
+  title     String
+  status    KnowledgeSessionStatus @default(ACTIVE)
+  createdAt DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+  messages  KnowledgeMessage[]
+
+  @@map("knowledge_sessions")
+  @@schema("app")
+}
+
+model KnowledgeMessage {
+  id         String           @id @default(cuid())
+  sessionId  String           @map("session_id")
+  role       MessageRole
+  content    String
+  citations  Json?
+  tokenCount Int?             @map("token_count")
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  session    KnowledgeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("knowledge_messages")
+  @@schema("app")
+}
+
+model AiUsageLog {
+  id            String   @id @default(cuid())
+  operation     String
+  model         String
+  tokenCount    Int      @map("token_count")
+  estimatedCost Float?   @map("estimated_cost")
+  documentId    String?  @map("document_id")
+  sessionId     String?  @map("session_id")
+  success       Boolean
+  errorCode     String?  @map("error_code")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@map("ai_usage_logs")
   @@schema("app")
 }
