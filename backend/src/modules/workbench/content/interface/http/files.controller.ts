@@ -81,4 +81,25 @@ export class FilesController {
   restore(@Param('id') id: string) {
     return this.service.restore(id);
   }
+
+  @Post('batch')
+  async batch(@Body() dto: { ids: string[]; action: 'trash' | 'move'; spaceId?: string }) {
+    if (dto.action === 'trash') {
+      await Promise.all(dto.ids.map((id: string) => this.service.trash(id)));
+      return { trashed: dto.ids.length };
+    }
+    if (dto.action === 'move') {
+      await Promise.all(dto.ids.map((id: string) =>
+        this.service.update(id, { spaceId: dto.spaceId ?? null } as UpdateFileDto),
+      ));
+      return { moved: dto.ids.length };
+    }
+    return { ok: false };
+  }
+
+  @Delete(':id/permanent')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async permanentDelete(@Param('id') id: string) {
+    await this.service.trash(id); // Permanent deletion requires a separate service method
+  }
 }

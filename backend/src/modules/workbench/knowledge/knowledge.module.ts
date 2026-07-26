@@ -7,6 +7,7 @@ import { SessionService } from './application/session.service';
 import { IndexingService } from './application/indexing.service';
 import { KnowledgeController } from './interface/http/knowledge.controller';
 import { EmbeddingCache } from './domain/embedding-cache';
+import { DocumentImportService } from './application/document-import.service';
 import { PlatformPrismaService } from '../../../infrastructure/prisma/platform-prisma.service';
 
 @Module({
@@ -33,6 +34,7 @@ import { PlatformPrismaService } from '../../../infrastructure/prisma/platform-p
     SessionService,
     IndexingService,
     PlatformPrismaService,
+    DocumentImportService,
   ],
   exports: [ChunkingService, EmbeddingService, RagService, SessionService, IndexingService],
 })

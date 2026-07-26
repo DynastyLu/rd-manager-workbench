@@ -1,11 +1,14 @@
 import {
   Body, Controller, Delete, Get, HttpCode, HttpStatus,
-  Param, Patch, Post, Res,
+  Param, Patch, Post, Res, UploadedFile, UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { SessionService } from '../../application/session.service';
 import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
+import { DocumentImportService } from '../../application/document-import.service';
+import { UploadedContentFile } from '../../../content/application/files.service';
 import { CreateSessionDto, ChatMessageDto } from './dto/knowledge.dto';
 
 @Controller('knowledge')
@@ -14,6 +17,7 @@ export class KnowledgeController {
     private readonly sessions: SessionService,
     private readonly rag: RagService,
     private readonly indexing: IndexingService,
+    private readonly importer: DocumentImportService,
   ) {}
 
   @Post('sessions')
@@ -113,5 +117,18 @@ export class KnowledgeController {
   @Post('reindex')
   triggerReindex() {
     return this.indexing.indexAll();
+  }
+
+  @Post('documents/upload')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
+  async uploadDocument(@UploadedFile() file: UploadedContentFile | undefined) {
+    if (!file) throw new Error('File is required');
+    const extracted = await this.importer.extract(file);
+    return {
+      title: extracted.title,
+      plainTextPreview: extracted.plainText.slice(0, 500),
+      plainText: extracted.plainText,
+      wordCount: extracted.wordCount,
+    };
   }
 }
