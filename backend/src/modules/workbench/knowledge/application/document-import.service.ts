@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import type { UploadedContentFile } from '../../content/application/files.service';
 
 interface ExtractedDocument {
@@ -65,6 +67,55 @@ export class DocumentImportService {
     return utf8;
   }
 
+  /**
+   * Extract text from PDF using pdftotext (best for Chinese PDFs) with pdf-parse fallback.
+   * Returns null if all methods fail.
+   */
+  private async extractPdf(buffer: Buffer): Promise<string | null> {
+    // Method 1: pdftotext (poppler-utils) — handles Chinese PDFs best
+    try {
+      const { writeFileSync, unlinkSync } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const { randomUUID } = await import('node:crypto');
+      const tmpPath = join(tmpdir(), `kb-pdf-${randomUUID()}.pdf`);
+      writeFileSync(tmpPath, buffer);
+      try {
+        const result = execSync(`pdftotext -layout -enc UTF-8 "${tmpPath}" -`, {
+          encoding: 'utf-8', timeout: 15_000, maxBuffer: 10 * 1024 * 1024,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        if (result && result.trim().length > 0) {
+          this.logger.log(`pdftotext extracted ${result.length} chars`);
+          return result;
+        }
+      } finally {
+        try { unlinkSync(tmpPath); } catch { /* ignore */ }
+      }
+    } catch (err) {
+      this.logger.warn(`pdftotext failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Method 2: pdf-parse (pdf.js based) — works for some PDFs
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pdfParseModule = await import('pdf-parse') as any;
+      const { PDFParse } = pdfParseModule;
+      const parser = new PDFParse(new Uint8Array(buffer));
+      await parser.load();
+      const result = await parser.getText();
+      const text: string = typeof result.text === 'string' ? result.text : String(result);
+      if (text.trim().length > 0) {
+        this.logger.log(`pdf-parse extracted ${text.length} chars`);
+        return text;
+      }
+    } catch (err) {
+      this.logger.warn(`pdf-parse failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return null;
+  }
+
   async extract(file: UploadedContentFile): Promise<ExtractedDocument> {
     const buffer = file.buffer;
     const rawName = file.originalname ?? 'untitled';
@@ -93,19 +144,9 @@ export class DocumentImportService {
 
     // --- PDF ---
     if (mime === 'application/pdf') {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pdfParseModule = await import('pdf-parse') as any;
-        const { PDFParse } = pdfParseModule;
-        const parser = new PDFParse(new Uint8Array(buffer));
-        await parser.load();
-        const result = await parser.getText();
-        const text: string = typeof result.text === 'string' ? result.text : String(result);
-        return { title: name, plainText: text, wordCount: text.length };
-      } catch {
-        this.logger.warn('pdf-parse not available, trying fallback');
-        return { title: name, plainText: `[PDF 文件: ${name}]`, wordCount: 0 };
-      }
+      const plainText = await this.extractPdf(buffer);
+      if (plainText !== null) return { title: name, plainText, wordCount: plainText.length };
+      return { title: name, plainText: `[PDF 文件: ${name}]`, wordCount: 0 };
     }
 
     // --- XLSX / XLS ---
