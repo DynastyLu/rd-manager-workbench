@@ -92,7 +92,18 @@ export function KnowledgeFolderSync() {
     void queryClient.invalidateQueries({ queryKey: ['knowledge-folders'] });
     void queryClient.invalidateQueries({ queryKey: ['documents'] });
     void queryClient.invalidateQueries({ queryKey: ['knowledge-index-status'] });
+    void queryClient.invalidateQueries({ queryKey: ['knowledge-spaces'] });
   };
+
+  // Auto-refresh when sync completes
+  const prevPhase = useRef(progress?.phase);
+  useEffect(() => {
+    if (progress?.phase === 'done' && prevPhase.current !== 'done') {
+      refreshAll();
+    }
+    prevPhase.current = progress?.phase;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [progress?.phase]);
 
   const startMutation = useMutation({
     mutationFn: (body: { folderPath: string; label?: string; recursive?: boolean }) => startFolderWatch(body),
@@ -181,7 +192,7 @@ export function KnowledgeFolderSync() {
                   <strong>{f.label}</strong>
                   <Tag size="small" type={f.status === 'ACTIVE' ? 'solid' : 'ghost'}
                     color={f.status === 'ACTIVE' ? 'green' : f.status === 'ERROR' ? 'red' : 'orange'}>
-                    {f.status === 'ACTIVE' ? '同步中' : f.status === 'ERROR' ? '错误' : '已暂停'}
+                    {f.status === 'ACTIVE' ? '监听中' : f.status === 'ERROR' ? '错误' : '已暂停'}
                   </Tag>
                 </div>
                 <div style={{ fontSize: 12, color: '#8f959e', marginBottom: 4 }}>{f.folderPath}</div>

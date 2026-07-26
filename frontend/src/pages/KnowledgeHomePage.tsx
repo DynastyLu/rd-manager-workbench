@@ -111,6 +111,8 @@ export default function KnowledgeHomePage() {
     queryFn: () => getDocument(selectedDocumentId),
     enabled: Boolean(selectedDocumentId),
   })
+
+  // Removed useEffect — auto-preview logic is now in openDocument()
   const versionsQuery = useQuery({
     queryKey: ['document-versions', selectedDocumentId],
     queryFn: () => listDocumentVersions(selectedDocumentId),
@@ -302,7 +304,10 @@ export default function KnowledgeHomePage() {
   }
 
   function openDocument(id: string) {
-    setViewMode('edit')
+    // For synced/imported docs with plainText but no rich content, default to preview mode
+    const cached = queryClient.getQueryData<{ plainText?: string; content?: Record<string, unknown> }>(['document', id]);
+    const hasRichContent = cached?.content ? JSON.stringify(cached.content).length > 100 : false;
+    setViewMode(cached?.plainText && !hasRichContent ? 'preview' : 'edit');
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
       next.set('documentId', id)
