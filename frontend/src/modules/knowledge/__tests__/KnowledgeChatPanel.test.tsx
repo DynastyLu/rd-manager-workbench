@@ -446,7 +446,7 @@ describe('KnowledgeChatPanel', () => {
       });
     });
 
-    it('shows "思考中..." placeholder when stream has not delivered content', async () => {
+    it('shows thinking steps when streaming is in progress', async () => {
       const user = userEvent.setup();
 
       getSession.mockResolvedValue({
@@ -458,7 +458,11 @@ describe('KnowledgeChatPanel', () => {
         messages: [],
       });
 
-      chatStream.mockResolvedValue(mockHangingResponse());
+      // Simulate a stream that sends a status event then hangs
+      chatStream.mockResolvedValue(mockStreamResponse([
+        'event: status',
+        'data: {"phase":"searching","message":"正在检索本地知识库..."}',
+      ], true));
 
       renderPanel('stream-s2');
 
@@ -468,9 +472,9 @@ describe('KnowledgeChatPanel', () => {
       await user.type(textarea, 'Ping');
       await user.keyboard('{Enter}');
 
-      // streamingContent is '' so the fallback text is rendered.
+      // Status event appears as a thinking step
       await waitFor(() => {
-        expect(screen.getByText('正在检索知识库...')).toBeInTheDocument();
+        expect(screen.getByText('正在检索本地知识库...')).toBeInTheDocument();
       });
     });
 

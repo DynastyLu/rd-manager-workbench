@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { watch, FSWatcher } from 'chokidar';
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, extname, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Subject } from 'rxjs';
@@ -313,7 +313,6 @@ export class FolderWatchService implements OnModuleInit {
     const watch = await this.prisma.folderWatch.findUniqueOrThrow({ where: { id: watchId } });
     const hash = this.hashFile(filePath);
     const ext = extname(filePath).toLowerCase();
-    const fileName = basename(filePath, ext);
     const relPath = relative(watch.folderPath, filePath);
     const tags = this.pathTags(relPath);
 
@@ -376,7 +375,6 @@ export class FolderWatchService implements OnModuleInit {
   }
 
   private walkDir(basePath: string, currentPath: string, recursive: boolean, results: ScannedFile[]): void {
-    const { readdirSync } = require('node:fs');
     const entries = readdirSync(currentPath, { withFileTypes: true });
     for (const entry of entries) {
       const full = `${currentPath}/${entry.name}`;
@@ -387,8 +385,8 @@ export class FolderWatchService implements OnModuleInit {
       } else if (entry.isFile()) {
         const ext = extname(entry.name).toLowerCase();
         if (SUPPORTED_EXTS.has(ext)) {
-          const stat = statSync(full);
-          results.push({ filePath: full, relativePath: relative(basePath, full), fileName: entry.name, ext, size: stat.size });
+          const fileStat = statSync(full);
+          results.push({ filePath: full, relativePath: relative(basePath, full), fileName: entry.name, ext, size: fileStat.size });
         }
       }
     }

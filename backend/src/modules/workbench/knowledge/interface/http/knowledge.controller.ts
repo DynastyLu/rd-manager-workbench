@@ -64,16 +64,35 @@ export class KnowledgeController {
       await this.sessions.addMessage(sessionId, { role: 'USER', content: dto.question });
       const history = await this.sessions.getHistory(sessionId);
 
-      const { stream, citations } = await this.rag.ask({
-        question: dto.question,
-        history: history.slice(0, -1),
-      });
-
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       });
+
+      // Step 1: Searching
+      res.write(`event: status\ndata: ${JSON.stringify({ phase: 'searching', message: '正在检索本地知识库...' })}\n\n`);
+
+      const { stream, citations, totalFound, relevantCount } = await this.rag.ask({
+        question: dto.question,
+        history: history.slice(0, -1),
+      });
+
+      // Step 2: Report findings
+      if (relevantCount === 0) {
+        const msg = totalFound === 0
+          ? `知识库中没有已索引的文档内容（0 个分块）。请先同步本地文件夹或上传文件。`
+          : `检索了 ${totalFound} 个分块，没有找到与问题相关的内容（阈值 0.08）。请尝试换一种问法。`;
+        res.write(`event: status\ndata: ${JSON.stringify({ phase: 'empty', message: msg, totalFound, relevantCount })}\n\n`);
+        res.write(`event: done\ndata: ${JSON.stringify({ finished: true })}\n\n`);
+        res.end();
+        return;
+      }
+
+      res.write(`event: status\ndata: ${JSON.stringify({ phase: 'found', message: `找到 ${relevantCount} 个相关片段（共检索 ${totalFound} 个）`, totalFound, relevantCount })}\n\n`);
+
+      // Step 3: Generate
+      res.write(`event: status\ndata: ${JSON.stringify({ phase: 'thinking', message: '正在基于检索内容生成回答...' })}\n\n`);
 
       const reader = stream.getReader();
       const decoder = new TextDecoder();

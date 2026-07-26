@@ -39,7 +39,7 @@ export class RagService {
   async ask(params: {
     question: string;
     history: Array<{ role: string; content: string }>;
-  }): Promise<{ stream: ReadableStream<Uint8Array>; citations: ChunkCitation[] }> {
+  }): Promise<{ stream: ReadableStream<Uint8Array>; citations: ChunkCitation[]; totalFound: number; relevantCount: number }> {
     const chunks = await this.prisma.$queryRawUnsafe<ChunkRow[]>(
       `SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
               cd.title as document_title,
@@ -94,7 +94,7 @@ export class RagService {
     ];
 
     const stream = await this.deepseek.streamChat({ messages, systemPrompt });
-    return { stream, citations };
+    return { stream, citations, totalFound: chunks.length, relevantCount: relevant.length };
   }
 
   private truncateHistory(

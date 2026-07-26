@@ -17,6 +17,7 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastQuestion, setLastQuestion] = useState('');
+  const [thinkingSteps, setThinkingSteps] = useState<Array<{ phase: string; message: string }>>([]);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -52,6 +53,7 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     setStreaming(true);
     setStreamingContent('');
     setStreamingCitations([]);
+    setThinkingSteps([]);
     setError(null);
     abortRef.current = new AbortController();
 
@@ -78,10 +80,26 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         buf += decoder.decode(value, { stream: true });
         const lines = buf.split('\n');
         buf = lines.pop() || '';
+
+        let currentEvent = '';
         for (const line of lines) {
-          if (line.startsWith('event: ')) continue;
+          if (line.startsWith('event: ')) { currentEvent = line.slice(7).trim(); continue; }
           if (!line.startsWith('data: ')) continue;
           const raw = line.slice(6);
+
+          // Handle status events (thinking process)
+          if (currentEvent === 'status') {
+            try {
+              const statusData = JSON.parse(raw) as { phase: string; message: string };
+              setThinkingSteps((prev) => [...prev, statusData]);
+              if (statusData.phase === 'empty') {
+                setStreaming(false);
+                return;
+              }
+            } catch { /* skip */ }
+            currentEvent = '';
+            continue;
+          }
           try {
             const parsed: unknown = JSON.parse(raw);
             if (typeof parsed === 'object' && parsed !== null) {
@@ -168,12 +186,37 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
           <div className="kb-message kb-message--assistant">
             <div className="kb-message__avatar">AI</div>
             <div className="kb-message__body">
-              <div className="kb-message__bubble">
-                <KnowledgeMarkdown text={streamingContent || '正在检索知识库...'} />
-                {streamingContent && <span className="kb-streaming-indicator" />}
-              </div>
+              {/* Thinking steps */}
+              {thinkingSteps.length > 0 && (
+                <div className="kb-thinking">
+                  {thinkingSteps.map((step, i) => (
+                    <div key={i} className={`kb-thinking__step kb-thinking__step--${step.phase}`}>
+                      <span className="kb-thinking__dot" />
+                      <span>{step.message}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Answer content */}
+              {streamingContent && (
+                <div className="kb-message__bubble">
+                  <KnowledgeMarkdown text={streamingContent} />
+                  <span className="kb-streaming-indicator" />
+                </div>
+              )}
               {streamingCitations.length > 0 && (
                 <KnowledgeCitationCard citations={streamingCitations} highlightTerms={highlightTerms} />
+              )}
+              {/* Empty result warning */}
+              {!streamingContent && thinkingSteps.some((s) => s.phase === 'empty') && (
+                <div className="kb-message__bubble" style={{ background: '#fffbe6', border: '1px solid #ffe58f' }}>
+                  ⚠️ 未找到相关内容。请确认：
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13 }}>
+                    <li>本地文件夹已完成同步（点击「重新扫描」）</li>
+                    <li>文件内容已被正确提取（检查是否有 [需要后端转换] 占位符）</li>
+                    <li>搜索词存在于你的文件中</li>
+                  </ul>
+                </div>
               )}
             </div>
           </div>
@@ -256,6 +299,20 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
           animation: kb-blink 0.8s infinite; vertical-align: text-bottom; margin-left: 2px; border-radius: 2px;
         }
         @keyframes kb-blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+        .kb-thinking { margin-bottom: 8px; }
+        .kb-thinking__step {
+          display: flex; align-items: center; gap: 8px;
+          padding: 6px 0; font-size: 13px; color: #4e5969;
+        }
+        .kb-thinking__dot {
+          width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+        }
+        .kb-thinking__step--searching .kb-thinking__dot { background: #1456f0; animation: kb-pulse 1s infinite; }
+        .kb-thinking__step--found .kb-thinking__dot { background: #52c41a; }
+        .kb-thinking__step--empty .kb-thinking__dot { background: #faad14; }
+        .kb-thinking__step--thinking .kb-thinking__dot { background: #1456f0; animation: kb-pulse 0.6s infinite; }
+        @keyframes kb-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
       `}</style>
     </div>
   );
