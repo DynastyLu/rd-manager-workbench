@@ -112,7 +112,24 @@ export default function KnowledgeHomePage() {
     enabled: Boolean(selectedDocumentId),
   })
 
-  // Removed useEffect — auto-preview logic is now in openDocument()
+  // For synced/imported docs: auto-switch to preview mode on first load
+  const userToggledView = useRef(false);
+  const lastLoadedDocId = useRef<string>('');
+  useEffect(() => {
+    const doc = documentQuery.data as { plainText?: string; content?: Record<string, unknown> } | undefined;
+    if (!doc || !selectedDocumentId) return;
+    if (selectedDocumentId === lastLoadedDocId.current) return;
+    lastLoadedDocId.current = selectedDocumentId;
+    userToggledView.current = false;
+    if (!userToggledView.current && doc.plainText && doc.plainText.length > 0) {
+      const contentStr = JSON.stringify(doc.content ?? {});
+      if (contentStr.length < 100) {
+        // Defer state update to next microtask to avoid cascading render
+        queueMicrotask(() => setViewMode('preview'));
+      }
+    }
+  }, [documentQuery.data, selectedDocumentId]);
+
   const versionsQuery = useQuery({
     queryKey: ['document-versions', selectedDocumentId],
     queryFn: () => listDocumentVersions(selectedDocumentId),
@@ -304,10 +321,6 @@ export default function KnowledgeHomePage() {
   }
 
   function openDocument(id: string) {
-    // For synced/imported docs with plainText but no rich content, default to preview mode
-    const cached = queryClient.getQueryData<{ plainText?: string; content?: Record<string, unknown> }>(['document', id]);
-    const hasRichContent = cached?.content ? JSON.stringify(cached.content).length > 100 : false;
-    setViewMode(cached?.plainText && !hasRichContent ? 'preview' : 'edit');
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
       next.set('documentId', id)
@@ -484,8 +497,8 @@ export default function KnowledgeHomePage() {
               />
             </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <Button size="small" type={viewMode === 'preview' ? 'primary' : 'tertiary'} onClick={() => setViewMode('preview')}>预览</Button>
-              <Button size="small" type={viewMode === 'edit' ? 'primary' : 'tertiary'} onClick={() => setViewMode('edit')} disabled={directoryView === 'trash'}>编辑</Button>
+              <Button size="small" type={viewMode === 'preview' ? 'primary' : 'tertiary'} onClick={() => { userToggledView.current = true; setViewMode('preview'); }}>预览</Button>
+              <Button size="small" type={viewMode === 'edit' ? 'primary' : 'tertiary'} onClick={() => { userToggledView.current = true; setViewMode('edit'); }} disabled={directoryView === 'trash'}>编辑</Button>
             </div>
             {viewMode === 'preview' ? (
               <div>
