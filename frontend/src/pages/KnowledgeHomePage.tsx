@@ -36,6 +36,7 @@ import { SaveStatus } from '@/components/workspace/SaveStatus'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import { KnowledgeChatPanel } from '@/modules/knowledge/components/KnowledgeChatPanel'
 import { KnowledgeSessionList } from '@/modules/knowledge/components/KnowledgeSessionList'
+import { KnowledgeFolderSync } from '@/modules/knowledge/components/KnowledgeFolderSync'
 import type { KnowledgeSession } from '@/modules/knowledge/types'
 import './KnowledgeHomePage.less'
 
@@ -94,7 +95,7 @@ export default function KnowledgeHomePage() {
   const handledCreate = useRef<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const activeTab = urlState.getEnum('tab', ['documents', 'chat'] as const, 'documents')
+  const activeTab = urlState.getEnum('tab', ['documents', 'chat', 'folders'] as const, 'documents')
   const [chatSessionId, setChatSessionId] = useState<string | null>(null)
   const selectTab = (t: string) => urlState.update({ tab: t }, { defaults: { tab: 'documents' } })
 
@@ -313,6 +314,31 @@ export default function KnowledgeHomePage() {
   const handleChatSelect = (s: KnowledgeSession) => { setChatSessionId(s.id); };
   const handleChatCreated = (id: string) => { setChatSessionId(id); };
 
+  if (activeTab === 'folders') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e5e6eb', padding: '0 20px', background: '#fff' }}>
+          <button onClick={() => selectTab('documents')} style={{
+            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
+            color: '#4e5969', fontSize: 14, borderBottom: '2px solid transparent',
+          }}>文档浏览</button>
+          <button onClick={() => selectTab('chat')} style={{
+            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
+            color: '#4e5969', fontSize: 14, borderBottom: '2px solid transparent',
+          }}>AI 问答</button>
+          <button data-active style={{
+            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
+            color: '#1456f0', fontSize: 14, fontWeight: 600,
+            borderBottom: '2px solid #1456f0',
+          }}>本地文件夹</button>
+        </div>
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 20px' }}>
+          <KnowledgeFolderSync />
+        </div>
+      </div>
+    );
+  }
+
   if (activeTab === 'chat') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
@@ -326,6 +352,10 @@ export default function KnowledgeHomePage() {
             color: '#1456f0', fontSize: 14, fontWeight: 600,
             borderBottom: '2px solid #1456f0',
           }}>AI 问答</button>
+          <button onClick={() => selectTab('folders')} style={{
+            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
+            color: '#4e5969', fontSize: 14, borderBottom: '2px solid transparent',
+          }}>本地文件夹</button>
         </div>
         <div className="knowledge-workspace--chat" style={{ flex: 1 }}>
           <KnowledgeSessionList activeId={chatSessionId} onSelect={handleChatSelect} onNew={handleChatNew} />
@@ -341,6 +371,7 @@ export default function KnowledgeHomePage() {
         <h1>文档与知识库</h1>
         <button data-active onClick={() => selectTab('documents')}><IconFile /> 文档浏览</button>
         <button onClick={() => selectTab('chat')}><IconComment /> AI 问答</button>
+        <button onClick={() => selectTab('folders')}><IconFolder /> 本地文件夹</button>
         <button data-active={directoryView === 'all' && !spaceId} onClick={() => selectDirectory('all')}><IconFile /> 全部文档</button>
         <button data-active={directoryView === 'favorites'} onClick={() => selectDirectory('favorites')}><IconStar /> 收藏</button>
         <button data-active={directoryView === 'trash'} onClick={() => selectDirectory('trash')}><IconDelete /> 回收站</button>

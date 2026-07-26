@@ -8,7 +8,9 @@ import { SessionService } from '../../application/session.service';
 import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
 import { DocumentImportService } from '../../application/document-import.service';
+import { FolderWatchService } from '../../application/folder-watch.service';
 import { DocumentsService } from '../../../content/application/documents.service';
+import { KnowledgeSpacesService } from '../../../content/application/knowledge-spaces.service';
 import type { UploadedContentFile } from '../../../content/application/files.service';
 import { CreateSessionDto, ChatMessageDto } from './dto/knowledge.dto';
 
@@ -20,6 +22,8 @@ export class KnowledgeController {
     private readonly indexing: IndexingService,
     private readonly importer: DocumentImportService,
     private readonly documents: DocumentsService,
+    private readonly spaces: KnowledgeSpacesService,
+    private readonly folderWatch: FolderWatchService,
   ) {}
 
   @Post('sessions')
@@ -165,5 +169,49 @@ export class KnowledgeController {
       wordCount: extracted.wordCount,
       documentId: doc.id,
     };
+  }
+
+  // ── Folder Watch ──
+
+  @Get('folders')
+  listFolders() {
+    return this.folderWatch.list();
+  }
+
+  @Get('folders/:id')
+  getFolder(@Param('id') id: string) {
+    return this.folderWatch.get(id);
+  }
+
+  @Post('folders')
+  async startWatchingFolder(@Body() body: { folderPath: string; label?: string; spaceId?: string; recursive?: boolean }) {
+    if (!body.folderPath?.trim()) throw new Error('folderPath is required');
+
+    // Auto-create a space if not provided
+    let spaceId = body.spaceId;
+    if (!spaceId) {
+      const folderName = body.label || body.folderPath.split('/').pop() || '本地文件夹';
+      const space = await this.spaces.create({ name: folderName });
+      spaceId = space.id;
+    }
+
+    const watchId = await this.folderWatch.startWatching({
+      folderPath: body.folderPath.trim(),
+      label: body.label,
+      spaceId,
+      recursive: body.recursive,
+    });
+
+    return { watchId, spaceId };
+  }
+
+  @Delete('folders/:id')
+  async stopWatchingFolder(@Param('id') id: string) {
+    await this.folderWatch.stopWatching(id);
+  }
+
+  @Post('folders/:id/rescan')
+  async rescanFolder(@Param('id') id: string) {
+    return this.folderWatch.rescan(id);
   }
 }

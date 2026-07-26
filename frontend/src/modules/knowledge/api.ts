@@ -23,3 +23,34 @@ export function getIndexStatus() { return request<IndexStatus>('/knowledge/reind
 export function triggerReindex() {
   return request<{ jobId: string }>('/knowledge/reindex', { method: 'POST' });
 }
+
+// Folder watch
+export interface FolderWatchItem {
+  id: string;
+  label: string;
+  folderPath: string;
+  spaceId: string;
+  recursive: boolean;
+  status: string;
+  errorMessage?: string;
+  lastSyncAt?: string;
+  createdAt: string;
+  space: { id: string; name: string };
+  _count: { files: number };
+}
+export interface FolderWatchDetail extends FolderWatchItem {
+  files: Array<{ id: string; filePath: string; documentId: string; status: string; fileHash?: string; updatedAt: string }>;
+}
+export interface RescanResult { imported: number; updated: number; deleted: number; errors: number; }
+
+export function listFolderWatches() { return request<FolderWatchItem[]>('/knowledge/folders'); }
+export function getFolderWatch(id: string) { return request<FolderWatchDetail>(`/knowledge/folders/${encodeURIComponent(id)}`); }
+export function startFolderWatch(body: { folderPath: string; label?: string; spaceId?: string; recursive?: boolean }) {
+  return request<{ watchId: string; spaceId: string }>('/knowledge/folders', { method: 'POST', body: JSON.stringify(body) });
+}
+export function stopFolderWatch(id: string) {
+  return request<void>(`/knowledge/folders/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+export function rescanFolder(id: string) {
+  return request<RescanResult>(`/knowledge/folders/${encodeURIComponent(id)}/rescan`, { method: 'POST' });
+}

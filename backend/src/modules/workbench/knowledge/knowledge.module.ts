@@ -9,6 +9,7 @@ import { KnowledgeController } from './interface/http/knowledge.controller';
 import { KnowledgeGateway } from './knowledge.gateway';
 import { EmbeddingCache } from './domain/embedding-cache';
 import { DocumentImportService } from './application/document-import.service';
+import { FolderWatchService } from './application/folder-watch.service';
 import { ContentModule } from '../content/content.module';
 
 @Module({
@@ -37,7 +38,8 @@ import { ContentModule } from '../content/content.module';
     SessionService,
     IndexingService,
     DocumentImportService,
+    FolderWatchService,
   ],
-  exports: [ChunkingService, EmbeddingService, RagService, SessionService, IndexingService, KnowledgeGateway],
+  exports: [ChunkingService, EmbeddingService, RagService, SessionService, IndexingService, KnowledgeGateway, FolderWatchService],
 })
 export class KnowledgeModule {}

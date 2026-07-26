@@ -13,6 +13,6 @@ import { FilesController } from './interface/http/files.controller';
   imports: [StorageModule],
   controllers: [KnowledgeSpacesController, DocumentsController, FilesController],
   providers: [KnowledgeSpacesService, DocumentsService, FilesService],
-  exports: [DocumentsService, FilesService],
+  exports: [DocumentsService, FilesService, KnowledgeSpacesService],
 })
 export class ContentModule {}

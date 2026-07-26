@@ -769,6 +769,7 @@ model KnowledgeSpace {
   createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   documents   ContentDocument[]
+  watches     FolderWatch[]
 
   @@index([archivedAt, sequence, name])
   @@map("knowledge_spaces")
@@ -800,6 +801,7 @@ model ContentDocument {
   versions          DocumentVersion[]
   fileAssets        FileAsset[]
   chunks            DocumentChunk[]
+  folderFiles       FolderFile[]
 
   @@index([status, updatedAt])
   @@index([type, status, updatedAt])
@@ -2370,5 +2372,42 @@ model AiUsageLog {
 
   @@index([createdAt])
   @@map("ai_usage_logs")
+  @@schema("app")
+}
+
+model FolderWatch {
+  id           String       @id @default(cuid())
+  label        String
+  folderPath   String       @map("folder_path")
+  spaceId      String       @map("space_id")
+  recursive    Boolean      @default(true)
+  status       String       @default("ACTIVE")
+  errorMessage String?      @map("error_message")
+  lastSyncAt   DateTime?    @map("last_sync_at") @db.Timestamptz(6)
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  space        KnowledgeSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  files        FolderFile[]
+
+  @@map("folder_watches")
+  @@schema("app")
+}
+
+model FolderFile {
+  id         String   @id @default(cuid())
+  watchId    String   @map("watch_id")
+  filePath   String   @map("file_path")
+  documentId String   @map("document_id")
+  fileHash   String?  @map("file_hash")
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  watch    FolderWatch     @relation(fields: [watchId], references: [id], onDelete: Cascade)
+  document ContentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([watchId, filePath])
+  @@map("folder_files")
   @@schema("app")
 }
