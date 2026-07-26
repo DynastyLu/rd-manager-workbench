@@ -18,6 +18,7 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [lastQuestion, setLastQuestion] = useState('');
   const [thinkingSteps, setThinkingSteps] = useState<Array<{ phase: string; message: string }>>([]);
+  const [lastEmptyResult, setLastEmptyResult] = useState<{ message: string; totalFound: number } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -54,6 +55,7 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     setStreamingContent('');
     setStreamingCitations([]);
     setThinkingSteps([]);
+    setLastEmptyResult(null);
     setError(null);
     abortRef.current = new AbortController();
 
@@ -90,11 +92,10 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
           // Handle status events (thinking process)
           if (currentEvent === 'status') {
             try {
-              const statusData = JSON.parse(raw) as { phase: string; message: string };
+              const statusData = JSON.parse(raw) as { phase: string; message: string; totalFound?: number };
               setThinkingSteps((prev) => [...prev, statusData]);
               if (statusData.phase === 'empty') {
-                setStreaming(false);
-                return;
+                setLastEmptyResult({ message: statusData.message, totalFound: statusData.totalFound ?? 0 });
               }
             } catch { /* skip */ }
             currentEvent = '';
@@ -181,6 +182,26 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         {messages.map((msg: KnowledgeMessage) => (
           <MessageBubble key={msg.id} msg={msg} highlightTerms={highlightTerms} />
         ))}
+        {/* Persistent empty result card (survives streaming=false) */}
+        {!streaming && lastEmptyResult && (
+          <div className="kb-message kb-message--assistant">
+            <div className="kb-message__avatar">AI</div>
+            <div className="kb-message__body">
+              <div className="kb-message__bubble" style={{ background: '#fffbe6', border: '1px solid #ffe58f' }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>未找到相关内容</div>
+                <div style={{ fontSize: 13, color: '#8f959e' }}>{lastEmptyResult.message}</div>
+                {lastEmptyResult.totalFound === 0 && (
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13, color: '#4e5969' }}>
+                    <li>知识库中没有已索引的内容，请先同步本地文件夹</li>
+                    <li>在「本地文件夹」页面点击「重新扫描」</li>
+                    <li>确认文件格式受支持（.txt .md .docx .pdf .xlsx .csv）</li>
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Streaming bubble */}
         {streaming && (
           <div className="kb-message kb-message--assistant">
