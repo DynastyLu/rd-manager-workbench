@@ -245,9 +245,23 @@ export class FolderWatchService implements OnModuleInit {
       }
 
       // Phase 3: import or update files
+      // Pre-load document plainText for all existing files to detect placeholder content
+      const docTexts = new Map<string, string>();
+      const existingWithDoc = existingFiles.filter((f) => f.status === 'ACTIVE');
+      if (existingWithDoc.length > 0) {
+        const docs = await this.prisma.contentDocument.findMany({
+          where: { id: { in: existingWithDoc.map((f) => f.documentId) } },
+          select: { id: true, plainText: true },
+        });
+        for (const d of docs) docTexts.set(d.id, d.plainText);
+      }
+
       const toProcess = currentFiles.filter((f) => {
         const existing = existingFiles.find((ef) => ef.filePath === f.filePath);
         if (!existing) return true; // new file
+        // Force re-extraction if document has placeholder content (failed previous extraction)
+        const pt = docTexts.get(existing.documentId) || '';
+        if (pt.startsWith('[需要后端转换')) return true;
         const hash = this.hashFile(f.filePath);
         return hash && hash !== existing.fileHash; // changed
       });
