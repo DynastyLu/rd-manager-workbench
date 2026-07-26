@@ -124,10 +124,7 @@ export class KnowledgeController {
           }
         }
       } finally {
-        res.write(`event: citations\ndata: ${JSON.stringify(citations)}\n\n`);
-        res.write(`event: done\ndata: ${JSON.stringify({ finished: true })}\n\n`);
-        res.end();
-
+        // Save message BEFORE sending done — frontend refetches immediately on done
         if (fullContent) {
           await this.sessions.addMessage(sessionId, {
             role: 'ASSISTANT',
@@ -141,6 +138,10 @@ export class KnowledgeController {
             success: true, sessionId,
           });
         }
+
+        res.write(`event: citations\ndata: ${JSON.stringify(citations)}\n\n`);
+        res.write(`event: done\ndata: ${JSON.stringify({ finished: true })}\n\n`);
+        res.end();
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';

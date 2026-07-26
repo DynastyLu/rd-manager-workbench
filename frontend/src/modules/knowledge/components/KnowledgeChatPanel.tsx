@@ -19,9 +19,13 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
   const [lastQuestion, setLastQuestion] = useState('');
   const [thinkingSteps, setThinkingSteps] = useState<Array<{ phase: string; message: string }>>([]);
   const [lastEmptyResult, setLastEmptyResult] = useState<{ message: string; totalFound: number } | null>(null);
+  // Hold streaming result briefly so it doesn't disappear before the session refetch
+  const [pendingAnswer, setPendingAnswer] = useState<{ content: string; citations: ChunkCitation[] } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const streamContentRef = useRef('');       // capture streaming content for finally
+  const streamCitationsRef = useRef<ChunkCitation[]>([]);
   const qc = useQueryClient();
 
   const { data: session, isLoading } = useQuery({
@@ -35,6 +39,16 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [session?.messages, streamingContent]);
+
+  // Clear pending answer once it appears in the loaded session messages
+  useEffect(() => {
+    if (pendingAnswer && session?.messages) {
+      const hasAnswer = session.messages.some(
+        (m) => m.role === 'ASSISTANT' && m.content === pendingAnswer.content,
+      );
+      if (hasAnswer) setPendingAnswer(null);
+    }
+  }, [session?.messages, pendingAnswer]);
 
   const send = useCallback(async (question: string) => {
     setLastQuestion(question);
@@ -54,8 +68,11 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     setStreaming(true);
     setStreamingContent('');
     setStreamingCitations([]);
+    streamContentRef.current = '';
+    streamCitationsRef.current = [];
     setThinkingSteps([]);
     setLastEmptyResult(null);
+    setPendingAnswer(null);
     setError(null);
     abortRef.current = new AbortController();
 
@@ -109,12 +126,15 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
               if (typeof obj.content === 'string' && typeof obj.index === 'number') {
                 content += obj.content;
                 setStreamingContent(content);
+                streamContentRef.current = content;
               }
             }
             if (Array.isArray(parsed) && parsed.length > 0) {
               const first = parsed[0] as Record<string, unknown> | null;
               if (first && typeof first.documentId === 'string') {
-                setStreamingCitations(parsed as unknown as ChunkCitation[]);
+                const cites = parsed as unknown as ChunkCitation[];
+                setStreamingCitations(cites);
+                streamCitationsRef.current = cites;
               }
             }
           } catch { /* skip */ }
@@ -125,6 +145,11 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         setError(`连接中断：${err.message}`);
       }
     } finally {
+      const finalContent = streamContentRef.current;
+      const finalCitations = streamCitationsRef.current;
+      if (finalContent) {
+        setPendingAnswer({ content: finalContent, citations: finalCitations });
+      }
       setStreaming(false);
       abortRef.current = null;
       if (sid) {
@@ -182,6 +207,21 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         {messages.map((msg: KnowledgeMessage) => (
           <MessageBubble key={msg.id} msg={msg} highlightTerms={highlightTerms} />
         ))}
+        {/* Pending answer card (bridges the gap between streaming end and session refetch) */}
+        {!streaming && pendingAnswer && (
+          <div className="kb-message kb-message--assistant">
+            <div className="kb-message__avatar">AI</div>
+            <div className="kb-message__body">
+              <div className="kb-message__bubble">
+                <KnowledgeMarkdown text={pendingAnswer.content} />
+              </div>
+              {pendingAnswer.citations.length > 0 && (
+                <KnowledgeCitationCard citations={pendingAnswer.citations} highlightTerms={highlightTerms} />
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Persistent empty result card (survives streaming=false) */}
         {!streaming && lastEmptyResult && (
           <div className="kb-message kb-message--assistant">
