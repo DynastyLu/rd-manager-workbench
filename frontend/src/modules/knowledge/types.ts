@@ -1,0 +1,19 @@
+export interface KnowledgeSession {
+  id: string; title: string; status: 'ACTIVE' | 'ARCHIVED';
+  createdAt: string; updatedAt: string; messages?: KnowledgeMessage[];
+}
+export interface KnowledgeMessage {
+  id: string; role: 'USER' | 'ASSISTANT'; content: string;
+  citations?: ChunkCitation[]; tokenCount?: number; createdAt: string;
+}
+export interface ChunkCitation {
+  documentId: string; title: string; chunkIndex: number; text: string;
+}
+export interface IndexStatus {
+  indexedDocuments: number; totalDocuments: number;
+  missingEmbeddingChunks: number; lastIndexedAt?: string; complete: boolean;
+}
+export interface AiUsageStats {
+  today: { tokens: number; cost: number }; week: { tokens: number; cost: number };
+  month: { tokens: number; cost: number }; total: { tokens: number; cost: number };
+}

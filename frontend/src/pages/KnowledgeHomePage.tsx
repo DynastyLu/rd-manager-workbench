@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Modal, Skeleton, Tag, TextArea, Toast } from '@douyinfe/semi-ui'
 import {
   IconChevronRight,
+  IconComment,
   IconDelete,
   IconFile,
   IconFolder,
@@ -32,6 +33,9 @@ import { FileAttachments } from '@/modules/content/components/FileAttachments'
 import { AiBusinessAction } from '@/modules/workbench/components/extensions/AiBusinessAction'
 import { SaveStatus } from '@/components/workspace/SaveStatus'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
+import { KnowledgeChatPanel } from '@/modules/knowledge/components/KnowledgeChatPanel'
+import { KnowledgeSessionList } from '@/modules/knowledge/components/KnowledgeSessionList'
+import type { KnowledgeSession } from '@/modules/knowledge/types'
 import './KnowledgeHomePage.less'
 
 type DirectoryView = 'all' | 'favorites' | 'trash'
@@ -88,6 +92,10 @@ export default function KnowledgeHomePage() {
   const [qaOpen, setQaOpen] = useState(false)
   const [qaQuestion, setQaQuestion] = useState('')
   const handledCreate = useRef<string | null>(null)
+
+  const activeTab = urlState.getEnum('tab', ['documents', 'chat'] as const, 'documents')
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null)
+  const selectTab = (t: string) => urlState.update({ tab: t }, { defaults: { tab: 'documents' } })
 
   const spacesQuery = useQuery({ queryKey: ['knowledge-spaces'], queryFn: listKnowledgeSpaces })
   const status: ContentDocumentStatus = directoryView === 'trash' ? 'TRASHED' : 'ACTIVE'
@@ -262,10 +270,30 @@ export default function KnowledgeHomePage() {
     })
   }
 
+  const handleChatNew = () => { setChatSessionId(null); };
+  const handleChatSelect = (s: KnowledgeSession) => { setChatSessionId(s.id); };
+  const handleChatCreated = (id: string) => { setChatSessionId(id); };
+
+  if (activeTab === 'chat') {
+    return (
+      <div className="knowledge-workspace">
+        <aside className="knowledge-workspace__directory" aria-label="文档目录">
+          <h1>文档与知识库</h1>
+          <button data-active onClick={() => selectTab('documents')}><IconFile /> 文档浏览</button>
+          <button data-active><IconComment /> AI 问答</button>
+        </aside>
+        <KnowledgeSessionList activeId={chatSessionId} onSelect={handleChatSelect} onNew={handleChatNew} />
+        <KnowledgeChatPanel sessionId={chatSessionId} onSessionCreated={handleChatCreated} />
+      </div>
+    );
+  }
+
   return (
     <div className="knowledge-workspace">
       <aside className="knowledge-workspace__directory" aria-label="文档目录">
         <h1>文档与知识库</h1>
+        <button data-active onClick={() => selectTab('documents')}><IconFile /> 文档浏览</button>
+        <button onClick={() => selectTab('chat')}><IconComment /> AI 问答</button>
         <button data-active={directoryView === 'all' && !spaceId} onClick={() => selectDirectory('all')}><IconFile /> 全部文档</button>
         <button data-active={directoryView === 'favorites'} onClick={() => selectDirectory('favorites')}><IconStar /> 收藏</button>
         <button data-active={directoryView === 'trash'} onClick={() => selectDirectory('trash')}><IconDelete /> 回收站</button>
