@@ -5,7 +5,7 @@ import { listSessions } from '../api';
 import { knowledgeQueryKeys } from '../queryKeys';
 import type { KnowledgeSession } from '../types';
 
-interface Props { activeId?: string; onSelect: (s: KnowledgeSession) => void; onNew: () => void; }
+interface Props { activeId?: string | null; onSelect: (s: KnowledgeSession) => void; onNew: () => void; }
 
 export function KnowledgeSessionList({ activeId, onSelect, onNew }: Props) {
   const { data: sessions, isLoading } = useQuery({

@@ -1,5 +1,7 @@
-import { request, apiUrl } from '@/lib/http';
+import { request } from '@/lib/http';
 import type { KnowledgeSession, IndexStatus } from './types';
+
+const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : '';
 
 export function listSessions() { return request<KnowledgeSession[]>('/knowledge/sessions'); }
 export function createSession(question: string) {
@@ -12,7 +14,7 @@ export function archiveSession(id: string) {
   return request<void>(`/knowledge/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 export function chatStream(sessionId: string, question: string, signal?: AbortSignal) {
-  return fetch(apiUrl(`/knowledge/chat/${sessionId}/messages`), {
+  return fetch(`${API_BASE}/knowledge/chat/${sessionId}/messages`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question }), signal,
   });
