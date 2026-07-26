@@ -11,6 +11,7 @@ import {
   IconSave,
   IconSearch,
   IconStar,
+  IconUpload,
 } from '@douyinfe/semi-icons'
 import {
   createDocument,
@@ -93,6 +94,7 @@ export default function KnowledgeHomePage() {
   const [qaQuestion, setQaQuestion] = useState('')
   const handledCreate = useRef<string | null>(null)
 
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const activeTab = urlState.getEnum('tab', ['documents', 'chat'] as const, 'documents')
   const [chatSessionId, setChatSessionId] = useState<string | null>(null)
   const selectTab = (t: string) => urlState.update({ tab: t }, { defaults: { tab: 'documents' } })
@@ -262,6 +264,35 @@ export default function KnowledgeHomePage() {
     },
   })
 
+  const uploadMutation = useMutation({
+    mutationFn: async (uploadFile: File) => {
+      const form = new FormData()
+      form.append('file', uploadFile)
+      const resp = await fetch('http://127.0.0.1:4311/api/knowledge/documents/upload', { method: 'POST', body: form })
+      if (!resp.ok) throw new Error('Upload failed')
+      const body = await resp.json() as { data: { title: string; plainText: string; wordCount: number } }
+      return body.data
+    },
+    onSuccess: (result) => {
+      createDocument({
+        title: result.title,
+        type: 'DOCUMENT' as const,
+        plainText: result.plainText,
+      }).then(() => {
+        void queryClient.invalidateQueries({ queryKey: ['documents'] })
+        Toast.success(`已导入：${result.title}`)
+      }).catch(() => { Toast.error('创建文档失败'); })
+    },
+    onError: () => { Toast.error('文件上传失败，请确认本地服务已启动。'); },
+  })
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadFile = event.target.files?.[0]
+    if (!uploadFile) return
+    uploadMutation.mutate(uploadFile)
+    event.target.value = ''
+  }
+
   function openDocument(id: string) {
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
@@ -313,6 +344,10 @@ export default function KnowledgeHomePage() {
         <header>
           <div className="knowledge-workspace__search"><IconSearch /><input aria-label="搜索文档" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、正文和标签" /></div>
           <div>
+            <input ref={fileInputRef} type="file" accept=".txt,.md,.docx,.pdf" style={{ display: 'none' }} onChange={handleFileUpload} />
+            <Button icon={<IconUpload />} onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
+              {uploadMutation.isPending ? '导入中...' : '上传文件'}
+            </Button>
             <Button onClick={() => setQaOpen(true)}>AI 知识问答</Button>
             <Button icon={<IconPlus />} onClick={() => createMutation.mutate('DOCUMENT')}>新建文档</Button>
             <Button icon={<IconPlus />} onClick={() => createMutation.mutate('KNOWLEDGE_PAGE')}>知识页</Button>
