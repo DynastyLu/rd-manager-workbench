@@ -100,6 +100,6 @@ export class FilesController {
   @Delete(':id/permanent')
   @HttpCode(HttpStatus.NO_CONTENT)
   async permanentDelete(@Param('id') id: string) {
-    await this.service.trash(id); // Permanent deletion requires a separate service method
+    await this.service.permanentDelete(id);
   }
 }

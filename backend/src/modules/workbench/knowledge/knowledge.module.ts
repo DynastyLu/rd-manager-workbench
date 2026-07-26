@@ -6,6 +6,7 @@ import { RagService } from './application/rag.service';
 import { SessionService } from './application/session.service';
 import { IndexingService } from './application/indexing.service';
 import { KnowledgeController } from './interface/http/knowledge.controller';
+import { KnowledgeGateway } from './knowledge.gateway';
 import { EmbeddingCache } from './domain/embedding-cache';
 import { DocumentImportService } from './application/document-import.service';
 import { ContentModule } from '../content/content.module';
@@ -16,6 +17,7 @@ import { ContentModule } from '../content/content.module';
   providers: [
     ChunkingService,
     EmbeddingCache,
+    KnowledgeGateway,
     {
       provide: EmbeddingService,
       useFactory: (cache: EmbeddingCache) => {
@@ -36,6 +38,6 @@ import { ContentModule } from '../content/content.module';
     IndexingService,
     DocumentImportService,
   ],
-  exports: [ChunkingService, EmbeddingService, RagService, SessionService, IndexingService],
+  exports: [ChunkingService, EmbeddingService, RagService, SessionService, IndexingService, KnowledgeGateway],
 })
 export class KnowledgeModule {}

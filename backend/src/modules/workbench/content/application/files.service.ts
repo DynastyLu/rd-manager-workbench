@@ -192,6 +192,27 @@ export class FilesService {
     return this.getAsset(id);
   }
 
+  async permanentDelete(id: string) {
+    const asset = await this.prisma.fileAsset.findUnique({
+      where: { id },
+      include: { versions: true },
+    });
+    if (!asset) throw this.fileNotFound();
+
+    // Delete all stored versions from storage backend
+    const deletePromises = asset.versions.map((version) =>
+      this.storage.delete(version.storageKey).catch((error: unknown) => {
+        // Log but don't fail if individual storage cleanup errors occur
+        (this as any).logger?.warn?.({ storageKey: version.storageKey, error }, 'Storage delete failed during permanent delete');
+      }),
+    );
+    await Promise.all(deletePromises);
+
+    // Delete versions then the asset (versions cascade but explicit is safer)
+    await this.prisma.fileVersion.deleteMany({ where: { fileAssetId: id } });
+    await this.prisma.fileAsset.delete({ where: { id } });
+  }
+
   private getAsset(id: string) {
     return this.prisma.fileAsset.findUniqueOrThrow({
       where: { id },

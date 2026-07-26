@@ -7,19 +7,9 @@ interface ExtractedDocument {
   wordCount: number;
 }
 
-// Map file extensions to human-readable labels
-const EXT_LABELS: Record<string, string> = {
-  '.txt': '', '.md': '', '.docx': '', '.pdf': '',
-  '.html': '', '.htm': '', '.xlsx': '', '.csv': '', '.json': '',
-};
-
 @Injectable()
 export class DocumentImportService {
   private readonly logger = new Logger(DocumentImportService.name);
-
-  supports(mimeType: string): boolean {
-    return true; // Support all formats, fall back to raw text
-  }
 
   /**
    * Decode filename: handles both properly-decoded UTF-8 (modern multer/busboy)
