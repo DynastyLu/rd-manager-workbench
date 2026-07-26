@@ -307,14 +307,22 @@ export default function KnowledgeHomePage() {
 
   if (activeTab === 'chat') {
     return (
-      <div className="knowledge-workspace">
-        <aside className="knowledge-workspace__directory" aria-label="文档目录">
-          <h1>文档与知识库</h1>
-          <button data-active onClick={() => selectTab('documents')}><IconFile /> 文档浏览</button>
-          <button data-active><IconComment /> AI 问答</button>
-        </aside>
-        <KnowledgeSessionList activeId={chatSessionId} onSelect={handleChatSelect} onNew={handleChatNew} />
-        <KnowledgeChatPanel sessionId={chatSessionId} onSessionCreated={handleChatCreated} />
+      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
+        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e5e6eb', padding: '0 20px', background: '#fff' }}>
+          <button onClick={() => selectTab('documents')} style={{
+            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
+            color: '#4e5969', fontSize: 14, borderBottom: '2px solid transparent',
+          }}>文档浏览</button>
+          <button data-active style={{
+            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
+            color: '#1456f0', fontSize: 14, fontWeight: 600,
+            borderBottom: '2px solid #1456f0',
+          }}>AI 问答</button>
+        </div>
+        <div className="knowledge-workspace--chat" style={{ flex: 1 }}>
+          <KnowledgeSessionList activeId={chatSessionId} onSelect={handleChatSelect} onNew={handleChatNew} />
+          <KnowledgeChatPanel sessionId={chatSessionId} onSessionCreated={handleChatCreated} />
+        </div>
       </div>
     );
   }

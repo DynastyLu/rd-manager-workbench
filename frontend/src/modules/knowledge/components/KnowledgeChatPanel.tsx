@@ -1,21 +1,22 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Card, Typography, Spin, Empty } from '@douyinfe/semi-ui';
+import { Spin } from '@douyinfe/semi-ui';
 import { chatStream, createSession, getSession } from '../api';
 import { knowledgeQueryKeys } from '../queryKeys';
-import { KnowledgeChatInput } from './KnowledgeChatInput';
 import { KnowledgeMarkdown } from './KnowledgeMarkdown';
 import type { KnowledgeMessage, ChunkCitation } from '../types';
 
 interface SseToken { content: string; index: number }
-
 interface Props { sessionId: string | null; onSessionCreated: (id: string) => void; }
 
 export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingCitations, setStreamingCitations] = useState<ChunkCitation[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const qc = useQueryClient();
 
   const { data: session, isLoading } = useQuery({
@@ -24,21 +25,37 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     enabled: !!sessionId,
   });
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [session?.messages, streamingContent]);
+
   const send = useCallback(async (question: string) => {
     let sid = sessionId;
     if (!sid) {
-      const s = await createSession(question);
-      sid = s.id;
-      onSessionCreated(s.id);
+      try {
+        const s = await createSession(question);
+        sid = s.id;
+        onSessionCreated(s.id);
+        void qc.invalidateQueries({ queryKey: knowledgeQueryKeys.sessions });
+      } catch {
+        setError('创建对话失败，请确认后端服务已启动。');
+        return;
+      }
     }
 
     setStreaming(true);
     setStreamingContent('');
     setStreamingCitations([]);
+    setError(null);
     abortRef.current = new AbortController();
 
     try {
       const resp = await chatStream(sid, question, abortRef.current.signal);
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '');
+        setError(`请求失败 (${resp.status})：${errText || '请确认 DeepSeek API Key 已配置'}`);
+        return;
+      }
       const reader = resp.body!.getReader();
       const decoder = new TextDecoder();
       let content = '';
@@ -57,18 +74,17 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
           try {
             const parsed = JSON.parse(raw) as SseToken | ChunkCitation[] | { finished: boolean };
             if (typeof parsed === 'object' && parsed !== null && 'content' in parsed) {
-              const token = parsed as unknown as SseToken;
-              content += token.content;
+              content += (parsed as SseToken).content;
               setStreamingContent(content);
             } else if (Array.isArray(parsed) && parsed.length > 0 && 'documentId' in (parsed[0] ?? {})) {
-              setStreamingCitations(parsed as unknown as ChunkCitation[]);
+              setStreamingCitations(parsed as ChunkCitation[]);
             }
-          } catch { /* skip unparseable chunks */ }
+          } catch { /* skip */ }
         }
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'AbortError') {
-        console.error('Chat stream error', err);
+        setError(`连接中断：${err.message}`);
       }
     } finally {
       setStreaming(false);
@@ -81,61 +97,136 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
 
   const stop = useCallback(() => { abortRef.current?.abort(); }, []);
 
-  const handleSend = useCallback((text: string) => { void send(text); }, [send]);
-  const handleStop = useCallback(() => { stop(); }, [stop]);
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      const el = inputRef.current;
+      if (!el) return;
+      const text = el.value.trim();
+      if (text && !streaming) {
+        el.value = '';
+        void send(text);
+      }
+    }
+  }, [send, streaming]);
+
+  const handleSendClick = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    const text = el.value.trim();
+    if (text && !streaming) {
+      el.value = '';
+      void send(text);
+    }
+  }, [send, streaming]);
 
   if (!sessionId) {
     return (
-      <div className="kb-chat-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <Empty title="知识库问答" description="在左侧新建对话，开始用自然语言提问">
-          <KnowledgeChatInput onSend={handleSend} onStop={handleStop} streaming={streaming} />
-        </Empty>
+      <div className="kb-chat-main">
+        <div className="kb-chat-main__empty">
+          <div style={{ fontSize: 48, marginBottom: 8 }}>💬</div>
+          <h2>知识库 AI 问答</h2>
+          <p>在左侧新建或选择一个对话，基于你的本地文档获取答案</p>
+          <textarea
+            ref={inputRef}
+            className="kb-chat-input-bar__textarea"
+            style={{ width: 400, marginTop: 16 }}
+            placeholder="输入问题，回车发送..."
+            rows={2}
+            onKeyDown={handleKeyDown}
+          />
+          <p style={{ fontSize: 12, color: '#bbb', marginTop: 8 }}>
+            新对话将自动创建 · DeepSeek 驱动
+          </p>
+        </div>
       </div>
     );
   }
 
-  if (isLoading) return <Spin />;
+  if (isLoading) return <div className="kb-chat-main"><Spin size="large" style={{ margin: 'auto' }} /></div>;
 
   const messages = session?.messages ?? [];
 
   return (
-    <div className="kb-chat-panel">
-      <div className="kb-messages" style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+    <div className="kb-chat-main">
+      <div className="kb-chat-main__messages">
+        {messages.length === 0 && !streaming && (
+          <div className="kb-chat-main__empty">
+            <p>开始提问吧</p>
+          </div>
+        )}
         {messages.map((msg: KnowledgeMessage) => (
-          <div key={msg.id} style={{ marginBottom: 16, textAlign: msg.role === 'USER' ? 'right' : 'left' }}>
-            <Card
-              style={{
-                display: 'inline-block', maxWidth: '80%', textAlign: 'left',
-                background: msg.role === 'USER' ? 'var(--semi-color-primary-light-default)' : undefined,
-              }}
-            >
-              <Typography.Text>{msg.role === 'USER' ? '你' : 'AI'}</Typography.Text>
-              <KnowledgeMarkdown text={msg.content} />
-              {msg.citations?.map((c, i) => (
-                <Typography.Text key={i} size="small" type="tertiary" style={{ display: 'block' }}>
-                  参考：{c.title}
-                </Typography.Text>
-              ))}
-            </Card>
+          <div key={msg.id} className={`kb-message kb-message--${msg.role === 'USER' ? 'user' : 'assistant'}`}>
+            <div className="kb-message__avatar">{msg.role === 'USER' ? 'U' : 'AI'}</div>
+            <div>
+              <div className="kb-message__bubble">
+                <KnowledgeMarkdown text={msg.content} />
+              </div>
+              {msg.citations && msg.citations.length > 0 && (
+                <div className="kb-message__citations">
+                  {msg.citations.map((c, i) => (
+                    <a key={i} className="kb-message__citation" onClick={() => { window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; }} style={{ cursor: 'pointer' }}>
+                      {c.title}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         ))}
         {streaming && (
-          <div style={{ marginBottom: 16, textAlign: 'left' }}>
-            <Card style={{ display: 'inline-block', maxWidth: '80%' }}>
-              <Typography.Text>AI</Typography.Text>
-              <KnowledgeMarkdown text={streamingContent} />
-              {streamingCitations.map((c, i) => (
-                <Typography.Text key={i} size="small" type="tertiary" style={{ display: 'block' }}>
-                  参考：{c.title}
-                </Typography.Text>
-              ))}
-              <Spin size="small" style={{ marginLeft: 8 }} />
-            </Card>
+          <div className="kb-message kb-message--assistant">
+            <div className="kb-message__avatar">AI</div>
+            <div>
+              <div className="kb-message__bubble">
+                <KnowledgeMarkdown text={streamingContent || '思考中...'} />
+                {streamingContent && <span className="kb-streaming-indicator" />}
+              </div>
+              {streamingCitations.length > 0 && (
+                <div className="kb-message__citations">
+                  {streamingCitations.map((c, i) => (
+                    <a key={i} className="kb-message__citation" onClick={() => { window.location.hash = `#/docs?documentId=${encodeURIComponent(c.documentId)}`; }} style={{ cursor: 'pointer' }}>
+                      {c.title}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
+        {error && (
+          <div className="kb-message kb-message--assistant">
+            <div className="kb-message__bubble" style={{ background: '#fff3f3', color: '#e65050', border: '1px solid #fdd' }}>
+              {error}
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
       </div>
-      <div style={{ padding: 12, borderTop: '1px solid var(--semi-color-border)' }}>
-        <KnowledgeChatInput onSend={handleSend} onStop={handleStop} streaming={streaming} />
+      <div className="kb-chat-input-bar">
+        <textarea
+          ref={inputRef}
+          className="kb-chat-input-bar__textarea"
+          placeholder={streaming ? '等待回复完成...' : '输入问题，Enter 发送，Shift+Enter 换行'}
+          rows={1}
+          disabled={streaming}
+          onKeyDown={handleKeyDown}
+        />
+        {streaming ? (
+          <button className="kb-chat-input-bar__stop" onClick={stop} style={{
+            padding: '8px 18px', borderRadius: 8, border: '1px solid #e65050',
+            background: '#fff', color: '#e65050', cursor: 'pointer', fontWeight: 500,
+          }}>
+            停止
+          </button>
+        ) : (
+          <button className="kb-chat-input-bar__send" onClick={handleSendClick} style={{
+            padding: '8px 18px', borderRadius: 8, border: 0,
+            background: '#1456f0', color: '#fff', cursor: 'pointer', fontWeight: 500,
+          }}>
+            发送
+          </button>
+        )}
       </div>
     </div>
   );
