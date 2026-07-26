@@ -51,7 +51,7 @@ export class IndexingService {
 
       if (chunks.length === 0) return;
 
-      const rows = chunks.map((chunk, i) => ({
+      const rows = chunks.map((chunk) => ({
         documentId: id,
         chunkIndex: chunk.chunkIndex,
         content: chunk.content,

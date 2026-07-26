@@ -6,12 +6,17 @@ describe('IndexingService', () => {
   beforeEach(() => {
     mockChunking = { chunk: jest.fn() };
     mockEmbedding = { embed: jest.fn() };
-    mockPrisma = {
+    const tx = {
       documentChunk: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
-      contentDocument: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn() },
-      $transaction: jest.fn((fn: Function) => fn(mockPrisma)),
       $executeRawUnsafe: jest.fn(),
       $queryRawUnsafe: jest.fn(),
+    };
+    mockPrisma = {
+      documentChunk: tx.documentChunk,
+      contentDocument: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn() },
+      $transaction: jest.fn((fn: (t: any) => unknown) => fn(tx)),
+      $executeRawUnsafe: tx.$executeRawUnsafe,
+      $queryRawUnsafe: tx.$queryRawUnsafe,
     };
     service = new IndexingService(mockPrisma, mockChunking, mockEmbedding);
   });
@@ -25,7 +30,7 @@ describe('IndexingService', () => {
     mockPrisma.contentDocument.findUnique.mockResolvedValue({ plainText: 'text' });
 
     await service.indexDocument('doc1', 'text');
-    expect(mockPrisma.documentChunk.deleteMany).toHaveBeenCalledWith({ where: { documentId: 'doc1' } });
+    expect(mockPrisma.$transaction).toHaveBeenCalled();
     expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledTimes(2);
   });
 

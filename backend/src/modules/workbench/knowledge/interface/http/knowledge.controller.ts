@@ -6,7 +6,7 @@ import type { Response } from 'express';
 import { SessionService } from '../../application/session.service';
 import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
-import { CreateSessionDto, ChatMessageDto, UpdateSessionDto } from './dto/knowledge.dto';
+import { CreateSessionDto, ChatMessageDto } from './dto/knowledge.dto';
 
 @Controller('knowledge')
 export class KnowledgeController {
@@ -32,7 +32,7 @@ export class KnowledgeController {
   }
 
   @Patch('sessions/:id')
-  updateSession(@Param('id') id: string, @Body() dto: UpdateSessionDto) {
+  updateSession(@Param('id') id: string) {
     return this.sessions.archive(id);
   }
 
