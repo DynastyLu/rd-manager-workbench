@@ -74,13 +74,17 @@ export class DocumentsController {
 
   @Get(':id/preview-html')
   async previewHtml(@Param('id') id: string, @Res() res: Response) {
-    const html = await this.service.getPreviewHtml(id);
-    if (!html) {
-      res.status(404).json({ success: false, error: { message: 'No HTML preview available for this document' } });
+    const result = await this.service.getPreviewHtml(id);
+    if (result === 'not-pdf') {
+      res.status(204).send();
+      return;
+    }
+    if (!result) {
+      res.status(500).json({ success: false, error: { message: 'PDF preview generation failed' } });
       return;
     }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(html);
+    res.send(result);
   }
 
   @Post(':id/restore')

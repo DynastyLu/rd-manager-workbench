@@ -70,19 +70,17 @@ export class DocumentsService {
    * Each page is rendered as a high-resolution PNG and embedded in HTML.
    * Returns null if the document has no PDF source file.
    */
-  async getPreviewHtml(id: string): Promise<string | null> {
-    // 1. Find PDF source: folder_files first, then fileAssets
-    let pdfPath: string | null = null;
-
+  async getPreviewHtml(id: string): Promise<string | null | 'not-pdf'> {
+    // 1. Find PDF source
     const folderFile = await this.prisma.folderFile.findFirst({
       where: { documentId: id, status: 'ACTIVE' },
       select: { filePath: true },
     });
-    if (folderFile?.filePath?.toLowerCase().endsWith('.pdf')) {
-      pdfPath = folderFile.filePath;
-    }
 
-    if (!pdfPath) return null;
+    if (!folderFile?.filePath) return 'not-pdf';
+    if (!folderFile.filePath.toLowerCase().endsWith('.pdf')) return 'not-pdf';
+
+    const pdfPath = folderFile.filePath;
 
     try {
       const { execSync } = await import('node:child_process');

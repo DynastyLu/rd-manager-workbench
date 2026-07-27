@@ -91,24 +91,21 @@ function parseTable(text: string): { headers: string[]; rows: string[][] } {
 
 function PdfHtmlPreview({ documentId }: { documentId: string }) {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
   const src = `${import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : ''}/documents/${encodeURIComponent(documentId)}/preview-html`;
 
   return (
     <div style={{ marginTop: 16 }}>
-      {loading && !error && <p style={{ color: '#8f959e', fontSize: 13 }}>正在生成 PDF 预览...</p>}
+      {loading && <p style={{ color: '#8f959e', fontSize: 13 }}>正在生成 PDF 预览...</p>}
       <iframe
         title="PDF 预览"
         src={src}
         style={{
           width: '100%', minHeight: 600, border: '1px solid #e5e6eb',
-          borderRadius: 8, background: '#fff', display: error ? 'none' : 'block',
+          borderRadius: 8, background: '#525659', display: 'block',
         }}
         sandbox="allow-same-origin"
         onLoad={() => setLoading(false)}
-        onError={() => { setError(true); setLoading(false); }}
       />
-      {error && <p style={{ color: '#8f959e', fontSize: 13 }}>PDF 预览生成失败，请查看下方文本内容。</p>}
     </div>
   );
 }
