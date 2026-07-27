@@ -244,7 +244,7 @@ export class KnowledgeController {
     );
   }
 
-  @Get('folders/:id/progress')
+  @Get('folders/:id/progress-snapshot')
   folderProgressSnapshot(@Param('id') id: string) {
     return this.folderWatch.getProgress(id) ?? { phase: 'done', total: 0, current: 0, currentFile: '', percent: 100 };
   }

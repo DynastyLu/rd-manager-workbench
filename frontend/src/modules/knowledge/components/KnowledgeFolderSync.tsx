@@ -131,7 +131,8 @@ export function KnowledgeFolderSync() {
   const rescanMutation = useMutation({
     mutationFn: (id: string) => {
       setActiveWatchId(id);
-      return rescanFolder(id);
+      // Delay rescan slightly so the SSE connection can be established first
+      return new Promise((resolve) => setTimeout(resolve, 200)).then(() => rescanFolder(id));
     },
     onSuccess: () => {
       refreshAll();
