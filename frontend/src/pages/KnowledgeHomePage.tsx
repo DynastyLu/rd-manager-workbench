@@ -66,6 +66,92 @@ const TYPE_LABELS: Record<ContentDocumentType, string> = {
 const EMPTY_CONTENT = { type: 'doc', content: [{ type: 'paragraph' }] }
 const EMPTY_TAGS: string[] = []
 
+/** Detect whether content looks like CSV/TSV tabular data */
+function looksLikeTable(text: string): boolean {
+  const lines = text.split('\n').filter((l) => l.trim());
+  if (lines.length < 2) return false;
+  const commaLines = lines.filter((l) => l.includes(','));
+  if (commaLines.length < lines.length * 0.6) return false;
+  const colCounts = commaLines.map((l) => l.split(',').length);
+  const freq = new Map<number, number>();
+  for (const c of colCounts) freq.set(c, (freq.get(c) ?? 0) + 1);
+  let mode = 0; let maxFreq = 0;
+  for (const [k, v] of freq) { if (v > maxFreq) { maxFreq = v; mode = k; } }
+  return mode >= 3 && colCounts.filter((c) => c === mode).length >= colCounts.length * 0.5;
+}
+
+/** Parse CSV lines into a 2D array (handles Chinese commas too) */
+function parseTable(text: string): { headers: string[]; rows: string[][] } {
+  const lines = text.split('\n').filter((l) => l.trim());
+  if (lines.length === 0) return { headers: [], rows: [] };
+  const headers = (lines[0] ?? '').split(',').map((h: string) => h.trim());
+  const rows = lines.slice(1).map((l) => l.split(',').map((c: string) => c.trim()));
+  return { headers, rows };
+}
+
+function DocumentPreview({ content }: { content: string; title?: string }) {
+  if (!content || !content.trim()) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: '#8f959e' }}>
+        暂无内容。此文件的文本未能提取，可能是图片型 PDF 或加密文件。
+      </div>
+    );
+  }
+
+  // Remove sheet separators added by XLSX extraction for cleaner display
+  const cleanContent = content.replace(/^=== .* ===$/gm, '').trim();
+
+  if (looksLikeTable(cleanContent)) {
+    const { headers, rows } = parseTable(cleanContent);
+    return (
+      <div className="kb-preview-table-wrap">
+        <table className="kb-preview-table">
+          <thead>
+            <tr>{headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri}>{row.map((cell, ci) => <td key={ci}>{cell}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+        <style>{`
+          .kb-preview-table-wrap {
+            overflow: auto; max-height: calc(100vh - 320px);
+            border: 1px solid #e5e6eb; border-radius: 8px; background: #fff;
+          }
+          .kb-preview-table {
+            width: 100%; border-collapse: collapse; font-size: 13px;
+          }
+          .kb-preview-table th {
+            position: sticky; top: 0; z-index: 1;
+            background: #f5f6f8; color: #4e5969; font-weight: 600;
+            padding: 8px 12px; text-align: left; border-bottom: 2px solid #e5e6eb;
+            white-space: nowrap;
+          }
+          .kb-preview-table td {
+            padding: 6px 12px; border-bottom: 1px solid #f0f1f3;
+            color: #1f2b3d; max-width: 300px; overflow: hidden; text-overflow: ellipsis;
+          }
+          .kb-preview-table tr:hover td { background: #f8f9fd; }
+        `}</style>
+      </div>
+    );
+  }
+
+  // Plain text view
+  return (
+    <div style={{
+      padding: 24, minHeight: 300, fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+      background: '#fff', borderRadius: 8, border: '1px solid #e5e6eb',
+      overflow: 'auto', maxHeight: 'calc(100vh - 320px)', color: '#1f2b3d',
+    }}>
+      {cleanContent || '暂无内容'}
+    </div>
+  );
+}
+
 export default function KnowledgeHomePage() {
   const urlState = useWorkspaceSearchParams()
   const { searchParams, setSearchParams } = urlState
@@ -502,14 +588,7 @@ export default function KnowledgeHomePage() {
             </div>
             {viewMode === 'preview' ? (
               <div>
-                <div style={{
-                  padding: 20, minHeight: 360, fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace',
-                  fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                  background: '#fafbfc', borderRadius: 8, border: '1px solid #e5e6eb',
-                  overflow: 'auto', maxHeight: 'calc(100vh - 360px)',
-                }}>
-                  {plainText || '暂无内容'}
-                </div>
+                <DocumentPreview content={plainText || ''} />
               </div>
             ) : (
               <RichTextEditor
