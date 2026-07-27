@@ -261,7 +261,7 @@ export class FolderWatchService implements OnModuleInit {
         if (!existing) return true; // new file
         // Force re-extraction if document has placeholder content (failed previous extraction)
         const pt = docTexts.get(existing.documentId) || '';
-        if (pt.startsWith('[需要后端转换') || pt.startsWith('[PDF 文件:')) return true;
+        if (pt.startsWith('[需要后端转换') || pt.startsWith('[PDF 文件:') || pt.startsWith('[Excel 文件:') || pt.trim().length === 0) return true;
         const hash = this.hashFile(f.filePath);
         return hash && hash !== existing.fileHash; // changed
       });
