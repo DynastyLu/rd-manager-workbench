@@ -29,7 +29,6 @@ import {
   type ContentDocumentStatus,
   type ContentDocumentType,
 } from '@/modules/workbench/api/documents'
-import { RichTextEditor } from '@/modules/content/components/RichTextEditor'
 import { FileAttachments } from '@/modules/content/components/FileAttachments'
 import { AiBusinessAction } from '@/modules/workbench/components/extensions/AiBusinessAction'
 import { SaveStatus } from '@/components/workspace/SaveStatus'
@@ -87,6 +86,21 @@ function parseTable(text: string): { headers: string[]; rows: string[][] } {
   const headers = (lines[0] ?? '').split(',').map((h: string) => h.trim());
   const rows = lines.slice(1).map((l) => l.split(',').map((c: string) => c.trim()));
   return { headers, rows };
+}
+
+function PdfViewer({ documentId }: { documentId: string }) {
+  const [ready, setReady] = useState(false);
+  const src = `${import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : ''}/documents/${encodeURIComponent(documentId)}/preview-html`;
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      {!ready && <div style={{ padding: 12, color: '#8f959e', fontSize: 13 }}>加载原版中...</div>}
+      <iframe title="PDF" src={src} style={{
+        width: '100%', minHeight: ready ? 600 : 0, border: '1px solid #e5e6eb',
+        borderRadius: 8, background: '#525659', display: ready ? 'block' : 'none',
+      }} sandbox="allow-same-origin" onLoad={() => setReady(true)} />
+    </div>
+  );
 }
 
 function DocumentPreview({ content }: { content: string }) {
@@ -174,7 +188,6 @@ export default function KnowledgeHomePage() {
   )
   const setQuery = (value: string) => urlState.update({ query: value })
   const [draft, setDraft] = useState<DocumentDraft | null>(null)
-  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [spaceModalOpen, setSpaceModalOpen] = useState(false)
   const [spaceName, setSpaceName] = useState('')
@@ -198,23 +211,6 @@ export default function KnowledgeHomePage() {
     enabled: Boolean(selectedDocumentId),
   })
 
-  // For synced/imported docs: auto-switch to preview mode on first load
-  const userToggledView = useRef(false);
-  const lastLoadedDocId = useRef<string>('');
-  useEffect(() => {
-    const doc = documentQuery.data as { plainText?: string; content?: Record<string, unknown> } | undefined;
-    if (!doc || !selectedDocumentId) return;
-    if (selectedDocumentId === lastLoadedDocId.current) return;
-    lastLoadedDocId.current = selectedDocumentId;
-    userToggledView.current = false;
-    if (!userToggledView.current && doc.plainText && doc.plainText.length > 0) {
-      const contentStr = JSON.stringify(doc.content ?? {});
-      if (contentStr.length < 100) {
-        // Defer state update to next microtask to avoid cascading render
-        queueMicrotask(() => setViewMode('preview'));
-      }
-    }
-  }, [documentQuery.data, selectedDocumentId]);
 
   const versionsQuery = useQuery({
     queryKey: ['document-versions', selectedDocumentId],
@@ -389,7 +385,6 @@ export default function KnowledgeHomePage() {
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['knowledge-index-status'] })
       Toast.success(`已导入并索引：${result.title}`)
-      setViewMode('preview')
       setSearchParams((current) => {
         const next = new URLSearchParams(current)
         next.set('documentId', result.documentId)
@@ -582,27 +577,8 @@ export default function KnowledgeHomePage() {
                 placeholder="用逗号分隔标签"
               />
             </div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              <Button size="small" type={viewMode === 'preview' ? 'primary' : 'tertiary'} onClick={() => { userToggledView.current = true; setViewMode('preview'); }}>预览</Button>
-              <Button size="small" type={viewMode === 'edit' ? 'primary' : 'tertiary'} onClick={() => { userToggledView.current = true; setViewMode('edit'); }} disabled={directoryView === 'trash'}>编辑</Button>
-              {selectedDocumentId && (
-                <Button size="small" theme="light" onClick={() => {
-                  const apiBase = import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : '';
-                  window.open(`${apiBase}/documents/${encodeURIComponent(selectedDocumentId)}/preview-html`, '_blank');
-                }}>查看原版</Button>
-              )}
-            </div>
-            {viewMode === 'preview' ? (
-              <div>
-                <DocumentPreview content={plainText || ''} />
-              </div>
-            ) : (
-              <RichTextEditor
-                value={content}
-                readOnly={directoryView === 'trash'}
-                onChange={(nextContent, nextPlainText) => updateDraft({ content: nextContent, plainText: nextPlainText })}
-              />
-            )}
+            {selectedDocumentId && <PdfViewer documentId={selectedDocumentId} />}
+            <DocumentPreview content={plainText || ''} />
             <FileAttachments
               associations={{
                 documentId: documentQuery.data.id,
