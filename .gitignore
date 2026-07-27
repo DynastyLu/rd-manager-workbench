@@ -37,3 +37,6 @@ desktop/release/
 # Local machine files
 *.log
 .DS_Store
+-.html
+-[0-9]*.png
+backend/--*.jpg
