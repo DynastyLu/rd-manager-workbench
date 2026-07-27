@@ -81,10 +81,14 @@ export class DocumentsService {
         const { existsSync } = await import('node:fs');
         if (!existsSync(folderFile.filePath)) return null;
         const html = execSync(
-          `pdftohtml -stdout -enc UTF-8 "${folderFile.filePath}" -`,
+          `pdftohtml -stdout -i -enc UTF-8 "${folderFile.filePath}" -`,
           { encoding: 'utf-8', timeout: 15_000, maxBuffer: 50 * 1024 * 1024 },
         );
-        if (html && html.length > 100) return html;
+        if (html && html.length > 100) {
+          // Inject normalization CSS: light background, black text, fix broken image placeholders
+          const fixCss = '<style>body{background:#fff!important;color:#111!important}img{display:none}</style>';
+          return html.replace('</head>', `${fixCss}</head>`);
+        }
       } catch { /* pdftohtml failed, return null */ }
     }
     return null;
