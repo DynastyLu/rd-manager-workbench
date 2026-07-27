@@ -40,3 +40,5 @@ desktop/release/
 -.html
 -[0-9]*.png
 backend/--*.jpg
+--*.html
+-_*.html

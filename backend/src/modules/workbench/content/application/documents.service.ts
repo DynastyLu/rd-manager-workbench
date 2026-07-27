@@ -66,31 +66,64 @@ export class DocumentsService {
   }
 
   /**
-   * Generate an HTML preview for PDF documents using pdftohtml.
+   * Generate an image-based HTML preview for PDF documents using pdftoppm.
+   * Each page is rendered as a high-resolution PNG and embedded in HTML.
    * Returns null if the document has no PDF source file.
    */
   async getPreviewHtml(id: string): Promise<string | null> {
-    // Check folder_files for a PDF source
+    // 1. Find PDF source: folder_files first, then fileAssets
+    let pdfPath: string | null = null;
+
     const folderFile = await this.prisma.folderFile.findFirst({
       where: { documentId: id, status: 'ACTIVE' },
       select: { filePath: true },
     });
     if (folderFile?.filePath?.toLowerCase().endsWith('.pdf')) {
-      try {
-        const { execSync } = await import('node:child_process');
-        const { existsSync } = await import('node:fs');
-        if (!existsSync(folderFile.filePath)) return null;
-        const html = execSync(
-          `pdftohtml -stdout -i -enc UTF-8 "${folderFile.filePath}" -`,
-          { encoding: 'utf-8', timeout: 15_000, maxBuffer: 50 * 1024 * 1024 },
-        );
-        if (html && html.length > 100) {
-          // Inject normalization CSS: light background, black text, fix broken image placeholders
-          const fixCss = '<style>body{background:#fff!important;color:#111!important}img{display:none}</style>';
-          return html.replace('</head>', `${fixCss}</head>`);
-        }
-      } catch { /* pdftohtml failed, return null */ }
+      pdfPath = folderFile.filePath;
     }
+
+    if (!pdfPath) return null;
+
+    try {
+      const { execSync } = await import('node:child_process');
+      const { existsSync, mkdirSync, readFileSync, rmSync } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const { randomUUID } = await import('node:crypto');
+
+      if (!existsSync(pdfPath)) return null;
+
+      // Render PDF pages as PNG images at 200 DPI
+      const tmpDir = join(tmpdir(), `kb-pdf-${randomUUID()}`);
+      mkdirSync(tmpDir);
+      try {
+        execSync(`pdftoppm -png -r 200 "${pdfPath}" "${tmpDir}/page"`, {
+          timeout: 30_000, maxBuffer: 10 * 1024 * 1024,
+        });
+
+        // Read generated images and build HTML
+        const { readdirSync } = await import('node:fs');
+        const files = readdirSync(tmpDir).filter((f: string) => f.endsWith('.png')).sort();
+        if (files.length === 0) return null;
+
+        const images = files.map((f: string) => {
+          const buf = readFileSync(join(tmpDir, f));
+          return `data:image/png;base64,${buf.toString('base64')}`;
+        });
+
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+          body{background:#525659;margin:0;padding:20px;display:flex;flex-direction:column;align-items:center;gap:20px}
+          img{max-width:100%;box-shadow:0 2px 12px rgba(0,0,0,.4);background:#fff}
+          .page-num{color:#aaa;font-size:12px;text-align:center;margin-top:-12px}
+        </style></head><body>
+          ${images.map((src, i) => `<div><img src="${src}" alt="第${i + 1}页"><div class="page-num">第 ${i + 1} / ${files.length} 页</div></div>`).join('\n')}
+        </body></html>`;
+
+        return html;
+      } finally {
+        try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* cleanup failed */ }
+      }
+    } catch { /* render failed, return null */ }
     return null;
   }
 
