@@ -89,11 +89,37 @@ function parseTable(text: string): { headers: string[]; rows: string[][] } {
   return { headers, rows };
 }
 
-function DocumentPreview({ content }: { content: string; title?: string }) {
+function PdfHtmlPreview({ documentId }: { documentId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const src = `${import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : ''}/documents/${encodeURIComponent(documentId)}/preview-html`;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      {loading && !error && <p style={{ color: '#8f959e', fontSize: 13 }}>正在生成 PDF 预览...</p>}
+      <iframe
+        title="PDF 预览"
+        src={src}
+        style={{
+          width: '100%', minHeight: 600, border: '1px solid #e5e6eb',
+          borderRadius: 8, background: '#fff', display: error ? 'none' : 'block',
+        }}
+        sandbox="allow-same-origin"
+        onLoad={() => setLoading(false)}
+        onError={() => { setError(true); setLoading(false); }}
+      />
+      {error && <p style={{ color: '#8f959e', fontSize: 13 }}>PDF 预览生成失败，请查看下方文本内容。</p>}
+    </div>
+  );
+}
+
+function DocumentPreview({ content, documentId }: { content: string; title?: string; documentId?: string }) {
   if (!content || !content.trim()) {
+    // Try HTML preview for PDFs even when plainText is empty
     return (
       <div style={{ padding: 40, textAlign: 'center', color: '#8f959e' }}>
         暂无内容。此文件的文本未能提取，可能是图片型 PDF 或加密文件。
+        {documentId && <PdfHtmlPreview documentId={documentId} />}
       </div>
     );
   }
@@ -141,13 +167,16 @@ function DocumentPreview({ content }: { content: string; title?: string }) {
 
   // Plain text view
   return (
-    <div style={{
-      padding: 24, minHeight: 300, fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-      background: '#fff', borderRadius: 8, border: '1px solid #e5e6eb',
-      overflow: 'auto', maxHeight: 'calc(100vh - 320px)', color: '#1f2b3d',
-    }}>
-      {cleanContent || '暂无内容'}
+    <div>
+      {documentId && <PdfHtmlPreview documentId={documentId} />}
+      <div style={{
+        padding: 24, minHeight: 200, fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        background: '#fff', borderRadius: 8, border: '1px solid #e5e6eb',
+        overflow: 'auto', maxHeight: documentId ? 'calc(100vh - 800px)' : 'calc(100vh - 320px)', color: '#1f2b3d',
+      }}>
+        {cleanContent || '暂无内容'}
+      </div>
     </div>
   );
 }
@@ -588,7 +617,7 @@ export default function KnowledgeHomePage() {
             </div>
             {viewMode === 'preview' ? (
               <div>
-                <DocumentPreview content={plainText || ''} />
+                <DocumentPreview content={plainText || ''} documentId={selectedDocumentId || undefined} />
               </div>
             ) : (
               <RichTextEditor

@@ -65,6 +65,31 @@ export class DocumentsService {
     return document;
   }
 
+  /**
+   * Generate an HTML preview for PDF documents using pdftohtml.
+   * Returns null if the document has no PDF source file.
+   */
+  async getPreviewHtml(id: string): Promise<string | null> {
+    // Check folder_files for a PDF source
+    const folderFile = await this.prisma.folderFile.findFirst({
+      where: { documentId: id, status: 'ACTIVE' },
+      select: { filePath: true },
+    });
+    if (folderFile?.filePath?.toLowerCase().endsWith('.pdf')) {
+      try {
+        const { execSync } = await import('node:child_process');
+        const { existsSync } = await import('node:fs');
+        if (!existsSync(folderFile.filePath)) return null;
+        const html = execSync(
+          `pdftohtml -stdout -enc UTF-8 "${folderFile.filePath}" -`,
+          { encoding: 'utf-8', timeout: 15_000, maxBuffer: 50 * 1024 * 1024 },
+        );
+        if (html && html.length > 100) return html;
+      } catch { /* pdftohtml failed, return null */ }
+    }
+    return null;
+  }
+
   async create(dto: CreateDocumentDto) {
     const references = await this.validateReferences(dto);
     return this.prisma.contentDocument.create({

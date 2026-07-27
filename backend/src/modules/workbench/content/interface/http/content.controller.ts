@@ -9,7 +9,9 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { DocumentsService } from '../../application/documents.service';
 import { KnowledgeSpacesService } from '../../application/knowledge-spaces.service';
 import {
@@ -68,6 +70,17 @@ export class DocumentsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async trash(@Param('id') id: string) {
     await this.service.trash(id);
+  }
+
+  @Get(':id/preview-html')
+  async previewHtml(@Param('id') id: string, @Res() res: Response) {
+    const html = await this.service.getPreviewHtml(id);
+    if (!html) {
+      res.status(404).json({ success: false, error: { message: 'No HTML preview available for this document' } });
+      return;
+    }
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   }
 
   @Post(':id/restore')
