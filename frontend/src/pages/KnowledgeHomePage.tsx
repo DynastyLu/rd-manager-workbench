@@ -89,7 +89,7 @@ function parseTable(text: string): { headers: string[]; rows: string[][] } {
   return { headers, rows };
 }
 
-function DocumentPreview({ content, documentId }: { content: string; title?: string; documentId?: string }) {
+function DocumentPreview({ content }: { content: string }) {
   if (!content || !content.trim()) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: '#8f959e' }}>
@@ -594,7 +594,7 @@ export default function KnowledgeHomePage() {
             </div>
             {viewMode === 'preview' ? (
               <div>
-                <DocumentPreview content={plainText || ''} documentId={selectedDocumentId || undefined} />
+                <DocumentPreview content={plainText || ''} />
               </div>
             ) : (
               <RichTextEditor
