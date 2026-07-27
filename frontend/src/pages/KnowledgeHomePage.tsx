@@ -89,34 +89,11 @@ function parseTable(text: string): { headers: string[]; rows: string[][] } {
   return { headers, rows };
 }
 
-function PdfHtmlPreview({ documentId }: { documentId: string }) {
-  const [loading, setLoading] = useState(true);
-  const src = `${import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : ''}/documents/${encodeURIComponent(documentId)}/preview-html`;
-
-  return (
-    <div style={{ marginTop: 16 }}>
-      {loading && <p style={{ color: '#8f959e', fontSize: 13 }}>正在生成 PDF 预览...</p>}
-      <iframe
-        title="PDF 预览"
-        src={src}
-        style={{
-          width: '100%', minHeight: 600, border: '1px solid #e5e6eb',
-          borderRadius: 8, background: '#525659', display: 'block',
-        }}
-        sandbox="allow-same-origin"
-        onLoad={() => setLoading(false)}
-      />
-    </div>
-  );
-}
-
 function DocumentPreview({ content, documentId }: { content: string; title?: string; documentId?: string }) {
   if (!content || !content.trim()) {
-    // Try HTML preview for PDFs even when plainText is empty
     return (
       <div style={{ padding: 40, textAlign: 'center', color: '#8f959e' }}>
         暂无内容。此文件的文本未能提取，可能是图片型 PDF 或加密文件。
-        {documentId && <PdfHtmlPreview documentId={documentId} />}
       </div>
     );
   }
@@ -164,16 +141,13 @@ function DocumentPreview({ content, documentId }: { content: string; title?: str
 
   // Plain text view
   return (
-    <div>
-      {documentId && <PdfHtmlPreview documentId={documentId} />}
-      <div style={{
-        padding: 24, minHeight: 200, fontFamily: 'system-ui, -apple-system, sans-serif',
-        fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        background: '#fff', borderRadius: 8, border: '1px solid #e5e6eb',
-        overflow: 'auto', maxHeight: documentId ? 'calc(100vh - 800px)' : 'calc(100vh - 320px)', color: '#1f2b3d',
-      }}>
-        {cleanContent || '暂无内容'}
-      </div>
+    <div style={{
+      padding: 24, minHeight: 200, fontFamily: 'system-ui, -apple-system, sans-serif',
+      fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+      background: '#fff', borderRadius: 8, border: '1px solid #e5e6eb',
+      overflow: 'auto', maxHeight: 'calc(100vh - 320px)', color: '#1f2b3d',
+    }}>
+      {cleanContent || '暂无内容'}
     </div>
   );
 }
@@ -611,6 +585,12 @@ export default function KnowledgeHomePage() {
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <Button size="small" type={viewMode === 'preview' ? 'primary' : 'tertiary'} onClick={() => { userToggledView.current = true; setViewMode('preview'); }}>预览</Button>
               <Button size="small" type={viewMode === 'edit' ? 'primary' : 'tertiary'} onClick={() => { userToggledView.current = true; setViewMode('edit'); }} disabled={directoryView === 'trash'}>编辑</Button>
+              {selectedDocumentId && (
+                <Button size="small" theme="light" onClick={() => {
+                  const apiBase = import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : '';
+                  window.open(`${apiBase}/documents/${encodeURIComponent(selectedDocumentId)}/preview-html`, '_blank');
+                }}>查看原版</Button>
+              )}
             </div>
             {viewMode === 'preview' ? (
               <div>
