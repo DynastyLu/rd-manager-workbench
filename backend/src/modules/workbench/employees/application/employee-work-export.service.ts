@@ -14,11 +14,14 @@ import { AuditLogService } from '../../governance/application/audit-log.service'
 
 const DAY_MS = 86_400_000;
 
-const ITEM_SELECT = {
+const CURRENT_ITEM_SELECT = {
   id: true,
+  sourceRowId: true,
   periodStartAt: true,
   periodEndAt: true,
   title: true,
+  workKind: true,
+  plannedCompletionAt: true,
   planText: true,
   summaryText: true,
   completionRate: true,
@@ -29,12 +32,49 @@ const ITEM_SELECT = {
   actualHours: true,
   note: true,
   importBatchId: true,
-  employee: { select: { displayName: true, department: true } },
-  project: { select: { code: true, name: true } },
-  task: { select: { code: true, title: true } },
+  projectId: true,
+  taskId: true,
+  employee: { select: { displayName: true, department: true, workDirection: true } },
+  project: { select: { id: true, code: true, name: true } },
+  task: { select: { id: true, code: true, title: true } },
+  sourceRow: {
+    select: { sourceSheetName: true, sourceSection: true, sourceRowNumber: true },
+  },
 } satisfies Prisma.EmployeeWorkItemSelect;
 
-type EmployeeWorkExportItem = Prisma.EmployeeWorkItemGetPayload<{ select: typeof ITEM_SELECT }>;
+const PLAN_ITEM_SELECT = {
+  id: true,
+  sourceRowId: true,
+  periodStartAt: true,
+  periodEndAt: true,
+  title: true,
+  deliverableText: true,
+  plannedCompletionAt: true,
+  priority: true,
+  collaborationText: true,
+  planText: true,
+  note: true,
+  workKind: true,
+  carryStatus: true,
+  cancelReason: true,
+  importBatchId: true,
+  projectId: true,
+  taskId: true,
+  employee: { select: { displayName: true, department: true, workDirection: true } },
+  project: { select: { id: true, code: true, name: true } },
+  task: { select: { id: true, code: true, title: true } },
+  sourceRow: {
+    select: { sourceSheetName: true, sourceSection: true, sourceRowNumber: true },
+  },
+} satisfies Prisma.EmployeeWeekPlanItemSelect;
+
+type CurrentExportItem = Prisma.EmployeeWorkItemGetPayload<{
+  select: typeof CURRENT_ITEM_SELECT;
+}>;
+type PlanExportItem = Prisma.EmployeeWeekPlanItemGetPayload<{ select: typeof PLAN_ITEM_SELECT }>;
+type EmployeeWorkExportItem =
+  | { sourceType: '当前工作'; item: CurrentExportItem }
+  | { sourceType: '未来计划'; item: PlanExportItem };
 
 type ExportCell = string | number | null;
 
@@ -47,37 +87,146 @@ interface EmployeeWorkExportColumn {
 // Single source of truth: header, column width, and cell extractor per column
 // so the three can never drift apart.
 const COLUMNS: readonly EmployeeWorkExportColumn[] = [
-  { header: '员工姓名', width: 16, value: (item) => item.employee.displayName },
-  { header: '部门', width: 16, value: (item) => item.employee.department },
-  { header: '周期开始', width: 14, value: (item) => dateOnly(item.periodStartAt) },
-  { header: '工作内容', width: 32, value: (item) => item.title },
-  { header: '本期计划', width: 32, value: (item) => item.planText },
-  { header: '本期完成情况', width: 32, value: (item) => item.summaryText },
-  { header: '完成度', width: 12, value: (item) => item.completionRate },
-  { header: '工作状态', width: 14, value: (item) => item.status },
-  { header: '下期计划', width: 32, value: (item) => item.nextPlanText },
-  { header: '风险与阻塞', width: 32, value: (item) => item.riskText },
+  { header: '员工姓名', width: 16, value: ({ item }) => item.employee.displayName },
+  { header: '部门', width: 16, value: ({ item }) => item.employee.department },
+  { header: '周期开始', width: 14, value: ({ item }) => dateOnly(item.periodStartAt) },
+  { header: '工作内容', width: 32, value: ({ item }) => item.title },
+  {
+    header: '本期计划',
+    width: 32,
+    value: (row) => (row.sourceType === '当前工作' ? row.item.planText : null),
+  },
+  {
+    header: '本期完成情况',
+    width: 32,
+    value: (row) => (row.sourceType === '当前工作' ? row.item.summaryText : null),
+  },
+  {
+    header: '完成度',
+    width: 12,
+    value: (row) => (row.sourceType === '当前工作' ? row.item.completionRate : null),
+  },
+  {
+    header: '工作状态',
+    width: 14,
+    value: (row) => (row.sourceType === '当前工作' ? row.item.status : null),
+  },
+  {
+    header: '下期计划',
+    width: 32,
+    value: (row) => (row.sourceType === '当前工作' ? row.item.nextPlanText : null),
+  },
+  {
+    header: '风险与阻塞',
+    width: 32,
+    value: (row) => (row.sourceType === '当前工作' ? row.item.riskText : null),
+  },
   {
     header: '计划工时',
     width: 12,
-    value: (item) => (item.plannedHours === null ? null : Number(item.plannedHours)),
+    value: (row) =>
+      row.sourceType === '当前工作' && row.item.plannedHours !== null
+        ? Number(row.item.plannedHours)
+        : null,
   },
   {
     header: '实际工时',
     width: 12,
-    value: (item) => (item.actualHours === null ? null : Number(item.actualHours)),
+    value: (row) =>
+      row.sourceType === '当前工作' && row.item.actualHours !== null
+        ? Number(row.item.actualHours)
+        : null,
   },
-  { header: '项目编号', width: 16, value: (item) => item.project?.code ?? null },
-  { header: '项目名称', width: 24, value: (item) => item.project?.name ?? null },
-  { header: '任务编号', width: 16, value: (item) => item.task?.code ?? null },
-  { header: '来源批次', width: 40, value: (item) => item.importBatchId },
-  { header: '备注', width: 28, value: (item) => item.note },
+  { header: '项目编号', width: 16, value: ({ item }) => item.project?.code ?? null },
+  { header: '项目名称', width: 24, value: ({ item }) => item.project?.name ?? null },
+  { header: '任务编号', width: 16, value: ({ item }) => item.task?.code ?? null },
+  { header: '来源批次', width: 40, value: ({ item }) => item.importBatchId },
+  { header: '备注', width: 28, value: ({ item }) => item.note },
+  { header: '来源类型', width: 14, value: ({ sourceType }) => sourceType },
+  { header: '周期结束', width: 14, value: ({ item }) => dateOnly(item.periodEndAt) },
+  { header: '工作方向', width: 18, value: ({ item }) => item.employee.workDirection },
+  { header: '系统分类', width: 14, value: ({ item }) => item.workKind },
+  {
+    header: '计划完成日期',
+    width: 16,
+    value: ({ item }) =>
+      item.plannedCompletionAt ? dateOnly(item.plannedCompletionAt) : null,
+  },
+  {
+    header: '交付物',
+    width: 32,
+    value: (row) => (row.sourceType === '未来计划' ? row.item.deliverableText : null),
+  },
+  {
+    header: '优先级',
+    width: 14,
+    value: (row) => (row.sourceType === '未来计划' ? row.item.priority : null),
+  },
+  {
+    header: '协作需求',
+    width: 32,
+    value: (row) => (row.sourceType === '未来计划' ? row.item.collaborationText : null),
+  },
+  {
+    header: '未来计划',
+    width: 32,
+    value: (row) => (row.sourceType === '未来计划' ? row.item.planText : null),
+  },
+  {
+    header: '计划流转状态',
+    width: 16,
+    value: (row) => (row.sourceType === '未来计划' ? row.item.carryStatus : null),
+  },
+  {
+    header: '取消原因',
+    width: 28,
+    value: (row) => (row.sourceType === '未来计划' ? row.item.cancelReason : null),
+  },
+  { header: '项目ID', width: 28, value: ({ item }) => item.projectId },
+  { header: '任务ID', width: 28, value: ({ item }) => item.taskId },
+  { header: '任务名称', width: 28, value: ({ item }) => item.task?.title ?? null },
+  {
+    header: '工时风险',
+    width: 20,
+    value: (row) => workHoursRisk(row),
+  },
+  {
+    header: '来源工作表',
+    width: 20,
+    value: ({ item }) => item.sourceRow.sourceSheetName,
+  },
+  { header: '来源区段', width: 18, value: ({ item }) => item.sourceRow.sourceSection },
+  { header: '来源行号', width: 12, value: ({ item }) => item.sourceRow.sourceRowNumber },
+  { header: '来源记录ID', width: 32, value: ({ item }) => item.sourceRowId },
 ];
 
-const LAST_COLUMN_LETTER = String.fromCharCode('A'.charCodeAt(0) + COLUMNS.length - 1);
+const LAST_COLUMN_LETTER = columnLetter(COLUMNS.length);
 
 function dateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function columnLetter(columnNumber: number): string {
+  let value = columnNumber;
+  let result = '';
+  while (value > 0) {
+    value -= 1;
+    result = String.fromCharCode(65 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+  return result;
+}
+
+function workHoursRisk(row: EmployeeWorkExportItem): string | null {
+  if (
+    row.sourceType !== '当前工作' ||
+    row.item.plannedHours === null ||
+    row.item.actualHours === null
+  ) {
+    return null;
+  }
+  const overrun = Number(row.item.actualHours) - Number(row.item.plannedHours);
+  return overrun > 0 ? `超出计划 ${overrun} 小时` : null;
 }
 
 export interface EmployeeWorkExportQuery {
@@ -101,42 +250,63 @@ export class EmployeeWorkExportService {
     const format = query.format ?? 'xlsx';
     try {
       const period = this.periodBounds(query.periodType, query.periodStart);
-      const items = await this.prisma.employeeWorkItem.findMany({
-        where: {
-          archivedAt: null,
-          periodEndAt: { gte: period.startAt, lte: period.endAt },
-          ...(query.periodType === EmployeeProgressPeriod.WEEK
-            ? { periodStartAt: period.startAt }
-            : {}),
-          ...(query.employeeId ? { employeeId: query.employeeId } : {}),
-          ...(query.projectId ? { projectId: query.projectId } : {}),
-          ...(query.status ? { status: query.status } : {}),
-          employee: {
+      const importBatchWhere = {
+        periodType: EmployeeProgressPeriod.WEEK,
+        periodStartAt:
+          query.periodType === EmployeeProgressPeriod.WEEK
+            ? period.startAt
+            : { gte: period.batchWindowStart, lte: period.endAt },
+        periodEndAt:
+          query.periodType === EmployeeProgressPeriod.WEEK
+            ? period.endAt
+            : { gte: period.startAt, lte: period.endAt },
+        status: EmployeeWorkImportStatus.COMPLETED,
+        archivedAt: null,
+      } satisfies Prisma.EmployeeWorkImportBatchWhereInput;
+      const employeeWhere = {
+        archivedAt: null,
+        ...(query.department ? { department: query.department } : {}),
+      } satisfies Prisma.ResourceProfileWhereInput;
+      const [currentItems, planItems] = await Promise.all([
+        this.prisma.employeeWorkItem.findMany({
+          where: {
             archivedAt: null,
-            ...(query.department ? { department: query.department } : {}),
+            periodEndAt: { gte: period.startAt, lte: period.endAt },
+            ...(query.periodType === EmployeeProgressPeriod.WEEK
+              ? { periodStartAt: period.startAt }
+              : {}),
+            ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+            ...(query.projectId ? { projectId: query.projectId } : {}),
+            ...(query.status ? { status: query.status } : {}),
+            employee: employeeWhere,
+            importBatch: importBatchWhere,
           },
-          importBatch: {
-            periodType: EmployeeProgressPeriod.WEEK,
-            periodStartAt:
-              query.periodType === EmployeeProgressPeriod.WEEK
-                ? period.startAt
-                : { gte: period.batchWindowStart, lte: period.endAt },
-            periodEndAt:
-              query.periodType === EmployeeProgressPeriod.WEEK
-                ? period.endAt
-                : { gte: period.startAt, lte: period.endAt },
-            status: EmployeeWorkImportStatus.COMPLETED,
+          select: CURRENT_ITEM_SELECT,
+          orderBy: [{ periodStartAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        }),
+        this.prisma.employeeWeekPlanItem.findMany({
+          where: {
             archivedAt: null,
+            ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+            ...(query.projectId ? { projectId: query.projectId } : {}),
+            employee: employeeWhere,
+            importBatch: importBatchWhere,
           },
-        },
-        select: ITEM_SELECT,
-        orderBy: [{ periodStartAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
-      });
+          select: PLAN_ITEM_SELECT,
+          orderBy: [{ periodStartAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        }),
+      ]);
+      const items: EmployeeWorkExportItem[] = [
+        ...currentItems.map((item) => ({ sourceType: '当前工作' as const, item })),
+        ...planItems.map((item) => ({ sourceType: '未来计划' as const, item })),
+      ];
       const rows: ExportCell[][] = [
         COLUMNS.map(({ header }) => header),
         ...items.map((item) => COLUMNS.map(({ value }) => value(item))),
       ];
-      const sourceBatchIds = [...new Set(items.map(({ importBatchId }) => importBatchId))].sort();
+      const sourceBatchIds = [
+        ...new Set(items.map(({ item }) => item.importBatchId)),
+      ].sort();
       const result = format === 'csv' ? this.csv(rows) : await this.xlsx(rows, query.periodStart);
       await this.audit.record({
         action: 'EMPLOYEE_WORK_EXPORTED',

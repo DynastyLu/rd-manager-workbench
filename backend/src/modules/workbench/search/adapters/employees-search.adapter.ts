@@ -13,11 +13,12 @@ export class EmployeesSearchAdapter implements SearchAdapter {
   constructor(private readonly prisma: PlatformPrismaService) {}
 
   async search(query: string, types: readonly SearchType[]): Promise<SearchCandidate[]> {
-    const [employees, workItems] = await Promise.all([
+    const [employees, workItems, planItems] = await Promise.all([
       types.includes('EMPLOYEE') ? this.searchEmployees(query) : Promise.resolve([]),
       types.includes('EMPLOYEE_WORK') ? this.searchWorkItems(query) : Promise.resolve([]),
+      types.includes('EMPLOYEE_WORK') ? this.searchPlanItems(query) : Promise.resolve([]),
     ]);
-    return limitSearchCandidates(query, [...employees, ...workItems], CANDIDATE_LIMIT);
+    return limitSearchCandidates(query, [...employees, ...workItems, ...planItems], CANDIDATE_LIMIT);
   }
 
   private async searchEmployees(query: string): Promise<SearchCandidate[]> {
@@ -29,6 +30,7 @@ export class EmployeesSearchAdapter implements SearchAdapter {
           { displayName: contains },
           { department: contains },
           { roleTitle: contains },
+          { workDirection: contains },
           { managerName: contains },
           { developmentGoal: contains },
           { notes: contains },
@@ -39,6 +41,7 @@ export class EmployeesSearchAdapter implements SearchAdapter {
         displayName: true,
         department: true,
         roleTitle: true,
+        workDirection: true,
         managerName: true,
         developmentGoal: true,
         notes: true,
@@ -54,6 +57,7 @@ export class EmployeesSearchAdapter implements SearchAdapter {
       snippet: buildSearchSnippet(query, [
         employee.department,
         employee.roleTitle,
+        employee.workDirection,
         employee.managerName,
         employee.developmentGoal,
         employee.notes,
@@ -83,6 +87,7 @@ export class EmployeesSearchAdapter implements SearchAdapter {
         { note: contains },
         { employee: { displayName: contains } },
         { employee: { department: contains } },
+        { employee: { workDirection: contains } },
         { project: { code: contains } },
         { project: { name: contains } },
         { task: { code: contains } },
@@ -102,9 +107,12 @@ export class EmployeesSearchAdapter implements SearchAdapter {
         periodStartAt: true,
         employeeId: true,
         updatedAt: true,
-        employee: { select: { displayName: true, department: true } },
-        project: { select: { code: true, name: true } },
+        employee: { select: { displayName: true, department: true, workDirection: true } },
+        project: { select: { id: true, code: true, name: true } },
         task: { select: { code: true, title: true } },
+        sourceRow: {
+          select: { sourceSheetName: true, sourceSection: true, sourceRowNumber: true },
+        },
       },
       orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       take: CANDIDATE_LIMIT,
@@ -113,13 +121,26 @@ export class EmployeesSearchAdapter implements SearchAdapter {
       const params = new URLSearchParams({
         periodType: EmployeeProgressPeriod.WEEK,
         periodStart: item.periodStartAt.toISOString().slice(0, 10),
+        sourceSection: 'CURRENT_WORK',
         workItemId: item.id,
       });
+      if (item.sourceRow.sourceSheetName) {
+        params.set('sourceSheet', item.sourceRow.sourceSheetName);
+      }
+      if (item.sourceRow.sourceRowNumber !== null) {
+        params.set('sourceRow', String(item.sourceRow.sourceRowNumber));
+      }
       return {
         type: 'EMPLOYEE_WORK' as const,
         id: item.id,
-        title: item.title,
+        title: `当前工作｜${item.title}`,
         snippet: buildSearchSnippet(query, [
+          item.employee.displayName,
+          item.employee.workDirection,
+          item.project?.name,
+          item.periodStartAt.toISOString().slice(0, 10),
+          item.sourceRow.sourceSheetName,
+          item.sourceRow.sourceRowNumber === null ? null : `第 ${item.sourceRow.sourceRowNumber} 行`,
           item.planText,
           item.summaryText,
           item.nextPlanText,
@@ -129,6 +150,95 @@ export class EmployeesSearchAdapter implements SearchAdapter {
           item.employee.department,
           item.project?.code,
           item.project?.name,
+          item.task?.code,
+          item.task?.title,
+        ]),
+        path: `/employees/${encodeURIComponent(item.employeeId)}?${params.toString()}`,
+        updatedAt: item.updatedAt,
+        actions: ['OPEN', 'COPY_LINK'] as const,
+      };
+    });
+  }
+
+  private async searchPlanItems(query: string): Promise<SearchCandidate[]> {
+    const contains = { contains: query, mode: 'insensitive' as const };
+    const items = await this.prisma.employeeWeekPlanItem.findMany({
+      where: {
+        archivedAt: null,
+        employee: { archivedAt: null },
+        importBatch: {
+          periodType: EmployeeProgressPeriod.WEEK,
+          status: EmployeeWorkImportStatus.COMPLETED,
+          archivedAt: null,
+        },
+        OR: [
+          { title: contains },
+          { deliverableText: contains },
+          { collaborationText: contains },
+          { planText: contains },
+          { note: contains },
+          { employee: { displayName: contains } },
+          { employee: { department: contains } },
+          { employee: { workDirection: contains } },
+          { project: { code: contains } },
+          { project: { name: contains } },
+          { task: { code: contains } },
+          { task: { title: contains } },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        deliverableText: true,
+        collaborationText: true,
+        planText: true,
+        note: true,
+        periodStartAt: true,
+        periodEndAt: true,
+        employeeId: true,
+        updatedAt: true,
+        employee: { select: { displayName: true, department: true, workDirection: true } },
+        project: { select: { id: true, code: true, name: true } },
+        task: { select: { code: true, title: true } },
+        sourceRow: {
+          select: { sourceSheetName: true, sourceSection: true, sourceRowNumber: true },
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: CANDIDATE_LIMIT,
+    });
+    return items.map((item) => {
+      const params = new URLSearchParams({
+        periodType: EmployeeProgressPeriod.WEEK,
+        periodStart: item.periodStartAt.toISOString().slice(0, 10),
+        sourceSection: 'NEXT_WEEK_PLAN',
+        planItemId: item.id,
+      });
+      if (item.sourceRow.sourceSheetName) {
+        params.set('sourceSheet', item.sourceRow.sourceSheetName);
+      }
+      if (item.sourceRow.sourceRowNumber !== null) {
+        params.set('sourceRow', String(item.sourceRow.sourceRowNumber));
+      }
+      return {
+        type: 'EMPLOYEE_WORK' as const,
+        id: item.id,
+        title: `未来计划｜${item.title}`,
+        snippet: buildSearchSnippet(query, [
+          item.employee.displayName,
+          item.employee.workDirection,
+          item.project?.name,
+          `${item.periodStartAt.toISOString().slice(0, 10)} 至 ${item.periodEndAt
+            .toISOString()
+            .slice(0, 10)}`,
+          item.sourceRow.sourceSheetName,
+          item.sourceRow.sourceRowNumber === null ? null : `第 ${item.sourceRow.sourceRowNumber} 行`,
+          item.deliverableText,
+          item.collaborationText,
+          item.planText,
+          item.note,
+          item.employee.department,
+          item.project?.code,
           item.task?.code,
           item.task?.title,
         ]),

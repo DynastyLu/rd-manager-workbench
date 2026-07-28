@@ -1,6 +1,7 @@
 import {
   EmployeeProgressPeriod,
   EmployeeWorkImportStatus,
+  EmployeeWorkKind,
   EmployeeWorkStatus,
   RiskImpact,
   RiskLevel,
@@ -14,6 +15,7 @@ describe('EmployeeWorkRiskService', () => {
     title: '完成权限模型',
     riskText: '外部权限依赖未就绪',
     status: EmployeeWorkStatus.AT_RISK,
+    workKind: EmployeeWorkKind.PROJECT,
     projectId: 'project-1',
     taskId: 'task-1',
     riskId: null,
@@ -106,10 +108,48 @@ describe('EmployeeWorkRiskService', () => {
     );
   });
 
+  it('creates an idempotent employee risk for non-project work without project references', async () => {
+    const nonProject = {
+      ...workItem,
+      workKind: EmployeeWorkKind.NON_PROJECT,
+      projectId: null,
+      taskId: null,
+      project: null,
+    };
+    tx.employeeWorkItem.findFirst
+      .mockReset()
+      .mockResolvedValueOnce(nonProject)
+      .mockResolvedValueOnce({ ...nonProject, riskId: risk.id });
+    const service = createService();
+
+    await expect(service.convert('work-1')).resolves.toEqual({
+      risk,
+      alreadyExists: false,
+    });
+    await expect(service.convert('work-1')).resolves.toEqual({
+      risk,
+      alreadyExists: true,
+    });
+
+    expect(risks.createRiskInTransaction).toHaveBeenCalledTimes(1);
+    expect(risks.createRiskInTransaction).toHaveBeenCalledWith(tx, {
+      title: workItem.title,
+      description: workItem.riskText,
+      likelihood: RiskLikelihood.MEDIUM,
+      impact: RiskImpact.MEDIUM,
+      level: RiskLevel.MEDIUM,
+      ownerName: workItem.employee.displayName,
+    });
+    expect(tx.employeeWorkItem.update).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     [{ ...workItem, riskText: '  ' }, 'risk text'],
     [{ ...workItem, status: EmployeeWorkStatus.IN_PROGRESS }, 'risk status'],
-    [{ ...workItem, projectId: null, project: null }, 'active project'],
+    [
+      { ...workItem, workKind: null, projectId: null, project: null },
+      'active project',
+    ],
     [{ ...workItem, project: { id: 'project-1', archivedAt: new Date() } }, 'active project'],
   ])('rejects an ineligible current work item (%s)', async (ineligible, message) => {
     tx.employeeWorkItem.findFirst.mockReset().mockResolvedValue(ineligible);

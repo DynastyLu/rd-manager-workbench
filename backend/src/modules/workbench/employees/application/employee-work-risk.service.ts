@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   EmployeeProgressPeriod,
   EmployeeWorkImportStatus,
+  EmployeeWorkKind,
   EmployeeWorkStatus,
   Prisma,
   RiskImpact,
@@ -50,6 +51,7 @@ export class EmployeeWorkRiskService {
             title: true,
             riskText: true,
             status: true,
+            workKind: true,
             projectId: true,
             taskId: true,
             riskId: true,
@@ -82,7 +84,10 @@ export class EmployeeWorkRiskService {
         ) {
           throw this.invalid('Employee work item must have a risk status');
         }
-        if (!workItem.projectId || !workItem.project || workItem.project.archivedAt) {
+        if (
+          workItem.workKind !== EmployeeWorkKind.NON_PROJECT &&
+          (!workItem.projectId || !workItem.project || workItem.project.archivedAt)
+        ) {
           throw this.invalid('Employee work item must reference an active project');
         }
 
@@ -93,8 +98,14 @@ export class EmployeeWorkRiskService {
           impact: RiskImpact.MEDIUM,
           level: RiskLevel.MEDIUM,
           ownerName: workItem.employee.displayName,
-          projectId: workItem.projectId,
-          taskId: workItem.taskId ?? undefined,
+          ...(workItem.workKind !== EmployeeWorkKind.NON_PROJECT && workItem.projectId
+            ? { projectId: workItem.projectId }
+            : {}),
+          ...(workItem.workKind !== EmployeeWorkKind.NON_PROJECT &&
+          workItem.projectId &&
+          workItem.taskId
+            ? { taskId: workItem.taskId }
+            : {}),
         });
         await tx.employeeWorkItem.update({
           where: { id: workItemId },
