@@ -7,12 +7,21 @@ import {
   EmployeeWorkbookInspectionIssue,
   EmployeeWorkbookInspectionResult,
   EmployeeWorkbookIssueCode,
-  EmployeeWorkbookMeta,
   EmployeeWorkbookParseResult,
   EmployeeWorkbookSourceRow,
+  EmployeeWorkbookV1Meta,
   EmployeeWorkbookValidationIssue,
   NormalizedEmployeeWorkRow,
 } from '../domain/employee-work.types';
+import {
+  detectEmployeeWorkbookFormat,
+  EmployeeWorkbookFormatError,
+  V1_EMPLOYEE_WORK_HEADERS,
+} from './employee-workbook-format';
+import {
+  EmployeeWorkbookV2Service,
+  EmployeeWorkbookV2TemplateOptions,
+} from './employee-workbook-v2.service';
 import { preflightEmployeeWorkbookZip } from './employee-workbook-zip-preflight';
 
 const TEMPLATE_VERSION = 1 as const;
@@ -24,21 +33,7 @@ const TEMPLATE_VALIDATION_LAST_ROW = 50_001;
 const MAX_ISSUES_IN_ERROR_DETAILS = 1_000;
 const MAX_ISSUE_RAW_VALUE_LENGTH = 256;
 
-const HEADERS = [
-  '员工姓名',
-  '工作内容',
-  '本期计划',
-  '本期完成情况',
-  '完成度',
-  '工作状态',
-  '下期计划',
-  '风险与阻塞',
-  '计划工时',
-  '实际工时',
-  '项目编号',
-  '任务编号',
-  '备注',
-] as const;
+const HEADERS = V1_EMPLOYEE_WORK_HEADERS;
 
 type EmployeeWorkHeader = (typeof HEADERS)[number];
 type NormalizedCellValue = string | number | null;
@@ -77,7 +72,18 @@ interface InspectedEmployeeRow {
 
 @Injectable()
 export class EmployeeWorkbookService {
-  async template(): Promise<Buffer> {
+  private readonly v2 = new EmployeeWorkbookV2Service();
+
+  async template(options?: EmployeeWorkbookV2TemplateOptions): Promise<Buffer> {
+    if (options) return this.v2.template(options);
+    return this.templateV1();
+  }
+
+  async templateV2(options: EmployeeWorkbookV2TemplateOptions): Promise<Buffer> {
+    return this.v2.template(options);
+  }
+
+  async templateV1(): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'RD Manager Workbench';
     workbook.created = new Date(0);
@@ -119,9 +125,13 @@ export class EmployeeWorkbookService {
     if (inspected.issues.length > 0) {
       const issues = inspected.issues.slice(0, MAX_ISSUES_IN_ERROR_DETAILS);
       const firstIssue = inspected.issues[0];
+      const location =
+        firstIssue.sourceSheetName && firstIssue.sourceSection && firstIssue.sourceRowNumber
+          ? `${firstIssue.sourceSheetName} ${firstIssue.sourceSection} row ${firstIssue.sourceRowNumber}`
+          : `row ${firstIssue.rowNumber}`;
       throw new AppError({
         code: ErrorCodes.EMPLOYEE_IMPORT_TEMPLATE_INVALID,
-        message: `row ${firstIssue.rowNumber} ${firstIssue.field}: ${firstIssue.reason} (${inspected.issues.length} total issue(s))`,
+        message: `${location} ${firstIssue.field}: ${firstIssue.reason} (${inspected.issues.length} total issue(s))`,
         statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
         details: {
           issues,
@@ -130,7 +140,11 @@ export class EmployeeWorkbookService {
         },
       });
     }
-    return { meta: inspected.meta, rows: inspected.rows };
+    return {
+      meta: inspected.meta,
+      rows: inspected.rows,
+      ...(inspected.profileWarnings ? { profileWarnings: inspected.profileWarnings } : {}),
+    };
   }
 
   async inspect(buffer: Buffer): Promise<EmployeeWorkbookInspectionResult> {
@@ -146,6 +160,14 @@ export class EmployeeWorkbookService {
       throw this.invalid('File is not a parseable XLSX workbook', undefined, cause);
     }
 
+    let format;
+    try {
+      format = detectEmployeeWorkbookFormat(workbook);
+    } catch (cause) {
+      if (!(cause instanceof EmployeeWorkbookFormatError)) throw cause;
+      throw this.invalid(cause.message, undefined, cause);
+    }
+    if (format.version === 2) return this.v2.inspect(workbook, format);
     if (
       workbook.worksheets.length !== 2 ||
       workbook.worksheets[0]?.name !== '说明' ||
@@ -153,6 +175,7 @@ export class EmployeeWorkbookService {
     ) {
       throw this.invalid('Workbook must contain exactly two sheets in order: 说明, 工作明细');
     }
+
     const instructions = workbook.worksheets[0];
     const details = workbook.worksheets[1];
 
@@ -302,7 +325,7 @@ export class EmployeeWorkbookService {
     });
   }
 
-  private parseMeta(sheet: ExcelJS.Worksheet, date1904: boolean): EmployeeWorkbookMeta {
+  private parseMeta(sheet: ExcelJS.Worksheet, date1904: boolean): EmployeeWorkbookV1Meta {
     const dataType = this.normalizeCellValue(sheet.getCell('B1'), { field: 'dataType' });
     if (dataType !== '周计划与总结') {
       throw this.invalid('dataType must be 周计划与总结', { field: 'dataType' });

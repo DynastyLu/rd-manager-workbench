@@ -221,7 +221,7 @@ describe('EmployeeWorkbookService', () => {
 
     const result = await parseWorkbook(workbook);
 
-    expect(result.rows[0].status).toBe(expected);
+    expect('status' in result.rows[0] && result.rows[0].status).toBe(expected);
   });
 
   it.each([
@@ -236,7 +236,7 @@ describe('EmployeeWorkbookService', () => {
 
     const result = await parseWorkbook(workbook);
 
-    expect(result.rows[0].completionRate).toBe(expected);
+    expect('completionRate' in result.rows[0] && result.rows[0].completionRate).toBe(expected);
   });
 
   it.each([
