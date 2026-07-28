@@ -411,6 +411,16 @@ export class EmployeeImportCommitService {
           projectId: row.resolvedProjectId,
           taskId: row.resolvedTaskId,
           keepUnlinked: row.keepUnlinked,
+          ...(row.sourceSection
+            ? {
+                workKind: row.workKind,
+                plannedHours: row.plannedHours,
+                actualHours: row.actualHours,
+                profileAction: row.profileAction,
+                riskDecision: row.riskDecision,
+                riskText: row.riskText,
+              }
+            : {}),
         },
       ]),
     );

@@ -333,6 +333,26 @@ describe('EmployeeImportCommitService', () => {
 
     await dependencies.service.commit('batch-v2');
 
+    const commitResolutions = dependencies.validator.validate.mock.calls[0][1] as Map<
+      number,
+      Record<string, unknown>
+    >;
+    expect(commitResolutions.get(2)).toMatchObject({
+      workKind: EmployeeWorkKind.PROJECT,
+      plannedHours: 8,
+      actualHours: 7.5,
+      profileAction: 'KEEP',
+      riskDecision: 'KEEP',
+      riskText: '接口延期风险',
+    });
+    expect(commitResolutions.get(3)).toMatchObject({
+      workKind: EmployeeWorkKind.NON_PROJECT,
+      plannedHours: 6,
+      actualHours: null,
+      profileAction: 'KEEP',
+      riskDecision: null,
+      riskText: null,
+    });
     expect(dependencies.tx.employeeWorkItem.createMany).toHaveBeenCalledWith({
       data: [
         expect.objectContaining({
