@@ -4,7 +4,7 @@ import { Button, DatePicker, Input, Select, TextArea } from '@douyinfe/semi-ui'
 import { toast } from 'sonner'
 
 import { updateProject } from '@/modules/workbench/api/projects'
-import type { ProjectDetail, ProjectHealth, ProjectPhase, ProjectStatus } from '@/modules/workbench/types'
+import type { ProjectDetail, ProjectHealth, ProjectPhase, ProjectStatus, ProjectWeightMode } from '@/modules/workbench/types'
 
 const STATUS_OPTIONS = [
   { value: 'DRAFT', label: '草稿' },
@@ -30,6 +30,11 @@ const HEALTH_OPTIONS = [
   { value: 'RED', label: '有风险' },
 ]
 
+const WEIGHT_MODE_OPTIONS = [
+  { value: 'EQUAL', label: '平均分配' },
+  { value: 'CUSTOM', label: '自定义权重' },
+]
+
 function toIsoDate(value: string) {
   return new Date(`${value}T00:00:00`).toISOString()
 }
@@ -53,6 +58,7 @@ export function ProjectDetailsForm({
   const [status, setStatus] = useState<ProjectStatus>(project.status)
   const [phase, setPhase] = useState<ProjectPhase>(project.phase)
   const [health, setHealth] = useState<ProjectHealth | 'AUTO'>(project.healthOverride ?? 'AUTO')
+  const [weightMode, setWeightMode] = useState<ProjectWeightMode>(project.weightMode)
   const [validationMessage, setValidationMessage] = useState('')
   const mutation = useMutation({
     mutationFn: () => updateProject(project.id, {
@@ -67,6 +73,7 @@ export function ProjectDetailsForm({
       status,
       phase,
       healthOverride: health === 'AUTO' ? null : health,
+      weightMode,
     }),
     onSuccess: async () => {
       await Promise.all([
@@ -114,6 +121,21 @@ export function ProjectDetailsForm({
         <div className="workspace-modal-form__field" role="group" aria-labelledby="project-status-label"><span id="project-status-label">项目状态</span><Select aria-labelledby="project-status-label" value={status} onChange={(value) => setStatus(value as ProjectStatus)} optionList={STATUS_OPTIONS} style={{ width: '100%' }} /></div>
         <div className="workspace-modal-form__field" role="group" aria-labelledby="project-phase-label"><span id="project-phase-label">项目阶段</span><Select aria-labelledby="project-phase-label" value={phase} onChange={(value) => setPhase(value as ProjectPhase)} optionList={PHASE_OPTIONS} style={{ width: '100%' }} /></div>
         <div className="workspace-modal-form__field" role="group" aria-labelledby="project-health-label"><span id="project-health-label">健康度</span><Select aria-labelledby="project-health-label" value={health} onChange={(value) => setHealth(value as ProjectHealth | 'AUTO')} optionList={HEALTH_OPTIONS} style={{ width: '100%' }} /></div>
+      </div>
+      <div className="workspace-modal-form__field" role="group" aria-labelledby="project-weight-mode-label">
+        <span id="project-weight-mode-label">里程碑权重方式</span>
+        <Select
+          aria-labelledby="project-weight-mode-label"
+          value={weightMode}
+          onChange={(value) => setWeightMode(value as ProjectWeightMode)}
+          optionList={WEIGHT_MODE_OPTIONS}
+          style={{ width: '100%' }}
+        />
+        <small>
+          {weightMode === 'EQUAL'
+            ? '项目进度按所有里程碑平均计算。'
+            : '保存前请确保所有里程碑权重合计为 100%。'}
+        </small>
       </div>
       {validationMessage ? <p className="workspace-modal-form__error" role="alert">{validationMessage}</p> : null}
       <div className="workspace-modal-form__actions"><Button htmlType="submit" theme="solid" type="primary" loading={mutation.isPending}>保存项目</Button></div>

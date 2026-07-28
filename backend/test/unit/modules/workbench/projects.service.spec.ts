@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
 import { ProjectsService } from '../../../../src/modules/workbench/projects/application/projects.service';
 import { ProjectProgressService } from '../../../../src/modules/workbench/projects/application/project-progress.service';
@@ -161,5 +161,24 @@ describe('ProjectsService', () => {
       where: { id: 'project-1', archivedAt: null },
       data: { name: '不应更新' },
     });
+  });
+
+  it('does not enable custom milestone weights until the configured total is exactly 100', async () => {
+    const updateMany = jest.fn();
+    const prisma = {
+      project: { updateMany },
+      milestone: {
+        findMany: jest.fn().mockResolvedValue([
+          { weightPercent: { toNumber: () => 40 } },
+          { weightPercent: { toNumber: () => 40 } },
+        ]),
+      },
+    } as unknown as PlatformPrismaService;
+    const service = new ProjectsService(prisma);
+
+    await expect(
+      service.update('project-1', { weightMode: 'CUSTOM' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });

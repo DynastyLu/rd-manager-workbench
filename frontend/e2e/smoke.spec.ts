@@ -174,7 +174,8 @@ test.describe('workbench smoke', () => {
     const projectDialog = page.getByRole('dialog', { name: '编辑项目' })
     await expect(projectDialog.getByLabel('项目目标')).toBeVisible()
     await expect(projectDialog.locator('.semi-datepicker')).toHaveCount(2)
-    await expect(projectDialog.locator('.semi-select')).toHaveCount(3)
+    await expect(projectDialog.locator('.semi-select')).toHaveCount(4)
+    await expect(projectDialog.getByRole('combobox', { name: '里程碑权重方式' })).toBeVisible()
     await expect(projectDialog.getByRole('button', { name: '保存项目' })).toBeVisible()
     await projectDialog.locator('.semi-modal-close').click()
 
@@ -187,7 +188,7 @@ test.describe('workbench smoke', () => {
     if (await workItemProgress.count()) await expect(workItemProgress.first()).toBeVisible()
 
     await page.getByRole('tab', { name: '概览' }).click()
-    await expect(page.getByRole('progressbar', { name: '里程碑完成进度' })).toBeVisible()
+    await expect(page.getByText('项目实际进度')).toBeVisible()
     await expect(page.getByRole('button', { name: '新建里程碑' })).toBeVisible()
   })
 })

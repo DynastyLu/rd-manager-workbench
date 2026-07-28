@@ -1,4 +1,4 @@
-import { HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
@@ -154,6 +154,24 @@ export class ProjectsService {
 
   async update(id: string, dto: UpdateProjectDto) {
     try {
+      if (dto.weightMode === 'CUSTOM') {
+        const milestones = await this.prisma.milestone.findMany({
+          where: { projectId: id },
+          select: { weightPercent: true },
+        });
+        if (milestones.length > 0) {
+          const totalHundredths = milestones.reduce(
+            (total, milestone) =>
+              total + Math.round((milestone.weightPercent?.toNumber() ?? 0) * 100),
+            0,
+          );
+          if (totalHundredths !== 10_000) {
+            throw new BadRequestException(
+              `启用自定义权重前，所有里程碑权重之和必须为 100%，当前为 ${totalHundredths / 100}%`,
+            );
+          }
+        }
+      }
       const result = await this.prisma.project.updateMany({
         where: { id, archivedAt: null },
         data: this.toProjectUpdateData(dto),
