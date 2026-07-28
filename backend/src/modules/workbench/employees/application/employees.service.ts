@@ -23,6 +23,7 @@ export class EmployeesService {
     const where: Prisma.ResourceProfileWhereInput = {
       archivedAt: null,
       ...(query.department ? { department: query.department } : {}),
+      ...(query.workDirection ? { workDirection: query.workDirection } : {}),
       ...(query.employmentStatus ? { employmentStatus: query.employmentStatus } : {}),
       ...(query.q
         ? {
@@ -30,6 +31,7 @@ export class EmployeesService {
               { displayName: { contains: query.q, mode: 'insensitive' } },
               { roleTitle: { contains: query.q, mode: 'insensitive' } },
               { department: { contains: query.q, mode: 'insensitive' } },
+              { workDirection: { contains: query.q, mode: 'insensitive' } },
             ],
           }
         : {}),

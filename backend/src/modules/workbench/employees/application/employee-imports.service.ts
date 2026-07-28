@@ -5,6 +5,7 @@ import {
   EmployeeImportRowStatus,
   EmployeeWorkImportBatch,
   EmployeeWorkImportStatus,
+  EmploymentStatus,
   Prisma,
 } from '@prisma/client';
 import ExcelJS from 'exceljs';
@@ -17,7 +18,7 @@ import { UploadedContentFile } from '../../content/application/files.service';
 import {
   EmployeeWorkbookInspectionIssue,
   EmployeeWorkbookSourceRow,
-  NormalizedEmployeeWorkRow,
+  NormalizedEmployeeWorkbookRow,
 } from '../domain/employee-work.types';
 import {
   EmployeeImportResolution,
@@ -32,7 +33,9 @@ import {
 import { EmployeeImportCommitService } from './employee-import-commit.service';
 import {
   isNormalizedEmployeeImportRow,
+  isNormalizedEmployeeWeekPlanImportRow,
   parseStoredEmployeeImportRow,
+  StagedEmployeeImportRow,
 } from './employee-import-staged-row';
 import { EmployeeWorkbookService } from './employee-workbook.service';
 
@@ -67,11 +70,23 @@ const ERROR_HEADERS = [
 ] as const;
 
 interface ResolveRowInput {
-  rowNumber: number;
+  rowNumber?: number;
+  rowId?: string;
   employeeId?: string | null;
+  createEmployee?: {
+    displayName: string;
+    department?: string;
+    workDirection?: string;
+  };
+  updateEmployeeProfile?: boolean;
   projectId?: string | null;
   taskId?: string | null;
   keepUnlinked?: boolean;
+  workKind?: 'PROJECT' | 'NON_PROJECT';
+  plannedHours?: number;
+  actualHours?: number;
+  riskDecision?: 'KEEP' | 'REMOVE' | 'EDIT';
+  riskText?: string;
 }
 
 export interface ResolveEmployeeImportInput {
@@ -83,7 +98,7 @@ interface StagedRowData {
   batchId: string;
   rowNumber: number;
   rawValues: Record<string, string | number | null>;
-  normalizedValues: NormalizedEmployeeWorkRow | Record<string, never>;
+  normalizedValues: NormalizedEmployeeWorkbookRow | Record<string, never>;
   status: EmployeeImportRowStatus;
   errors: Array<{
     field: string;
@@ -95,6 +110,16 @@ interface StagedRowData {
   resolvedProjectId: string | null;
   resolvedTaskId: string | null;
   keepUnlinked: boolean;
+  sourceSheetName?: StagedEmployeeImportRow['sourceSheetName'];
+  sourceSection?: StagedEmployeeImportRow['sourceSection'];
+  sourceRowNumber?: StagedEmployeeImportRow['sourceRowNumber'];
+  sourceKey?: StagedEmployeeImportRow['sourceKey'];
+  workKind?: StagedEmployeeImportRow['workKind'];
+  plannedHours?: number | null;
+  actualHours?: number | null;
+  profileAction?: StagedEmployeeImportRow['profileAction'];
+  riskDecision?: StagedEmployeeImportRow['riskDecision'];
+  riskText?: string | null;
 }
 
 @Injectable()
@@ -129,6 +154,29 @@ export class EmployeeImportsService {
       throw new Error('Employee import commit service is unavailable');
     }
     return this.commitService.rebuildSnapshots(id);
+  }
+
+  async template(periodStart: string): Promise<Buffer> {
+    const employees = await this.prisma.resourceProfile.findMany({
+      where: {
+        archivedAt: null,
+        employmentStatus: EmploymentStatus.ACTIVE,
+      },
+      orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
+      select: {
+        displayName: true,
+        department: true,
+        workDirection: true,
+      },
+    });
+    return this.workbook.template({
+      periodStart,
+      employees: employees.map((employee) => ({
+        employeeName: employee.displayName,
+        department: employee.department,
+        workDirection: employee.workDirection,
+      })),
+    });
   }
 
   async restore(id: string) {
@@ -469,7 +517,23 @@ export class EmployeeImportsService {
           `old preview artifact ${previousErrorStorageKey}`,
         );
       }
-      return this.publicBatch(updated);
+      const result = this.publicBatch(updated);
+      return inspected.meta.templateVersion === 2
+        ? {
+            ...result,
+            profileWarnings: [
+              ...(inspected.profileWarnings ?? []),
+              ...validated.flatMap(({ row, warnings }) =>
+                (warnings ?? []).map((warning) => ({
+                  employeeName: row.employeeName,
+                  sourceSheetName:
+                    'sourceSheetName' in row ? row.sourceSheetName : row.employeeName,
+                  ...warning,
+                })),
+              ),
+            ],
+          }
+        : result;
     } catch (error) {
       if (newErrorStorageKey && newErrorStorageKey !== previousErrorStorageKey) {
         await this.cleanupUnreferencedAttempt(id, newErrorStorageKey);
@@ -505,21 +569,70 @@ export class EmployeeImportsService {
         previousErrorStorageKey = batch.errorStorageKey;
         const rows: StagedRowData[] = storedRows.map((row) => this.storedRow(row));
         const rowsByNumber = new Map(rows.map((row) => [row.rowNumber, row]));
+        const rowsById = new Map(rows.flatMap((row) => (row.id ? [[row.id, row] as const] : [])));
         const resolutionMap = new Map<number, EmployeeImportResolution>();
-        const changedRows: NormalizedEmployeeWorkRow[] = [];
+        const changedRows: NormalizedEmployeeWorkbookRow[] = [];
         for (const resolution of input.rows) {
-          if (resolutionMap.has(resolution.rowNumber)) {
+          const byId = resolution.rowId ? rowsById.get(resolution.rowId) : undefined;
+          const byNumber =
+            resolution.rowNumber === undefined
+              ? undefined
+              : rowsByNumber.get(resolution.rowNumber);
+          if (byId && byNumber && byId.id !== byNumber.id) {
+            throw this.resolutionInvalid('rowId and rowNumber identify different staged rows');
+          }
+          const staged = byId ?? byNumber;
+          if (!staged) {
+            throw this.resolutionInvalid('Resolution must identify a staged row in this batch');
+          }
+          if (resolutionMap.has(staged.rowNumber)) {
             throw this.resolutionInvalid('Each row may be resolved only once');
           }
-          const staged = rowsByNumber.get(resolution.rowNumber);
-          if (!staged || !this.isNormalizedRow(staged.normalizedValues)) {
-            throw this.resolutionInvalid(`Row ${resolution.rowNumber} cannot be resolved`);
+          if (!this.isNormalizedRow(staged.normalizedValues)) {
+            throw this.resolutionInvalid(`Row ${staged.rowNumber} cannot be resolved`);
+          }
+          if (resolution.employeeId && resolution.createEmployee) {
+            throw this.resolutionInvalid(
+              'A resolution cannot both link and create an employee profile',
+            );
+          }
+          let employeeId =
+            resolution.employeeId !== undefined
+              ? resolution.employeeId
+              : (staged.resolvedEmployeeId ?? undefined);
+          if (resolution.createEmployee) {
+            if (resolution.createEmployee.displayName !== staged.normalizedValues.employeeName) {
+              throw this.resolutionInvalid(
+                'Created employee displayName must match the workbook employee name',
+              );
+            }
+            const created = await tx.resourceProfile.create({
+              data: {
+                displayName: resolution.createEmployee.displayName,
+                department: resolution.createEmployee.department,
+                workDirection: resolution.createEmployee.workDirection,
+              },
+              select: { id: true },
+            });
+            employeeId = created.id;
+          }
+          if (resolution.updateEmployeeProfile) {
+            if (!employeeId || !('sourceSection' in staged.normalizedValues)) {
+              throw this.resolutionInvalid(
+                'Updating an employee profile requires a resolved V2 employee row',
+              );
+            }
+            await tx.resourceProfile.update({
+              where: { id: employeeId },
+              data: {
+                department: staged.normalizedValues.department,
+                workDirection: staged.normalizedValues.workDirection,
+              },
+              select: { id: true },
+            });
           }
           const merged: EmployeeImportResolution = {
-            employeeId:
-              resolution.employeeId !== undefined
-                ? resolution.employeeId
-                : (staged.resolvedEmployeeId ?? undefined),
+            employeeId,
             projectId:
               resolution.projectId !== undefined
                 ? resolution.projectId
@@ -530,7 +643,25 @@ export class EmployeeImportsService {
                 : (staged.resolvedTaskId ?? undefined),
             keepUnlinked: resolution.keepUnlinked ?? staged.keepUnlinked,
           };
-          resolutionMap.set(resolution.rowNumber, merged);
+          if (staged.sourceSection) {
+            Object.assign(merged, {
+              workKind: resolution.workKind ?? staged.workKind,
+              plannedHours:
+                resolution.plannedHours !== undefined
+                  ? resolution.plannedHours
+                  : staged.plannedHours,
+              actualHours:
+                resolution.actualHours !== undefined ? resolution.actualHours : staged.actualHours,
+              profileAction: resolution.createEmployee
+                ? 'CREATE'
+                : resolution.updateEmployeeProfile
+                  ? 'UPDATE'
+                  : (staged.profileAction ?? undefined),
+              riskDecision: resolution.riskDecision ?? staged.riskDecision,
+              riskText: resolution.riskText ?? staged.riskText,
+            } satisfies EmployeeImportResolution);
+          }
+          resolutionMap.set(staged.rowNumber, merged);
           changedRows.push(staged.normalizedValues);
         }
 
@@ -724,6 +855,7 @@ export class EmployeeImportsService {
           resolvedProjectId: null,
           resolvedTaskId: null,
           keepUnlinked: false,
+          ...this.sourceMetadata(source),
         };
       }
       const row = validatedByRow.get(source.rowNumber);
@@ -746,10 +878,33 @@ export class EmployeeImportsService {
           resolvedProjectId: null,
           resolvedTaskId: null,
           keepUnlinked: false,
+          ...this.sourceMetadata(source),
         };
       }
       return this.validatedStageRow(batchId, row);
     });
+  }
+
+  private sourceMetadata(source: EmployeeWorkbookSourceRow) {
+    if (
+      !source.sourceSheetName ||
+      !source.sourceSection ||
+      source.sourceRowNumber === undefined
+    ) {
+      return {};
+    }
+    return {
+      sourceSheetName: source.sourceSheetName,
+      sourceSection: source.sourceSection,
+      sourceRowNumber: source.sourceRowNumber,
+      sourceKey: `${source.sourceSheetName}:${source.sourceSection}:${source.sourceRowNumber}`,
+      workKind: null,
+      plannedHours: null,
+      actualHours: null,
+      profileAction: null,
+      riskDecision: null,
+      riskText: null,
+    };
   }
 
   private async recordFailure(
@@ -790,7 +945,8 @@ export class EmployeeImportsService {
           row.status !== EmployeeImportRowStatus.VALID ||
           row.errors.length !== 0 ||
           !row.resolvedEmployeeId ||
-          !isNormalizedEmployeeImportRow(row.normalizedValues),
+          (!isNormalizedEmployeeImportRow(row.normalizedValues) &&
+            !isNormalizedEmployeeWeekPlanImportRow(row.normalizedValues)),
       )
     ) {
       throw this.integrityFailed('Restored employee import rows are not complete and resolved');
@@ -839,6 +995,21 @@ export class EmployeeImportsService {
       resolvedProjectId: validated.resolvedProjectId,
       resolvedTaskId: validated.resolvedTaskId,
       keepUnlinked: validated.keepUnlinked,
+      sourceSheetName:
+        'sourceSheetName' in validated.row ? validated.row.sourceSheetName : null,
+      sourceSection: 'sourceSection' in validated.row ? validated.row.sourceSection : null,
+      sourceRowNumber:
+        'sourceRowNumber' in validated.row ? validated.row.sourceRowNumber : null,
+      sourceKey:
+        'sourceSection' in validated.row
+          ? `${validated.row.sourceSheetName}:${validated.row.sourceSection}:${validated.row.sourceRowNumber}`
+          : null,
+      workKind: validated.workKind,
+      plannedHours: validated.plannedHours,
+      actualHours: validated.actualHours,
+      profileAction: validated.profileAction,
+      riskDecision: validated.riskDecision,
+      riskText: validated.riskText,
     };
   }
 
@@ -854,6 +1025,16 @@ export class EmployeeImportsService {
       resolvedProjectId: row.resolvedProjectId,
       resolvedTaskId: row.resolvedTaskId,
       keepUnlinked: row.keepUnlinked,
+      sourceSheetName: row.sourceSheetName ?? null,
+      sourceSection: row.sourceSection ?? null,
+      sourceRowNumber: row.sourceRowNumber ?? null,
+      sourceKey: row.sourceKey ?? null,
+      workKind: row.workKind ?? null,
+      plannedHours: this.decimal(row.plannedHours),
+      actualHours: this.decimal(row.actualHours),
+      profileAction: row.profileAction ?? null,
+      riskDecision: row.riskDecision ?? null,
+      riskText: row.riskText ?? null,
     };
   }
 
@@ -919,7 +1100,7 @@ export class EmployeeImportsService {
   }
 
   private fingerprintRow(row: StagedRowData) {
-    return {
+    const common = {
       rowNumber: row.rowNumber,
       rawValues: row.rawValues,
       normalizedValues: row.normalizedValues,
@@ -930,6 +1111,21 @@ export class EmployeeImportsService {
       resolvedTaskId: row.resolvedTaskId,
       keepUnlinked: row.keepUnlinked,
     };
+    return row.sourceSection
+      ? {
+          ...common,
+          sourceSheetName: row.sourceSheetName ?? null,
+          sourceSection: row.sourceSection,
+          sourceRowNumber: row.sourceRowNumber ?? null,
+          sourceKey: row.sourceKey ?? null,
+          workKind: row.workKind ?? null,
+          plannedHours: row.plannedHours ?? null,
+          actualHours: row.actualHours ?? null,
+          profileAction: row.profileAction ?? null,
+          riskDecision: row.riskDecision ?? null,
+          riskText: row.riskText ?? null,
+        }
+      : common;
   }
 
   private storedRow(row: {
@@ -944,14 +1140,26 @@ export class EmployeeImportsService {
     resolvedProjectId: string | null;
     resolvedTaskId: string | null;
     keepUnlinked: boolean;
+    sourceSheetName?: string | null;
+    sourceSection?: string | null;
+    sourceRowNumber?: number | null;
+    sourceKey?: string | null;
+    workKind?: string | null;
+    plannedHours?: Prisma.Decimal | number | string | null;
+    actualHours?: Prisma.Decimal | number | string | null;
+    profileAction?: string | null;
+    riskDecision?: string | null;
+    riskText?: string | null;
   }): StagedRowData {
     return parseStoredEmployeeImportRow(row);
   }
 
   private isNormalizedRow(
-    value: NormalizedEmployeeWorkRow | Record<string, never>,
-  ): value is NormalizedEmployeeWorkRow {
-    return isNormalizedEmployeeImportRow(value);
+    value: NormalizedEmployeeWorkbookRow | Record<string, never>,
+  ): value is NormalizedEmployeeWorkbookRow {
+    return (
+      isNormalizedEmployeeImportRow(value) || isNormalizedEmployeeWeekPlanImportRow(value)
+    );
   }
 
   private async requireBatch(id: string) {
@@ -1020,7 +1228,13 @@ export class EmployeeImportsService {
           ${validatedRow.resolvedEmployeeId}::text,
           ${validatedRow.resolvedProjectId}::text,
           ${validatedRow.resolvedTaskId}::text,
-          ${validatedRow.keepUnlinked}::boolean
+          ${validatedRow.keepUnlinked}::boolean,
+          ${validatedRow.workKind ?? null}::"app"."EmployeeWorkKind",
+          ${this.decimal(validatedRow.plannedHours)}::numeric,
+          ${this.decimal(validatedRow.actualHours)}::numeric,
+          ${validatedRow.profileAction ?? null}::text,
+          ${validatedRow.riskDecision ?? null}::text,
+          ${validatedRow.riskText ?? null}::text
         )`,
         ),
       );
@@ -1033,6 +1247,12 @@ export class EmployeeImportsService {
           "resolved_project_id" = incoming.resolved_project_id,
           "resolved_task_id" = incoming.resolved_task_id,
           "keep_unlinked" = incoming.keep_unlinked,
+          "work_kind" = incoming.work_kind,
+          "planned_hours" = incoming.planned_hours,
+          "actual_hours" = incoming.actual_hours,
+          "profile_action" = incoming.profile_action,
+          "risk_decision" = incoming.risk_decision,
+          "risk_text" = incoming.risk_text,
           "updated_at" = now()
         FROM (
           VALUES ${values}
@@ -1043,7 +1263,13 @@ export class EmployeeImportsService {
           resolved_employee_id,
           resolved_project_id,
           resolved_task_id,
-          keep_unlinked
+          keep_unlinked,
+          work_kind,
+          planned_hours,
+          actual_hours,
+          profile_action,
+          risk_decision,
+          risk_text
         )
         WHERE target.id = incoming.id
       `);
@@ -1290,6 +1516,10 @@ export class EmployeeImportsService {
 
   private utcDate(value: string): Date {
     return new Date(`${value}T00:00:00.000Z`);
+  }
+
+  private decimal(value: number | null | undefined): Prisma.Decimal | null {
+    return value === null || value === undefined ? null : new Prisma.Decimal(String(value));
   }
 
   private dateOnly(value: Date): string {

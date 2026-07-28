@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Optional } from '@nestjs/common';
 import {
   EmployeeImportRowStatus,
+  EmployeePlanCarryStatus,
   EmployeeSnapshotStatus,
   EmployeeWorkImportBatch,
   EmployeeWorkImportStatus,
@@ -12,7 +13,7 @@ import { PlatformPrismaService } from '../../../../infrastructure/prisma/platfor
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { AuditLogService } from '../../governance/application/audit-log.service';
-import { NormalizedEmployeeWorkRow } from '../domain/employee-work.types';
+import { NormalizedEmployeeWorkbookRow } from '../domain/employee-work.types';
 import { employeeImportFingerprint } from './employee-import-fingerprint';
 import { EmployeeProgressSnapshotService } from './employee-progress-snapshot.service';
 import {
@@ -22,6 +23,7 @@ import {
 } from './employee-import-validator.service';
 import {
   isNormalizedEmployeeImportRow,
+  isNormalizedEmployeeWeekPlanImportRow,
   parseStoredEmployeeImportRow,
   StagedEmployeeImportRow,
 } from './employee-import-staged-row';
@@ -135,8 +137,15 @@ export class EmployeeImportCommitService {
         const version = (versionAggregate._max.version ?? 0) + 1;
         const committedAt = this.now();
 
-        const workItems = rows.map((row, index) => {
+        const currentEntries = rows.flatMap((row, index) => {
           const normalized = normalizedRows[index];
+          return isNormalizedEmployeeImportRow(normalized) ? [{ row, normalized }] : [];
+        });
+        const planEntries = rows.flatMap((row, index) => {
+          const normalized = normalizedRows[index];
+          return isNormalizedEmployeeWeekPlanImportRow(normalized) ? [{ row, normalized }] : [];
+        });
+        const workItems = currentEntries.map(({ row, normalized }) => {
           return {
             id: randomUUID(),
             employeeId: row.resolvedEmployeeId!,
@@ -145,14 +154,23 @@ export class EmployeeImportCommitService {
             periodStartAt: batch.periodStartAt,
             periodEndAt: batch.periodEndAt,
             title: normalized.title,
+            workKind: row.workKind,
+            plannedCompletionAt:
+              'plannedCompletionAt' in normalized
+                ? this.optionalDate(normalized.plannedCompletionAt)
+                : null,
             planText: normalized.planText,
             summaryText: normalized.summaryText,
             completionRate: normalized.completionRate,
             status: normalized.status,
             nextPlanText: normalized.nextPlanText,
-            riskText: normalized.riskText,
-            plannedHours: this.decimal(normalized.plannedHours),
-            actualHours: this.decimal(normalized.actualHours),
+            riskText: row.sourceSection ? row.riskText : normalized.riskText,
+            plannedHours: this.decimal(
+              row.sourceSection ? row.plannedHours : normalized.plannedHours,
+            ),
+            actualHours: this.decimal(
+              row.sourceSection ? row.actualHours : normalized.actualHours,
+            ),
             projectId: row.resolvedProjectId,
             taskId: row.resolvedTaskId,
             note: normalized.note,
@@ -163,9 +181,35 @@ export class EmployeeImportCommitService {
           await tx.employeeWorkItem.createMany({ data: chunk });
         }
 
+        const nextPeriodStartAt = this.addUtcDays(batch.periodStartAt, 7);
+        const nextPeriodEndAt = this.addUtcDays(batch.periodEndAt, 7);
+        const weekPlanItems = planEntries.map(({ row, normalized }) => ({
+          id: randomUUID(),
+          employeeId: row.resolvedEmployeeId!,
+          importBatchId: id,
+          sourceRowId: row.id,
+          periodStartAt: nextPeriodStartAt,
+          periodEndAt: nextPeriodEndAt,
+          title: normalized.title,
+          deliverableText: normalized.deliverableText,
+          plannedCompletionAt: this.optionalDate(normalized.plannedCompletionAt),
+          priority: normalized.priority,
+          collaborationText: normalized.collaborationText,
+          planText: normalized.planText,
+          note: normalized.note,
+          workKind: row.workKind!,
+          projectId: row.resolvedProjectId,
+          taskId: row.resolvedTaskId,
+          carryStatus: EmployeePlanCarryStatus.PLANNED,
+          rawRow: row.rawValues as Prisma.InputJsonObject,
+        })) satisfies Prisma.EmployeeWeekPlanItemCreateManyInput[];
+        for (const chunk of this.chunks(weekPlanItems)) {
+          await tx.employeeWeekPlanItem.createMany({ data: chunk });
+        }
+
         const loadEntries: Prisma.ResourceLoadEntryCreateManyInput[] = [];
-        rows.forEach((row, index) => {
-          const plannedHours = normalizedRows[index].plannedHours;
+        currentEntries.forEach(({ row, normalized }, index) => {
+          const plannedHours = row.sourceSection ? row.plannedHours : normalized.plannedHours;
           if (plannedHours === null) return;
           loadEntries.push({
             id: randomUUID(),
@@ -177,7 +221,7 @@ export class EmployeeImportCommitService {
             employeeWorkItemId: workItems[index].id,
             employeeWorkImportBatchId: id,
             plannedHours: new Prisma.Decimal(String(plannedHours)),
-            note: normalizedRows[index].note,
+            note: normalized.note,
           });
         });
         for (const chunk of this.chunks(loadEntries)) {
@@ -185,6 +229,10 @@ export class EmployeeImportCommitService {
         }
 
         if (current) {
+          await tx.employeeWeekPlanItem.updateMany({
+            where: { importBatchId: current.id, archivedAt: null },
+            data: { archivedAt: committedAt },
+          });
           await tx.resourceLoadEntry.updateMany({
             where: { employeeWorkImportBatchId: current.id, archivedAt: null },
             data: { archivedAt: committedAt },
@@ -221,6 +269,8 @@ export class EmployeeImportCommitService {
             metadata: {
               status: EmployeeWorkImportStatus.COMPLETED,
               itemCount: rows.length,
+              currentWorkCount: workItems.length,
+              nextPlanCount: weekPlanItems.length,
               periodType: batch.periodType,
               periodStart: this.dateOnly(batch.periodStartAt),
               periodEnd: this.dateOnly(batch.periodEndAt),
@@ -247,6 +297,8 @@ export class EmployeeImportCommitService {
                 restoredFromBatchId: batch.restoredFromBatchId,
                 version,
                 itemCount: rows.length,
+                currentWorkCount: workItems.length,
+                nextPlanCount: weekPlanItems.length,
                 periodType: batch.periodType,
                 periodStart: this.dateOnly(batch.periodStartAt),
                 periodEnd: this.dateOnly(batch.periodEndAt),
@@ -290,7 +342,7 @@ export class EmployeeImportCommitService {
   private assertStagedRows(
     batch: EmployeeWorkImportBatch,
     rows: StagedEmployeeImportRow[],
-  ): NormalizedEmployeeWorkRow[] {
+  ): NormalizedEmployeeWorkbookRow[] {
     if (
       rows.length !== batch.totalRows ||
       batch.validRows !== batch.totalRows ||
@@ -301,7 +353,9 @@ export class EmployeeImportCommitService {
           row.status !== EmployeeImportRowStatus.VALID ||
           row.errors.length !== 0 ||
           !row.resolvedEmployeeId ||
-          !isNormalizedEmployeeImportRow(row.normalizedValues),
+          (!isNormalizedEmployeeImportRow(row.normalizedValues) &&
+            !isNormalizedEmployeeWeekPlanImportRow(row.normalizedValues)) ||
+          (row.sourceSection !== null && row.workKind === null),
       )
     ) {
       throw this.integrityFailed('Employee import staged rows are not complete and valid');
@@ -322,17 +376,31 @@ export class EmployeeImportCommitService {
         resolvedProjectId: row.resolvedProjectId,
         resolvedTaskId: row.resolvedTaskId,
         keepUnlinked: row.keepUnlinked,
+        ...(row.sourceSection
+          ? {
+              sourceSheetName: row.sourceSheetName,
+              sourceSection: row.sourceSection,
+              sourceRowNumber: row.sourceRowNumber,
+              sourceKey: row.sourceKey,
+              workKind: row.workKind,
+              plannedHours: row.plannedHours,
+              actualHours: row.actualHours,
+              profileAction: row.profileAction,
+              riskDecision: row.riskDecision,
+              riskText: row.riskText,
+            }
+          : {}),
       })),
     });
     if (!batch.previewFingerprint || fingerprint !== batch.previewFingerprint) {
       throw this.integrityFailed('Employee import preview fingerprint does not match staged rows');
     }
-    return rows.map((row) => row.normalizedValues as NormalizedEmployeeWorkRow);
+    return rows.map((row) => row.normalizedValues as NormalizedEmployeeWorkbookRow);
   }
 
   private async assertReferencesCurrent(
     rows: StagedEmployeeImportRow[],
-    normalizedRows: NormalizedEmployeeWorkRow[],
+    normalizedRows: NormalizedEmployeeWorkbookRow[],
     tx: Prisma.TransactionClient,
   ): Promise<void> {
     const resolutions = new Map<number, EmployeeImportResolution>(
@@ -370,7 +438,14 @@ export class EmployeeImportCommitService {
       validated.resolvedEmployeeId === row.resolvedEmployeeId &&
       validated.resolvedProjectId === row.resolvedProjectId &&
       validated.resolvedTaskId === row.resolvedTaskId &&
-      validated.keepUnlinked === row.keepUnlinked
+      validated.keepUnlinked === row.keepUnlinked &&
+      (!row.sourceSection ||
+        (validated.workKind === row.workKind &&
+          validated.plannedHours === row.plannedHours &&
+          validated.actualHours === row.actualHours &&
+          validated.profileAction === row.profileAction &&
+          validated.riskDecision === row.riskDecision &&
+          validated.riskText === row.riskText))
     );
   }
 
@@ -523,6 +598,16 @@ export class EmployeeImportCommitService {
 
   private decimal(value: number | null): Prisma.Decimal | null {
     return value === null ? null : new Prisma.Decimal(String(value));
+  }
+
+  private optionalDate(value: string | null): Date | null {
+    return value ? new Date(`${value}T00:00:00.000Z`) : null;
+  }
+
+  private addUtcDays(value: Date, days: number): Date {
+    const result = new Date(value);
+    result.setUTCDate(result.getUTCDate() + days);
+    return result;
   }
 
   private chunks<T>(values: T[], size = WRITE_CHUNK_SIZE): T[][] {

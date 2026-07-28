@@ -4,6 +4,10 @@ import {
   EmployeeImportResolution,
 } from '../../../../src/modules/workbench/employees/application/employee-import-validator.service';
 import { NormalizedEmployeeWorkRow } from '../../../../src/modules/workbench/employees/domain/employee-work.types';
+import {
+  NormalizedEmployeeCurrentWorkRow,
+  NormalizedEmployeeNextWeekPlanRow,
+} from '../../../../src/modules/workbench/employees/domain/employee-work.types';
 
 function row(overrides: Partial<NormalizedEmployeeWorkRow> = {}): NormalizedEmployeeWorkRow {
   return {
@@ -32,6 +36,157 @@ function row(overrides: Partial<NormalizedEmployeeWorkRow> = {}): NormalizedEmpl
 }
 
 describe('EmployeeImportValidatorService', () => {
+  it('requires V2 work classification and a project for project work', async () => {
+    const prisma = {
+      resourceProfile: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'employee-1',
+            displayName: '匿名员工',
+            department: '研发部',
+            workDirection: '平台工程',
+          },
+        ]),
+      },
+      project: { findMany: jest.fn().mockResolvedValue([]) },
+      workTask: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const validator = new EmployeeImportValidatorService(prisma as never);
+    const current = {
+      ...row({ employeeName: '匿名员工' }),
+      sourceSection: 'CURRENT_WORK',
+      sourceSheetName: '匿名员工',
+      sourceRowNumber: 7,
+      department: '研发部',
+      workDirection: '平台工程',
+      plannedCompletionAt: '2026-07-24',
+    } satisfies NormalizedEmployeeCurrentWorkRow;
+
+    const [unclassified] = await validator.validate([current]);
+    const [projectMissing] = await validator.validate(
+      [current],
+      new Map([[2, { workKind: 'PROJECT' }]]),
+    );
+
+    expect(unclassified).toMatchObject({
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: [expect.objectContaining({ code: 'WORK_KIND_REQUIRED' })],
+    });
+    expect(projectMissing).toMatchObject({
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: [expect.objectContaining({ code: 'PROJECT_REQUIRED' })],
+      workKind: 'PROJECT',
+    });
+  });
+
+  it('rejects project/task links and actual hours for a non-project next-week plan', async () => {
+    const prisma = {
+      resourceProfile: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'employee-1', displayName: '匿名员工', department: null, workDirection: null },
+        ]),
+      },
+      project: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'project-1', code: 'RD-026' }]),
+      },
+      workTask: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([{ id: 'task-1', code: 'TASK-001', projectId: 'project-1' }]),
+      },
+    };
+    const validator = new EmployeeImportValidatorService(prisma as never);
+    const plan: NormalizedEmployeeNextWeekPlanRow = {
+      sourceSection: 'NEXT_WEEK_PLAN',
+      rowNumber: 3,
+      sourceSheetName: '匿名员工',
+      sourceRowNumber: 28,
+      employeeName: '匿名员工',
+      department: null,
+      workDirection: null,
+      title: '发布导入功能',
+      deliverableText: '完成上线',
+      plannedCompletionAt: '2026-07-31',
+      priority: 'HIGH',
+      collaborationText: null,
+      planText: null,
+      note: null,
+      rawValues: { 下周重点工作: '发布导入功能' },
+    };
+
+    const [result] = await validator.validate(
+      [plan],
+      new Map([
+        [
+          3,
+          {
+            employeeId: 'employee-1',
+            workKind: 'NON_PROJECT',
+            projectId: 'project-1',
+            taskId: 'task-1',
+            plannedHours: 6,
+            actualHours: 1,
+          },
+        ],
+      ]),
+    );
+
+    expect(result).toMatchObject({
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: expect.arrayContaining([
+        expect.objectContaining({ code: 'NON_PROJECT_LINK_FORBIDDEN' }),
+        expect.objectContaining({ code: 'ACTUAL_HOURS_NOT_ALLOWED' }),
+      ]),
+      plannedHours: 6,
+      actualHours: 1,
+    });
+  });
+
+  it('reports profile differences as non-blocking warnings', async () => {
+    const prisma = {
+      resourceProfile: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'employee-1',
+            displayName: '匿名员工',
+            department: '旧部门',
+            workDirection: '旧方向',
+          },
+        ]),
+      },
+      project: { findMany: jest.fn().mockResolvedValue([]) },
+      workTask: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const validator = new EmployeeImportValidatorService(prisma as never);
+    const current = {
+      ...row({ employeeName: '匿名员工' }),
+      sourceSection: 'CURRENT_WORK',
+      sourceSheetName: '匿名员工',
+      sourceRowNumber: 7,
+      department: '新部门',
+      workDirection: '新方向',
+      plannedCompletionAt: null,
+    } satisfies NormalizedEmployeeCurrentWorkRow;
+
+    const [result] = await validator.validate(
+      [current],
+      new Map([[2, { workKind: 'NON_PROJECT' }]]),
+    );
+
+    expect(result).toMatchObject({
+      status: EmployeeImportRowStatus.VALID,
+      errors: [],
+      warnings: [
+        expect.objectContaining({ field: 'department', profileValue: '旧部门', rowValue: '新部门' }),
+        expect.objectContaining({
+          field: 'workDirection',
+          profileValue: '旧方向',
+          rowValue: '新方向',
+        }),
+      ],
+    });
+  });
+
   it('marks unknown employees and projects unresolved and rejects a task outside the project', async () => {
     const prisma = {
       resourceProfile: {

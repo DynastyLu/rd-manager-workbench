@@ -12,6 +12,8 @@ import {
 } from '../../../../src/modules/workbench/employees/application/employee-import-fingerprint';
 import {
   EmployeeWorkbookInspectionResult,
+  NormalizedEmployeeCurrentWorkRow,
+  NormalizedEmployeeNextWeekPlanRow,
   NormalizedEmployeeWorkRow,
 } from '../../../../src/modules/workbench/employees/domain/employee-work.types';
 
@@ -160,6 +162,10 @@ function createService(options: {
       create: jest.fn().mockImplementation(({ data }) => batch(data)),
       update: jest.fn().mockImplementation(({ data }) => batch(data)),
     },
+    resourceProfile: {
+      create: jest.fn().mockImplementation(({ data }) => ({ id: 'employee-created', ...data })),
+      update: jest.fn().mockImplementation(({ data }) => ({ id: 'employee-1', ...data })),
+    },
   };
   const prisma = {
     employeeWorkImportBatch: {
@@ -169,6 +175,15 @@ function createService(options: {
       update: jest.fn().mockImplementation(({ data }) => batch(data)),
     },
     employeeWorkItem: { create: jest.fn() },
+    resourceProfile: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          displayName: '匿名员工',
+          department: '研发部',
+          workDirection: '平台工程',
+        },
+      ]),
+    },
     $transaction: jest.fn().mockImplementation((work) => work(tx)),
   };
   const storage = {
@@ -181,6 +196,7 @@ function createService(options: {
   };
   const workbook = {
     inspect: jest.fn().mockResolvedValue(options.inspection ?? inspection()),
+    template: jest.fn().mockResolvedValue(Buffer.from('v2-template')),
   };
   const validator = {
     validate: jest.fn().mockResolvedValue(
@@ -235,7 +251,324 @@ function inspection(): EmployeeWorkbookInspectionResult {
   };
 }
 
+function normalizedV2Current(): NormalizedEmployeeCurrentWorkRow {
+  return {
+    ...normalizedRow({
+      employeeName: '匿名员工',
+      projectCode: null,
+      taskCode: null,
+      plannedHours: null,
+      actualHours: null,
+      riskText: '外部接口存在延期风险',
+    }),
+    sourceSection: 'CURRENT_WORK',
+    sourceSheetName: '匿名员工',
+    sourceRowNumber: 7,
+    department: '研发部',
+    workDirection: '平台工程',
+    plannedCompletionAt: '2026-07-24',
+  };
+}
+
+function normalizedV2Plan(): NormalizedEmployeeNextWeekPlanRow {
+  return {
+    sourceSection: 'NEXT_WEEK_PLAN',
+    rowNumber: 3,
+    sourceSheetName: '匿名员工',
+    sourceRowNumber: 28,
+    employeeName: '匿名员工',
+    department: '研发部',
+    workDirection: '平台工程',
+    title: '完成发布',
+    deliverableText: '上线 V2 导入',
+    plannedCompletionAt: '2026-07-31',
+    priority: 'HIGH',
+    collaborationText: '测试团队',
+    planText: '完成回归后发布',
+    note: null,
+    rawValues: { 下周重点工作: '完成发布' },
+  };
+}
+
 describe('EmployeeImportsService', () => {
+  it('builds the public V2 template from active employee profiles', async () => {
+    const dependencies = createService({});
+
+    await expect(dependencies.service.template('2026-07-20')).resolves.toEqual(
+      Buffer.from('v2-template'),
+    );
+
+    expect(dependencies.prisma.resourceProfile.findMany).toHaveBeenCalledWith({
+      where: {
+        archivedAt: null,
+        employmentStatus: 'ACTIVE',
+      },
+      orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
+      select: {
+        displayName: true,
+        department: true,
+        workDirection: true,
+      },
+    });
+    expect(dependencies.workbook.template).toHaveBeenCalledWith({
+      periodStart: '2026-07-20',
+      employees: [
+        {
+          employeeName: '匿名员工',
+          department: '研发部',
+          workDirection: '平台工程',
+        },
+      ],
+    });
+  });
+
+  it('stages V2 source coordinates, row kind, risk decision, and optional hours', async () => {
+    const current = normalizedV2Current();
+    const plan = normalizedV2Plan();
+    const dependencies = createService({
+      foundBatch: batch({ templateVersion: 2 }),
+      inspection: {
+        meta: {
+          templateVersion: 2,
+          periodType: 'WEEK',
+          periodStart: '2026-07-20',
+          periodEnd: '2026-07-26',
+          nextPeriodStart: '2026-07-27',
+          nextPeriodEnd: '2026-08-02',
+          employeeSheetCount: 1,
+        },
+        rows: [current, plan],
+        sourceRows: [
+          {
+            rowNumber: current.rowNumber,
+            sourceSheetName: current.sourceSheetName,
+            sourceSection: current.sourceSection,
+            sourceRowNumber: current.sourceRowNumber,
+            rawValues: current.rawValues,
+          },
+          {
+            rowNumber: plan.rowNumber,
+            sourceSheetName: plan.sourceSheetName,
+            sourceSection: plan.sourceSection,
+            sourceRowNumber: plan.sourceRowNumber,
+            rawValues: plan.rawValues,
+          },
+        ],
+        issues: [],
+        profileWarnings: [],
+      },
+      validation: [
+        {
+          row: current,
+          status: EmployeeImportRowStatus.UNRESOLVED,
+          errors: [{ field: '工作类型', code: 'WORK_KIND_REQUIRED' }],
+          warnings: [],
+          resolvedEmployeeId: 'employee-1',
+          resolvedProjectId: null,
+          resolvedTaskId: null,
+          keepUnlinked: false,
+          workKind: null,
+          plannedHours: null,
+          actualHours: null,
+          profileAction: 'KEEP',
+          riskDecision: 'KEEP',
+          riskText: '外部接口存在延期风险',
+        },
+        {
+          row: plan,
+          status: EmployeeImportRowStatus.UNRESOLVED,
+          errors: [{ field: '工作类型', code: 'WORK_KIND_REQUIRED' }],
+          warnings: [],
+          resolvedEmployeeId: 'employee-1',
+          resolvedProjectId: null,
+          resolvedTaskId: null,
+          keepUnlinked: false,
+          workKind: null,
+          plannedHours: null,
+          actualHours: null,
+          profileAction: 'KEEP',
+          riskDecision: null,
+          riskText: null,
+        },
+      ],
+    });
+
+    await dependencies.service.preview('batch-1');
+
+    const data = dependencies.tx.employeeWorkImportRow.createMany.mock.calls[0][0].data;
+    expect(data).toEqual([
+      expect.objectContaining({
+        rowNumber: 2,
+        sourceSheetName: '匿名员工',
+        sourceSection: 'CURRENT_WORK',
+        sourceRowNumber: 7,
+        sourceKey: '匿名员工:CURRENT_WORK:7',
+        workKind: null,
+        plannedHours: null,
+        actualHours: null,
+        profileAction: 'KEEP',
+        riskDecision: 'KEEP',
+        riskText: '外部接口存在延期风险',
+      }),
+      expect.objectContaining({
+        rowNumber: 3,
+        sourceSheetName: '匿名员工',
+        sourceSection: 'NEXT_WEEK_PLAN',
+        sourceRowNumber: 28,
+        sourceKey: '匿名员工:NEXT_WEEK_PLAN:28',
+        workKind: null,
+        actualHours: null,
+        riskDecision: null,
+      }),
+    ]);
+  });
+
+  it('resolves a V2 row by rowId and persists every administrator confirmation', async () => {
+    const current = normalizedV2Current();
+    const staged = {
+      id: 'row-v2-current',
+      batchId: 'batch-1',
+      rowNumber: 2,
+      sourceSheetName: '匿名员工',
+      sourceSection: 'CURRENT_WORK',
+      sourceRowNumber: 7,
+      sourceKey: '匿名员工:CURRENT_WORK:7',
+      rawValues: current.rawValues,
+      normalizedValues: current,
+      status: EmployeeImportRowStatus.UNRESOLVED,
+      errors: [{ field: '工作类型', code: 'WORK_KIND_REQUIRED' }],
+      resolvedEmployeeId: null,
+      resolvedProjectId: null,
+      resolvedTaskId: null,
+      keepUnlinked: false,
+      workKind: null,
+      plannedHours: null,
+      actualHours: null,
+      profileAction: 'KEEP',
+      riskDecision: 'KEEP',
+      riskText: '外部接口存在延期风险',
+    };
+    const dependencies = createService({
+      foundBatch: batch({
+        templateVersion: 2,
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: [staged],
+        totalRows: 1,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+      validation: [
+        {
+          row: current,
+          status: EmployeeImportRowStatus.VALID,
+          errors: [],
+          warnings: [],
+          resolvedEmployeeId: 'employee-created',
+          resolvedProjectId: 'project-1',
+          resolvedTaskId: 'task-1',
+          keepUnlinked: false,
+          workKind: 'PROJECT',
+          plannedHours: 8,
+          actualHours: 7.5,
+          profileAction: 'CREATE',
+          riskDecision: 'EDIT',
+          riskText: '已调整的风险说明',
+        },
+      ],
+    });
+    dependencies.tx.$executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+
+    await dependencies.service.resolve('batch-1', {
+      rows: [
+        {
+          rowId: 'row-v2-current',
+          createEmployee: {
+            displayName: '匿名员工',
+            department: '研发部',
+            workDirection: '平台工程',
+          },
+          workKind: 'PROJECT',
+          projectId: 'project-1',
+          taskId: 'task-1',
+          plannedHours: 8,
+          actualHours: 7.5,
+          riskDecision: 'EDIT',
+          riskText: '已调整的风险说明',
+        },
+      ],
+    });
+
+    expect(dependencies.tx.resourceProfile.create).toHaveBeenCalledWith({
+      data: {
+        displayName: '匿名员工',
+        department: '研发部',
+        workDirection: '平台工程',
+      },
+      select: { id: true },
+    });
+    expect(dependencies.validator.validate).toHaveBeenCalledWith(
+      [current],
+      new Map([
+        [
+          2,
+          expect.objectContaining({
+            employeeId: 'employee-created',
+            workKind: 'PROJECT',
+            projectId: 'project-1',
+            taskId: 'task-1',
+            plannedHours: 8,
+            actualHours: 7.5,
+            profileAction: 'CREATE',
+            riskDecision: 'EDIT',
+            riskText: '已调整的风险说明',
+          }),
+        ],
+      ]),
+      dependencies.tx,
+    );
+    const updateSql = dependencies.tx.$executeRaw.mock.calls[1][0].strings.join(' ');
+    expect(updateSql).toContain('"work_kind"');
+    expect(updateSql).toContain('"planned_hours"');
+    expect(updateSql).toContain('"risk_decision"');
+  });
+
+  it('rejects conflicting rowId and rowNumber coordinates', async () => {
+    const current = normalizedV2Current();
+    const stagedRows = [
+      {
+        ...restorableStoredRow(2),
+        id: 'row-a',
+        normalizedValues: current,
+        sourceSheetName: '匿名员工',
+        sourceSection: 'CURRENT_WORK',
+        sourceRowNumber: 7,
+        sourceKey: '匿名员工:CURRENT_WORK:7',
+        workKind: null,
+        plannedHours: null,
+        actualHours: null,
+        profileAction: 'KEEP',
+        riskDecision: 'KEEP',
+        riskText: current.riskText,
+      },
+      { ...restorableStoredRow(3), id: 'row-b' },
+    ];
+    const dependencies = createService({
+      foundBatch: batch({
+        templateVersion: 2,
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: stagedRows,
+        totalRows: 2,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+    });
+
+    await expect(
+      dependencies.service.resolve('batch-1', {
+        rows: [{ rowId: 'row-a', rowNumber: 3, workKind: 'NON_PROJECT' }],
+      }),
+    ).rejects.toMatchObject({ code: 'EMPLOYEE_IMPORT_RESOLUTION_INVALID' });
+    expect(dependencies.validator.validate).not.toHaveBeenCalled();
+  });
+
   it('hashes, sanitizes, stores, creates, and audits a new upload without exposing storage keys', async () => {
     const dependencies = createService({});
     const content = Buffer.from('xlsx');

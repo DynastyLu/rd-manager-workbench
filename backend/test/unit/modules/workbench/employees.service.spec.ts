@@ -17,6 +17,7 @@ describe('EmployeesService', () => {
       id: 'employee-1',
       displayName: '研发主管',
       department: '研发部',
+      workDirection: '平台研发',
       roleTitle: '负责人',
       employmentStatus: EmploymentStatus.ACTIVE,
       skills: [],
@@ -33,6 +34,7 @@ describe('EmployeesService', () => {
       service.list({
         q: '研发',
         department: '研发部',
+        workDirection: '平台研发',
         employmentStatus: EmploymentStatus.ACTIVE,
         page: 2,
         pageSize: 5,
@@ -45,11 +47,13 @@ describe('EmployeesService', () => {
       where: {
         archivedAt: null,
         department: '研发部',
+        workDirection: '平台研发',
         employmentStatus: EmploymentStatus.ACTIVE,
         OR: [
           { displayName: { contains: '研发', mode: 'insensitive' } },
           { roleTitle: { contains: '研发', mode: 'insensitive' } },
           { department: { contains: '研发', mode: 'insensitive' } },
+          { workDirection: { contains: '研发', mode: 'insensitive' } },
         ],
       },
       include: { skills: { orderBy: { name: 'asc' } } },
@@ -61,11 +65,13 @@ describe('EmployeesService', () => {
       where: {
         archivedAt: null,
         department: '研发部',
+        workDirection: '平台研发',
         employmentStatus: EmploymentStatus.ACTIVE,
         OR: [
           { displayName: { contains: '研发', mode: 'insensitive' } },
           { roleTitle: { contains: '研发', mode: 'insensitive' } },
           { department: { contains: '研发', mode: 'insensitive' } },
+          { workDirection: { contains: '研发', mode: 'insensitive' } },
         ],
       },
     });

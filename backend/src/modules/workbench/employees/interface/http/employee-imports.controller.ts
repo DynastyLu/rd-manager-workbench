@@ -19,8 +19,10 @@ import { Response } from 'express';
 import { UploadedContentFile } from '../../../content/application/files.service';
 import { EmployeeImportsService } from '../../application/employee-imports.service';
 import { EmployeeProgressQueryService } from '../../application/employee-progress-query.service';
-import { EmployeeWorkbookService } from '../../application/employee-workbook.service';
-import { ResolveEmployeeImportDto } from './dto/employee-imports.dto';
+import {
+  EmployeeWorkbookTemplateQueryDto,
+  ResolveEmployeeImportDto,
+} from './dto/employee-imports.dto';
 import { EmployeeImportDetailQueryDto, ListEmployeeImportsQueryDto } from './dto/employees.dto';
 
 const XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -32,13 +34,15 @@ const importUploadOptions = {
 export class EmployeeImportsController {
   constructor(
     private readonly imports: EmployeeImportsService,
-    private readonly workbook: EmployeeWorkbookService,
     private readonly progress: EmployeeProgressQueryService,
   ) {}
 
   @Get('template')
-  async template(@Res() response: Response) {
-    const content = await this.workbook.template();
+  async template(
+    @Query() query: EmployeeWorkbookTemplateQueryDto,
+    @Res() response: Response,
+  ) {
+    const content = await this.imports.template(query.periodStart);
     this.setDownloadHeaders(response, 'employee-work-import-template.xlsx');
     response.setHeader('Content-Length', content.length);
     response.status(HttpStatus.OK).send(content);

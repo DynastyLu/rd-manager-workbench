@@ -46,6 +46,11 @@ export class ListEmployeesQueryDto {
   @IsString()
   department?: string;
 
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  workDirection?: string;
+
   @ValidateIf(isDefined)
   @IsEnum(EmploymentStatus)
   employmentStatus?: EmploymentStatus;
@@ -75,6 +80,11 @@ export class CreateEmployeeDto {
   @ValidateIf(isDefined)
   @IsString()
   department?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  workDirection?: string;
 
   @Transform(trimString)
   @ValidateIf(isDefined)

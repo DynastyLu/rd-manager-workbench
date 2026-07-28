@@ -1,6 +1,8 @@
 import {
   EmployeeImportRowStatus,
+  EmployeePlanCarryStatus,
   EmployeeSnapshotStatus,
+  EmployeeWorkKind,
   EmployeeWorkImportStatus,
   EmployeeWorkStatus,
   LoadEntryKind,
@@ -32,7 +34,7 @@ function normalizedRow(rowNumber: number, overrides: Record<string, unknown> = {
   };
 }
 
-function stagedRow(rowNumber: number, overrides: Record<string, unknown> = {}) {
+function stagedRow(rowNumber: number, overrides: Record<string, unknown> = {}): Record<string, any> {
   return {
     id: `source-row-${rowNumber}`,
     batchId: 'batch-v2',
@@ -54,7 +56,7 @@ function stagedRow(rowNumber: number, overrides: Record<string, unknown> = {}) {
 function fingerprint(rows: ReturnType<typeof stagedRow>[]) {
   return employeeImportFingerprint({
     fileHash: 'file-hash-v2',
-    templateVersion: 1,
+    templateVersion: rows.some((row) => row.sourceSection) ? 2 : 1,
     periodType: 'WEEK',
     periodStart: '2026-07-20',
     periodEnd: '2026-07-26',
@@ -68,6 +70,20 @@ function fingerprint(rows: ReturnType<typeof stagedRow>[]) {
       resolvedProjectId: row.resolvedProjectId,
       resolvedTaskId: row.resolvedTaskId,
       keepUnlinked: row.keepUnlinked,
+      ...(row.sourceSection
+        ? {
+            sourceSheetName: row.sourceSheetName ?? null,
+            sourceSection: row.sourceSection,
+            sourceRowNumber: row.sourceRowNumber ?? null,
+            sourceKey: row.sourceKey ?? null,
+            workKind: row.workKind ?? null,
+            plannedHours: row.plannedHours ?? null,
+            actualHours: row.actualHours ?? null,
+            profileAction: row.profileAction ?? null,
+            riskDecision: row.riskDecision ?? null,
+            riskText: row.riskText ?? null,
+          }
+        : {}),
     })),
   });
 }
@@ -176,6 +192,10 @@ function createService(options: {
         : jest.fn().mockResolvedValue({ count: rows.length }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    employeeWeekPlanItem: {
+      createMany: jest.fn().mockResolvedValue({ count: rows.length }),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     resourceLoadEntry: {
       createMany: jest.fn().mockResolvedValue({ count: rows.length }),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -194,7 +214,14 @@ function createService(options: {
           resolvedEmployeeId: row.resolvedEmployeeId,
           resolvedProjectId: row.resolvedProjectId,
           resolvedTaskId: row.resolvedTaskId,
-          keepUnlinked: row.keepUnlinked,
+        keepUnlinked: row.keepUnlinked,
+          workKind: row.workKind ?? null,
+          plannedHours: row.plannedHours ?? null,
+          actualHours: row.actualHours ?? null,
+          profileAction: row.profileAction ?? null,
+          riskDecision: row.riskDecision ?? null,
+          riskText: row.riskText ?? null,
+          warnings: [],
         })),
     ),
   };
@@ -233,6 +260,110 @@ function createService(options: {
 }
 
 describe('EmployeeImportCommitService', () => {
+  it('creates V2 current work and next-week plans in the same replacement transaction', async () => {
+    const currentNormalized = {
+      ...normalizedRow(2, {
+        employeeName: '匿名员工',
+        plannedHours: null,
+        actualHours: null,
+        projectCode: null,
+        taskCode: null,
+        riskText: '接口延期风险',
+      }),
+      sourceSection: 'CURRENT_WORK',
+      sourceSheetName: '匿名员工',
+      sourceRowNumber: 7,
+      department: '研发部',
+      workDirection: '平台工程',
+      plannedCompletionAt: '2026-07-24',
+    };
+    const planNormalized = {
+      sourceSection: 'NEXT_WEEK_PLAN',
+      rowNumber: 3,
+      sourceSheetName: '匿名员工',
+      sourceRowNumber: 28,
+      employeeName: '匿名员工',
+      department: '研发部',
+      workDirection: '平台工程',
+      title: '发布 V2 导入',
+      deliverableText: '完成上线',
+      plannedCompletionAt: '2026-07-31',
+      priority: 'HIGH',
+      collaborationText: '测试团队',
+      planText: '完成回归后发布',
+      note: null,
+      rawValues: { 下周重点工作: '发布 V2 导入' },
+    };
+    const rows = [
+      stagedRow(2, {
+        normalizedValues: currentNormalized,
+        rawValues: currentNormalized.rawValues,
+        sourceSheetName: '匿名员工',
+        sourceSection: 'CURRENT_WORK',
+        sourceRowNumber: 7,
+        sourceKey: '匿名员工:CURRENT_WORK:7',
+        workKind: EmployeeWorkKind.PROJECT,
+        plannedHours: 8,
+        actualHours: 7.5,
+        profileAction: 'KEEP',
+        riskDecision: 'KEEP',
+        riskText: '接口延期风险',
+      }),
+      stagedRow(3, {
+        normalizedValues: planNormalized,
+        rawValues: planNormalized.rawValues,
+        sourceSheetName: '匿名员工',
+        sourceSection: 'NEXT_WEEK_PLAN',
+        sourceRowNumber: 28,
+        sourceKey: '匿名员工:NEXT_WEEK_PLAN:28',
+        workKind: EmployeeWorkKind.NON_PROJECT,
+        plannedHours: 6,
+        actualHours: null,
+        profileAction: 'KEEP',
+        riskDecision: null,
+        riskText: null,
+        resolvedProjectId: null,
+        resolvedTaskId: null,
+      }),
+    ];
+    const dependencies = createService({
+      rows,
+      batchOverrides: { templateVersion: 2, previewFingerprint: fingerprint(rows) },
+    });
+
+    await dependencies.service.commit('batch-v2');
+
+    expect(dependencies.tx.employeeWorkItem.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          sourceRowId: 'source-row-2',
+          workKind: EmployeeWorkKind.PROJECT,
+          plannedCompletionAt: new Date('2026-07-24T00:00:00.000Z'),
+          plannedHours: expect.objectContaining({}),
+          actualHours: expect.objectContaining({}),
+          riskText: '接口延期风险',
+        }),
+      ],
+    });
+    expect(dependencies.tx.employeeWeekPlanItem.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          sourceRowId: 'source-row-3',
+          periodStartAt: new Date('2026-07-27T00:00:00.000Z'),
+          periodEndAt: new Date('2026-08-02T00:00:00.000Z'),
+          priority: 'HIGH',
+          workKind: EmployeeWorkKind.NON_PROJECT,
+          carryStatus: EmployeePlanCarryStatus.PLANNED,
+        }),
+      ],
+    });
+    expect(dependencies.tx.resourceLoadEntry.createMany.mock.calls[0][0].data).toHaveLength(1);
+    expect(dependencies.tx.employeeWeekPlanItem.updateMany).toHaveBeenCalledWith({
+      where: { importBatchId: 'batch-v1', archivedAt: null },
+      data: { archivedAt: NOW },
+    });
+  });
+
   it('replaces the current week atomically, creates deterministic work/load rows, and archives v1', async () => {
     const dependencies = createService({});
 
