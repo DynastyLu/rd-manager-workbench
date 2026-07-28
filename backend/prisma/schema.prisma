@@ -2357,6 +2357,17 @@ enum KnowledgeSessionStatus {
   @@schema("app")
 }
 
+enum KnowledgeScopeType {
+  ALL
+  PROJECT
+  SPACE
+  FOLDER
+  DOCUMENTS
+  RECENT
+
+  @@schema("app")
+}
+
 enum MessageRole {
   USER
   ASSISTANT
@@ -2433,28 +2444,37 @@ model KnowledgeIndexJob {
 }
 
 model KnowledgeSession {
-  id        String             @id @default(cuid())
-  title     String
-  status    String             @default("ACTIVE")
-  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
-  messages  KnowledgeMessage[]
+  id         String             @id @default(cuid())
+  title      String
+  status     String             @default("ACTIVE")
+  scopeType  KnowledgeScopeType @default(ALL) @map("scope_type")
+  scopeValue Json?              @map("scope_value")
+  isPinned   Boolean            @default(false) @map("is_pinned")
+  archivedAt DateTime?          @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  messages   KnowledgeMessage[]
 
+  @@index([archivedAt, isPinned, updatedAt])
   @@map("knowledge_sessions")
   @@schema("app")
 }
 
 model KnowledgeMessage {
-  id         String           @id @default(cuid())
-  sessionId  String           @map("session_id")
-  role       String
-  content    String
-  citations  Json?
-  tokenCount Int?             @map("token_count")
-  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  session    KnowledgeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  id               String             @id @default(cuid())
+  sessionId        String             @map("session_id")
+  role             String
+  content          String
+  citations        Json?
+  tokenCount       Int?               @map("token_count")
+  replyToMessageId String?            @map("reply_to_message_id")
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  session          KnowledgeSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  replyTo          KnowledgeMessage?  @relation("KnowledgeMessageReplies", fields: [replyToMessageId], references: [id], onDelete: SetNull)
+  replies          KnowledgeMessage[] @relation("KnowledgeMessageReplies")
 
   @@index([sessionId, createdAt])
+  @@index([replyToMessageId])
   @@map("knowledge_messages")
   @@schema("app")
 }
