@@ -565,6 +565,38 @@ enum EmployeeWorkStatus {
   @@schema("app")
 }
 
+enum EmployeeWorkKind {
+  PROJECT
+  NON_PROJECT
+
+  @@schema("app")
+}
+
+enum EmployeeWorkSourceSection {
+  CURRENT_WORK
+  NEXT_WEEK_PLAN
+
+  @@schema("app")
+}
+
+enum EmployeePlanPriority {
+  UNSPECIFIED
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+
+  @@schema("app")
+}
+
+enum EmployeePlanCarryStatus {
+  PLANNED
+  MATCHED
+  CANCELLED
+
+  @@schema("app")
+}
+
 enum EmployeeProgressScope {
   TEAM
   EMPLOYEE
@@ -628,6 +660,7 @@ model Project {
   intelligenceTopics         IntelligenceTopicProject[]
   intelligenceItems          IntelligenceItemProject[]
   employeeWorkItems          EmployeeWorkItem[]
+  employeeWeekPlanItems      EmployeeWeekPlanItem[]
   resolvedEmployeeImportRows EmployeeWorkImportRow[]
 
   @@index([status, archivedAt])
@@ -700,6 +733,7 @@ model WorkTask {
   later                      TaskLater?
   resourceLoadEntries        ResourceLoadEntry[]
   employeeWorkItems          EmployeeWorkItem[]
+  employeeWeekPlanItems      EmployeeWeekPlanItem[]
   resolvedEmployeeImportRows EmployeeWorkImportRow[]
   progressReports            ProgressReport[]
 
@@ -1686,6 +1720,7 @@ model ResourceProfile {
   displayName                String                  @unique @map("display_name")
   roleTitle                  String?                 @map("role_title")
   department                 String?
+  workDirection              String?                 @map("work_direction")
   managerName                String?                 @map("manager_name")
   employmentStatus           EmploymentStatus        @default(ACTIVE) @map("employment_status")
   weeklyCapacityHours        Int                     @default(40) @map("weekly_capacity_hours")
@@ -1697,6 +1732,7 @@ model ResourceProfile {
   skills                     ResourceSkill[]
   loadEntries                ResourceLoadEntry[]
   employeeWorkItems          EmployeeWorkItem[]
+  employeeWeekPlanItems      EmployeeWeekPlanItem[]
   resolvedEmployeeImportRows EmployeeWorkImportRow[]
 
   @@index([archivedAt, displayName])
@@ -1782,6 +1818,7 @@ model EmployeeWorkImportBatch {
   restoredBy          EmployeeWorkImportBatch[] @relation("EmployeeImportRestores")
   rows                EmployeeWorkImportRow[]
   workItems           EmployeeWorkItem[]
+  weekPlanItems       EmployeeWeekPlanItem[]
   loadEntries         ResourceLoadEntry[]
 
   @@unique([periodType, periodStartAt, version])
@@ -1792,67 +1829,121 @@ model EmployeeWorkImportBatch {
 }
 
 model EmployeeWorkImportRow {
-  id                 String                  @id @default(cuid())
-  batchId            String                  @map("batch_id")
-  rowNumber          Int                     @map("row_number")
-  rawValues          Json                    @map("raw_values")
-  normalizedValues   Json                    @map("normalized_values")
+  id                 String                     @id @default(cuid())
+  batchId            String                     @map("batch_id")
+  rowNumber          Int                        @map("row_number")
+  sourceSheetName    String?                    @map("source_sheet_name")
+  sourceSection      EmployeeWorkSourceSection? @map("source_section")
+  sourceRowNumber    Int?                       @map("source_row_number")
+  sourceKey          String?                    @map("source_key")
+  workKind           EmployeeWorkKind?          @map("work_kind")
+  plannedHours       Decimal?                   @map("planned_hours") @db.Decimal(6, 2)
+  actualHours        Decimal?                   @map("actual_hours") @db.Decimal(6, 2)
+  profileAction      String?                    @map("profile_action")
+  riskDecision       String?                    @map("risk_decision")
+  riskText           String?                    @map("risk_text")
+  rawValues          Json                       @map("raw_values")
+  normalizedValues   Json                       @map("normalized_values")
   status             EmployeeImportRowStatus
   errors             Json
-  resolvedEmployeeId String?                 @map("resolved_employee_id")
-  resolvedProjectId  String?                 @map("resolved_project_id")
-  resolvedTaskId     String?                 @map("resolved_task_id")
-  keepUnlinked       Boolean                 @default(false) @map("keep_unlinked")
-  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
-  batch              EmployeeWorkImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  resolvedEmployee   ResourceProfile?        @relation(fields: [resolvedEmployeeId], references: [id], onDelete: SetNull)
-  resolvedProject    Project?                @relation(fields: [resolvedProjectId], references: [id], onDelete: SetNull)
-  resolvedTask       WorkTask?               @relation(fields: [resolvedTaskId], references: [id], onDelete: SetNull)
+  resolvedEmployeeId String?                    @map("resolved_employee_id")
+  resolvedProjectId  String?                    @map("resolved_project_id")
+  resolvedTaskId     String?                    @map("resolved_task_id")
+  keepUnlinked       Boolean                    @default(false) @map("keep_unlinked")
+  createdAt          DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  batch              EmployeeWorkImportBatch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  resolvedEmployee   ResourceProfile?           @relation(fields: [resolvedEmployeeId], references: [id], onDelete: SetNull)
+  resolvedProject    Project?                   @relation(fields: [resolvedProjectId], references: [id], onDelete: SetNull)
+  resolvedTask       WorkTask?                  @relation(fields: [resolvedTaskId], references: [id], onDelete: SetNull)
   workItem           EmployeeWorkItem?
+  weekPlanItem       EmployeeWeekPlanItem?
 
   @@unique([batchId, rowNumber])
+  @@unique([batchId, sourceKey])
   @@index([batchId, status])
   @@map("employee_work_import_rows")
   @@schema("app")
 }
 
 model EmployeeWorkItem {
-  id             String                  @id @default(cuid())
-  employeeId     String                  @map("employee_id")
-  importBatchId  String                  @map("import_batch_id")
-  sourceRowId    String                  @unique @map("source_row_id")
-  periodStartAt  DateTime                @map("period_start_at") @db.Date
-  periodEndAt    DateTime                @map("period_end_at") @db.Date
-  title          String
-  planText       String?                 @map("plan_text")
-  summaryText    String?                 @map("summary_text")
-  completionRate Int?                    @map("completion_rate")
-  status         EmployeeWorkStatus
-  nextPlanText   String?                 @map("next_plan_text")
-  riskText       String?                 @map("risk_text")
-  plannedHours   Decimal?                @map("planned_hours") @db.Decimal(6, 2)
-  actualHours    Decimal?                @map("actual_hours") @db.Decimal(6, 2)
-  projectId      String?                 @map("project_id")
-  taskId         String?                 @map("task_id")
-  riskId         String?                 @unique @map("risk_id")
-  note           String?
-  rawRow         Json                    @map("raw_row")
-  archivedAt     DateTime?               @map("archived_at") @db.Timestamptz(6)
-  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
-  employee       ResourceProfile         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
-  importBatch    EmployeeWorkImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
-  sourceRow      EmployeeWorkImportRow   @relation(fields: [sourceRowId], references: [id], onDelete: Restrict)
-  project        Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  task           WorkTask?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  risk           Risk?                   @relation(fields: [riskId], references: [id], onDelete: SetNull)
-  loadEntry      ResourceLoadEntry?
+  id                  String                  @id @default(cuid())
+  employeeId          String                  @map("employee_id")
+  importBatchId       String                  @map("import_batch_id")
+  sourceRowId         String                  @unique @map("source_row_id")
+  periodStartAt       DateTime                @map("period_start_at") @db.Date
+  periodEndAt         DateTime                @map("period_end_at") @db.Date
+  title               String
+  workKind            EmployeeWorkKind?       @map("work_kind")
+  plannedCompletionAt DateTime?               @map("planned_completion_at") @db.Date
+  planText            String?                 @map("plan_text")
+  summaryText         String?                 @map("summary_text")
+  completionRate      Int?                    @map("completion_rate")
+  status              EmployeeWorkStatus
+  nextPlanText        String?                 @map("next_plan_text")
+  riskText            String?                 @map("risk_text")
+  plannedHours        Decimal?                @map("planned_hours") @db.Decimal(6, 2)
+  actualHours         Decimal?                @map("actual_hours") @db.Decimal(6, 2)
+  projectId           String?                 @map("project_id")
+  taskId              String?                 @map("task_id")
+  riskId              String?                 @unique @map("risk_id")
+  note                String?
+  rawRow              Json                    @map("raw_row")
+  archivedAt          DateTime?               @map("archived_at") @db.Timestamptz(6)
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  employee            ResourceProfile         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  importBatch         EmployeeWorkImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  sourceRow           EmployeeWorkImportRow   @relation(fields: [sourceRowId], references: [id], onDelete: Restrict)
+  project             Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task                WorkTask?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  risk                Risk?                   @relation(fields: [riskId], references: [id], onDelete: SetNull)
+  loadEntry           ResourceLoadEntry?
+  matchedWeekPlans    EmployeeWeekPlanItem[]  @relation("EmployeeWeekPlanCarry")
 
   @@index([employeeId, periodStartAt, archivedAt])
   @@index([projectId, periodStartAt, archivedAt])
   @@index([importBatchId, archivedAt])
   @@map("employee_work_items")
+  @@schema("app")
+}
+
+model EmployeeWeekPlanItem {
+  id                  String                  @id @default(cuid())
+  employeeId          String                  @map("employee_id")
+  importBatchId       String                  @map("import_batch_id")
+  sourceRowId         String                  @unique @map("source_row_id")
+  periodStartAt       DateTime                @map("period_start_at") @db.Date
+  periodEndAt         DateTime                @map("period_end_at") @db.Date
+  title               String
+  deliverableText     String?                 @map("deliverable_text")
+  plannedCompletionAt DateTime?               @map("planned_completion_at") @db.Date
+  priority            EmployeePlanPriority    @default(UNSPECIFIED)
+  collaborationText   String?                 @map("collaboration_text")
+  planText            String?                 @map("plan_text")
+  note                String?
+  workKind            EmployeeWorkKind        @map("work_kind")
+  projectId           String?                 @map("project_id")
+  taskId              String?                 @map("task_id")
+  carryStatus         EmployeePlanCarryStatus @default(PLANNED) @map("carry_status")
+  matchedWorkItemId   String?                 @unique @map("matched_work_item_id")
+  cancelReason        String?                 @map("cancel_reason")
+  rawRow              Json                    @map("raw_row")
+  archivedAt          DateTime?               @map("archived_at") @db.Timestamptz(6)
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  employee            ResourceProfile         @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  importBatch         EmployeeWorkImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+  sourceRow           EmployeeWorkImportRow   @relation(fields: [sourceRowId], references: [id], onDelete: Restrict)
+  project             Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task                WorkTask?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  matchedWorkItem     EmployeeWorkItem?       @relation("EmployeeWeekPlanCarry", fields: [matchedWorkItemId], references: [id], onDelete: SetNull)
+
+  @@index([employeeId, periodStartAt, archivedAt])
+  @@index([projectId, periodStartAt, archivedAt])
+  @@index([importBatchId, archivedAt])
+  @@index([carryStatus, periodStartAt, archivedAt])
+  @@map("employee_week_plan_items")
   @@schema("app")
 }
 

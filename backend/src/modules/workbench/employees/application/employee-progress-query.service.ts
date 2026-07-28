@@ -63,6 +63,8 @@ const WORK_ITEM_SELECT = {
   periodStartAt: true,
   periodEndAt: true,
   title: true,
+  workKind: true,
+  plannedCompletionAt: true,
   planText: true,
   summaryText: true,
   completionRate: true,
@@ -76,12 +78,26 @@ const WORK_ITEM_SELECT = {
   riskId: true,
   note: true,
   employee: {
-    select: { id: true, displayName: true, department: true, roleTitle: true },
+    select: {
+      id: true,
+      displayName: true,
+      department: true,
+      roleTitle: true,
+      workDirection: true,
+    },
   },
   project: { select: { id: true, code: true, name: true, archivedAt: true } },
   task: { select: { id: true, code: true, title: true, archivedAt: true } },
   importBatch: { select: { id: true, version: true, status: true } },
-  sourceRow: { select: { rowNumber: true } },
+  sourceRow: {
+    select: {
+      rowNumber: true,
+      sourceSheetName: true,
+      sourceSection: true,
+      sourceRowNumber: true,
+      sourceKey: true,
+    },
+  },
 } as const satisfies Prisma.EmployeeWorkItemSelect;
 
 type QueryWorkItem = Prisma.EmployeeWorkItemGetPayload<{
@@ -93,6 +109,8 @@ type QueryWorkItem = Prisma.EmployeeWorkItemGetPayload<{
     periodStartAt: true;
     periodEndAt: true;
     title: true;
+    workKind: true;
+    plannedCompletionAt: true;
     planText: true;
     summaryText: true;
     completionRate: true;
@@ -106,12 +124,26 @@ type QueryWorkItem = Prisma.EmployeeWorkItemGetPayload<{
     riskId: true;
     note: true;
     employee: {
-      select: { id: true; displayName: true; department: true; roleTitle: true };
+      select: {
+        id: true;
+        displayName: true;
+        department: true;
+        roleTitle: true;
+        workDirection: true;
+      };
     };
     project: { select: { id: true; code: true; name: true; archivedAt: true } };
     task: { select: { id: true; code: true; title: true; archivedAt: true } };
     importBatch: { select: { id: true; version: true; status: true } };
-    sourceRow: { select: { rowNumber: true } };
+    sourceRow: {
+      select: {
+        rowNumber: true;
+        sourceSheetName: true;
+        sourceSection: true;
+        sourceRowNumber: true;
+        sourceKey: true;
+      };
+    };
   };
 }>;
 
@@ -878,6 +910,7 @@ export class EmployeeProgressQueryService {
       employeeId: item.employeeId,
       employeeName: item.employee.displayName,
       department: item.employee.department,
+      workDirection: item.employee.workDirection,
       importBatchId: item.importBatchId,
       importVersion: item.importBatch.version,
       sourceRowId: item.sourceRowId,
@@ -886,6 +919,22 @@ export class EmployeeProgressQueryService {
       periodStart: this.dateOnly(item.periodStartAt),
       periodEnd: this.dateOnly(item.periodEndAt),
       title: item.title,
+      workKind: item.workKind,
+      classificationState: item.workKind ? 'CLASSIFIED' : 'LEGACY_UNCLASSIFIED',
+      plannedCompletionDate: item.plannedCompletionAt
+        ? this.dateOnly(item.plannedCompletionAt)
+        : null,
+      overdue:
+        item.plannedCompletionAt !== null &&
+        item.status !== EmployeeWorkStatus.COMPLETED &&
+        this.dateOnly(item.plannedCompletionAt) < this.dateOnly(new Date()),
+      source: {
+        sheetName: item.sourceRow.sourceSheetName,
+        section: item.sourceRow.sourceSection,
+        rowNumber: item.sourceRow.sourceRowNumber,
+        key: item.sourceRow.sourceKey,
+        label: this.sourceLabel(item.sourceRow),
+      },
       planText: item.planText,
       summaryText: item.summaryText,
       completionRate: item.completionRate,
@@ -955,6 +1004,14 @@ export class EmployeeProgressQueryService {
       sourceBatchIds: [item.importBatchId],
       links: this.publicWorkItem(item, period, filters).links,
     };
+  }
+
+  private sourceLabel(source: QueryWorkItem['sourceRow']): string {
+    if (!source.sourceSheetName || !source.sourceSection || !source.sourceRowNumber) {
+      return `导入批次第 ${source.rowNumber} 行`;
+    }
+    const sectionLabel = source.sourceSection === 'CURRENT_WORK' ? '本周工作' : '下周计划';
+    return `${source.sourceSheetName} / ${sectionLabel} / 第 ${source.sourceRowNumber} 行`;
   }
 
   private async publicImportBatch(batch: EmployeeWorkImportBatch) {

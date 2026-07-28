@@ -25,6 +25,10 @@ describe('employee work progress Prisma catalog contract', () => {
     __dirname,
     '../../../prisma/migrations/20260723012000_task_code_collision_safe_compatibility/migration.sql',
   );
+  const workbookV2MigrationPath = resolve(
+    __dirname,
+    '../../../prisma/migrations/20260728110000_employee_weekly_workbook_v2/migration.sql',
+  );
 
   it('defines the employee import, work-item, snapshot, and compatibility catalog', () => {
     const schema = readFileSync(schemaPath, 'utf8');
@@ -57,6 +61,86 @@ describe('employee work progress Prisma catalog contract', () => {
     expect(schemaBlock(schema, 'model', 'ResourceProfile')).toContain(
       '@@index([employmentStatus, archivedAt, displayName], map: "resource_profiles_employment_status_archived_at_display_name_id")',
     );
+  });
+
+  it('defines the V2 weekly workbook source, work-kind, and next-week plan catalog', () => {
+    const schema = readFileSync(schemaPath, 'utf8');
+
+    for (const enumName of [
+      'EmployeeWorkKind',
+      'EmployeeWorkSourceSection',
+      'EmployeePlanPriority',
+      'EmployeePlanCarryStatus',
+    ]) {
+      expect(schemaBlock(schema, 'enum', enumName)).toContain('@@schema("app")');
+    }
+
+    const employee = schemaBlock(schema, 'model', 'ResourceProfile');
+    expect(employee).toMatch(/workDirection\s+String\?\s+@map\("work_direction"\)/);
+    expect(employee).toContain('employeeWeekPlanItems');
+
+    const importRow = schemaBlock(schema, 'model', 'EmployeeWorkImportRow');
+    expect(importRow).toMatch(/sourceSheetName\s+String\?\s+@map\("source_sheet_name"\)/);
+    expect(importRow).toMatch(
+      /sourceSection\s+EmployeeWorkSourceSection\?\s+@map\("source_section"\)/,
+    );
+    expect(importRow).toMatch(/sourceRowNumber\s+Int\?\s+@map\("source_row_number"\)/);
+    expect(importRow).toMatch(/sourceKey\s+String\?\s+@map\("source_key"\)/);
+    expect(importRow).toMatch(/workKind\s+EmployeeWorkKind\?\s+@map\("work_kind"\)/);
+    expect(importRow).toMatch(
+      /plannedHours\s+Decimal\?\s+@map\("planned_hours"\)\s+@db\.Decimal\(6, 2\)/,
+    );
+    expect(importRow).toMatch(
+      /actualHours\s+Decimal\?\s+@map\("actual_hours"\)\s+@db\.Decimal\(6, 2\)/,
+    );
+    expect(importRow).toMatch(/profileAction\s+String\?\s+@map\("profile_action"\)/);
+    expect(importRow).toMatch(/riskDecision\s+String\?\s+@map\("risk_decision"\)/);
+    expect(importRow).toMatch(/riskText\s+String\?\s+@map\("risk_text"\)/);
+    expect(importRow).toContain('@@unique([batchId, sourceKey])');
+
+    const currentWork = schemaBlock(schema, 'model', 'EmployeeWorkItem');
+    expect(currentWork).toMatch(/workKind\s+EmployeeWorkKind\?\s+@map\("work_kind"\)/);
+    expect(currentWork).toMatch(
+      /plannedCompletionAt\s+DateTime\?\s+@map\("planned_completion_at"\)\s+@db\.Date/,
+    );
+    expect(currentWork).toContain('matchedWeekPlans');
+
+    const nextPlan = schemaBlock(schema, 'model', 'EmployeeWeekPlanItem');
+    expect(nextPlan).toMatch(/sourceRowId\s+String\s+@unique\s+@map\("source_row_id"\)/);
+    expect(nextPlan).toMatch(/workKind\s+EmployeeWorkKind\s+@map\("work_kind"\)/);
+    expect(nextPlan).toMatch(
+      /priority\s+EmployeePlanPriority\s+@default\(UNSPECIFIED\)/,
+    );
+    expect(nextPlan).toMatch(
+      /carryStatus\s+EmployeePlanCarryStatus\s+@default\(PLANNED\)/,
+    );
+    expect(nextPlan).toMatch(
+      /matchedWorkItemId\s+String\?\s+@unique\s+@map\("matched_work_item_id"\)/,
+    );
+    expect(nextPlan).toContain('@@index([employeeId, periodStartAt, archivedAt])');
+    expect(nextPlan).toContain('@@index([projectId, periodStartAt, archivedAt])');
+  });
+
+  it('adds the V2 weekly workbook catalog through an additive migration', () => {
+    const migration = readFileSync(workbookV2MigrationPath, 'utf8');
+
+    expect(migration).toContain('CREATE TYPE "app"."EmployeeWorkKind"');
+    expect(migration).toContain('CREATE TYPE "app"."EmployeeWorkSourceSection"');
+    expect(migration).toContain('CREATE TYPE "app"."EmployeePlanPriority"');
+    expect(migration).toContain('CREATE TYPE "app"."EmployeePlanCarryStatus"');
+    expect(migration).toContain(
+      'ADD COLUMN "work_direction" TEXT',
+    );
+    expect(migration).toContain(
+      'CREATE TABLE "app"."employee_week_plan_items"',
+    );
+    expect(migration).toMatch(
+      /employee_week_plan_items_source_row_id_fkey"[^;]*ON DELETE RESTRICT/,
+    );
+    expect(migration).toMatch(
+      /employee_week_plan_items_matched_work_item_id_fkey"[^;]*ON DELETE SET NULL/,
+    );
+    expect(migration).not.toMatch(/\bDROP\s+(TABLE|COLUMN|TYPE)\b/i);
   });
 
   it('keeps the migration data-safe and aligned with the Prisma catalog', () => {

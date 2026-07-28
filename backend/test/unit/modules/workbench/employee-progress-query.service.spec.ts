@@ -2,6 +2,7 @@ import {
   EmployeeImportRowStatus,
   EmployeeProgressPeriod,
   EmployeeWorkImportStatus,
+  EmployeeWorkKind,
   EmployeeWorkStatus,
 } from '@prisma/client';
 import { EmployeeProgressQueryService } from '../../../../src/modules/workbench/employees/application/employee-progress-query.service';
@@ -47,6 +48,8 @@ describe('EmployeeProgressQueryService', () => {
     periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
     periodEndAt: new Date('2026-07-26T00:00:00.000Z'),
     title: '完成查询接口',
+    workKind: EmployeeWorkKind.PROJECT,
+    plannedCompletionAt: new Date('2026-07-24T00:00:00.000Z'),
     planText: '实现接口',
     summaryText: '完成实现',
     completionRate: 100,
@@ -66,6 +69,7 @@ describe('EmployeeProgressQueryService', () => {
       displayName: '张三',
       department: '研发部',
       roleTitle: '工程师',
+      workDirection: '平台研发',
     },
     project: {
       id: 'project-1',
@@ -84,7 +88,13 @@ describe('EmployeeProgressQueryService', () => {
       version: 2,
       status: EmployeeWorkImportStatus.COMPLETED,
     },
-    sourceRow: { rowNumber: 2 },
+    sourceRow: {
+      rowNumber: 2,
+      sourceSheetName: '张三',
+      sourceSection: 'CURRENT_WORK',
+      sourceRowNumber: 7,
+      sourceKey: '张三:CURRENT_WORK:7',
+    },
   };
 
   const riskyItem = {
@@ -372,6 +382,33 @@ describe('EmployeeProgressQueryService', () => {
           project: { select: expect.objectContaining({ archivedAt: true }) },
           task: { select: expect.objectContaining({ archivedAt: true }) },
         }),
+      }),
+    );
+  });
+
+  it('exposes V2 work classification, due metadata, work direction, and real Excel coordinates', async () => {
+    const service = createService();
+
+    const result = await service.workItems({
+      periodType: EmployeeProgressPeriod.WEEK,
+      periodStart: '2026-07-20',
+      employeeId: 'employee-1',
+    });
+
+    expect(result.data[0]).toEqual(
+      expect.objectContaining({
+        workKind: EmployeeWorkKind.PROJECT,
+        workDirection: '平台研发',
+        plannedCompletionDate: '2026-07-24',
+        overdue: false,
+        classificationState: 'CLASSIFIED',
+        source: {
+          sheetName: '张三',
+          section: 'CURRENT_WORK',
+          rowNumber: 7,
+          key: '张三:CURRENT_WORK:7',
+          label: '张三 / 本周工作 / 第 7 行',
+        },
       }),
     );
   });
