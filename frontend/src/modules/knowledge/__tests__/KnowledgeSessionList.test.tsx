@@ -5,25 +5,40 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { KnowledgeSessionList } from '../components/KnowledgeSessionList';
 import type { KnowledgeSession } from '../types';
 
-const { listSessions, archiveSession } = vi.hoisted(() => ({
+const { listSessions, archiveSession, updateSession } = vi.hoisted(() => ({
   listSessions: vi.fn(),
   archiveSession: vi.fn(),
+  updateSession: vi.fn(),
 }));
 
-vi.mock('../api', () => ({ listSessions, archiveSession }));
+vi.mock('../api', () => ({ listSessions, archiveSession, updateSession }));
 
 vi.mock('@douyinfe/semi-ui', () => ({
-  Button: ({ children, onClick, ...props }: Record<string, unknown>) => (
+  Button: ({ children, onClick, icon: _icon, ...props }: Record<string, unknown>) => (
     <button onClick={onClick as () => void} {...props}>
       {children as React.ReactNode}
     </button>
   ),
-  Toast: { success: vi.fn() },
+  Input: ({ value, onChange, prefix: _prefix, showClear: _showClear, ...props }: Record<string, unknown>) => (
+    <input
+      value={value as string}
+      onChange={(event) => (onChange as (value: string) => void)(event.target.value)}
+      {...props}
+    />
+  ),
+  Tooltip: ({ children }: { children: React.ReactNode }) => children,
+  Modal: {
+    confirm: ({ onOk }: { onOk?: () => unknown }) => onOk?.(),
+  },
+  Toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('@douyinfe/semi-icons', () => ({
   IconPlus: () => null,
   IconDelete: () => null,
+  IconEdit: () => null,
+  IconSearch: () => null,
+  IconStar: () => null,
 }));
 
 function makeSession(overrides: Partial<KnowledgeSession> = {}): KnowledgeSession {
@@ -166,7 +181,7 @@ describe('KnowledgeSessionList', () => {
     renderComponent();
 
     // Header and new button are always visible
-    expect(screen.getByText('对话历史')).toBeInTheDocument();
+    expect(screen.getByText('知识助手')).toBeInTheDocument();
     expect(screen.getByText('新建对话')).toBeInTheDocument();
 
     // No session items are rendered after loading completes

@@ -5,13 +5,13 @@ describe('createSseParser', () => {
     const onEvent = vi.fn()
     const parser = createSseParser(onEvent)
 
-    parser.push('event: status\n')
-    parser.push('data: {"phase":"empty",')
-    parser.push('"message":"无结果"}\n\n')
+    parser.push('event: retrieval_completed\n')
+    parser.push('data: {"searchedDocumentCount":0,')
+    parser.push('"relevantCount":0}\n\n')
 
-    expect(onEvent).toHaveBeenCalledWith('status', {
-      phase: 'empty',
-      message: '无结果',
+    expect(onEvent).toHaveBeenCalledWith('retrieval_completed', {
+      searchedDocumentCount: 0,
+      relevantCount: 0,
     })
   })
 
@@ -19,12 +19,11 @@ describe('createSseParser', () => {
     const onEvent = vi.fn()
     const parser = createSseParser(onEvent)
 
-    parser.push('event: token\r\ndata: {"content":"完成","index":2}')
+    parser.push('event: answer_delta\r\ndata: {"text":"完成"}')
     parser.finish()
 
-    expect(onEvent).toHaveBeenCalledWith('token', {
-      content: '完成',
-      index: 2,
+    expect(onEvent).toHaveBeenCalledWith('answer_delta', {
+      text: '完成',
     })
   })
 })

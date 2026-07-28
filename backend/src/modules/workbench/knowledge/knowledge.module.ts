@@ -13,6 +13,7 @@ import { FolderWatchService } from './application/folder-watch.service';
 import { KnowledgeIngestionService } from './application/knowledge-ingestion.service';
 import { KnowledgeFileService } from './application/knowledge-file.service';
 import { OfficePreviewService } from './application/office-preview.service';
+import { WorkbookPreviewService } from './application/workbook-preview.service';
 import { ContentModule } from '../content/content.module';
 import { StorageModule } from '../../../infrastructure/storage/storage.module';
 
@@ -45,6 +46,7 @@ import { StorageModule } from '../../../infrastructure/storage/storage.module';
     KnowledgeIngestionService,
     KnowledgeFileService,
     OfficePreviewService,
+    WorkbookPreviewService,
   ],
   exports: [ChunkingService, EmbeddingService, RagService, SessionService, IndexingService, KnowledgeGateway, FolderWatchService],
 })

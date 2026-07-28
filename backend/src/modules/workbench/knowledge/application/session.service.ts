@@ -1,5 +1,29 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import {
+  deserializeKnowledgeScope,
+  KnowledgeScope,
+  serializeKnowledgeScope,
+} from '../domain/knowledge-scope';
+
+type UpdateSessionInput = {
+  title?: string;
+  isPinned?: boolean;
+  scope?: KnowledgeScope;
+};
+
+const sessionSelect = {
+  id: true,
+  title: true,
+  status: true,
+  scopeType: true,
+  scopeValue: true,
+  isPinned: true,
+  archivedAt: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.KnowledgeSessionSelect;
 
 @Injectable()
 export class SessionService {
@@ -10,29 +34,72 @@ export class SessionService {
     return this.prisma.knowledgeSession.create({ data: { title } });
   }
 
-  async list() {
-    return this.prisma.knowledgeSession.findMany({
-      where: { status: 'ACTIVE' },
-      orderBy: { updatedAt: 'desc' },
-      select: { id: true, title: true, status: true, createdAt: true, updatedAt: true },
+  async list(query: { search?: string } = {}) {
+    const search = query.search?.trim();
+    const sessions = await this.prisma.knowledgeSession.findMany({
+      where: {
+        archivedAt: null,
+        ...(search ? { title: { contains: search, mode: 'insensitive' as const } } : {}),
+      },
+      orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }],
+      select: sessionSelect,
     });
+    return sessions.map((session) => this.presentSession(session));
   }
 
   async get(id: string) {
-    return this.prisma.knowledgeSession.findUnique({
+    const session = await this.prisma.knowledgeSession.findUnique({
       where: { id },
       include: {
         messages: {
           orderBy: { createdAt: 'asc' },
-          select: { id: true, role: true, content: true, citations: true, tokenCount: true, createdAt: true },
+          select: {
+            id: true,
+            role: true,
+            content: true,
+            citations: true,
+            tokenCount: true,
+            replyToMessageId: true,
+            createdAt: true,
+          },
         },
       },
     });
+    if (!session || session.archivedAt) {
+      throw new NotFoundException('知识问答会话不存在');
+    }
+    return this.presentSession(session);
+  }
+
+  async update(id: string, input: UpdateSessionInput) {
+    await this.requireActive(id);
+    const data: Prisma.KnowledgeSessionUpdateInput = {};
+
+    if (input.title !== undefined) {
+      const title = input.title.trim();
+      if (!title) throw new BadRequestException('会话标题不能为空');
+      data.title = title.slice(0, 60);
+    }
+    if (input.isPinned !== undefined) data.isPinned = input.isPinned;
+    if (input.scope) Object.assign(data, serializeKnowledgeScope(input.scope));
+
+    const session = await this.prisma.knowledgeSession.update({
+      where: { id },
+      data,
+      select: sessionSelect,
+    });
+    return this.presentSession(session);
   }
 
   async addMessage(
     sessionId: string,
-    data: { role: 'USER' | 'ASSISTANT'; content: string; citations?: Record<string, unknown>[]; tokenCount?: number },
+    data: {
+      role: 'USER' | 'ASSISTANT';
+      content: string;
+      citations?: Record<string, unknown>[];
+      tokenCount?: number;
+      replyToMessageId?: string;
+    },
   ) {
     await this.prisma.knowledgeSession.update({
       where: { id: sessionId },
@@ -45,6 +112,7 @@ export class SessionService {
         content: data.content,
         citations: (data.citations ?? null) as any,
         tokenCount: data.tokenCount ?? null,
+        replyToMessageId: data.replyToMessageId ?? null,
       },
     });
   }
@@ -59,10 +127,42 @@ export class SessionService {
   }
 
   async archive(id: string) {
-    return this.prisma.knowledgeSession.update({
+    const session = await this.prisma.knowledgeSession.findUnique({
       where: { id },
-      data: { status: 'ARCHIVED' },
+      select: sessionSelect,
     });
+    if (!session) throw new NotFoundException('知识问答会话不存在');
+    if (session.archivedAt) return this.presentSession(session);
+
+    const archived = await this.prisma.knowledgeSession.update({
+      where: { id },
+      data: { status: 'ARCHIVED', archivedAt: new Date(), isPinned: false },
+      select: sessionSelect,
+    });
+    return this.presentSession(archived);
+  }
+
+  private async requireActive(id: string) {
+    const session = await this.prisma.knowledgeSession.findUnique({
+      where: { id },
+      select: { id: true, archivedAt: true },
+    });
+    if (!session || session.archivedAt) {
+      throw new NotFoundException('知识问答会话不存在');
+    }
+    return session;
+  }
+
+  private presentSession<
+    T extends {
+      scopeType: Parameters<typeof deserializeKnowledgeScope>[0]['scopeType'];
+      scopeValue: Prisma.JsonValue | null;
+    },
+  >(session: T) {
+    return {
+      ...session,
+      scope: deserializeKnowledgeScope(session),
+    };
   }
 
   async logUsage(data: {

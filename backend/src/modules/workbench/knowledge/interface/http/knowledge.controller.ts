@@ -13,9 +13,15 @@ import { KnowledgeIngestionService } from '../../application/knowledge-ingestion
 import { KnowledgeFileService } from '../../application/knowledge-file.service';
 import { EmbeddingService } from '../../application/embedding.service';
 import { FolderWatchService } from '../../application/folder-watch.service';
+import { WorkbookPreviewService } from '../../application/workbook-preview.service';
 import { KnowledgeSpacesService } from '../../../content/application/knowledge-spaces.service';
 import type { UploadedContentFile } from '../../../content/application/files.service';
-import { CreateSessionDto, ChatMessageDto } from './dto/knowledge.dto';
+import {
+  ChatMessageDto,
+  CreateSessionDto,
+  ListSessionsQueryDto,
+  UpdateSessionDto,
+} from './dto/knowledge.dto';
 
 @Controller('knowledge')
 export class KnowledgeController {
@@ -28,6 +34,7 @@ export class KnowledgeController {
     private readonly embeddings: EmbeddingService,
     private readonly spaces: KnowledgeSpacesService,
     private readonly folderWatch: FolderWatchService,
+    private readonly workbookPreview: WorkbookPreviewService,
   ) {}
 
   @Post('sessions')
@@ -36,8 +43,8 @@ export class KnowledgeController {
   }
 
   @Get('sessions')
-  listSessions() {
-    return this.sessions.list();
+  listSessions(@Query() query: ListSessionsQueryDto) {
+    return this.sessions.list(query);
   }
 
   @Get('sessions/:id')
@@ -46,8 +53,8 @@ export class KnowledgeController {
   }
 
   @Patch('sessions/:id')
-  updateSession(@Param('id') id: string) {
-    return this.sessions.archive(id);
+  updateSession(@Param('id') id: string, @Body() dto: UpdateSessionDto) {
+    return this.sessions.update(id, dto as Parameters<SessionService['update']>[1]);
   }
 
   @Delete('sessions/:id')
@@ -62,35 +69,63 @@ export class KnowledgeController {
     @Body() dto: ChatMessageDto,
     @Res() res: Response,
   ) {
+    const writeEvent = (name: string, payload: unknown) => {
+      if (!res.writableEnded) {
+        res.write(`event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`);
+      }
+    };
     try {
-      await this.sessions.addMessage(sessionId, { role: 'USER', content: dto.question });
-      const history = await this.sessions.getHistory(sessionId);
-
-      const { stream, citations, totalFound, relevantCount } = await this.rag.ask({
-        question: dto.question,
-        history: history.slice(0, -1),
+      const session = await this.sessions.get(sessionId);
+      const userMessage = await this.sessions.addMessage(sessionId, {
+        role: 'USER',
+        content: dto.question,
       });
+      const history = await this.sessions.getHistory(sessionId);
 
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       });
+      writeEvent('retrieval_started', { scope: session.scope });
+      const {
+        stream,
+        citations,
+        totalFound,
+        relevantCount,
+        searchedDocumentCount,
+        hasEvidence,
+      } = await this.rag.ask({
+        question: dto.question,
+        history: history.slice(0, -1),
+        scope: session.scope,
+      });
+      writeEvent('retrieval_completed', {
+        searchedDocumentCount,
+        totalFound,
+        relevantCount,
+        hasEvidence,
+      });
 
-      // Retrieval and the upstream model connection are ready before SSE headers.
-      if (relevantCount === 0) {
-        const msg = totalFound === 0
-          ? `知识库中没有已索引的文档内容（0 个分块）。请先同步本地文件夹或上传文件。`
-          : `检索了 ${totalFound} 个分块，没有找到与问题相关的内容（阈值 0.08）。请尝试换一种问法。`;
-        res.write(`event: status\ndata: ${JSON.stringify({ phase: 'empty', message: msg, totalFound, relevantCount })}\n\n`);
-        res.write(`event: done\ndata: ${JSON.stringify({ finished: true })}\n\n`);
+      if (!hasEvidence || !stream) {
+        const content =
+          '在当前检索范围内没有找到可用于回答的已索引内容。请检查文件是否已完成索引，或调整检索范围后重试。';
+        const message = await this.sessions.addMessage(sessionId, {
+          role: 'ASSISTANT',
+          content,
+          citations: [],
+          tokenCount: Math.ceil(content.length / 2),
+          replyToMessageId: userMessage.id,
+        });
+        writeEvent('answer_delta', { text: content });
+        writeEvent('completed', {
+          messageId: message.id,
+          tokenCount: message.tokenCount ?? 0,
+          hasEvidence: false,
+        });
         res.end();
         return;
       }
-
-      res.write(`event: status\ndata: ${JSON.stringify({ phase: 'found', message: `找到 ${relevantCount} 个相关片段（共检索 ${totalFound} 个）`, totalFound, relevantCount })}\n\n`);
-
-      res.write(`event: status\ndata: ${JSON.stringify({ phase: 'thinking', message: '正在基于检索内容生成回答...' })}\n\n`);
 
       const reader = stream.getReader();
       const decoder = new TextDecoder();
@@ -114,7 +149,7 @@ export class KnowledgeController {
               const content = parsed.choices?.[0]?.delta?.content;
               if (content) {
                 fullContent += content;
-                res.write(`event: token\ndata: ${JSON.stringify({ content, index: fullContent.length })}\n\n`);
+                writeEvent('answer_delta', { text: content });
               }
             } catch { /* skip malformed upstream event */ }
           }
@@ -122,32 +157,34 @@ export class KnowledgeController {
       }
 
       // Save before `done`: the frontend refetches the session immediately.
-      if (fullContent) {
-        await this.sessions.addMessage(sessionId, {
-          role: 'ASSISTANT',
-          content: fullContent,
-          citations: citations.map((citation) => ({
-            documentId: citation.documentId,
-            title: citation.title,
-            chunkIndex: citation.chunkIndex,
-            text: citation.text,
-            pageNumber: citation.pageNumber,
-            sheetName: citation.sheetName,
-            locationLabel: citation.locationLabel,
-          })),
-          tokenCount: Math.ceil(fullContent.length / 2),
-        });
-        void this.sessions.logUsage({
-          operation: 'KNOWLEDGE_QA',
-          model: 'deepseek-v4-pro',
-          tokenCount: Math.ceil((dto.question.length + fullContent.length) / 2),
-          success: true,
-          sessionId,
-        });
-      }
-
-      res.write(`event: citations\ndata: ${JSON.stringify(citations)}\n\n`);
-      res.write(`event: done\ndata: ${JSON.stringify({ finished: true })}\n\n`);
+      const assistantMessage = await this.sessions.addMessage(sessionId, {
+        role: 'ASSISTANT',
+        content: fullContent,
+        citations: citations.map((citation) => ({
+          documentId: citation.documentId,
+          title: citation.title,
+          chunkIndex: citation.chunkIndex,
+          text: citation.text,
+          pageNumber: citation.pageNumber,
+          sheetName: citation.sheetName,
+          locationLabel: citation.locationLabel,
+        })),
+        tokenCount: Math.ceil(fullContent.length / 2),
+        replyToMessageId: userMessage.id,
+      });
+      for (const citation of citations) writeEvent('citation', citation);
+      writeEvent('completed', {
+        messageId: assistantMessage.id,
+        tokenCount: assistantMessage.tokenCount ?? 0,
+        hasEvidence: true,
+      });
+      void this.sessions.logUsage({
+        operation: 'KNOWLEDGE_QA',
+        model: 'deepseek-v4-pro',
+        tokenCount: Math.ceil((dto.question.length + fullContent.length) / 2),
+        success: true,
+        sessionId,
+      });
       res.end();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
@@ -155,7 +192,11 @@ export class KnowledgeController {
         res.writeHead(500, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
       }
       if (!res.writableEnded) {
-        res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
+        writeEvent('failed', {
+          code: 'KNOWLEDGE_ANSWER_FAILED',
+          message,
+          retryable: true,
+        });
         res.end();
       }
     }
@@ -207,6 +248,12 @@ export class KnowledgeController {
   async getDocumentPreview(@Param('id') id: string, @Res() res: Response) {
     const file = await this.knowledgeFiles.getPreview(id);
     this.sendFile(res, file, 'inline');
+  }
+
+  @Get('documents/:id/workbook')
+  async getDocumentWorkbook(@Param('id') id: string) {
+    const file = await this.knowledgeFiles.getOriginal(id);
+    return this.workbookPreview.parse(file);
   }
 
   @Get('documents/:id/local-open-path')

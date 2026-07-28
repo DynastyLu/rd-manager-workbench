@@ -3,7 +3,7 @@ import { watch, FSWatcher } from 'chokidar';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, extname, join, relative } from 'node:path';
 import { createHash } from 'node:crypto';
-import { Subject } from 'rxjs';
+import { BehaviorSubject } from 'rxjs';
 import { KnowledgeProcessingStatus, KnowledgeSourceKind } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { DocumentImportService } from './document-import.service';
@@ -42,7 +42,7 @@ export class FolderWatchService implements OnModuleInit {
   private readonly logger = new Logger(FolderWatchService.name);
   private readonly watchers = new Map<string, FSWatcher>();
   private readonly scanLocks = new Map<string, Promise<unknown>>();
-  private readonly progress = new Map<string, { subject: Subject<SyncProgress>; data: SyncProgress }>();
+  private readonly progress = new Map<string, BehaviorSubject<SyncProgress>>();
 
   constructor(
     private readonly prisma: PlatformPrismaService,
@@ -51,16 +51,8 @@ export class FolderWatchService implements OnModuleInit {
   ) {}
 
   /** Get an SSE stream of sync progress for a given watch */
-  getProgressStream(watchId: string): Subject<SyncProgress> {
-    let entry = this.progress.get(watchId);
-    if (!entry) {
-      entry = {
-        subject: new Subject<SyncProgress>(),
-        data: { watchId, phase: 'done', total: 0, current: 0, currentFile: '', percent: 100 },
-      };
-      this.progress.set(watchId, entry);
-    }
-    return entry.subject;
+  getProgressStream(watchId: string): BehaviorSubject<SyncProgress> {
+    return this.ensureProgress(watchId);
   }
 
   /** Start watching a folder: full scan + chokidar watch */
@@ -84,6 +76,7 @@ export class FolderWatchService implements OnModuleInit {
       data: { label, folderPath: params.folderPath, spaceId: params.spaceId, recursive, status: 'ACTIVE' },
     });
 
+    this.ensureProgress(watch.id);
     void this.fullScan(watch.id).catch((err) => {
       this.logger.error({ watchId: watch.id, err }, 'Initial full scan failed');
       this.setError(watch.id, err instanceof Error ? err.message : 'Unknown error').catch(() => {});
@@ -97,8 +90,8 @@ export class FolderWatchService implements OnModuleInit {
     const w = this.watchers.get(id);
     if (w) { await w.close(); this.watchers.delete(id); }
     // Clean up progress
-    const entry = this.progress.get(id);
-    if (entry) { entry.subject.complete(); this.progress.delete(id); }
+    const progress = this.progress.get(id);
+    if (progress) { progress.complete(); this.progress.delete(id); }
     await this.prisma.folderWatch.update({ where: { id }, data: { status: 'PAUSED' } });
   }
 
@@ -110,7 +103,7 @@ export class FolderWatchService implements OnModuleInit {
 
   /** Get current progress snapshot (for polling fallback) */
   getProgress(id: string): SyncProgress | null {
-    return this.progress.get(id)?.data ?? null;
+    return this.progress.get(id)?.value ?? null;
   }
 
   async list() {
@@ -148,10 +141,23 @@ export class FolderWatchService implements OnModuleInit {
   // ── private ──
 
   private emitProgress(watchId: string, update: Partial<SyncProgress>) {
-    const entry = this.progress.get(watchId);
-    if (!entry) return;
-    entry.data = { ...entry.data, ...update };
-    entry.subject.next(entry.data);
+    const subject = this.ensureProgress(watchId);
+    subject.next({ ...subject.value, ...update });
+  }
+
+  private ensureProgress(watchId: string): BehaviorSubject<SyncProgress> {
+    const existing = this.progress.get(watchId);
+    if (existing) return existing;
+    const subject = new BehaviorSubject<SyncProgress>({
+      watchId,
+      phase: 'done',
+      total: 0,
+      current: 0,
+      currentFile: '',
+      percent: 100,
+    });
+    this.progress.set(watchId, subject);
+    return subject;
   }
 
   private startWatcher(watchId: string, folderPath: string, recursive: boolean): void {
@@ -237,7 +243,15 @@ export class FolderWatchService implements OnModuleInit {
 
     try {
       // Phase 1: scan folder
-      this.emitProgress(watchId, { phase: 'scanning', total: 0, current: 0, currentFile: '正在扫描文件夹...', percent: 0 });
+      this.emitProgress(watchId, {
+        phase: 'scanning',
+        total: 0,
+        current: 0,
+        currentFile: '正在扫描文件夹...',
+        percent: 0,
+        error: undefined,
+        result: undefined,
+      });
       const currentFiles = await this.scanFolder(watch.folderPath, watch.recursive);
       const currentPaths = new Set(currentFiles.map((f) => f.filePath));
 
@@ -325,7 +339,14 @@ export class FolderWatchService implements OnModuleInit {
       data: { lastSyncAt: new Date(), errorMessage: null },
     });
 
-    this.emitProgress(watchId, { phase: 'done', current: result.imported + result.updated, percent: 100, result });
+    const finalProgress = this.ensureProgress(watchId).value;
+    this.emitProgress(watchId, {
+      phase: 'done',
+      current: finalProgress.total,
+      currentFile: '',
+      percent: 100,
+      result,
+    });
     this.logger.log({ watchId, ...result }, 'Full scan complete');
     return result;
   }

@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Spin, Tag, Toast } from '@douyinfe/semi-ui'
 import { IconDownload, IconExternalOpen, IconFile } from '@douyinfe/semi-icons'
+import { KnowledgeMarkdown } from './KnowledgeMarkdown'
+import { KnowledgeSpreadsheetViewer } from './KnowledgeSpreadsheetViewer'
+import { KnowledgeDocxViewer } from './KnowledgeDocxViewer'
+import { resolveKnowledgeViewerKind } from '../viewer-kind'
 
 type ProcessingStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'PARTIAL' | 'FAILED' | 'MISSING'
 
@@ -14,13 +18,6 @@ export type KnowledgeFileDocument = {
   processingError: string | null
   plainText: string
 }
-
-const TEXT_MIME_TYPES = new Set([
-  'text/plain',
-  'text/markdown',
-  'text/csv',
-  'application/json',
-])
 
 function apiBaseUrl() {
   return window.__APP_CONFIG__?.apiBaseUrl?.replace(/\/$/, '') || 'http://127.0.0.1:4311/api'
@@ -38,6 +35,47 @@ function processingLabel(status: ProcessingStatus) {
   return labels[status]
 }
 
+async function previewErrorMessage(response: Response): Promise<string> {
+  const fallback = `预览生成失败（${response.status}）`
+  if (!response.headers.get('content-type')?.includes('application/json')) return fallback
+  try {
+    const body = await response.json() as {
+      message?: string
+      error?: string | { message?: string }
+    }
+    if (typeof body.error === 'object' && body.error?.message) return body.error.message
+    if (body.message) return body.message
+    if (typeof body.error === 'string') return body.error
+  } catch {
+    // Keep the stable fallback when an error body is malformed.
+  }
+  return fallback
+}
+
+function readerLabel(kind: ReturnType<typeof resolveKnowledgeViewerKind>): string {
+  const labels = {
+    pdf: 'PDF 原文件',
+    docx: 'Word 原版式',
+    'office-pdf': '兼容预览',
+    spreadsheet: 'Excel 工作簿',
+    markdown: 'Markdown',
+    json: 'JSON',
+    html: 'HTML',
+    image: '图片原文件',
+    text: '文本原文件',
+    unsupported: '暂不支持',
+  } as const
+  return labels[kind]
+}
+
+function formatJson(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2)
+  } catch {
+    return text
+  }
+}
+
 export function KnowledgeFileViewer({
   document,
   citationPage,
@@ -52,45 +90,79 @@ export function KnowledgeFileViewer({
     text: string | null
     error: string | null
   }>({ url: '', text: null, error: null })
+  const [binaryPreview, setBinaryPreview] = useState<{
+    url: string
+    objectUrl: string | null
+    error: string | null
+  }>({ url: '', objectUrl: null, error: null })
   const mimeType = (document.mimeType || 'application/octet-stream')
     .split(';')[0]
     ?.toLowerCase() || 'application/octet-stream'
   const fileName = document.originalName || '未命名文件'
   const sourceUrl = `${apiBaseUrl()}/knowledge/documents/${encodeURIComponent(document.id)}/source`
   const previewUrl = `${apiBaseUrl()}/knowledge/documents/${encodeURIComponent(document.id)}/preview`
-  const positionedPreviewUrl = citationPage ? `${previewUrl}#page=${citationPage}` : previewUrl
   const downloadUrl = `${sourceUrl}?download=1`
-  const isText = TEXT_MIME_TYPES.has(mimeType)
-  const isImage = mimeType.startsWith('image/')
+  const viewerKind = resolveKnowledgeViewerKind(fileName, mimeType)
+  const isTextual = ['text', 'markdown', 'json', 'html'].includes(viewerKind)
+  const usesPdfReader = viewerKind === 'pdf' || viewerKind === 'office-pdf'
   const desktopKnowledge = window.rdWorkbenchDesktop?.knowledge
   const canOpenLocally = document.sourceKind === 'LOCAL_FILE'
     && desktopKnowledge !== undefined
-  const isOfficeOrPdf = useMemo(
-    () => mimeType === 'application/pdf' || /\.(docx?|xlsx?|pptx?|odt|ods|odp)$/i.test(fileName),
-    [fileName, mimeType],
-  )
 
   useEffect(() => {
-    if (!isText) return
+    if (!isTextual) return
     const controller = new AbortController()
-    void fetch(previewUrl, { signal: controller.signal })
+    void fetch(sourceUrl, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`预览读取失败（${response.status}）`)
         return response.text()
       })
-      .then((text) => setTextPreview({ url: previewUrl, text, error: null }))
+      .then((text) => setTextPreview({ url: sourceUrl, text, error: null }))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
         setTextPreview({
-          url: previewUrl,
+          url: sourceUrl,
           text: null,
           error: error instanceof Error ? error.message : '预览读取失败',
         })
       })
     return () => controller.abort()
-  }, [isText, previewUrl])
-  const activeText = textPreview.url === previewUrl ? textPreview.text : null
-  const activeTextError = textPreview.url === previewUrl ? textPreview.error : null
+  }, [isTextual, sourceUrl])
+  const activeText = textPreview.url === sourceUrl ? textPreview.text : null
+  const activeTextError = textPreview.url === sourceUrl ? textPreview.error : null
+
+  useEffect(() => {
+    if (!usesPdfReader) return
+    const controller = new AbortController()
+    let objectUrl: string | null = null
+    void fetch(previewUrl, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await previewErrorMessage(response))
+        const blob = await response.blob()
+        if (blob.type !== 'application/pdf') {
+          throw new Error('预览服务未返回有效的 PDF 文件')
+        }
+        objectUrl = URL.createObjectURL(blob)
+        setBinaryPreview({ url: previewUrl, objectUrl, error: null })
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setBinaryPreview({
+          url: previewUrl,
+          objectUrl: null,
+          error: error instanceof Error ? error.message : '预览生成失败',
+        })
+      })
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [usesPdfReader, previewUrl])
+  const activeBinaryUrl = binaryPreview.url === previewUrl ? binaryPreview.objectUrl : null
+  const activeBinaryError = binaryPreview.url === previewUrl ? binaryPreview.error : null
+  const positionedBinaryUrl = activeBinaryUrl && citationPage
+    ? `${activeBinaryUrl}#page=${citationPage}`
+    : activeBinaryUrl
 
   return (
     <section className="knowledge-file-viewer" aria-label="原文件阅读器">
@@ -98,8 +170,8 @@ export function KnowledgeFileViewer({
         <div>
           <IconFile />
           <span title={fileName}>{fileName}</span>
-          <Tag size="small" color={document.previewStatus === 'FAILED' ? 'red' : 'blue'}>
-            预览：{processingLabel(document.previewStatus)}
+          <Tag size="small" color={viewerKind === 'unsupported' ? 'grey' : 'blue'}>
+            阅读：{readerLabel(viewerKind)}
           </Tag>
           <Tag size="small" color={document.indexStatus === 'FAILED' ? 'red' : 'green'}>
             检索：{processingLabel(document.indexStatus)}
@@ -134,7 +206,7 @@ export function KnowledgeFileViewer({
         </div>
       </header>
 
-      {document.processingError ? (
+      {document.processingError && viewerKind === 'office-pdf' ? (
         <div className="knowledge-file-viewer__warning">{document.processingError}</div>
       ) : null}
       {citationLocation || citationPage ? (
@@ -143,25 +215,52 @@ export function KnowledgeFileViewer({
         </div>
       ) : null}
 
-      {isText ? (
+      {viewerKind === 'spreadsheet' ? (
+        <KnowledgeSpreadsheetViewer documentId={document.id} fileName={fileName} />
+      ) : viewerKind === 'docx' ? (
+        <KnowledgeDocxViewer sourceUrl={sourceUrl} />
+      ) : isTextual ? (
         activeTextError ? (
           <div className="knowledge-file-viewer__fallback">{activeTextError}，可下载原文件查看。</div>
         ) : activeText === null ? (
           <div className="knowledge-file-viewer__loading"><Spin /> 正在加载文件内容…</div>
+        ) : viewerKind === 'markdown' ? (
+          <article className="knowledge-file-viewer__rich-text">
+            <KnowledgeMarkdown text={activeText} />
+          </article>
+        ) : viewerKind === 'html' ? (
+          <iframe
+            title={`${fileName} HTML 内容预览`}
+            srcDoc={activeText}
+            sandbox=""
+            className="knowledge-file-viewer__frame knowledge-file-viewer__frame--document"
+          />
         ) : (
-          <pre className="knowledge-file-viewer__text">{activeText}</pre>
+          <pre className="knowledge-file-viewer__text">
+            {viewerKind === 'json' ? formatJson(activeText) : activeText}
+          </pre>
         )
-      ) : isImage ? (
+      ) : viewerKind === 'image' ? (
         <div className="knowledge-file-viewer__image">
-          <img src={positionedPreviewUrl} alt={fileName} />
+          <img src={sourceUrl} alt={fileName} />
         </div>
-      ) : isOfficeOrPdf ? (
-        <iframe
-          title={`${fileName} 在线预览`}
-          src={positionedPreviewUrl}
-          className="knowledge-file-viewer__frame"
-          sandbox="allow-same-origin"
-        />
+      ) : usesPdfReader ? (
+        activeBinaryError ? (
+          <div className="knowledge-file-viewer__fallback">
+            <IconFile />
+            <strong>暂时无法在线预览</strong>
+            <span>{activeBinaryError}</span>
+            <span>原文件没有损坏，仍可下载或使用本机应用打开。</span>
+          </div>
+        ) : positionedBinaryUrl ? (
+          <iframe
+            title={`${fileName} 在线预览`}
+            src={positionedBinaryUrl}
+            className="knowledge-file-viewer__frame"
+          />
+        ) : (
+          <div className="knowledge-file-viewer__loading"><Spin /> 正在生成文件预览…</div>
+        )
       ) : (
         <div className="knowledge-file-viewer__fallback">
           <IconFile />

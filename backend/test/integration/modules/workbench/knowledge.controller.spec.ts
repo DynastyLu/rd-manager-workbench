@@ -95,6 +95,38 @@ describe('KnowledgeController (integration)', () => {
     );
   });
 
+  it('PATCH /api/knowledge/sessions/:id updates title, pinning, and scoped retrieval metadata', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/knowledge/sessions')
+      .send({ question: `${prefix} 范围更新` })
+      .expect(201);
+    const title = `${prefix} 项目行动项`;
+
+    const updated = await request(app.getHttpServer())
+      .patch(`/api/knowledge/sessions/${created.body.data.id}`)
+      .send({
+        title,
+        isPinned: true,
+        scope: { type: 'PROJECT', projectId: 'project-for-test' },
+      })
+      .expect(200);
+
+    expect(updated.body.data).toMatchObject({
+      id: created.body.data.id,
+      title,
+      isPinned: true,
+      scope: { type: 'PROJECT', projectId: 'project-for-test' },
+    });
+
+    const searched = await request(app.getHttpServer())
+      .get('/api/knowledge/sessions')
+      .query({ search: '项目行动项' })
+      .expect(200);
+    expect(searched.body.data).toEqual([
+      expect.objectContaining({ id: created.body.data.id }),
+    ]);
+  });
+
   it('GET /api/knowledge/sessions/:id - should get session detail with messages', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/knowledge/sessions')

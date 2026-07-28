@@ -8,6 +8,7 @@ interface Props {
   citations?: ChunkCitation[];
   deletedIds?: Set<string>;
   highlightTerms?: string[];
+  onSelect?: (citation: ChunkCitation) => void;
 }
 
 function truncateText(text: string, max = 100): string {
@@ -15,7 +16,7 @@ function truncateText(text: string, max = 100): string {
   return text.slice(0, max) + '…';
 }
 
-export function KnowledgeCitationCard({ citations, deletedIds, highlightTerms }: Props) {
+export function KnowledgeCitationCard({ citations, deletedIds, highlightTerms, onSelect }: Props) {
   if (!citations || citations.length === 0) return null;
 
   const unique = new Map<string, ChunkCitation>();
@@ -45,6 +46,7 @@ export function KnowledgeCitationCard({ citations, deletedIds, highlightTerms }:
             citation={citation}
             isDeleted={isDeleted}
             segments={segments}
+            onSelect={onSelect}
           />
         );
       })}
@@ -89,10 +91,11 @@ export function KnowledgeCitationCard({ citations, deletedIds, highlightTerms }:
   );
 }
 
-function SourceItem({ citation, isDeleted, segments }: {
+function SourceItem({ citation, isDeleted, segments, onSelect }: {
   citation: ChunkCitation;
   isDeleted: boolean;
   segments: ReturnType<typeof highlightTextSegments>;
+  onSelect?: (citation: ChunkCitation) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -106,6 +109,10 @@ function SourceItem({ citation, isDeleted, segments }: {
 
   const handleClick = () => {
     if (isDeleted) return;
+    if (onSelect) {
+      onSelect(citation);
+      return;
+    }
     const query = new URLSearchParams({
       tab: 'documents',
       documentId: citation.documentId,

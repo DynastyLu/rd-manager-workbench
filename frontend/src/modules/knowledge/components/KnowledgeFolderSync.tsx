@@ -4,64 +4,82 @@ import { Button, Input, Switch, Toast, Tag, Card, Space, Modal, Progress } from 
 import { IconFolder, IconDelete, IconRefresh, IconPlus } from '@douyinfe/semi-icons';
 import {
   listFolderWatches, startFolderWatch, stopFolderWatch, rescanFolder,
+  getFolderProgressSnapshot,
+  type FolderSyncProgress,
   type FolderWatchItem,
 } from '../api';
+import { parseFolderProgressEvent } from '../folder-progress';
 import { KnowledgeEmbeddingStatus } from './KnowledgeEmbeddingStatus';
 
 const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : '';
 
-interface SyncProgress {
-  watchId: string;
-  phase: 'scanning' | 'deleting' | 'importing' | 'done' | 'error';
-  total: number;
-  current: number;
-  currentFile: string;
-  percent: number;
-  result?: { imported: number; updated: number; deleted: number; errors: number };
-  error?: string;
-}
-
 function useFolderProgress(watchId: string | null) {
-  const [progress, setProgress] = useState<SyncProgress | null>(null);
+  const [progress, setProgress] = useState<FolderSyncProgress | null>(null);
   const esRef = useRef<EventSource | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearPolling = useCallback(() => {
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    pollTimerRef.current = null;
+  }, []);
 
   const connect = useCallback((id: string) => {
-    // Close previous connection
     esRef.current?.close();
+    clearPolling();
+
+    const applyProgress = (data: FolderSyncProgress) => {
+      setProgress(data);
+      if (data.phase === 'done' || data.phase === 'error') {
+        clearPolling();
+        esRef.current?.close();
+        esRef.current = null;
+      }
+    };
+
+    const poll = () => {
+      void getFolderProgressSnapshot(id)
+        .then((data) => {
+          applyProgress(data);
+          if (data.phase !== 'done' && data.phase !== 'error') {
+            pollTimerRef.current = setTimeout(poll, 800);
+          }
+        })
+        .catch(() => {
+          pollTimerRef.current = setTimeout(poll, 800);
+        });
+    };
+    void getFolderProgressSnapshot(id).then(applyProgress).catch(() => undefined);
+
     const es = new EventSource(`${API_BASE}/knowledge/folders/${encodeURIComponent(String(id))}/progress`);
     esRef.current = es;
 
     es.onmessage = (event) => {
       try {
-        const raw = JSON.parse(String(event.data)) as unknown;
-        const data = raw as SyncProgress;
-        setProgress(data);
-        if (data.phase === 'done' || data.phase === 'error') {
-          es.close();
-          esRef.current = null;
-          // Keep the done state visible for 3 seconds
-          setTimeout(() => setProgress(null), 3000);
-        }
+        applyProgress(parseFolderProgressEvent(String(event.data)));
       } catch { /* ignore parse errors */ }
     };
 
     es.onerror = () => {
       es.close();
       esRef.current = null;
-      // Fallback to polling
+      poll();
     };
-  }, []);
+  }, [clearPolling]);
 
   const disconnect = useCallback(() => {
     esRef.current?.close();
     esRef.current = null;
+    clearPolling();
     setProgress(null);
-  }, []);
+  }, [clearPolling]);
 
   useEffect(() => {
     if (watchId) connect(watchId);
-    return () => { esRef.current?.close(); };
-  }, [watchId, connect]);
+    return () => {
+      esRef.current?.close();
+      clearPolling();
+    };
+  }, [watchId, connect, clearPolling]);
 
   return { progress, connect, disconnect };
 }
@@ -81,7 +99,7 @@ export function KnowledgeFolderSync() {
   const [folderLabel, setFolderLabel] = useState('');
   const [recursive, setRecursive] = useState(true);
   const [activeWatchId, setActiveWatchId] = useState<string | null>(null);
-  const { progress, disconnect } = useFolderProgress(activeWatchId);
+  const { progress, connect, disconnect } = useFolderProgress(activeWatchId);
 
   const { data: folders, isPending } = useQuery({
     queryKey: ['knowledge-folders'],
@@ -132,8 +150,8 @@ export function KnowledgeFolderSync() {
   const rescanMutation = useMutation({
     mutationFn: (id: string) => {
       setActiveWatchId(id);
-      // Delay rescan slightly so the SSE connection can be established first
-      return new Promise((resolve) => setTimeout(resolve, 200)).then(() => rescanFolder(id));
+      connect(id);
+      return rescanFolder(id);
     },
     onSuccess: () => {
       refreshAll();

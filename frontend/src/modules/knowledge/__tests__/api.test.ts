@@ -14,6 +14,23 @@ describe('knowledge API', () => {
     expect(result).toEqual([{ id: 's1', title: 'test' }]);
   });
 
+  it('encodes session search and patches presentation state', async () => {
+    mockRequest.mockResolvedValue([]);
+    const { listSessions, updateSession } = await import('../api');
+    await listSessions('评审 计划');
+    expect(mockRequest).toHaveBeenCalledWith('/knowledge/sessions?search=%E8%AF%84%E5%AE%A1%20%E8%AE%A1%E5%88%92');
+
+    await updateSession('s/1', { title: '行动项', isPinned: true, scope: { type: 'PROJECT', projectId: 'p1' } });
+    expect(mockRequest).toHaveBeenCalledWith('/knowledge/sessions/s%2F1', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        title: '行动项',
+        isPinned: true,
+        scope: { type: 'PROJECT', projectId: 'p1' },
+      }),
+    });
+  });
+
   it('createSession posts question', async () => {
     mockRequest.mockResolvedValue({ id: 's2', title: 'hello' });
     const { createSession } = await import('../api');

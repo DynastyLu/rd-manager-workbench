@@ -33,6 +33,7 @@ describe('SessionService', () => {
   });
 
   it('archives a session', async () => {
+    mockPrisma.knowledgeSession.findUnique.mockResolvedValue({ id: 's1', archivedAt: null });
     mockPrisma.knowledgeSession.update.mockResolvedValue({ id: 's1', status: 'ARCHIVED' });
     const result = await service.archive('s1');
     expect(result.status).toBe('ARCHIVED');

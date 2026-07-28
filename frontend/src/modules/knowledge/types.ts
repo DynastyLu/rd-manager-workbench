@@ -1,10 +1,22 @@
+export type KnowledgeScope =
+  | { type: 'ALL' }
+  | { type: 'PROJECT'; projectId: string }
+  | { type: 'SPACE'; spaceId: string }
+  | { type: 'FOLDER'; folderWatchId: string }
+  | { type: 'DOCUMENTS'; documentIds: string[] }
+  | { type: 'RECENT' }
+
 export interface KnowledgeSession {
   id: string; title: string; status: 'ACTIVE' | 'ARCHIVED';
+  scope?: KnowledgeScope;
+  scopeType?: KnowledgeScope['type'];
+  isPinned?: boolean;
+  archivedAt?: string | null;
   createdAt: string; updatedAt: string; messages?: KnowledgeMessage[];
 }
 export interface KnowledgeMessage {
   id: string; role: 'USER' | 'ASSISTANT'; content: string;
-  citations?: ChunkCitation[]; tokenCount?: number; createdAt: string;
+  citations?: ChunkCitation[]; tokenCount?: number; replyToMessageId?: string | null; createdAt: string;
 }
 export interface ChunkCitation {
   documentId: string; title: string; chunkIndex: number; text: string;

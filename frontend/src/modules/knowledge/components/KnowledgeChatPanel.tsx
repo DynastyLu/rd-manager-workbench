@@ -1,28 +1,49 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Spin, Tooltip } from '@douyinfe/semi-ui';
-import { IconCopy, IconStop } from '@douyinfe/semi-icons';
-import { chatStream, createSession, getSession } from '../api';
+import { Select, Spin, Toast, Tooltip } from '@douyinfe/semi-ui';
+import { IconCopy, IconEdit, IconRefresh, IconStop } from '@douyinfe/semi-icons';
+import {
+  chatStream,
+  createSession,
+  getIndexStatus,
+  getSession,
+  updateSession,
+} from '../api';
 import { knowledgeQueryKeys } from '../queryKeys';
 import { KnowledgeMarkdown } from './KnowledgeMarkdown';
 import { KnowledgeCitationCard } from './KnowledgeCitationCard';
 import { copyToClipboard, extractHighlightTerms } from '../format';
 import { createSseParser } from '../sse';
-import type { KnowledgeMessage, ChunkCitation } from '../types';
+import type { KnowledgeMessage, ChunkCitation, KnowledgeScope } from '../types';
+import { createTask } from '@/modules/workbench/api/tasks';
 
-interface Props { sessionId: string | null; onSessionCreated: (id: string) => void; }
+interface Props {
+  sessionId: string | null;
+  onSessionCreated: (id: string) => void;
+  onCitationSelect?: (citation: ChunkCitation) => void;
+  projectId?: string;
+}
 
-export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
+export function KnowledgeChatPanel({
+  sessionId,
+  onSessionCreated,
+  onCitationSelect,
+  projectId,
+}: Props) {
   const [streamingContent, setStreamingContent] = useState('');
   const [streamingCitations, setStreamingCitations] = useState<ChunkCitation[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastQuestion, setLastQuestion] = useState('');
+  const [newScopeType, setNewScopeType] = useState<'ALL' | 'RECENT' | 'PROJECT'>(
+    projectId ? 'PROJECT' : 'ALL',
+  );
   const [thinkingSteps, setThinkingSteps] = useState<Array<{ phase: string; message: string }>>([]);
   const [lastEmptyResult, setLastEmptyResult] = useState<{ message: string; totalFound: number } | null>(null);
   // Hold streaming result briefly so it doesn't disappear before the session refetch
   const [pendingAnswer, setPendingAnswer] = useState<{ content: string; citations: ChunkCitation[] } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const activeSessionRef = useRef<string | null>(sessionId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamContentRef = useRef('');       // capture streaming content for finally
@@ -33,6 +54,10 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     queryKey: knowledgeQueryKeys.session(sessionId ?? ''),
     queryFn: () => getSession(sessionId!),
     enabled: !!sessionId,
+  });
+  const indexStatusQuery = useQuery({
+    queryKey: knowledgeQueryKeys.indexStatus,
+    queryFn: getIndexStatus,
   });
 
   const highlightTerms = useMemo(() => extractHighlightTerms(lastQuestion), [lastQuestion]);
@@ -58,6 +83,10 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
       try {
         const s = await createSession(question);
         sid = s.id;
+        const scope = scopeFromType(newScopeType, projectId);
+        if (scope.type !== 'ALL') {
+          await updateSession(s.id, { scope });
+        }
         onSessionCreated(s.id);
         void qc.invalidateQueries({ queryKey: knowledgeQueryKeys.sessions });
       } catch {
@@ -93,44 +122,99 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
       const decoder = new TextDecoder();
       let content = '';
       const parser = createSseParser((event, parsed) => {
-        if (event === 'status' && typeof parsed === 'object' && parsed !== null) {
-          const statusData = parsed as { phase?: unknown; message?: unknown; totalFound?: unknown };
-          if (typeof statusData.phase === 'string' && typeof statusData.message === 'string') {
-            const step = { phase: statusData.phase, message: statusData.message };
-            setThinkingSteps((prev) => [...prev, step]);
-            if (statusData.phase === 'empty') {
-              setLastEmptyResult({
-                message: statusData.message,
-                totalFound: typeof statusData.totalFound === 'number' ? statusData.totalFound : 0,
-              });
+        // Read previously stored/dev-server streams during a rolling local upgrade.
+        if (event === 'message') {
+          if (Array.isArray(parsed)) {
+            const citations = parsed.filter((citation): citation is ChunkCitation =>
+              typeof citation === 'object'
+              && citation !== null
+              && typeof (citation as { documentId?: unknown }).documentId === 'string',
+            );
+            streamCitationsRef.current = citations;
+            setStreamingCitations(citations);
+            return;
+          }
+          if (typeof parsed === 'object' && parsed !== null) {
+            const legacy = parsed as {
+              content?: unknown;
+              phase?: unknown;
+              message?: unknown;
+              totalFound?: unknown;
+              error?: unknown;
+            };
+            if (typeof legacy.content === 'string') {
+              content += legacy.content;
+              streamContentRef.current = content;
+              setStreamingContent(content);
+              return;
+            }
+            if (typeof legacy.phase === 'string' && typeof legacy.message === 'string') {
+              setThinkingSteps((steps) => [
+                ...steps,
+                { phase: legacy.phase as string, message: legacy.message as string },
+              ]);
+              if (legacy.phase === 'empty') {
+                setLastEmptyResult({
+                  message: legacy.message,
+                  totalFound: typeof legacy.totalFound === 'number' ? legacy.totalFound : 0,
+                });
+              }
+              return;
+            }
+            if (typeof legacy.error === 'string') {
+              setError(legacy.error);
+              return;
             }
           }
+        }
+        if (event === 'retrieval_started') {
+          setThinkingSteps([{ phase: 'searching', message: '正在检索当前范围内的已索引文件…' }]);
           return;
         }
-
-        if (event === 'token' && typeof parsed === 'object' && parsed !== null) {
-          const token = parsed as { content?: unknown; index?: unknown };
-          if (typeof token.content === 'string' && typeof token.index === 'number') {
-            content += token.content;
+        if (event === 'retrieval_completed' && typeof parsed === 'object' && parsed !== null) {
+          const result = parsed as {
+            searchedDocumentCount?: unknown;
+            relevantCount?: unknown;
+            hasEvidence?: unknown;
+          };
+          const relevantCount = typeof result.relevantCount === 'number' ? result.relevantCount : 0;
+          const searched = typeof result.searchedDocumentCount === 'number'
+            ? result.searchedDocumentCount
+            : 0;
+          setThinkingSteps((steps) => [
+            ...steps,
+            {
+              phase: relevantCount > 0 ? 'found' : 'empty',
+              message: relevantCount > 0
+                ? `已从 ${searched} 个文件中找到 ${relevantCount} 个可引用片段`
+                : '当前范围内没有找到可引用的内容',
+            },
+          ]);
+          return;
+        }
+        if (event === 'answer_delta' && typeof parsed === 'object' && parsed !== null) {
+          const delta = (parsed as { text?: unknown }).text;
+          if (typeof delta === 'string') {
+            content += delta;
             setStreamingContent(content);
             streamContentRef.current = content;
           }
           return;
         }
-
-        if (event === 'citations' && Array.isArray(parsed)) {
-          const citations = parsed.filter((citation): citation is ChunkCitation =>
-            typeof citation === 'object'
-            && citation !== null
-            && typeof (citation as { documentId?: unknown }).documentId === 'string',
-          );
-          setStreamingCitations(citations);
+        if (event === 'citation' && typeof parsed === 'object' && parsed !== null) {
+          const citation = parsed as ChunkCitation;
+          if (typeof citation.documentId !== 'string') return;
+          const key = `${citation.documentId}:${citation.chunkIndex}`;
+          if (streamCitationsRef.current.some(
+            (item) => `${item.documentId}:${item.chunkIndex}` === key,
+          )) return;
+          const citations = [...streamCitationsRef.current, citation];
           streamCitationsRef.current = citations;
+          setStreamingCitations(citations);
           return;
         }
-
-        if (event === 'error' && typeof parsed === 'object' && parsed !== null) {
-          const streamError = (parsed as { error?: unknown }).error;
+        if (event === 'failed' && typeof parsed === 'object' && parsed !== null) {
+          const streamError = (parsed as { message?: unknown }).message;
           if (typeof streamError === 'string') setError(streamError);
         }
       });
@@ -159,9 +243,25 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         void qc.invalidateQueries({ queryKey: knowledgeQueryKeys.sessions });
       }
     }
-  }, [sessionId, onSessionCreated, qc]);
+  }, [newScopeType, onSessionCreated, projectId, qc, sessionId]);
+
+  const changeScope = useCallback(async (value: unknown) => {
+    if (!sessionId || typeof value !== 'string') return;
+    const scope = scopeFromType(value as 'ALL' | 'RECENT' | 'PROJECT', projectId);
+    await updateSession(sessionId, { scope });
+    await qc.invalidateQueries({ queryKey: knowledgeQueryKeys.session(sessionId) });
+  }, [projectId, qc, sessionId]);
 
   const stop = useCallback(() => { abortRef.current?.abort(); }, []);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (activeSessionRef.current && activeSessionRef.current !== sessionId) {
+      abortRef.current?.abort();
+    }
+    activeSessionRef.current = sessionId;
+  }, [sessionId]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -180,6 +280,36 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
     if (text && !streaming) { el.value = ''; void send(text); }
   }, [send, streaming]);
 
+  const editQuestion = useCallback((question: string) => {
+    if (!inputRef.current) return;
+    inputRef.current.value = question;
+    inputRef.current.focus();
+  }, []);
+
+  const createTaskFromAnswer = useCallback(async (message: KnowledgeMessage) => {
+    const firstLine = message.content.split('\n').find((line) => line.trim())?.trim() ?? 'AI 回答行动项';
+    try {
+      await createTask({
+        title: firstLine.slice(0, 80),
+        description: message.content,
+        ...(session?.scope?.type === 'PROJECT' ? { projectId: session.scope.projectId } : {}),
+        sourceType: 'KNOWLEDGE_MESSAGE',
+        sourceId: message.id,
+      });
+      Toast.success('已创建工作项');
+      void qc.invalidateQueries({ queryKey: ['tasks'] });
+    } catch (taskError) {
+      Toast.error(taskError instanceof Error ? taskError.message : '创建工作项失败');
+    }
+  }, [qc, session?.scope]);
+
+  const suggestions = [
+    '总结最近上传的研发资料',
+    '有哪些尚未关闭的风险？',
+    '整理项目评审中的行动项',
+    '对比已有方案的关键差异',
+  ];
+
   // Empty state (no session)
   if (!sessionId) {
     return (
@@ -187,9 +317,30 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         <div className="kb-chat-main__empty">
           <div style={{ fontSize: 48, marginBottom: 8 }}>💬</div>
           <h2>知识库 AI 问答</h2>
-          <p>基于本地文档的智能问答，自动检索相关内容</p>
-          <textarea ref={inputRef} className="kb-chat-input-bar__textarea" style={{ width: 400, marginTop: 16 }}
-            placeholder="输入问题，回车发送..." rows={2} onKeyDown={handleKeyDown} />
+          <p>只基于你本地或上传且已完成索引的文件回答，并给出可核对来源。</p>
+          <Select
+            className="knowledge-assistant__scope-select"
+            value={newScopeType}
+            onChange={(value) => setNewScopeType(value as typeof newScopeType)}
+            optionList={scopeOptions(Boolean(projectId))}
+          />
+          <div className="knowledge-assistant__suggestions">
+            {suggestions.map((suggestion) => (
+              <button key={suggestion} type="button" onClick={() => void send(suggestion)}>
+                {suggestion}
+              </button>
+            ))}
+          </div>
+          <div className="knowledge-assistant__empty-composer">
+            <textarea
+              ref={inputRef}
+              className="kb-chat-input-bar__textarea"
+              placeholder="输入问题，回车发送..."
+              rows={2}
+              onKeyDown={handleKeyDown}
+            />
+            <button type="button" onClick={handleSendClick}>发送</button>
+          </div>
           <p style={{ fontSize: 12, color: '#bbb', marginTop: 8 }}>新对话将自动创建 · DeepSeek 驱动</p>
         </div>
       </div>
@@ -202,12 +353,44 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
 
   return (
     <div className="kb-chat-main">
+      <header className="knowledge-assistant__conversation-header">
+        <div>
+          <strong>{session?.title || '新对话'}</strong>
+          <span>
+            检索范围：{scopeLabel(session?.scope?.type)}
+            {' · '}
+            已索引 {indexStatusQuery.data?.indexedDocuments ?? 0} 个文件
+          </span>
+        </div>
+        <Select
+          value={session?.scope?.type ?? 'ALL'}
+          onChange={(value) => void changeScope(value)}
+          optionList={scopeOptions(Boolean(projectId))}
+          className="knowledge-assistant__scope-select"
+        />
+      </header>
       <div className="kb-chat-main__messages">
         {messages.length === 0 && !streaming && (
           <div className="kb-chat-main__empty"><p>输入问题开始搜索本地知识库</p></div>
         )}
-        {messages.map((msg: KnowledgeMessage) => (
-          <MessageBubble key={msg.id} msg={msg} highlightTerms={highlightTerms} />
+        {messages.map((msg: KnowledgeMessage, index) => (
+          <MessageBubble
+            key={msg.id}
+            msg={msg}
+            highlightTerms={highlightTerms}
+            onCitationSelect={onCitationSelect}
+            onEdit={msg.role === 'USER' ? () => editQuestion(msg.content) : undefined}
+            onRegenerate={msg.role === 'ASSISTANT' ? () => {
+              const previousQuestion = messages
+                .slice(0, index)
+                .reverse()
+                .find((candidate) => candidate.role === 'USER')?.content;
+              if (previousQuestion) void send(previousQuestion);
+            } : undefined}
+            onCreateTask={msg.role === 'ASSISTANT'
+              ? () => void createTaskFromAnswer(msg)
+              : undefined}
+          />
         ))}
         {/* Pending answer card (bridges the gap between streaming end and session refetch) */}
         {!streaming && pendingAnswer && (
@@ -218,7 +401,11 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
                 <KnowledgeMarkdown text={pendingAnswer.content} />
               </div>
               {pendingAnswer.citations.length > 0 && (
-                <KnowledgeCitationCard citations={pendingAnswer.citations} highlightTerms={highlightTerms} />
+                <KnowledgeCitationCard
+                  citations={pendingAnswer.citations}
+                  highlightTerms={highlightTerms}
+                  onSelect={onCitationSelect}
+                />
               )}
             </div>
           </div>
@@ -268,7 +455,11 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
                 </div>
               )}
               {streamingCitations.length > 0 && (
-                <KnowledgeCitationCard citations={streamingCitations} highlightTerms={highlightTerms} />
+                <KnowledgeCitationCard
+                  citations={streamingCitations}
+                  highlightTerms={highlightTerms}
+                  onSelect={onCitationSelect}
+                />
               )}
               {/* Empty result warning */}
               {!streamingContent && thinkingSteps.some((s) => s.phase === 'empty') && (
@@ -288,7 +479,10 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         {error && (
           <div className="kb-message kb-message--error">
             <div className="kb-message__bubble" style={{ background: '#fff3f3', color: '#e65050', border: '1px solid #fdd' }}>
-              {error}
+              <span>{error}</span>
+              {lastQuestion ? (
+                <button type="button" onClick={() => void send(lastQuestion)}>重试</button>
+              ) : null}
             </div>
           </div>
         )}
@@ -309,82 +503,25 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
         )}
       </div>
 
-      <style>{`
-        .kb-chat-main { flex: 1; display: flex; flex-direction: column; height: 100%; min-width: 0; }
-        .kb-chat-main__empty {
-          flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-          color: #8f959e; text-align: center; padding: 40px;
-        }
-        .kb-chat-main__empty h2 { margin: 0 0 8px; font-size: 20px; color: #4e5969; }
-        .kb-chat-main__messages { flex: 1; overflow-y: auto; padding: 16px 20px; }
-
-        .kb-message { display: flex; gap: 10px; margin-bottom: 20px; }
-        .kb-message--user { flex-direction: row-reverse; }
-        .kb-message--assistant { flex-direction: row; }
-        .kb-message__avatar {
-          flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 12px; font-weight: 700;
-        }
-        .kb-message--user .kb-message__avatar { background: #1456f0; color: #fff; }
-        .kb-message--assistant .kb-message__avatar { background: #e8f0fe; color: #1456f0; }
-        .kb-message__body { flex: 1; min-width: 0; }
-        .kb-message__bubble {
-          padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.7;
-          word-break: break-word;
-        }
-        .kb-message--user .kb-message__bubble { background: #e8f0fe; }
-        .kb-message--assistant .kb-message__bubble { background: #f5f6f8; }
-        .kb-message__copy-btn {
-          display: inline-flex; align-items: center; gap: 4px; margin-top: 6px;
-          font-size: 12px; color: #8f959e; border: 0; background: none; cursor: pointer;
-        }
-        .kb-message__copy-btn:hover { color: #1456f0; }
-
-        .kb-chat-input-bar {
-          display: flex; gap: 10px; align-items: flex-end;
-          padding: 16px 20px; border-top: 1px solid #e5e6eb; background: #fff;
-        }
-        .kb-chat-input-bar__textarea {
-          flex: 1; border: 1px solid #ddd; border-radius: 12px; padding: 10px 16px;
-          font-size: 14px; resize: none; line-height: 1.5; min-height: 44px; max-height: 150px;
-          font-family: inherit;
-        }
-        .kb-chat-input-bar__textarea:focus { border-color: #1456f0; }
-        .kb-chat-input-bar__send, .kb-chat-input-bar__stop {
-          padding: 10px 20px; border-radius: 10px; border: 0; cursor: pointer; font-weight: 500; font-size: 14px;
-          white-space: nowrap;
-        }
-        .kb-chat-input-bar__send { background: #1456f0; color: #fff; }
-        .kb-chat-input-bar__stop { background: #fff; color: #e65050; border: 1px solid #e65050; }
-        .kb-streaming-indicator {
-          display: inline-block; width: 8px; height: 16px; background: #1456f0;
-          animation: kb-blink 0.8s infinite; vertical-align: text-bottom; margin-left: 2px; border-radius: 2px;
-        }
-        @keyframes kb-blink { 0%,100%{opacity:1} 50%{opacity:0} }
-
-        .kb-thinking { margin-bottom: 8px; }
-        .kb-thinking__step {
-          display: flex; align-items: center; gap: 8px;
-          padding: 6px 0; font-size: 13px; color: #4e5969;
-        }
-        .kb-thinking__dot {
-          width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-        }
-        .kb-thinking__step--searching .kb-thinking__dot { background: #1456f0; animation: kb-pulse 1s infinite; }
-        .kb-thinking__step--found .kb-thinking__dot { background: #52c41a; }
-        .kb-thinking__step--empty .kb-thinking__dot { background: #faad14; }
-        .kb-thinking__step--thinking .kb-thinking__dot { background: #1456f0; animation: kb-pulse 0.6s infinite; }
-        @keyframes kb-pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-      `}</style>
     </div>
   );
 }
 
 /** Single message bubble with copy and citations */
-function MessageBubble({ msg, highlightTerms }: {
+function MessageBubble({
+  msg,
+  highlightTerms,
+  onCitationSelect,
+  onEdit,
+  onRegenerate,
+  onCreateTask,
+}: {
   msg: KnowledgeMessage;
   highlightTerms: string[];
+  onCitationSelect?: (citation: ChunkCitation) => void;
+  onEdit?: () => void;
+  onRegenerate?: () => void;
+  onCreateTask?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
   const isUser = msg.role === 'USER';
@@ -402,18 +539,66 @@ function MessageBubble({ msg, highlightTerms }: {
         <div className="kb-message__bubble">
           {isUser ? msg.content : <KnowledgeMarkdown text={msg.content} />}
         </div>
-        {!isUser && (
-          <Tooltip content={copied ? '已复制' : '复制回答'}>
-            <button className="kb-message__copy-btn" onClick={handleCopy} type="button">
-              <IconCopy size="small" style={{ marginRight: 2 }} />
-              {copied ? '已复制' : '复制'}
-            </button>
-          </Tooltip>
-        )}
+        <div className="knowledge-assistant__message-actions">
+          {isUser && onEdit ? (
+            <button type="button" onClick={onEdit}><IconEdit size="small" />编辑后再问</button>
+          ) : null}
+          {!isUser ? (
+            <>
+              <Tooltip content={copied ? '已复制' : '复制回答'}>
+                <button className="kb-message__copy-btn" onClick={handleCopy} type="button">
+                  <IconCopy size="small" />
+                  {copied ? '已复制' : '复制'}
+                </button>
+              </Tooltip>
+              {onRegenerate ? (
+                <button type="button" onClick={onRegenerate}>
+                  <IconRefresh size="small" />重新生成
+                </button>
+              ) : null}
+              {onCreateTask ? (
+                <button type="button" onClick={onCreateTask}>转为工作项</button>
+              ) : null}
+            </>
+          ) : null}
+        </div>
         {!isUser && msg.citations && msg.citations.length > 0 && (
-          <KnowledgeCitationCard citations={msg.citations} highlightTerms={highlightTerms} />
+          <KnowledgeCitationCard
+            citations={msg.citations}
+            highlightTerms={highlightTerms}
+            onSelect={onCitationSelect}
+          />
         )}
       </div>
     </div>
   );
+}
+
+function scopeLabel(type?: string) {
+  const labels: Record<string, string> = {
+    ALL: '全部知识',
+    PROJECT: '当前项目',
+    SPACE: '知识空间',
+    FOLDER: '本地目录',
+    DOCUMENTS: '指定文档',
+    RECENT: '最近 30 天',
+  };
+  return labels[type ?? 'ALL'] ?? '全部知识';
+}
+
+function scopeOptions(hasProject: boolean) {
+  return [
+    { label: '全部已索引知识', value: 'ALL' },
+    ...(hasProject ? [{ label: '当前项目', value: 'PROJECT' }] : []),
+    { label: '最近 30 天', value: 'RECENT' },
+  ];
+}
+
+function scopeFromType(
+  type: 'ALL' | 'RECENT' | 'PROJECT',
+  projectId?: string,
+): KnowledgeScope {
+  if (type === 'PROJECT' && projectId) return { type, projectId };
+  if (type === 'RECENT') return { type };
+  return { type: 'ALL' };
 }

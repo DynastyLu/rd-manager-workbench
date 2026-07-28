@@ -7,13 +7,21 @@ import { KnowledgeChatPanel } from '../components/KnowledgeChatPanel';
 // ---------------------------------------------------------------------------
 // Hoisted module-level mocks
 // ---------------------------------------------------------------------------
-const { getSession, createSession, chatStream } = vi.hoisted(() => ({
+const { getSession, createSession, chatStream, getIndexStatus, updateSession } = vi.hoisted(() => ({
   getSession: vi.fn(),
   createSession: vi.fn(),
   chatStream: vi.fn(),
+  getIndexStatus: vi.fn(),
+  updateSession: vi.fn(),
 }));
 
-vi.mock('../api', () => ({ getSession, createSession, chatStream }));
+vi.mock('../api', () => ({
+  getSession,
+  createSession,
+  chatStream,
+  getIndexStatus,
+  updateSession,
+}));
 
 vi.mock('../components/KnowledgeMarkdown', () => ({
   KnowledgeMarkdown: ({ text }: { text: string }) => (
@@ -113,6 +121,12 @@ describe('KnowledgeChatPanel', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       messages: [],
+    });
+    getIndexStatus.mockResolvedValue({
+      indexedDocuments: 3,
+      totalDocuments: 3,
+      totalChunks: 12,
+      complete: true,
     });
 
     createSession.mockResolvedValue({

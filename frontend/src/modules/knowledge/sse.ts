@@ -1,4 +1,11 @@
-export type KnowledgeSseEvent = 'status' | 'token' | 'citations' | 'done' | 'error' | 'message'
+export type KnowledgeSseEvent =
+  | 'retrieval_started'
+  | 'retrieval_completed'
+  | 'answer_delta'
+  | 'citation'
+  | 'completed'
+  | 'failed'
+  | 'message'
 
 export function createSseParser(
   onEvent: (event: KnowledgeSseEvent, data: unknown) => void,
@@ -11,7 +18,17 @@ export function createSseParser(
     for (const line of block.split('\n')) {
       if (line.startsWith('event:')) {
         const candidate = line.slice(6).trim()
-        if (['status', 'token', 'citations', 'done', 'error', 'message'].includes(candidate)) {
+        if (
+          [
+            'retrieval_started',
+            'retrieval_completed',
+            'answer_delta',
+            'citation',
+            'completed',
+            'failed',
+            'message',
+          ].includes(candidate)
+        ) {
           event = candidate as KnowledgeSseEvent
         }
       } else if (line.startsWith('data:')) {

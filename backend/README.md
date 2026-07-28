@@ -27,6 +27,8 @@ pnpm start:dev
 
 开发服务固定监听 `http://127.0.0.1:4311`，避免占用旧项目的默认端口。请先从 `.env.example` 复制出 `.env`；Vite 前端默认请求 `http://127.0.0.1:4311/api`。
 
+DOC/DOCX、XLS/XLSX、PPT/PPTX 等 Office 文件的保真 PDF 预览依赖 LibreOffice。系统会自动查找常见安装位置；如果安装在自定义目录，请在 `.env` 中设置 `LIBREOFFICE_BIN` 为 `soffice` 的绝对路径。未安装时原文件仍可下载或用本机应用打开，页面会显示可读提示，不会嵌入后端错误响应。
+
 Endpoints are loopback-only by default:
 
 - `GET /api/health`

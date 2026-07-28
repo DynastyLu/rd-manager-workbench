@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { DeepSeekHttpService } from './deepseek-http.service';
 import { ChunkCitation } from '../domain/knowledge.types';
 import { EmbeddingService } from './embedding.service';
+import {
+  buildKnowledgeScopeSql,
+  KnowledgeScope,
+  normalizeKnowledgeScope,
+} from '../domain/knowledge-scope';
 
 const SYSTEM_PROMPT = `你是一个本地研发知识库助手，服务于研发主管的日常决策。
 你的知识来源是用户本机的文档、会议纪要、方案和复盘。
@@ -51,27 +57,38 @@ export class RagService {
   async ask(params: {
     question: string;
     history: Array<{ role: string; content: string }>;
-  }): Promise<{ stream: ReadableStream<Uint8Array>; citations: ChunkCitation[]; totalFound: number; relevantCount: number }> {
+    scope?: KnowledgeScope;
+  }): Promise<{
+    stream: ReadableStream<Uint8Array> | null;
+    citations: ChunkCitation[];
+    totalFound: number;
+    relevantCount: number;
+    searchedDocumentCount: number;
+    hasEvidence: boolean;
+  }> {
     const keywords = extractKeywords(params.question);
+    const scope = normalizeKnowledgeScope(params.scope ?? { type: 'ALL' });
+    const scopeSql = buildKnowledgeScopeSql(scope);
 
     // Primary: pg_trgm similarity search
-    const trigramResults = await this.prisma.$queryRawUnsafe<ChunkRow[]>(
-      `SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
+    const trigramResults = await this.prisma.$queryRaw<ChunkRow[]>(Prisma.sql`
+       SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
               dc.page_number, dc.sheet_name, dc.location_label,
               cd.title as document_title,
               ks.name as space_name,
-              public.similarity(dc.content, $1) AS similarity
+              public.similarity(dc.content, ${params.question}) AS similarity
        FROM app.document_chunks dc
        JOIN app.content_documents cd ON cd.id = dc.document_id
        LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
        WHERE cd.status = 'ACTIVE'
          AND cd.trashed_at IS NULL
+         AND cd.index_status = 'READY'
          AND dc.content IS NOT NULL
          AND dc.content != ''
-       ORDER BY public.similarity(dc.content, $1) DESC
-       LIMIT $2`,
-      params.question, TOP_K * 2,
-    );
+         ${scopeSql}
+       ORDER BY public.similarity(dc.content, ${params.question}) DESC
+       LIMIT ${TOP_K * 2}
+    `);
 
     // Collect results in a map (deduplicate by chunk id)
     const chunkMap = new Map<string, ChunkRow & { score: number }>();
@@ -89,23 +106,23 @@ export class RagService {
     const [questionEmbedding] = await this.embeddings.embed([params.question]);
     if (questionEmbedding) {
       const vectorLiteral = `[${questionEmbedding.join(',')}]`;
-      const vectorResults = await this.prisma.$queryRawUnsafe<ChunkRow[]>(
-        `SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
+      const vectorResults = await this.prisma.$queryRaw<ChunkRow[]>(Prisma.sql`
+         SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
                 dc.page_number, dc.sheet_name, dc.location_label,
                 cd.title as document_title,
                 ks.name as space_name,
-                1 - (dc.embedding <=> $1::public.vector) AS similarity
+                1 - (dc.embedding <=> ${vectorLiteral}::public.vector) AS similarity
          FROM app.document_chunks dc
          JOIN app.content_documents cd ON cd.id = dc.document_id
          LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
          WHERE cd.status = 'ACTIVE'
            AND cd.trashed_at IS NULL
+           AND cd.index_status = 'READY'
            AND dc.embedding IS NOT NULL
-         ORDER BY dc.embedding <=> $1::public.vector
-         LIMIT $2`,
-        vectorLiteral,
-        TOP_K,
-      );
+           ${scopeSql}
+         ORDER BY dc.embedding <=> ${vectorLiteral}::public.vector
+         LIMIT ${TOP_K}
+      `);
       for (const chunk of vectorResults) {
         const score = Number(chunk.similarity);
         const existing = chunkMap.get(chunk.id);
@@ -117,22 +134,23 @@ export class RagService {
     const aboveThreshold = [...chunkMap.values()].filter((c) => c.similarity >= SIMILARITY_THRESHOLD);
     if (aboveThreshold.length < 5 && keywords.length > 0) {
       for (const kw of keywords.slice(0, 5)) {
-        const likeResults = await this.prisma.$queryRawUnsafe<ChunkRow[]>(
-          `SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
+        const likeResults = await this.prisma.$queryRaw<ChunkRow[]>(Prisma.sql`
+           SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
                   dc.page_number, dc.sheet_name, dc.location_label,
                   cd.title as document_title,
                   ks.name as space_name,
-                  public.similarity(dc.content, $1) AS similarity
+                  public.similarity(dc.content, ${kw}) AS similarity
            FROM app.document_chunks dc
            JOIN app.content_documents cd ON cd.id = dc.document_id
            LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
            WHERE cd.status = 'ACTIVE'
              AND cd.trashed_at IS NULL
-             AND dc.content ILIKE '%' || $1 || '%'
-           ORDER BY public.similarity(dc.content, $1) DESC
-           LIMIT 10`,
-          kw,
-        );
+             AND cd.index_status = 'READY'
+             AND dc.content ILIKE '%' || ${kw} || '%'
+             ${scopeSql}
+           ORDER BY public.similarity(dc.content, ${kw}) DESC
+           LIMIT 10
+        `);
         for (const c of likeResults) {
           if (!chunkMap.has(c.id)) {
             const sim = Number(c.similarity);
@@ -177,9 +195,19 @@ export class RagService {
       contextUsed += chunkTokens;
     }
 
-    const systemPrompt = contextParts.length > 0
-      ? `${SYSTEM_PROMPT}\n\n<context>\n${contextParts.join('\n---\n')}\n</context>`
-      : `${SYSTEM_PROMPT}\n\n知识库中未找到与该问题相关的信息。请如实告知用户。`;
+    const searchedDocumentCount = new Set(sorted.map((chunk) => chunk.document_id)).size;
+    if (citations.length === 0) {
+      return {
+        stream: null,
+        citations: [],
+        totalFound: sorted.length,
+        relevantCount: 0,
+        searchedDocumentCount,
+        hasEvidence: false,
+      };
+    }
+
+    const systemPrompt = `${SYSTEM_PROMPT}\n\n<context>\n${contextParts.join('\n---\n')}\n</context>`;
 
     const historyMessages = this.truncateHistory(params.history, MAX_HISTORY_TOKENS);
     const messages = [
@@ -191,7 +219,14 @@ export class RagService {
     ];
 
     const stream = await this.deepseek.streamChat({ messages, systemPrompt });
-    return { stream, citations, totalFound: sorted.length, relevantCount: relevant.length };
+    return {
+      stream,
+      citations,
+      totalFound: sorted.length,
+      relevantCount: citations.length,
+      searchedDocumentCount,
+      hasEvidence: true,
+    };
   }
 
   private truncateHistory(

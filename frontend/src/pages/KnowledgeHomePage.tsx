@@ -27,11 +27,9 @@ import {
 import { FileAttachments } from '@/modules/content/components/FileAttachments'
 import { SaveStatus } from '@/components/workspace/SaveStatus'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
-import { KnowledgeChatPanel } from '@/modules/knowledge/components/KnowledgeChatPanel'
-import { KnowledgeSessionList } from '@/modules/knowledge/components/KnowledgeSessionList'
+import { KnowledgeAssistantWorkspace } from '@/modules/knowledge/components/KnowledgeAssistantWorkspace'
 import { KnowledgeFolderSync } from '@/modules/knowledge/components/KnowledgeFolderSync'
 import { KnowledgeFileViewer } from '@/modules/knowledge/components/KnowledgeFileViewer'
-import type { KnowledgeSession } from '@/modules/knowledge/types'
 import './KnowledgeHomePage.less'
 
 type DirectoryView = 'all' | 'favorites' | 'trash'
@@ -190,6 +188,7 @@ export default function KnowledgeHomePage() {
       return document && (
         document.indexStatus === 'PENDING'
         || document.indexStatus === 'PROCESSING'
+        || document.previewStatus === 'PENDING'
         || document.previewStatus === 'PROCESSING'
       ) ? 1200 : false
     },
@@ -345,10 +344,6 @@ export default function KnowledgeHomePage() {
     })
   }
 
-  const handleChatNew = () => { setChatSessionId(null); };
-  const handleChatSelect = (s: KnowledgeSession) => { setChatSessionId(s.id); };
-  const handleChatCreated = (id: string) => { setChatSessionId(id); };
-
   if (activeTab === 'folders') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
@@ -392,9 +387,12 @@ export default function KnowledgeHomePage() {
             color: '#4e5969', fontSize: 14, borderBottom: '2px solid transparent',
           }}>本地文件夹</button>
         </div>
-        <div className="knowledge-workspace--chat" style={{ flex: 1 }}>
-          <KnowledgeSessionList activeId={chatSessionId} onSelect={handleChatSelect} onNew={handleChatNew} />
-          <KnowledgeChatPanel sessionId={chatSessionId} onSessionCreated={handleChatCreated} />
+        <div className="knowledge-workspace--chat">
+          <KnowledgeAssistantWorkspace
+            sessionId={chatSessionId}
+            onSessionChange={setChatSessionId}
+            projectId={projectId}
+          />
         </div>
       </div>
     );
