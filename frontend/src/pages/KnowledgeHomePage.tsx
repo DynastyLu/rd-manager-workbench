@@ -36,6 +36,7 @@ import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import { KnowledgeChatPanel } from '@/modules/knowledge/components/KnowledgeChatPanel'
 import { KnowledgeSessionList } from '@/modules/knowledge/components/KnowledgeSessionList'
 import { KnowledgeFolderSync } from '@/modules/knowledge/components/KnowledgeFolderSync'
+import { KnowledgeFileViewer } from '@/modules/knowledge/components/KnowledgeFileViewer'
 import type { KnowledgeSession } from '@/modules/knowledge/types'
 import './KnowledgeHomePage.less'
 
@@ -86,21 +87,6 @@ function parseTable(text: string): { headers: string[]; rows: string[][] } {
   const headers = (lines[0] ?? '').split(',').map((h: string) => h.trim());
   const rows = lines.slice(1).map((l) => l.split(',').map((c: string) => c.trim()));
   return { headers, rows };
-}
-
-function PdfViewer({ documentId }: { documentId: string }) {
-  const [ready, setReady] = useState(false);
-  const src = `${import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : ''}/documents/${encodeURIComponent(documentId)}/preview-html`;
-
-  return (
-    <div style={{ marginBottom: 16 }}>
-      {!ready && <div style={{ padding: 12, color: '#8f959e', fontSize: 13 }}>加载原版中...</div>}
-      <iframe title="PDF" src={src} style={{
-        width: '100%', minHeight: ready ? 600 : 0, border: '1px solid #e5e6eb',
-        borderRadius: 8, background: '#525659', display: ready ? 'block' : 'none',
-      }} sandbox="allow-same-origin" onLoad={() => setReady(true)} />
-    </div>
-  );
 }
 
 function DocumentPreview({ content }: { content: string }) {
@@ -376,7 +362,15 @@ export default function KnowledgeHomePage() {
         const body = await resp.json().catch(() => ({})) as { error?: { message?: string } }
         throw new Error(body.error?.message || 'Upload failed')
       }
-      const body = await resp.json() as { success: boolean; data: { title: string; plainText: string; wordCount: number; documentId: string } }
+      const body = await resp.json() as {
+        success: boolean
+        data: {
+          title: string
+          documentId: string
+          originalName: string
+          processing: { preview: string; index: string }
+        }
+      }
       return body.data
     },
     onSuccess: (result) => {
@@ -384,7 +378,7 @@ export default function KnowledgeHomePage() {
       // Just refresh the list and navigate to the new document.
       void queryClient.invalidateQueries({ queryKey: ['documents'] })
       void queryClient.invalidateQueries({ queryKey: ['knowledge-index-status'] })
-      Toast.success(`已导入并索引：${result.title}`)
+      Toast.success(`原文件已保存，正在建立检索索引：${result.title}`)
       setSearchParams((current) => {
         const next = new URLSearchParams(current)
         next.set('documentId', result.documentId)
@@ -577,8 +571,11 @@ export default function KnowledgeHomePage() {
                 placeholder="用逗号分隔标签"
               />
             </div>
-            {selectedDocumentId && <PdfViewer documentId={selectedDocumentId} />}
-            <DocumentPreview content={plainText || ''} />
+            {documentQuery.data.sourceKind === 'UPLOAD' || documentQuery.data.sourceKind === 'LOCAL_FILE' ? (
+              <KnowledgeFileViewer document={documentQuery.data} />
+            ) : (
+              <DocumentPreview content={plainText || ''} />
+            )}
             <FileAttachments
               associations={{
                 documentId: documentQuery.data.id,

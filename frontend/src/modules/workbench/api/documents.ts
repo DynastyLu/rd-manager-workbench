@@ -2,6 +2,8 @@ import { request } from '@/lib/http'
 
 export type ContentDocumentType = 'DOCUMENT' | 'KNOWLEDGE_PAGE' | 'MEETING_MINUTES'
 export type ContentDocumentStatus = 'ACTIVE' | 'TRASHED'
+export type KnowledgeSourceKind = 'UPLOAD' | 'LOCAL_FILE' | 'LEGACY'
+export type KnowledgeProcessingStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'PARTIAL' | 'FAILED' | 'MISSING'
 
 export type ContentDocument = {
   id: string
@@ -16,6 +18,17 @@ export type ContentDocument = {
   parentId: string | null
   projectId: string | null
   meetingId: string | null
+  sourceKind: KnowledgeSourceKind
+  originalName: string | null
+  mimeType: string | null
+  fileSize: number | null
+  sourceSha256: string | null
+  previewStatus: KnowledgeProcessingStatus
+  previewStorageKey: string | null
+  previewMimeType: string | null
+  indexStatus: KnowledgeProcessingStatus
+  processingError: string | null
+  indexedAt: string | null
   createdAt: string
   updatedAt: string
 }
