@@ -203,7 +203,7 @@ export function KnowledgeSpreadsheetViewer({
         </table>
       </div>
 
-      <nav className="knowledge-spreadsheet__tabs" role="tablist" aria-label="工作表">
+      <div className="knowledge-spreadsheet__tabs" role="tablist" aria-label="工作表">
         {activeResult.workbook.sheets.map((item, index) => (
           <button
             type="button"
@@ -218,7 +218,7 @@ export function KnowledgeSpreadsheetViewer({
             {item.name}
           </button>
         ))}
-      </nav>
+      </div>
     </section>
   )
 }

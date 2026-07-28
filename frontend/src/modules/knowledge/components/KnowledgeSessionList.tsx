@@ -132,7 +132,6 @@ export function KnowledgeSessionList({ activeId, onSelect, onNew }: Props) {
             <div className="knowledge-assistant__session-main">
               {editingId === session.id ? (
                 <Input
-                  autoFocus
                   value={draftTitle}
                   onChange={setDraftTitle}
                   onClick={(event) => event.stopPropagation()}
