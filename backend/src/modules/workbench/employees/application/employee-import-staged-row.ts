@@ -14,7 +14,7 @@ const rawValuesSchema = z.record(
 );
 const normalizedRowSchema = z
   .object({
-    rowNumber: z.number().int().min(2).max(1_048_576),
+    rowNumber: z.number().int().min(1).max(1_048_576),
     employeeName: z.string().min(1).max(10_000),
     title: z.string().min(1).max(10_000),
     planText: persistedNullableTextSchema,
@@ -50,7 +50,7 @@ const v2CurrentRowSchema = normalizedRowSchema
   .strict();
 const v2NextPlanRowSchema = z
   .object({
-    rowNumber: z.number().int().min(2).max(1_048_576),
+    rowNumber: z.number().int().min(1).max(1_048_576),
     sourceSection: z.literal('NEXT_WEEK_PLAN'),
     ...sourceCoordinatesSchema,
     employeeName: z.string().min(1).max(10_000),

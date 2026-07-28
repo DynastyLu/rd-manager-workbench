@@ -71,6 +71,28 @@ describe('parseStoredEmployeeImportRow V2', () => {
     });
   });
 
+  it('accepts the first V2 business row as global batch row 1', () => {
+    const normalizedValues = {
+      ...currentWorkRow(),
+      rowNumber: 1,
+    };
+
+    expect(
+      parseStoredEmployeeImportRow(
+        storedV2Row({
+          id: 'row-1',
+          rowNumber: 1,
+          normalizedValues,
+        }) as never,
+      ),
+    ).toMatchObject({
+      id: 'row-1',
+      rowNumber: 1,
+      sourceSheetName: '匿名员工',
+      sourceRowNumber: 7,
+    });
+  });
+
   it.each([
     { sourceKey: '匿名员工:CURRENT_WORK:8' },
     { sourceSection: 'UNKNOWN' },
