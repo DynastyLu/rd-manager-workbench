@@ -1,6 +1,6 @@
 import {
   Body, Controller, Delete, Get, HttpCode, HttpStatus, MessageEvent,
-  Param, Patch, Post, Res, Sse, UploadedFile, UseInterceptors,
+  Param, Patch, Post, Query, Res, Sse, UploadedFile, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
@@ -9,9 +9,9 @@ import { map } from 'rxjs/operators';
 import { SessionService } from '../../application/session.service';
 import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
-import { DocumentImportService } from '../../application/document-import.service';
+import { KnowledgeIngestionService } from '../../application/knowledge-ingestion.service';
+import { KnowledgeFileService } from '../../application/knowledge-file.service';
 import { FolderWatchService } from '../../application/folder-watch.service';
-import { DocumentsService } from '../../../content/application/documents.service';
 import { KnowledgeSpacesService } from '../../../content/application/knowledge-spaces.service';
 import type { UploadedContentFile } from '../../../content/application/files.service';
 import { CreateSessionDto, ChatMessageDto } from './dto/knowledge.dto';
@@ -22,8 +22,8 @@ export class KnowledgeController {
     private readonly sessions: SessionService,
     private readonly rag: RagService,
     private readonly indexing: IndexingService,
-    private readonly importer: DocumentImportService,
-    private readonly documents: DocumentsService,
+    private readonly ingestion: KnowledgeIngestionService,
+    private readonly knowledgeFiles: KnowledgeFileService,
     private readonly spaces: KnowledgeSpacesService,
     private readonly folderWatch: FolderWatchService,
   ) {}
@@ -169,28 +169,23 @@ export class KnowledgeController {
   @Post('documents/upload')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
   async uploadDocument(@UploadedFile() file: UploadedContentFile | undefined) {
-    if (!file) throw new Error('File is required');
-    const extracted = await this.importer.extract(file);
+    return this.ingestion.upload(file);
+  }
 
-    // Create the document and index it in one step so AI Q&A can search it immediately
-    const doc = await this.documents.create({
-      type: 'DOCUMENT' as const,
-      title: extracted.title,
-      plainText: extracted.plainText,
-    });
+  @Get('documents/:id/source')
+  async getDocumentSource(
+    @Param('id') id: string,
+    @Query('download') download: string | undefined,
+    @Res() res: Response,
+  ) {
+    const file = await this.knowledgeFiles.getOriginal(id);
+    this.sendFile(res, file, download === '1' ? 'attachment' : 'inline');
+  }
 
-    // Index asynchronously — the document is already created, so the user can see it
-    void this.indexing.indexDocument(doc.id, extracted.plainText).catch(() => {
-      // Indexing failure is logged but doesn't block the upload response
-    });
-
-    return {
-      title: extracted.title,
-      plainTextPreview: extracted.plainText.slice(0, 500),
-      plainText: extracted.plainText,
-      wordCount: extracted.wordCount,
-      documentId: doc.id,
-    };
+  @Get('documents/:id/preview')
+  async getDocumentPreview(@Param('id') id: string, @Res() res: Response) {
+    const file = await this.knowledgeFiles.getPreview(id);
+    this.sendFile(res, file, 'inline');
   }
 
   // ── Folder Watch ──
@@ -247,5 +242,19 @@ export class KnowledgeController {
   @Get('folders/:id/progress-snapshot')
   folderProgressSnapshot(@Param('id') id: string) {
     return this.folderWatch.getProgress(id) ?? { phase: 'done', total: 0, current: 0, currentFile: '', percent: 100 };
+  }
+
+  private sendFile(
+    res: Response,
+    file: { content: Buffer; fileName: string; mimeType: string; sha256: string },
+    disposition: 'inline' | 'attachment',
+  ): void {
+    const encodedFileName = encodeURIComponent(file.fileName);
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader('Content-Length', file.content.length);
+    res.setHeader('Content-Disposition', `${disposition}; filename*=UTF-8''${encodedFileName}`);
+    res.setHeader('ETag', `"sha256-${file.sha256}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(file.content);
   }
 }

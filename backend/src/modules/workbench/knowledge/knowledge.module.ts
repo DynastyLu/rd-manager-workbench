@@ -10,10 +10,14 @@ import { KnowledgeGateway } from './knowledge.gateway';
 import { EmbeddingCache } from './domain/embedding-cache';
 import { DocumentImportService } from './application/document-import.service';
 import { FolderWatchService } from './application/folder-watch.service';
+import { KnowledgeIngestionService } from './application/knowledge-ingestion.service';
+import { KnowledgeFileService } from './application/knowledge-file.service';
+import { OfficePreviewService } from './application/office-preview.service';
 import { ContentModule } from '../content/content.module';
+import { StorageModule } from '../../../infrastructure/storage/storage.module';
 
 @Module({
-  imports: [ContentModule],
+  imports: [ContentModule, StorageModule],
   controllers: [KnowledgeController],
   providers: [
     ChunkingService,
@@ -39,6 +43,9 @@ import { ContentModule } from '../content/content.module';
     IndexingService,
     DocumentImportService,
     FolderWatchService,
+    KnowledgeIngestionService,
+    KnowledgeFileService,
+    OfficePreviewService,
   ],
   exports: [ChunkingService, EmbeddingService, RagService, SessionService, IndexingService, KnowledgeGateway, FolderWatchService],
 })
