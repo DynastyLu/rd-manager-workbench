@@ -7,6 +7,7 @@ import { knowledgeQueryKeys } from '../queryKeys';
 import { KnowledgeMarkdown } from './KnowledgeMarkdown';
 import { KnowledgeCitationCard } from './KnowledgeCitationCard';
 import { copyToClipboard, extractHighlightTerms } from '../format';
+import { createSseParser } from '../sse';
 import type { KnowledgeMessage, ChunkCitation } from '../types';
 
 interface Props { sessionId: string | null; onSessionCreated: (id: string) => void; }
@@ -91,55 +92,56 @@ export function KnowledgeChatPanel({ sessionId, onSessionCreated }: Props) {
       const reader = resp.body!.getReader();
       const decoder = new TextDecoder();
       let content = '';
-      let buf = '';
+      const parser = createSseParser((event, parsed) => {
+        if (event === 'status' && typeof parsed === 'object' && parsed !== null) {
+          const statusData = parsed as { phase?: unknown; message?: unknown; totalFound?: unknown };
+          if (typeof statusData.phase === 'string' && typeof statusData.message === 'string') {
+            const step = { phase: statusData.phase, message: statusData.message };
+            setThinkingSteps((prev) => [...prev, step]);
+            if (statusData.phase === 'empty') {
+              setLastEmptyResult({
+                message: statusData.message,
+                totalFound: typeof statusData.totalFound === 'number' ? statusData.totalFound : 0,
+              });
+            }
+          }
+          return;
+        }
+
+        if (event === 'token' && typeof parsed === 'object' && parsed !== null) {
+          const token = parsed as { content?: unknown; index?: unknown };
+          if (typeof token.content === 'string' && typeof token.index === 'number') {
+            content += token.content;
+            setStreamingContent(content);
+            streamContentRef.current = content;
+          }
+          return;
+        }
+
+        if (event === 'citations' && Array.isArray(parsed)) {
+          const citations = parsed.filter((citation): citation is ChunkCitation =>
+            typeof citation === 'object'
+            && citation !== null
+            && typeof (citation as { documentId?: unknown }).documentId === 'string',
+          );
+          setStreamingCitations(citations);
+          streamCitationsRef.current = citations;
+          return;
+        }
+
+        if (event === 'error' && typeof parsed === 'object' && parsed !== null) {
+          const streamError = (parsed as { error?: unknown }).error;
+          if (typeof streamError === 'string') setError(streamError);
+        }
+      });
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split('\n');
-        buf = lines.pop() || '';
-
-        let currentEvent = '';
-        for (const line of lines) {
-          if (line.startsWith('event: ')) { currentEvent = line.slice(7).trim(); continue; }
-          if (!line.startsWith('data: ')) continue;
-          const raw = line.slice(6);
-
-          // Handle status events (thinking process)
-          if (currentEvent === 'status') {
-            try {
-              const statusData = JSON.parse(raw) as { phase: string; message: string; totalFound?: number };
-              setThinkingSteps((prev) => [...prev, statusData]);
-              if (statusData.phase === 'empty') {
-                setLastEmptyResult({ message: statusData.message, totalFound: statusData.totalFound ?? 0 });
-              }
-            } catch { /* skip */ }
-            currentEvent = '';
-            continue;
-          }
-          try {
-            const parsed: unknown = JSON.parse(raw);
-            if (typeof parsed === 'object' && parsed !== null) {
-              const obj = parsed as Record<string, unknown>;
-              if (typeof obj.error === 'string') { setError(obj.error); return; }
-              if (typeof obj.content === 'string' && typeof obj.index === 'number') {
-                content += obj.content;
-                setStreamingContent(content);
-                streamContentRef.current = content;
-              }
-            }
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              const first = parsed[0] as Record<string, unknown> | null;
-              if (first && typeof first.documentId === 'string') {
-                const cites = parsed as unknown as ChunkCitation[];
-                setStreamingCitations(cites);
-                streamCitationsRef.current = cites;
-              }
-            }
-          } catch { /* skip */ }
-        }
+        parser.push(decoder.decode(value, { stream: true }));
       }
+      parser.push(decoder.decode());
+      parser.finish();
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'AbortError') {
         setError(`连接中断：${err.message}`);

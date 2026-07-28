@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { KnowledgeCitationCard } from '../components/KnowledgeCitationCard';
 import type { ChunkCitation } from '../types';
@@ -29,6 +29,21 @@ describe('KnowledgeCitationCard', () => {
   it('shows content snippet', () => {
     render(<KnowledgeCitationCard citations={[makeCitation({ text: '预览', content: '这是匹配的文本内容' })]} />);
     expect(screen.getByText(/匹配的文本内容/)).toBeInTheDocument();
+  });
+
+  it('opens the cited file in the knowledge reader and shows its source location', () => {
+    window.location.hash = '#/knowledge?tab=chat';
+    render(<KnowledgeCitationCard citations={[makeCitation({
+      documentId: 'doc-42',
+      pageNumber: 3,
+      locationLabel: '第 3 页',
+    })]} />);
+
+    expect(screen.getByText('第 3 页')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /测试文档/ }));
+    expect(window.location.hash).toContain('#/knowledge?');
+    expect(window.location.hash).toContain('documentId=doc-42');
+    expect(window.location.hash).toContain('citationPage=3');
   });
 
   it('renders nothing for empty citations', () => {

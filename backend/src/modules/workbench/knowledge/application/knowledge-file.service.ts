@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import {
   ConflictException,
   Injectable,
@@ -161,6 +161,26 @@ export class KnowledgeFileService {
       });
       throw error;
     }
+  }
+
+  async getLocalOpenPath(documentId: string): Promise<{ filePath: string }> {
+    const folderFile = await this.prisma.folderFile.findFirst({
+      where: {
+        documentId,
+        status: 'ACTIVE',
+        document: { status: 'ACTIVE', trashedAt: null },
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { filePath: true },
+    });
+    if (!folderFile) {
+      throw new NotFoundException('该知识文件不是可在本机打开的活动目录文件');
+    }
+    const resolvedPath = await realpath(folderFile.filePath).catch(() => null);
+    if (!resolvedPath) throw new NotFoundException('本地知识源已不存在');
+    const fileStat = await stat(resolvedPath);
+    if (!fileStat.isFile()) throw new NotFoundException('本地知识源已不存在');
+    return { filePath: resolvedPath };
   }
 
   private async markPreviewReady(

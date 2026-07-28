@@ -26,6 +26,14 @@ export function createDesktopBridge(
     restoreBackup(input: RestoreBackupInput) {
       return ipc.invoke('desktop:restore-backup', input) as Promise<void>
     },
+    knowledge: {
+      openOriginal(documentId: string) {
+        return ipc.invoke('desktop:knowledge:open-original', { documentId }) as Promise<{
+          opened: boolean
+          error?: string
+        }>
+      },
+    },
     credentials: {
       isAvailable() {
         return ipc.invoke('desktop:credentials:is-available') as Promise<boolean>

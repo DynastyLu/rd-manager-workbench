@@ -1,5 +1,4 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -170,11 +169,11 @@ describe('KnowledgeHomePage', () => {
     expect(screen.getByText('回收站')).toBeInTheDocument()
 
     // Editor welcome state
-    expect(screen.getByText('选择或新建一篇文档')).toBeInTheDocument()
+    expect(screen.getByText('选择一个文件开始阅读')).toBeInTheDocument()
 
     // Wait for the documents query to resolve and show empty state
     await waitFor(() => {
-      expect(screen.getByText('这里还没有内容。新建文档开始记录。')).toBeInTheDocument()
+      expect(screen.getByText('这里还没有文件。请上传文件，或添加本地文件夹。')).toBeInTheDocument()
     })
   })
 
@@ -218,7 +217,7 @@ describe('KnowledgeHomePage', () => {
     renderKnowledgeHome()
 
     await waitFor(() => {
-      expect(screen.getByText('这里还没有内容。新建文档开始记录。')).toBeInTheDocument()
+      expect(screen.getByText('这里还没有文件。请上传文件，或添加本地文件夹。')).toBeInTheDocument()
     })
   })
 
@@ -270,18 +269,13 @@ describe('KnowledgeHomePage', () => {
     expect(mockUpdate).toHaveBeenCalledWith({ query: '测试关键词' })
   })
 
-  it('creates new document', async () => {
+  it('uses file sources instead of offering rich-text document creation', async () => {
     renderKnowledgeHome()
 
-    const newDocButton = screen.getByRole('button', { name: /新建文档/ })
-    await userEvent.click(newDocButton)
-
-    expect(mockCreateDocument).toHaveBeenCalledWith(
-      expect.objectContaining({
-        title: '未命名文档',
-        type: 'DOCUMENT',
-      }),
-    )
+    expect(screen.getByRole('button', { name: '上传文件' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /新建文档/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '知识页' })).not.toBeInTheDocument()
+    expect(mockCreateDocument).not.toHaveBeenCalled()
   })
 
   it('opens new knowledge space modal', async () => {

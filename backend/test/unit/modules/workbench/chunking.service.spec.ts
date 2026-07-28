@@ -47,4 +47,33 @@ describe('ChunkingService', () => {
     expect(totalTokens).toBeGreaterThan(200);
     expect(totalTokens).toBeLessThan(2000);
   });
+
+  it('preserves spreadsheet sheet names and source locations in chunk metadata', () => {
+    const text = [
+      '=== 研发部 ===',
+      '姓名,本周完成,下周计划',
+      '张三,完成知识库改造,补充回归测试',
+      '',
+      '=== 产品部 ===',
+      '姓名,本周完成,下周计划',
+      '李四,完成需求评审,跟进交互验收',
+    ].join('\n');
+
+    const chunks = service.chunk(text, { chunkSize: 20, chunkOverlap: 0 });
+
+    expect(chunks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          sheetName: '研发部',
+          locationLabel: expect.stringContaining('研发部'),
+        }),
+      }),
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          sheetName: '产品部',
+          locationLabel: expect.stringContaining('产品部'),
+        }),
+      }),
+    ]));
+  });
 });

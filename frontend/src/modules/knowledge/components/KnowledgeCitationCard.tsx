@@ -69,6 +69,10 @@ export function KnowledgeCitationCard({ citations, deletedIds, highlightTerms }:
         .kb-source-item__space {
           font-size: 11px; color: #8f959e; margin-left: 6px;
         }
+        .kb-source-item__location {
+          flex-shrink: 0; margin-left: 6px; padding: 1px 6px; border-radius: 4px;
+          background: #eef3ff; color: #1456f0; font-size: 11px;
+        }
         .kb-source-item__copy {
           flex-shrink: 0; color: #8f959e; font-size: 12px;
           display: flex; align-items: center; gap: 4px; border: 0; background: none; cursor: pointer;
@@ -102,8 +106,20 @@ function SourceItem({ citation, isDeleted, segments }: {
 
   const handleClick = () => {
     if (isDeleted) return;
-    window.location.hash = `#/docs?documentId=${encodeURIComponent(citation.documentId)}`;
+    const query = new URLSearchParams({
+      tab: 'documents',
+      documentId: citation.documentId,
+      citationChunk: String(citation.chunkIndex),
+    });
+    if (citation.pageNumber) query.set('citationPage', String(citation.pageNumber));
+    if (citation.sheetName) query.set('citationSheet', citation.sheetName);
+    if (citation.locationLabel) query.set('citationLocation', citation.locationLabel);
+    window.location.hash = `#/knowledge?${query.toString()}`;
   };
+
+  const location = citation.locationLabel
+    || (citation.pageNumber ? `第 ${citation.pageNumber} 页` : '')
+    || citation.sheetName;
 
   return (
     <div className={`kb-source-item${isDeleted ? ' kb-source-item--deleted' : ''}`}
@@ -114,6 +130,7 @@ function SourceItem({ citation, isDeleted, segments }: {
           <IconFile size="small" style={{ marginRight: 6, flexShrink: 0, color: '#8f959e' }} />
           <span className="kb-source-item__title" title={citation.title}>{citation.title}</span>
           {citation.spaceName && <span className="kb-source-item__space">{citation.spaceName}</span>}
+          {location && <span className="kb-source-item__location">{location}</span>}
         </div>
         <Tooltip content={copied ? '已复制' : '复制内容'}>
           <button className="kb-source-item__copy" onClick={handleCopy} type="button">

@@ -487,7 +487,7 @@ function ProjectDocumentsSection({
     <section className="project-workspace__panel project-workspace__panel--section">
       <header>
         <h2>文档与资料</h2>
-        <Link to={`${ROUTES.DOCS}?projectId=${project.id}&create=document`}>新建文档</Link>
+        <Link to={`${ROUTES.DOCS}?projectId=${project.id}`}>打开项目资料</Link>
       </header>
       {documentsQuery.data.data.length ? (
         <ul className="project-workspace__task-list">

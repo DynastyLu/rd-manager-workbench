@@ -1,11 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { watch, FSWatcher } from 'chokidar';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, extname, relative } from 'node:path';
+import { readFile, readdir, stat } from 'node:fs/promises';
+import { basename, extname, join, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 import { Subject } from 'rxjs';
+import { KnowledgeProcessingStatus, KnowledgeSourceKind } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
-import { DocumentsService } from '../../content/application/documents.service';
 import { DocumentImportService } from './document-import.service';
 import { IndexingService } from './indexing.service';
 
@@ -19,6 +19,8 @@ interface ScannedFile {
   fileName: string;
   ext: string;
   size: number;
+  sha256: string;
+  modifiedAt: Date;
 }
 
 export interface SyncProgress {
@@ -44,7 +46,6 @@ export class FolderWatchService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PlatformPrismaService,
-    private readonly documents: DocumentsService,
     private readonly importer: DocumentImportService,
     private readonly indexing: IndexingService,
   ) {}
@@ -73,7 +74,7 @@ export class FolderWatchService implements OnModuleInit {
     const recursive = params.recursive ?? true;
 
     try {
-      const folderStat = statSync(params.folderPath);
+      const folderStat = await stat(params.folderPath);
       if (!folderStat.isDirectory()) throw new Error('Path is not a directory');
     } catch (err) {
       throw new Error(`无法访问文件夹: ${params.folderPath} — ${err instanceof Error ? err.message : 'Unknown'}`);
@@ -151,11 +152,6 @@ export class FolderWatchService implements OnModuleInit {
     if (!entry) return;
     entry.data = { ...entry.data, ...update };
     entry.subject.next(entry.data);
-    if (entry.data.phase === 'done' || entry.data.phase === 'error') {
-      // Keep the subject alive for a bit so late subscribers get the final state,
-      // then complete after 30s
-      setTimeout(() => { entry.subject.complete(); this.progress.delete(watchId); }, 30_000);
-    }
   }
 
   private startWatcher(watchId: string, folderPath: string, recursive: boolean): void {
@@ -167,9 +163,18 @@ export class FolderWatchService implements OnModuleInit {
       awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 },
     });
 
-    w.on('add', (filePath) => this.onFileAdded(watchId, filePath));
-    w.on('change', (filePath) => this.onFileChanged(watchId, filePath));
-    w.on('unlink', (filePath) => this.onFileRemoved(watchId, filePath));
+    w.on('add', (filePath) => {
+      void this.runSerialized(watchId, () => this.onFileAdded(watchId, filePath))
+        .catch((error) => this.logger.error({ watchId, filePath, error }, 'File add sync failed'));
+    });
+    w.on('change', (filePath) => {
+      void this.runSerialized(watchId, () => this.onFileChanged(watchId, filePath))
+        .catch((error) => this.logger.error({ watchId, filePath, error }, 'File change sync failed'));
+    });
+    w.on('unlink', (filePath) => {
+      void this.runSerialized(watchId, () => this.onFileRemoved(watchId, filePath))
+        .catch((error) => this.logger.error({ watchId, filePath, error }, 'File removal sync failed'));
+    });
     w.on('error', (err) => {
       this.logger.error({ watchId, err }, 'FSWatcher error');
       this.setError(watchId, err instanceof Error ? err.message : String(err)).catch(() => {});
@@ -204,7 +209,24 @@ export class FolderWatchService implements OnModuleInit {
     await this.prisma.folderWatch.update({ where: { id: watchId }, data: { lastSyncAt: new Date() } });
   }
 
-  private async fullScan(watchId: string): Promise<{ imported: number; updated: number; deleted: number; errors: number }> {
+  private fullScan(
+    watchId: string,
+  ): Promise<{ imported: number; updated: number; deleted: number; errors: number }> {
+    return this.runSerialized(watchId, () => this.performFullScan(watchId));
+  }
+
+  private runSerialized<T>(watchId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.scanLocks.get(watchId) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(operation);
+    this.scanLocks.set(watchId, next);
+    const cleanup = () => {
+      if (this.scanLocks.get(watchId) === next) this.scanLocks.delete(watchId);
+    };
+    void next.then(cleanup, cleanup);
+    return next;
+  }
+
+  private async performFullScan(watchId: string): Promise<{ imported: number; updated: number; deleted: number; errors: number }> {
     const watch = await this.prisma.folderWatch.findUniqueOrThrow({ where: { id: watchId } });
     const existingFiles = await this.prisma.folderFile.findMany({ where: { watchId, status: 'ACTIVE' } });
     const existingPaths = new Set(existingFiles.map((f) => f.filePath));
@@ -216,7 +238,7 @@ export class FolderWatchService implements OnModuleInit {
     try {
       // Phase 1: scan folder
       this.emitProgress(watchId, { phase: 'scanning', total: 0, current: 0, currentFile: '正在扫描文件夹...', percent: 0 });
-      const currentFiles = this.scanFolder(watch.folderPath, watch.recursive);
+      const currentFiles = await this.scanFolder(watch.folderPath, watch.recursive);
       const currentPaths = new Set(currentFiles.map((f) => f.filePath));
 
       // Phase 2: handle deletions
@@ -262,8 +284,7 @@ export class FolderWatchService implements OnModuleInit {
         // Force re-extraction if document has placeholder content (failed previous extraction)
         const pt = docTexts.get(existing.documentId) || '';
         if (pt.startsWith('[需要后端转换') || pt.startsWith('[PDF 文件:') || pt.startsWith('[Excel 文件:') || pt.trim().length === 0) return true;
-        const hash = this.hashFile(f.filePath);
-        return hash && hash !== existing.fileHash; // changed
+        return f.sha256 !== existing.fileHash; // changed
       });
 
       if (toProcess.length > 0) {
@@ -311,82 +332,156 @@ export class FolderWatchService implements OnModuleInit {
 
   private async importFile(watchId: string, filePath: string): Promise<void> {
     const watch = await this.prisma.folderWatch.findUniqueOrThrow({ where: { id: watchId } });
-    const hash = this.hashFile(filePath);
     const ext = extname(filePath).toLowerCase();
     const relPath = relative(watch.folderPath, filePath);
     const tags = this.pathTags(relPath);
-
-    // Read file and extract text using DocumentImportService (handles all formats including DOCX/PDF/XLSX)
-    const buffer = readFileSync(filePath);
+    const source = await this.readSourceFile(filePath);
     const mime = this.mimeFromExt(ext);
     const extracted = await this.importer.extract({
       originalname: basename(filePath),
       mimetype: mime,
-      size: buffer.length,
-      buffer,
+      size: source.buffer.length,
+      buffer: source.buffer,
     });
 
-    const doc = await this.documents.create({
-      type: 'DOCUMENT',
-      title: extracted.title,
-      plainText: extracted.plainText,
-      spaceId: watch.spaceId,
-      tags,
+    const tracked = await this.prisma.folderFile.findUnique({
+      where: { watchId_filePath: { watchId, filePath } },
+    });
+    const documentId = await this.prisma.$transaction(async (tx) => {
+      if (tracked) {
+        await tx.contentDocument.update({
+          where: { id: tracked.documentId },
+          data: {
+            title: extracted.title,
+            plainText: extracted.plainText,
+            tags,
+            spaceId: watch.spaceId,
+            sourceKind: KnowledgeSourceKind.LOCAL_FILE,
+            originalName: basename(filePath),
+            mimeType: mime,
+            fileSize: source.buffer.length,
+            sourceSha256: source.sha256,
+            sourceModifiedAt: source.modifiedAt,
+            previewStatus: KnowledgeProcessingStatus.PENDING,
+            indexStatus: KnowledgeProcessingStatus.PROCESSING,
+            processingError: null,
+            status: 'ACTIVE',
+            trashedAt: null,
+          },
+        });
+        await tx.folderFile.update({
+          where: { id: tracked.id },
+          data: { fileHash: source.sha256, status: 'ACTIVE' },
+        });
+        return tracked.documentId;
+      }
+
+      const document = await tx.contentDocument.create({
+        data: {
+          type: 'DOCUMENT',
+          title: extracted.title,
+          plainText: extracted.plainText,
+          spaceId: watch.spaceId,
+          tags,
+          sourceKind: KnowledgeSourceKind.LOCAL_FILE,
+          originalName: basename(filePath),
+          mimeType: mime,
+          fileSize: source.buffer.length,
+          sourceSha256: source.sha256,
+          sourceModifiedAt: source.modifiedAt,
+          previewStatus: KnowledgeProcessingStatus.PENDING,
+          indexStatus: KnowledgeProcessingStatus.PROCESSING,
+        },
+        select: { id: true },
+      });
+      await tx.folderFile.create({
+        data: {
+          watchId,
+          filePath,
+          documentId: document.id,
+          fileHash: source.sha256,
+          status: 'ACTIVE',
+        },
+      });
+      return document.id;
     });
 
-    await this.prisma.folderFile.create({
-      data: { watchId, filePath, documentId: doc.id, fileHash: hash, status: 'ACTIVE' },
-    });
-
-    void this.indexing.indexDocument(doc.id, extracted.plainText).catch((err) => {
-      this.logger.error({ documentId: doc.id, filePath, err }, 'Indexing failed');
-    });
+    await this.finishIndex(documentId, extracted.plainText);
   }
 
   private async updateFile(watchId: string, filePath: string): Promise<void> {
     const existing = await this.prisma.folderFile.findUniqueOrThrow({
       where: { watchId_filePath: { watchId, filePath } },
     });
-    if (existing.status === 'DELETED') return;
-
-    const hash = this.hashFile(filePath);
     const ext = extname(filePath).toLowerCase();
-    const buffer = readFileSync(filePath);
+    const source = await this.readSourceFile(filePath);
     const mime = this.mimeFromExt(ext);
     const extracted = await this.importer.extract({
       originalname: basename(filePath),
       mimetype: mime,
-      size: buffer.length,
-      buffer,
+      size: source.buffer.length,
+      buffer: source.buffer,
     });
 
-    await this.documents.update(existing.documentId, { plainText: extracted.plainText });
-    await this.prisma.folderFile.update({ where: { id: existing.id }, data: { fileHash: hash } });
-
-    void this.indexing.indexDocument(existing.documentId, extracted.plainText).catch((err) => {
-      this.logger.error({ documentId: existing.documentId, err }, 'Re-indexing failed');
-    });
+    await this.prisma.$transaction([
+      this.prisma.contentDocument.update({
+        where: { id: existing.documentId },
+        data: {
+          title: extracted.title,
+          plainText: extracted.plainText,
+          sourceKind: KnowledgeSourceKind.LOCAL_FILE,
+          originalName: basename(filePath),
+          mimeType: mime,
+          fileSize: source.buffer.length,
+          sourceSha256: source.sha256,
+          sourceModifiedAt: source.modifiedAt,
+          previewStatus: KnowledgeProcessingStatus.PENDING,
+          indexStatus: KnowledgeProcessingStatus.PROCESSING,
+          processingError: null,
+          status: 'ACTIVE',
+          trashedAt: null,
+        },
+      }),
+      this.prisma.folderFile.update({
+        where: { id: existing.id },
+        data: { fileHash: source.sha256, status: 'ACTIVE' },
+      }),
+    ]);
+    await this.finishIndex(existing.documentId, extracted.plainText);
   }
 
-  private scanFolder(folderPath: string, recursive: boolean): ScannedFile[] {
+  private async scanFolder(folderPath: string, recursive: boolean): Promise<ScannedFile[]> {
     const results: ScannedFile[] = [];
-    this.walkDir(folderPath, folderPath, recursive, results);
+    await this.walkDir(folderPath, folderPath, recursive, results);
     return results;
   }
 
-  private walkDir(basePath: string, currentPath: string, recursive: boolean, results: ScannedFile[]): void {
-    const entries = readdirSync(currentPath, { withFileTypes: true });
+  private async walkDir(
+    basePath: string,
+    currentPath: string,
+    recursive: boolean,
+    results: ScannedFile[],
+  ): Promise<void> {
+    const entries = await readdir(currentPath, { withFileTypes: true });
     for (const entry of entries) {
-      const full = `${currentPath}/${entry.name}`;
+      const full = join(currentPath, entry.name);
       if (entry.isDirectory()) {
         if (recursive && !entry.name.startsWith('.') && entry.name !== 'node_modules') {
-          this.walkDir(basePath, full, recursive, results);
+          await this.walkDir(basePath, full, recursive, results);
         }
       } else if (entry.isFile()) {
         const ext = extname(entry.name).toLowerCase();
         if (SUPPORTED_EXTS.has(ext)) {
-          const fileStat = statSync(full);
-          results.push({ filePath: full, relativePath: relative(basePath, full), fileName: entry.name, ext, size: fileStat.size });
+          const source = await this.readSourceFile(full);
+          results.push({
+            filePath: full,
+            relativePath: relative(basePath, full),
+            fileName: entry.name,
+            ext,
+            size: source.buffer.length,
+            sha256: source.sha256,
+            modifiedAt: source.modifiedAt,
+          });
         }
       }
     }
@@ -404,11 +499,39 @@ export class FolderWatchService implements OnModuleInit {
     return map[ext] || 'text/plain';
   }
 
-  private hashFile(filePath: string): string | null {
+  private async readSourceFile(filePath: string) {
+    const [buffer, fileStat] = await Promise.all([readFile(filePath), stat(filePath)]);
+    return {
+      buffer,
+      modifiedAt: fileStat.mtime,
+      sha256: createHash('sha256').update(buffer).digest('hex'),
+    };
+  }
+
+  private async finishIndex(documentId: string, plainText: string): Promise<void> {
     try {
-      const buf = readFileSync(filePath);
-      return createHash('sha256').update(buf).digest('hex');
-    } catch { return null; }
+      const indexed = await this.indexing.indexDocument(documentId, plainText);
+      await this.prisma.contentDocument.update({
+        where: { id: documentId },
+        data: {
+          indexStatus: indexed.embedded < indexed.chunks
+            ? KnowledgeProcessingStatus.PARTIAL
+            : KnowledgeProcessingStatus.READY,
+          indexedAt: new Date(),
+          processingError: null,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Indexing failed';
+      await this.prisma.contentDocument.update({
+        where: { id: documentId },
+        data: {
+          indexStatus: KnowledgeProcessingStatus.FAILED,
+          processingError: message.slice(0, 1000),
+        },
+      });
+      throw error;
+    }
   }
 
   private pathTags(relativePath: string): string[] {

@@ -8,21 +8,16 @@ import {
   IconFile,
   IconFolder,
   IconPlus,
-  IconSave,
   IconSearch,
   IconStar,
   IconUpload,
 } from '@douyinfe/semi-icons'
 import {
-  createDocument,
-  createDocumentVersion,
   createKnowledgeSpace,
   getDocument,
   listDocuments,
-  listDocumentVersions,
   listKnowledgeSpaces,
   restoreDocument,
-  restoreDocumentVersion,
   trashDocument,
   updateDocument,
   type ContentDocument,
@@ -30,7 +25,6 @@ import {
   type ContentDocumentType,
 } from '@/modules/workbench/api/documents'
 import { FileAttachments } from '@/modules/content/components/FileAttachments'
-import { AiBusinessAction } from '@/modules/workbench/components/extensions/AiBusinessAction'
 import { SaveStatus } from '@/components/workspace/SaveStatus'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import { KnowledgeChatPanel } from '@/modules/knowledge/components/KnowledgeChatPanel'
@@ -44,8 +38,6 @@ type DirectoryView = 'all' | 'favorites' | 'trash'
 type DocumentDraft = {
   documentId: string
   title: string
-  content: Record<string, unknown>
-  plainText: string
   tags: string[]
   dirty: boolean
   revision: number
@@ -63,7 +55,6 @@ const TYPE_LABELS: Record<ContentDocumentType, string> = {
   MEETING_MINUTES: '会议纪要',
 }
 
-const EMPTY_CONTENT = { type: 'doc', content: [{ type: 'paragraph' }] }
 const EMPTY_TAGS: string[] = []
 
 /** Detect whether content looks like CSV/TSV tabular data */
@@ -160,7 +151,8 @@ export default function KnowledgeHomePage() {
   const focusedFileId = searchParams.get('fileId')?.trim() || undefined
   const projectId = searchParams.get('projectId') ?? undefined
   const partnerId = searchParams.get('partnerId')?.trim() || undefined
-  const requestedCreate = searchParams.get('create')
+  const citationPage = Number(searchParams.get('citationPage')) || undefined
+  const citationLocation = searchParams.get('citationLocation') || undefined
   const directoryView = urlState.getEnum(
     'directory',
     ['all', 'favorites', 'trash'] as const,
@@ -174,10 +166,8 @@ export default function KnowledgeHomePage() {
   )
   const setQuery = (value: string) => urlState.update({ query: value })
   const [draft, setDraft] = useState<DocumentDraft | null>(null)
-  const [versionsOpen, setVersionsOpen] = useState(false)
   const [spaceModalOpen, setSpaceModalOpen] = useState(false)
   const [spaceName, setSpaceName] = useState('')
-  const handledCreate = useRef<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const activeTab = urlState.getEnum('tab', ['documents', 'chat', 'folders'] as const, 'documents')
@@ -205,13 +195,6 @@ export default function KnowledgeHomePage() {
     },
   })
 
-
-  const versionsQuery = useQuery({
-    queryKey: ['document-versions', selectedDocumentId],
-    queryFn: () => listDocumentVersions(selectedDocumentId),
-    enabled: Boolean(selectedDocumentId && versionsOpen),
-  })
-
   const visibleDocuments = useMemo(() => {
     const documents = documentsQuery.data?.data ?? []
     return directoryView === 'favorites'
@@ -226,42 +209,15 @@ export default function KnowledgeHomePage() {
         ? {
             documentId: documentQuery.data.id,
             title: documentQuery.data.title,
-            content: Object.keys(documentQuery.data.content ?? {}).length
-              ? documentQuery.data.content
-              : EMPTY_CONTENT,
-            plainText: documentQuery.data.plainText,
             tags: documentQuery.data.tags,
             dirty: false,
             revision: 0,
           }
         : null
   const title = activeDraft?.title ?? ''
-  const content = activeDraft?.content ?? EMPTY_CONTENT
-  const plainText = activeDraft?.plainText ?? ''
   const tags = activeDraft?.tags ?? EMPTY_TAGS
   const dirty = activeDraft?.dirty ?? false
 
-  const createMutation = useMutation({
-    mutationFn: (type: ContentDocumentType) =>
-      createDocument({
-        title: type === 'KNOWLEDGE_PAGE' ? '未命名知识页' : '未命名文档',
-        type,
-        ...(projectId ? { projectId } : {}),
-        ...(spaceId ? { spaceId } : {}),
-        content: EMPTY_CONTENT,
-        plainText: '',
-      }),
-    onSuccess: (document) => {
-      void queryClient.invalidateQueries({ queryKey: ['documents'] })
-      setSearchParams((current) => {
-        const next = new URLSearchParams(current)
-        next.set('documentId', document.id)
-        next.delete('create')
-        return next
-      })
-    },
-    onError: () => Toast.error('新建文档失败，请确认本地服务已启动。'),
-  })
   const createSpaceMutation = useMutation({
     mutationFn: () => createKnowledgeSpace({ name: spaceName.trim() }),
     onSuccess: (space) => {
@@ -272,12 +228,6 @@ export default function KnowledgeHomePage() {
     },
     onError: () => Toast.error('新建知识空间失败。'),
   })
-
-  useEffect(() => {
-    if (!requestedCreate || handledCreate.current === requestedCreate) return
-    handledCreate.current = requestedCreate
-    createMutation.mutate(requestedCreate === 'knowledge' ? 'KNOWLEDGE_PAGE' : 'DOCUMENT')
-  }, [createMutation, requestedCreate])
 
   const { mutate: saveDocument, isPending: isSaving, isError: saveError } = useMutation({
     mutationFn: ({ documentId, payload }: SaveDocumentRequest) =>
@@ -300,12 +250,12 @@ export default function KnowledgeHomePage() {
     const timeout = window.setTimeout(() => saveDocument({
       documentId: selectedDocumentId,
       revision,
-      payload: { title, content, plainText, tags },
+      payload: { title, tags },
     }), 900)
     return () => window.clearTimeout(timeout)
-  }, [activeDraft?.revision, content, directoryView, dirty, plainText, saveDocument, selectedDocumentId, tags, title])
+  }, [activeDraft?.revision, directoryView, dirty, saveDocument, selectedDocumentId, tags, title])
 
-  function updateDraft(changes: Partial<Pick<DocumentDraft, 'title' | 'content' | 'plainText' | 'tags'>>) {
+  function updateDraft(changes: Partial<Pick<DocumentDraft, 'title' | 'tags'>>) {
     setDraft((current) => {
       const base = current?.documentId === selectedDocumentId ? current : activeDraft
       if (!base) return current
@@ -318,26 +268,10 @@ export default function KnowledgeHomePage() {
     saveDocument({
       documentId: selectedDocumentId,
       revision: activeDraft?.revision ?? 0,
-      payload: { title, content, plainText, tags, ...overrides },
+      payload: { title, tags, ...overrides },
     })
   }
 
-  const versionMutation = useMutation({
-    mutationFn: () => createDocumentVersion(selectedDocumentId),
-    onSuccess: () => {
-      Toast.success('已保存一个只读版本。')
-      void queryClient.invalidateQueries({ queryKey: ['document-versions', selectedDocumentId] })
-    },
-  })
-  const restoreVersionMutation = useMutation({
-    mutationFn: (versionId: string) => restoreDocumentVersion(selectedDocumentId, versionId),
-    onSuccess: () => {
-      setDraft(null)
-      setVersionsOpen(false)
-      void queryClient.invalidateQueries({ queryKey: ['document', selectedDocumentId] })
-      void queryClient.invalidateQueries({ queryKey: ['documents'] })
-    },
-  })
   const trashMutation = useMutation({
     mutationFn: () => trashDocument(selectedDocumentId),
     onSuccess: () => {
@@ -493,16 +427,14 @@ export default function KnowledgeHomePage() {
           <div className="knowledge-workspace__search"><IconSearch /><input aria-label="搜索文档" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、正文和标签" /></div>
           <div>
             <input ref={fileInputRef} type="file" accept=".txt,.md,.docx,.pdf,.html,.htm,.xlsx,.xls,.csv,.json" style={{ display: 'none' }} onChange={handleFileUpload} />
-            <Button icon={<IconUpload />} onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
+            <Button aria-label="上传文件" icon={<IconUpload />} onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}>
               {uploadMutation.isPending ? '导入中...' : '上传文件'}
             </Button>
-            <Button icon={<IconPlus />} onClick={() => createMutation.mutate('DOCUMENT')} title="创建富文本文档，支持 Markdown 编辑">新建文档</Button>
-            <Button icon={<IconPlus />} onClick={() => createMutation.mutate('KNOWLEDGE_PAGE')} title="创建结构化知识页，适合沉淀技术方案和复盘">知识页</Button>
           </div>
         </header>
         {documentsQuery.isPending ? <Skeleton.Paragraph rows={6} /> : null}
         {documentsQuery.isError ? <div className="knowledge-workspace__state">无法读取文档，<button onClick={() => void documentsQuery.refetch()}>重试</button></div> : null}
-        {!documentsQuery.isPending && !visibleDocuments.length ? <div className="knowledge-workspace__state">这里还没有内容。新建文档开始记录。</div> : null}
+        {!documentsQuery.isPending && !visibleDocuments.length ? <div className="knowledge-workspace__state">这里还没有文件。请上传文件，或添加本地文件夹。</div> : null}
         <ul>
           {visibleDocuments.map((document) => (
             <li key={document.id}>
@@ -516,7 +448,7 @@ export default function KnowledgeHomePage() {
         </ul>
       </section>
 
-      <section className="knowledge-workspace__editor" aria-label="文档编辑区">
+      <section className="knowledge-workspace__editor" aria-label="文件预览">
         {!selectedDocumentId ? (
           partnerId ? (
             <div className="knowledge-workspace__partner-materials">
@@ -530,7 +462,7 @@ export default function KnowledgeHomePage() {
               <FileAttachments associations={{ partnerId }} focusedFileId={focusedFileId} />
             </div>
           ) : (
-            <div className="knowledge-workspace__welcome"><IconFile /><h2>选择或新建一篇文档</h2><p>项目方案、会议纪要和知识页都保存在同一处，并可关联原始对象。</p></div>
+            <div className="knowledge-workspace__welcome"><IconFile /><h2>选择一个文件开始阅读</h2><p>上传文件或添加本地文件夹后，可以在这里按原格式预览并用于搜索与问答。</p></div>
           )
         ) : documentQuery.isPending ? (
           <Skeleton.Paragraph rows={10} />
@@ -554,16 +486,7 @@ export default function KnowledgeHomePage() {
                   <Button onClick={() => restoreMutation.mutate()}>恢复</Button>
                 ) : (
                   <>
-                    <AiBusinessAction
-                      operation="AI_SUMMARIZE_DOCUMENT"
-                      objectId={documentQuery.data.id}
-                      objectLabel={documentQuery.data.title}
-                      buttonLabel="AI 生成摘要"
-                      adoptLabel="采纳到文档"
-                    />
                     <Button aria-label={documentQuery.data.isFavorite ? '取消收藏' : '收藏'} icon={<IconStar />} onClick={() => saveDocumentOverrides({ isFavorite: !documentQuery.data.isFavorite })}>{documentQuery.data.isFavorite ? '取消收藏' : '收藏'}</Button>
-                    <Button aria-label="保存版本" icon={<IconSave />} onClick={() => versionMutation.mutate()} loading={versionMutation.isPending}>保存版本</Button>
-                    <Button onClick={() => setVersionsOpen(true)}>版本记录</Button>
                     <Button aria-label="移入回收站" type="danger" icon={<IconDelete />} onClick={() => trashMutation.mutate()}>移入回收站</Button>
                   </>
                 )}
@@ -580,9 +503,13 @@ export default function KnowledgeHomePage() {
               />
             </div>
             {documentQuery.data.sourceKind === 'UPLOAD' || documentQuery.data.sourceKind === 'LOCAL_FILE' ? (
-              <KnowledgeFileViewer document={documentQuery.data} />
+              <KnowledgeFileViewer
+                document={documentQuery.data}
+                citationPage={citationPage}
+                citationLocation={citationLocation}
+              />
             ) : (
-              <DocumentPreview content={plainText || ''} />
+              <DocumentPreview content={documentQuery.data.plainText || ''} />
             )}
             <FileAttachments
               associations={{
@@ -594,15 +521,6 @@ export default function KnowledgeHomePage() {
         ) : null}
       </section>
 
-      <Modal title="版本记录" visible={versionsOpen} onCancel={() => setVersionsOpen(false)} footer={null} width={560}>
-        {versionsQuery.isPending ? <Skeleton.Paragraph rows={4} /> : null}
-        {!versionsQuery.isPending && !versionsQuery.data?.length ? <p>还没有显式保存的版本。</p> : null}
-        <ol className="knowledge-workspace__versions">
-          {versionsQuery.data?.map((version) => (
-            <li key={version.id}><div><strong>版本 {version.versionNumber}</strong><span>{new Date(version.createdAt).toLocaleString('zh-CN')}</span></div><Button onClick={() => restoreVersionMutation.mutate(version.id)}>恢复此版本</Button></li>
-          ))}
-        </ol>
-      </Modal>
       <Modal
         title="新建知识空间"
         visible={spaceModalOpen}

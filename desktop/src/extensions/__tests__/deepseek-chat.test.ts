@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -19,12 +19,10 @@ describe('deepseekChat provider', () => {
   });
 
   it('returns connection test result', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      headers: { get: () => null },
-      text: async () => JSON.stringify({ choices: [{ message: { content: '{"answer":"ok"}' } }] }),
-    });
+    mockFetch.mockResolvedValueOnce(new Response(
+      JSON.stringify({ choices: [{ message: { content: '{"answer":"ok"}' } }] }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    ));
 
     const { deepseekChat } = await import('../providers/deepseek-chat.js');
     const result = await deepseekChat({

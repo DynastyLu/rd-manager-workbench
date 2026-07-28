@@ -1,6 +1,9 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
@@ -14,6 +17,10 @@ describe('KnowledgeController (integration)', () => {
   const prefix = `TEST-KNOWLEDGE-${Date.now()}`;
   let app: INestApplication;
   const uploadedAssetIds: string[] = [];
+  const folderWatchIds: string[] = [];
+  const folderDocumentIds: string[] = [];
+  const folderSpaceIds: string[] = [];
+  const temporaryFolders: string[] = [];
 
   beforeAll(async () => {
     const { AppModule } = await import('../../../../src/app.module');
@@ -33,6 +40,12 @@ describe('KnowledgeController (integration)', () => {
     const files = app?.get(FilesService);
     for (const assetId of uploadedAssetIds) {
       await files?.permanentDelete(assetId).catch(() => undefined);
+    }
+    await prisma.folderWatch.deleteMany({ where: { id: { in: folderWatchIds } } });
+    await prisma.contentDocument.deleteMany({ where: { id: { in: folderDocumentIds } } });
+    await prisma.knowledgeSpace.deleteMany({ where: { id: { in: folderSpaceIds } } });
+    for (const folderPath of temporaryFolders) {
+      await rm(folderPath, { recursive: true, force: true });
     }
     await prisma.contentDocument.deleteMany({
       where: { title: { startsWith: prefix } },
@@ -203,5 +216,56 @@ describe('KnowledgeController (integration)', () => {
       where: { id: stored.id },
       select: { previewStatus: true },
     })).resolves.toMatchObject({ previewStatus: 'READY' });
+  });
+
+  it('POST /api/knowledge/folders - imports local files as readable knowledge sources', async () => {
+    const folderPath = await mkdtemp(join(tmpdir(), 'rd-knowledge-watch-'));
+    temporaryFolders.push(folderPath);
+    const filePath = join(folderPath, '研发周报.md');
+    await writeFile(filePath, '# 本周进展\n\n完成知识库原文件同步。', 'utf8');
+
+    const created = await request(app.getHttpServer())
+      .post('/api/knowledge/folders')
+      .send({ folderPath, label: `${prefix}-本地目录`, recursive: true })
+      .expect(201);
+    folderWatchIds.push(created.body.data.watchId);
+    folderSpaceIds.push(created.body.data.spaceId);
+
+    let tracked: Awaited<ReturnType<typeof prisma.folderFile.findFirst>> = null;
+    for (let attempt = 0; attempt < 80; attempt++) {
+      tracked = await prisma.folderFile.findFirst({
+        where: { watchId: created.body.data.watchId, filePath, status: 'ACTIVE' },
+      });
+      if (tracked) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(tracked).not.toBeNull();
+    folderDocumentIds.push(tracked!.documentId);
+
+    const document = await prisma.contentDocument.findUniqueOrThrow({
+      where: { id: tracked!.documentId },
+    });
+    expect(document).toMatchObject({
+      sourceKind: 'LOCAL_FILE',
+      originalName: '研发周报.md',
+      mimeType: 'text/markdown',
+      sourceSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(['READY', 'PARTIAL']).toContain(document.indexStatus);
+
+    const source = await request(app.getHttpServer())
+      .get(`/api/knowledge/documents/${document.id}/source`)
+      .expect('Content-Type', /text\/markdown/)
+      .expect(200);
+    expect(source.text).toContain('完成知识库原文件同步');
+
+    const openPath = await request(app.getHttpServer())
+      .get(`/api/knowledge/documents/${document.id}/local-open-path`)
+      .expect(200);
+    expect(openPath.body.data).toEqual({ filePath: await realpath(filePath) });
+
+    await request(app.getHttpServer())
+      .delete(`/api/knowledge/folders/${created.body.data.watchId}`)
+      .expect(200);
   });
 });

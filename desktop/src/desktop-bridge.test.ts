@@ -38,4 +38,16 @@ describe('createDesktopBridge', () => {
     expect(bridge).toHaveProperty('chooseBackupDirectory')
     expect(bridge).toHaveProperty('restoreBackup')
   })
+
+  it('opens a knowledge original by document id without accepting a renderer path', async () => {
+    const invoke = vi.fn(async () => ({ opened: true }))
+    const bridge = createDesktopBridge({ invoke, on: vi.fn() })
+
+    await bridge.knowledge.openOriginal('document-1')
+
+    expect(invoke).toHaveBeenCalledWith(
+      'desktop:knowledge:open-original',
+      { documentId: 'document-1' },
+    )
+  })
 })

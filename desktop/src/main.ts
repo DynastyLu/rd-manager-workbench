@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, Tray } from 'electron'
 import { io, type Socket } from 'socket.io-client'
 import { BackupSettings } from './backup-settings.js'
 import { CredentialVault } from './credential-vault.js'
@@ -12,6 +12,7 @@ import { ProviderRegistry } from './extensions/provider-registry.js'
 import { registerBuiltinProviders } from './extensions/providers/index.js'
 import { RestoreOrchestrator } from './restore-orchestrator.js'
 import { normalizeSourcePath, resolveBackendEntry, resolveRendererTarget } from './runtime.js'
+import { openKnowledgeOriginal } from './knowledge-open.js'
 
 interface RealtimeNotification {
   id: string
@@ -255,6 +256,16 @@ function configureExtensionsIpc() {
   extensionRunBroker.start()
 }
 
+function configureKnowledgeIpc() {
+  ipcMain.handle('desktop:knowledge:open-original', async (_event, input: unknown) => {
+    return openKnowledgeOriginal(input as { documentId: string }, {
+      fetchImpl: fetch,
+      openPath: (filePath) => shell.openPath(filePath),
+      backendBaseUrl: 'http://127.0.0.1:4311/api',
+    })
+  })
+}
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
 else {
@@ -271,6 +282,7 @@ else {
     connectNotifications()
     configureDataGovernanceIpc()
     configureExtensionsIpc()
+    configureKnowledgeIpc()
   })
   app.on('activate', () => showMainWindow())
   app.on('before-quit', () => { isQuitting = true })
@@ -281,6 +293,7 @@ else {
     backendProcess?.kill('SIGTERM')
     ipcMain.removeHandler('desktop:choose-backup-directory')
     ipcMain.removeHandler('desktop:restore-backup')
+    ipcMain.removeHandler('desktop:knowledge:open-original')
     ipcMain.removeHandler('desktop:credentials:is-available')
     ipcMain.removeHandler('desktop:credentials:put')
     ipcMain.removeHandler('desktop:credentials:has')

@@ -66,21 +66,18 @@ export class KnowledgeController {
       await this.sessions.addMessage(sessionId, { role: 'USER', content: dto.question });
       const history = await this.sessions.getHistory(sessionId);
 
+      const { stream, citations, totalFound, relevantCount } = await this.rag.ask({
+        question: dto.question,
+        history: history.slice(0, -1),
+      });
+
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       });
 
-      // Step 1: Searching
-      res.write(`event: status\ndata: ${JSON.stringify({ phase: 'searching', message: '正在检索本地知识库...' })}\n\n`);
-
-      const { stream, citations, totalFound, relevantCount } = await this.rag.ask({
-        question: dto.question,
-        history: history.slice(0, -1),
-      });
-
-      // Step 2: Report findings
+      // Retrieval and the upstream model connection are ready before SSE headers.
       if (relevantCount === 0) {
         const msg = totalFound === 0
           ? `知识库中没有已索引的文档内容（0 个分块）。请先同步本地文件夹或上传文件。`
@@ -93,7 +90,6 @@ export class KnowledgeController {
 
       res.write(`event: status\ndata: ${JSON.stringify({ phase: 'found', message: `找到 ${relevantCount} 个相关片段（共检索 ${totalFound} 个）`, totalFound, relevantCount })}\n\n`);
 
-      // Step 3: Generate
       res.write(`event: status\ndata: ${JSON.stringify({ phase: 'thinking', message: '正在基于检索内容生成回答...' })}\n\n`);
 
       const reader = stream.getReader();
@@ -101,55 +97,67 @@ export class KnowledgeController {
       let fullContent = '';
       let buffer = '';
 
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const text = decoder.decode(value, { stream: true });
-          buffer += text;
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value, { stream: true });
+        buffer += text;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6);
-              if (data === '[DONE]') continue;
-              try {
-                const parsed = JSON.parse(data);
-                const content = parsed.choices?.[0]?.delta?.content;
-                if (content) {
-                  fullContent += content;
-                  res.write(`event: token\ndata: ${JSON.stringify({ content, index: fullContent.length })}\n\n`);
-                }
-              } catch { /* skip */ }
-            }
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content;
+              if (content) {
+                fullContent += content;
+                res.write(`event: token\ndata: ${JSON.stringify({ content, index: fullContent.length })}\n\n`);
+              }
+            } catch { /* skip malformed upstream event */ }
           }
         }
-      } finally {
-        // Save message BEFORE sending done — frontend refetches immediately on done
-        if (fullContent) {
-          await this.sessions.addMessage(sessionId, {
-            role: 'ASSISTANT',
-            content: fullContent,
-            citations: citations.map((c) => ({ documentId: c.documentId, title: c.title, chunkIndex: c.chunkIndex, text: c.text })),
-            tokenCount: Math.ceil(fullContent.length / 2),
-          });
-          void this.sessions.logUsage({
-            operation: 'KNOWLEDGE_QA', model: 'deepseek-v4-pro',
-            tokenCount: Math.ceil((dto.question.length + fullContent.length) / 2),
-            success: true, sessionId,
-          });
-        }
-
-        res.write(`event: citations\ndata: ${JSON.stringify(citations)}\n\n`);
-        res.write(`event: done\ndata: ${JSON.stringify({ finished: true })}\n\n`);
-        res.end();
       }
+
+      // Save before `done`: the frontend refetches the session immediately.
+      if (fullContent) {
+        await this.sessions.addMessage(sessionId, {
+          role: 'ASSISTANT',
+          content: fullContent,
+          citations: citations.map((citation) => ({
+            documentId: citation.documentId,
+            title: citation.title,
+            chunkIndex: citation.chunkIndex,
+            text: citation.text,
+            pageNumber: citation.pageNumber,
+            sheetName: citation.sheetName,
+            locationLabel: citation.locationLabel,
+          })),
+          tokenCount: Math.ceil(fullContent.length / 2),
+        });
+        void this.sessions.logUsage({
+          operation: 'KNOWLEDGE_QA',
+          model: 'deepseek-v4-pro',
+          tokenCount: Math.ceil((dto.question.length + fullContent.length) / 2),
+          success: true,
+          sessionId,
+        });
+      }
+
+      res.write(`event: citations\ndata: ${JSON.stringify(citations)}\n\n`);
+      res.write(`event: done\ndata: ${JSON.stringify({ finished: true })}\n\n`);
+      res.end();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      res.writeHead(500, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-      res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
-      res.end();
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+      }
+      if (!res.writableEnded) {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: message })}\n\n`);
+        res.end();
+      }
     }
   }
 
@@ -199,6 +207,11 @@ export class KnowledgeController {
   async getDocumentPreview(@Param('id') id: string, @Res() res: Response) {
     const file = await this.knowledgeFiles.getPreview(id);
     this.sendFile(res, file, 'inline');
+  }
+
+  @Get('documents/:id/local-open-path')
+  getLocalOpenPath(@Param('id') id: string) {
+    return this.knowledgeFiles.getLocalOpenPath(id);
   }
 
   // ── Folder Watch ──

@@ -462,6 +462,7 @@ describe('KnowledgeChatPanel', () => {
       chatStream.mockResolvedValue(mockStreamResponse([
         'event: status',
         'data: {"phase":"searching","message":"正在检索本地知识库..."}',
+        '',
       ], true));
 
       renderPanel('stream-s2');

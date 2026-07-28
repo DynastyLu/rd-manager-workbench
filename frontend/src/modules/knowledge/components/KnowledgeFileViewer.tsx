@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Spin, Tag } from '@douyinfe/semi-ui'
-import { IconDownload, IconFile } from '@douyinfe/semi-icons'
+import { Spin, Tag, Toast } from '@douyinfe/semi-ui'
+import { IconDownload, IconExternalOpen, IconFile } from '@douyinfe/semi-icons'
 
 type ProcessingStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'PARTIAL' | 'FAILED' | 'MISSING'
 
@@ -38,42 +38,59 @@ function processingLabel(status: ProcessingStatus) {
   return labels[status]
 }
 
-export function KnowledgeFileViewer({ document }: { document: KnowledgeFileDocument }) {
-  const [text, setText] = useState<string | null>(null)
-  const [textError, setTextError] = useState<string | null>(null)
-  const mimeType = (document.mimeType || 'application/octet-stream').split(';')[0].toLowerCase()
+export function KnowledgeFileViewer({
+  document,
+  citationPage,
+  citationLocation,
+}: {
+  document: KnowledgeFileDocument
+  citationPage?: number
+  citationLocation?: string
+}) {
+  const [textPreview, setTextPreview] = useState<{
+    url: string
+    text: string | null
+    error: string | null
+  }>({ url: '', text: null, error: null })
+  const mimeType = (document.mimeType || 'application/octet-stream')
+    .split(';')[0]
+    ?.toLowerCase() || 'application/octet-stream'
   const fileName = document.originalName || '未命名文件'
   const sourceUrl = `${apiBaseUrl()}/knowledge/documents/${encodeURIComponent(document.id)}/source`
   const previewUrl = `${apiBaseUrl()}/knowledge/documents/${encodeURIComponent(document.id)}/preview`
+  const positionedPreviewUrl = citationPage ? `${previewUrl}#page=${citationPage}` : previewUrl
   const downloadUrl = `${sourceUrl}?download=1`
   const isText = TEXT_MIME_TYPES.has(mimeType)
   const isImage = mimeType.startsWith('image/')
+  const desktopKnowledge = window.rdWorkbenchDesktop?.knowledge
+  const canOpenLocally = document.sourceKind === 'LOCAL_FILE'
+    && desktopKnowledge !== undefined
   const isOfficeOrPdf = useMemo(
     () => mimeType === 'application/pdf' || /\.(docx?|xlsx?|pptx?|odt|ods|odp)$/i.test(fileName),
     [fileName, mimeType],
   )
 
   useEffect(() => {
-    if (!isText) {
-      setText(null)
-      setTextError(null)
-      return
-    }
+    if (!isText) return
     const controller = new AbortController()
-    setText(null)
-    setTextError(null)
     void fetch(previewUrl, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`预览读取失败（${response.status}）`)
         return response.text()
       })
-      .then(setText)
+      .then((text) => setTextPreview({ url: previewUrl, text, error: null }))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return
-        setTextError(error instanceof Error ? error.message : '预览读取失败')
+        setTextPreview({
+          url: previewUrl,
+          text: null,
+          error: error instanceof Error ? error.message : '预览读取失败',
+        })
       })
     return () => controller.abort()
   }, [isText, previewUrl])
+  const activeText = textPreview.url === previewUrl ? textPreview.text : null
+  const activeTextError = textPreview.url === previewUrl ? textPreview.error : null
 
   return (
     <section className="knowledge-file-viewer" aria-label="原文件阅读器">
@@ -88,37 +105,60 @@ export function KnowledgeFileViewer({ document }: { document: KnowledgeFileDocum
             检索：{processingLabel(document.indexStatus)}
           </Tag>
         </div>
-        <a
-          className="knowledge-file-viewer__download"
-          aria-label="下载原文件"
-          href={downloadUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <IconDownload /> 下载原文件
-        </a>
+        <div>
+          {canOpenLocally ? (
+            <button
+              type="button"
+              className="knowledge-file-viewer__download"
+              aria-label="用本机应用打开"
+              onClick={() => {
+                void desktopKnowledge?.openOriginal(document.id)
+                  .then((result) => {
+                    if (!result.opened) Toast.error(result.error || '无法用本机应用打开文件')
+                  })
+                  .catch(() => Toast.error('本地文件已移动或无法访问，请重新同步目录'))
+              }}
+            >
+              <IconExternalOpen /> 用本机应用打开
+            </button>
+          ) : null}
+          <a
+            className="knowledge-file-viewer__download"
+            aria-label="下载原文件"
+            href={downloadUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <IconDownload /> 下载原文件
+          </a>
+        </div>
       </header>
 
       {document.processingError ? (
         <div className="knowledge-file-viewer__warning">{document.processingError}</div>
       ) : null}
+      {citationLocation || citationPage ? (
+        <div className="knowledge-file-viewer__citation-location">
+          已从问答引用定位到：{citationLocation || `第 ${citationPage} 页`}
+        </div>
+      ) : null}
 
       {isText ? (
-        textError ? (
-          <div className="knowledge-file-viewer__fallback">{textError}，可下载原文件查看。</div>
-        ) : text === null ? (
+        activeTextError ? (
+          <div className="knowledge-file-viewer__fallback">{activeTextError}，可下载原文件查看。</div>
+        ) : activeText === null ? (
           <div className="knowledge-file-viewer__loading"><Spin /> 正在加载文件内容…</div>
         ) : (
-          <pre className="knowledge-file-viewer__text">{text}</pre>
+          <pre className="knowledge-file-viewer__text">{activeText}</pre>
         )
       ) : isImage ? (
         <div className="knowledge-file-viewer__image">
-          <img src={previewUrl} alt={fileName} />
+          <img src={positionedPreviewUrl} alt={fileName} />
         </div>
       ) : isOfficeOrPdf ? (
         <iframe
           title={`${fileName} 在线预览`}
-          src={previewUrl}
+          src={positionedPreviewUrl}
           className="knowledge-file-viewer__frame"
           sandbox="allow-same-origin"
         />

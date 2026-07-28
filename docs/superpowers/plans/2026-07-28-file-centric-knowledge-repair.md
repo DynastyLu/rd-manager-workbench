@@ -1157,3 +1157,17 @@ Append the exact commands, pass counts and manual file matrix to `docs/superpowe
 git add docs/superpowers/plans/2026-07-28-file-centric-knowledge-repair.md
 git commit -m "test: record file knowledge acceptance"
 ```
+
+## Acceptance evidence — 2026-07-28
+
+- Backend lint and Nest build: passed.
+- Backend unit tests: 95 suites, 666 tests passed.
+- Backend integration tests: 44 suites, 197 tests passed after the temporary-database extension fixture was aligned with the new knowledge migrations.
+- Frontend lint, TypeScript application contracts and API contracts: passed.
+- Frontend serial regression: 106 files, 594 tests passed.
+- Frontend production build and relative-build verification: passed.
+- Electron desktop tests and typecheck: 18 files, 52 tests passed.
+- Current database: all 35 migrations applied.
+- Clean temporary database: all migrations applied from zero; `vector`, `pg_trgm`, `vector(384)`, HNSW and durable knowledge job columns verified; the `rdmw_verify_` database was removed in `finally`.
+- Original-source integration: uploaded TXT bytes and watched Markdown sources were read back through the source endpoint; watched paths were resolved through the document-ID-only desktop boundary.
+- UI product boundary: rich-text document creation, body editing, AI adoption into extracted content and body-version controls were removed; upload, folder sync, original preview, metadata, search and AI Q&A remain.

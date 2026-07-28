@@ -13,6 +13,12 @@ describe('IndexingService', () => {
     mockPrisma = {
       documentChunk: tx.documentChunk,
       contentDocument: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn() },
+      knowledgeIndexJob: {
+        create: jest.fn().mockResolvedValue({ id: 'job-1' }),
+        update: jest.fn().mockResolvedValue(undefined),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
       $transaction: jest.fn((fn: (t: any) => unknown) => fn(tx)),
       $executeRawUnsafe: tx.$executeRawUnsafe,
       $queryRawUnsafe: tx.$queryRawUnsafe,
@@ -51,5 +57,21 @@ describe('IndexingService', () => {
     expect(status.indexedDocuments).toBe(5);
     expect(status.totalDocuments).toBe(8);
     expect(status.complete).toBe(false);
+  });
+
+  it('persists reindex jobs so progress survives beyond an HTTP request', async () => {
+    mockPrisma.contentDocument.findMany.mockResolvedValue([]);
+
+    await expect(service.indexAll()).resolves.toEqual({ jobId: 'job-1' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockPrisma.knowledgeIndexJob.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ status: 'QUEUED', totalFiles: 0 }),
+      select: { id: true },
+    });
+    expect(mockPrisma.knowledgeIndexJob.update).toHaveBeenCalledWith({
+      where: { id: 'job-1' },
+      data: expect.objectContaining({ status: 'SUCCEEDED' }),
+    });
   });
 });

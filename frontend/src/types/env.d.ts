@@ -9,6 +9,9 @@ interface RdWorkbenchDesktopBridge {
     confirmationToken: string
     expectedHash: string
   }): Promise<void>
+  knowledge?: {
+    openOriginal(documentId: string): Promise<{ opened: boolean; error?: string }>
+  }
   credentials?: {
     isAvailable(): Promise<boolean>
     put(ref: string, secretObject: Record<string, unknown>): Promise<void>

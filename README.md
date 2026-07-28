@@ -48,6 +48,22 @@ pnpm start:dev
 
 可用 `pnpm prisma migrate status` 检查本地数据库迁移状态。
 
+### 文件型知识库运行依赖
+
+- PostgreSQL 账号需要能够安装 `vector` 与 `pg_trgm` 扩展；数据库迁移会在首次使用前自动执行 `CREATE EXTENSION IF NOT EXISTS`。
+- Office 原格式预览依赖本机 LibreOffice（headless）；没有安装时仍可下载原文件，文本提取与关键词检索不受影响。
+- 本地语义模型需要在知识库页面显式点击准备，首次下载需要联网；未准备或下载失败时系统自动使用 PostgreSQL 关键词检索。
+- 上传文件由工作台托管原件，本地目录文件保留在原位置；两类文件都进入统一搜索和 AI 问答索引。
+
+可用以下命令验证一个全新的临时数据库能否从零完成迁移；脚本只会创建并删除名称以 `rdmw_verify_` 开头的临时数据库：
+
+```sh
+cd backend
+pnpm verify:migrations:clean
+```
+
+如果普通应用账号没有创建临时数据库的权限，可通过 `DATABASE_ADMIN_URL` 单独提供本机管理连接；业务迁移仍使用生成的临时数据库连接。
+
 ## 员工工作进展
 
 员工工作区位于 `http://127.0.0.1:4312/#/employees`，包含团队概览、员工目录、工作明细和计划导入四个页签；员工详情页为 `/#/employees/:id`，项目空间「进展」页签内嵌当前周团队进展，双向可穿透。
