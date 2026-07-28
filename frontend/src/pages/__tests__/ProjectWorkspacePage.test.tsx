@@ -145,6 +145,106 @@ const teamProgressFixture = {
   links: { workItemsUrl: '/employee-work-items?periodType=WEEK&periodStart=2026-07-20' },
 }
 
+const projectWorkItemsFixture = {
+  period: { type: 'WEEK', start: '2026-07-20', end: '2026-07-26' },
+  data: [
+    {
+      id: 'work-1',
+      employeeId: 'employee-1',
+      employeeName: '张明',
+      department: '研发一组',
+      workDirection: '耐盐材料',
+      importBatchId: 'batch-1',
+      importVersion: 2,
+      sourceRowId: 'row-1',
+      sourceRowNumber: 7,
+      sourceBatchIds: ['batch-1'],
+      periodStart: '2026-07-20',
+      periodEnd: '2026-07-26',
+      title: '完成权限模型设计',
+      workKind: 'PROJECT',
+      classificationState: 'CLASSIFIED',
+      plannedCompletionDate: '2026-07-25',
+      overdue: false,
+      source: {
+        sheetName: '张明',
+        section: 'CURRENT_WORK',
+        rowNumber: 7,
+        key: '张明:CURRENT_WORK:7',
+        label: '张明 / 本周工作 / 第 7 行',
+      },
+      planText: null,
+      summaryText: '完成设计评审',
+      completionRate: 100,
+      status: 'COMPLETED',
+      nextPlanText: null,
+      riskText: null,
+      plannedHours: 12,
+      actualHours: 10,
+      project: { id: 'project-1', code: 'RD-001', name: '耐盐材料筛选' },
+      task: null,
+      riskId: null,
+      note: null,
+      links: {
+        selfUrl: '/employee-work-items/work-1',
+        employeeProgressUrl: '/employees/employee-1/progress',
+        projectProgressUrl: '/projects/project-1/team-progress',
+        sourceBatchUrl: '/employee-work-imports/batch-1',
+      },
+    },
+  ],
+  meta: { page: 1, pageSize: 20, total: 1 },
+  sourceBatchIds: ['batch-1'],
+  links: { progressUrl: '/projects/project-1/team-progress' },
+}
+
+const projectWeekPlansFixture = {
+  period: { type: 'WEEK', start: '2026-07-27', end: '2026-08-02' },
+  data: [
+    {
+      id: 'plan-1',
+      employeeId: 'employee-1',
+      employeeName: '张明',
+      department: '研发一组',
+      workDirection: '耐盐材料',
+      importBatchId: 'batch-1',
+      importVersion: 2,
+      sourceRowId: 'row-plan-1',
+      sourceBatchIds: ['batch-1'],
+      periodStart: '2026-07-27',
+      periodEnd: '2026-08-02',
+      title: '安排耐盐实验复测',
+      deliverableText: '复测记录',
+      plannedCompletionDate: '2026-07-31',
+      priority: 'HIGH',
+      collaborationText: '需要实验室协作',
+      planText: null,
+      note: null,
+      workKind: 'PROJECT',
+      carryStatus: 'PLANNED',
+      matchedWorkItemId: null,
+      cancelReason: null,
+      project: { id: 'project-1', code: 'RD-001', name: '耐盐材料筛选' },
+      task: null,
+      source: {
+        sheetName: '张明',
+        section: 'NEXT_WEEK_PLAN',
+        rowNumber: 21,
+        key: '张明:NEXT_WEEK_PLAN:21',
+        label: '张明 / 下周计划 / 第 21 行',
+      },
+      links: {
+        selfUrl: '/employee-week-plans/plan-1',
+        employeeProgressUrl: '/employees/employee-1/progress',
+        projectProgressUrl: '/projects/project-1/team-progress',
+        sourceBatchUrl: '/employee-work-imports/batch-1',
+      },
+    },
+  ],
+  meta: { page: 1, pageSize: 20, total: 1 },
+  sourceBatchIds: ['batch-1'],
+}
+
 const project = {
   id: 'project-1',
   code: 'RD-001',
@@ -271,11 +371,15 @@ describe('ProjectWorkspacePage', () => {
     listNonProjectRd.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
     listPartners.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
     listRisks.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 100, total: 0 } })
-    request.mockImplementation((url: string) =>
-      typeof url === 'string' && url.includes('team-progress')
-        ? Promise.resolve(teamProgressFixture)
-        : Promise.resolve({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
-    )
+    request.mockImplementation((url: string) => {
+      if (typeof url !== 'string') {
+        return Promise.resolve({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
+      }
+      if (url.includes('team-progress')) return Promise.resolve(teamProgressFixture)
+      if (url.startsWith('/employee-work-items?')) return Promise.resolve(projectWorkItemsFixture)
+      if (url.startsWith('/employee-week-plans?')) return Promise.resolve(projectWeekPlansFixture)
+      return Promise.resolve({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
+    })
     updateProject.mockResolvedValue(project)
     updateTask.mockResolvedValue(project.tasks[0])
   })
@@ -522,17 +626,27 @@ describe('ProjectWorkspacePage', () => {
     renderWorkspace('/spaces/projects/project-1/progress')
 
     expect(await screen.findByRole('heading', { name: '团队进展' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '张明' })).toHaveAttribute(
+    expect(screen.getAllByRole('link', { name: '张明' })[0]).toHaveAttribute(
       'href',
       '/employees/employee-1?periodType=WEEK&periodStart=2026-07-20',
     )
-    expect(screen.getByText('完成权限模型设计')).toBeInTheDocument()
+    expect(screen.getAllByText('完成权限模型设计').length).toBeGreaterThan(0)
     expect(screen.getByText('联调准备')).toBeInTheDocument()
     expect(screen.getByText('依赖方接口未冻结')).toBeInTheDocument()
     expect(screen.getByText(/参与 1 人/)).toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: '打开团队概览' })
     ).toHaveAttribute('href', '/employees?tab=overview&periodType=WEEK&periodStart=2026-07-20')
+    expect(screen.getByRole('heading', { name: '当前工作' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '未来计划' })).toBeInTheDocument()
+    expect(await screen.findByText('安排耐盐实验复测')).toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: '张明' }).length).toBeGreaterThan(1)
+    expect(request).toHaveBeenCalledWith(
+      '/employee-work-items?periodType=WEEK&periodStart=2026-07-20&projectId=project-1&page=1&pageSize=20'
+    )
+    expect(request).toHaveBeenCalledWith(
+      '/employee-week-plans?periodType=WEEK&periodStart=2026-07-27&projectId=project-1&page=1&pageSize=20'
+    )
   })
 
   it('fetches team progress only when the progress section is visible', async () => {

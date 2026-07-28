@@ -11,7 +11,11 @@ import type {
   EmployeeWorkImportDetail,
   EmployeeWorkItem,
   EmployeeWorkItemFilters,
+  EmployeeWeekPlan,
+  EmployeeWeekPlanFilters,
+  EmployeeWeekPlanTaskResult,
   ImportFilters,
+  ListEmployeeWeekPlansResult,
   ListEmployeeWorkImportsResult,
   ListEmployeeWorkItemsResult,
   PageResult,
@@ -20,6 +24,7 @@ import type {
   ResolveEmployeeImportInput,
   TeamProgress,
   UpdateEmployeeInput,
+  UpdateEmployeeWeekPlanInput,
 } from './types'
 
 function resource(path: string, id: string): string {
@@ -50,6 +55,10 @@ function importPath(batchId: string): string {
 
 function workItemPath(workItemId: string): string {
   return resource('/employee-work-items', workItemId)
+}
+
+function weekPlanPath(planId: string): string {
+  return resource('/employee-week-plans', planId)
 }
 
 export function listEmployees(filters: EmployeeFilters = {}): Promise<PageResult<Employee>> {
@@ -101,6 +110,58 @@ export function listEmployeeWorkItems(
 
 export function getEmployeeWorkItem(workItemId: string): Promise<EmployeeWorkItem> {
   return request(workItemPath(workItemId))
+}
+
+export function listEmployeeWeekPlans(
+  filters: EmployeeWeekPlanFilters
+): Promise<ListEmployeeWeekPlansResult> {
+  return request(`/employee-week-plans${queryString(filters)}`)
+}
+
+export function getEmployeeWeekPlan(planId: string): Promise<EmployeeWeekPlan> {
+  return request(weekPlanPath(planId))
+}
+
+export function updateEmployeeWeekPlan(
+  planId: string,
+  input: UpdateEmployeeWeekPlanInput
+): Promise<EmployeeWeekPlan> {
+  return request(weekPlanPath(planId), {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
+}
+
+export function cancelEmployeeWeekPlan(
+  planId: string,
+  reason: string
+): Promise<{ plan: EmployeeWeekPlan; alreadyCancelled: boolean }> {
+  return request(`${weekPlanPath(planId)}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
+export function matchEmployeeWeekPlan(
+  planId: string,
+  workItemId: string
+): Promise<{ plan: EmployeeWeekPlan; alreadyMatched: boolean }> {
+  return request(`${weekPlanPath(planId)}/match`, {
+    method: 'POST',
+    body: JSON.stringify({ workItemId }),
+  })
+}
+
+export function unmatchEmployeeWeekPlan(
+  planId: string
+): Promise<{ plan: EmployeeWeekPlan; alreadyPlanned: boolean }> {
+  return request(`${weekPlanPath(planId)}/unmatch`, { method: 'POST' })
+}
+
+export function convertEmployeeWeekPlanToTask(
+  planId: string
+): Promise<EmployeeWeekPlanTaskResult> {
+  return request(`${weekPlanPath(planId)}/convert-to-task`, { method: 'POST' })
 }
 
 export function listEmployeeWorkImports(

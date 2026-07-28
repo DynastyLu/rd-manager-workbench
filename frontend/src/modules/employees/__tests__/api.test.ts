@@ -3,7 +3,9 @@ import { ApiError } from '@/lib/http'
 import {
   archiveEmployee,
   archiveEmployeeWorkImport,
+  cancelEmployeeWeekPlan,
   commitEmployeeWorkImport,
+  convertEmployeeWeekPlanToTask,
   convertEmployeeWorkItemRisk,
   createEmployee,
   downloadEmployeeImportErrors,
@@ -14,16 +16,21 @@ import {
   getEmployeeProgress,
   getEmployeeWorkImport,
   getEmployeeWorkItem,
+  getEmployeeWeekPlan,
   getProjectTeamProgress,
   getTeamProgress,
   listEmployeeWorkImports,
   listEmployeeWorkItems,
+  listEmployeeWeekPlans,
+  matchEmployeeWeekPlan,
   listEmployees,
   previewEmployeeWorkImport,
   rebuildEmployeeWorkImportSnapshots,
   resolveEmployeeWorkImport,
   restoreEmployeeWorkImport,
+  unmatchEmployeeWeekPlan,
   updateEmployee,
+  updateEmployeeWeekPlan,
   uploadEmployeeWorkImport,
 } from '../api'
 
@@ -130,6 +137,63 @@ describe('employee workspace API', () => {
       ['/employee-work-imports/batch%20%2F%201/restore', { method: 'POST' }],
       ['/employee-work-imports/batch%20%2F%201', { method: 'DELETE' }],
       ['/employee-work-items/work%20%2F%201/convert-risk', { method: 'POST' }],
+    ])
+  })
+
+  it('queries week plans and sends bounded plan actions to encoded resources', async () => {
+    await listEmployeeWeekPlans({
+      periodType: 'WEEK',
+      periodStart: '2026-07-27',
+      employeeId: 'employee / 1',
+      department: '研发 一组',
+      projectId: '',
+      carryStatus: 'PLANNED',
+      page: 2,
+      pageSize: 20,
+    })
+    await getEmployeeWeekPlan('plan / 1')
+    await updateEmployeeWeekPlan('plan / 1', {
+      workKind: 'PROJECT',
+      projectId: 'project-1',
+      taskId: null,
+      plannedCompletionAt: '2026-07-31',
+      priority: 'URGENT',
+      collaborationText: '需要测试协作',
+    })
+    await cancelEmployeeWeekPlan('plan / 1', '范围调整')
+    await matchEmployeeWeekPlan('plan / 1', 'work / 1')
+    await unmatchEmployeeWeekPlan('plan / 1')
+    await convertEmployeeWeekPlanToTask('plan / 1')
+
+    expect(request.mock.calls).toEqual([
+      [
+        '/employee-week-plans?periodType=WEEK&periodStart=2026-07-27&employeeId=employee+%2F+1&department=%E7%A0%94%E5%8F%91+%E4%B8%80%E7%BB%84&carryStatus=PLANNED&page=2&pageSize=20',
+      ],
+      ['/employee-week-plans/plan%20%2F%201'],
+      [
+        '/employee-week-plans/plan%20%2F%201',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            workKind: 'PROJECT',
+            projectId: 'project-1',
+            taskId: null,
+            plannedCompletionAt: '2026-07-31',
+            priority: 'URGENT',
+            collaborationText: '需要测试协作',
+          }),
+        },
+      ],
+      [
+        '/employee-week-plans/plan%20%2F%201/cancel',
+        { method: 'POST', body: JSON.stringify({ reason: '范围调整' }) },
+      ],
+      [
+        '/employee-week-plans/plan%20%2F%201/match',
+        { method: 'POST', body: JSON.stringify({ workItemId: 'work / 1' }) },
+      ],
+      ['/employee-week-plans/plan%20%2F%201/unmatch', { method: 'POST' }],
+      ['/employee-week-plans/plan%20%2F%201/convert-to-task', { method: 'POST' }],
     ])
   })
 

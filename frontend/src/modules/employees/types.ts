@@ -60,6 +60,7 @@ export interface EmployeeFilters {
 export interface CreateEmployeeInput {
   displayName: string
   department?: string
+  workDirection?: string
   roleTitle?: string
   managerName?: string
   employmentStatus?: EmploymentStatus
@@ -87,6 +88,7 @@ export type EmployeeImportRowStatus = 'VALID' | 'ERROR' | 'UNRESOLVED'
 export type EmployeeWorkKind = 'PROJECT' | 'NON_PROJECT'
 export type EmployeeWorkSourceSection = 'CURRENT_WORK' | 'NEXT_WEEK_PLAN'
 export type EmployeePlanPriority = 'UNSPECIFIED' | 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+export type EmployeePlanCarryStatus = 'PLANNED' | 'MATCHED' | 'CANCELLED'
 export type EmployeeRiskDecision = 'KEEP' | 'REMOVE' | 'EDIT'
 
 export interface ProgressFilters {
@@ -141,6 +143,28 @@ export interface EmployeeProgressMetrics {
   unlinkedCount: number
   dataComplete: boolean
   missingWeeks: string[]
+  overdueCount?: number
+  projectWorkCount?: number
+  nonProjectWorkCount?: number
+  legacyUnclassifiedCount?: number
+  workDirectionDistribution?: Array<{
+    workDirection: string | null
+    workItemCount: number
+    completedCount: number
+    completionRate: number | null
+  }>
+  missingHoursCount?: number
+  hoursCompleteness?: number | null
+  hoursUtilizationRate?: number | null
+}
+
+export interface EmployeeNextPlanMetrics {
+  planCount: number
+  priorityDistribution: Record<EmployeePlanPriority, number>
+  highPriorityCount: number
+  collaborationCount: number
+  unmatchedCount: number
+  cancelledCount: number
 }
 
 export interface ProgressPeriod {
@@ -168,11 +192,26 @@ export interface EmployeeWorkItemLinks {
   sourceBatchUrl: string
 }
 
+export interface EmployeeWorkSource {
+  sheetName: string | null
+  section: EmployeeWorkSourceSection | null
+  rowNumber: number | null
+  key: string | null
+  label: string
+}
+
+export interface EmployeeWorkReference {
+  id: string
+  code: string
+  archived?: boolean
+}
+
 export interface EmployeeWorkItem {
   id: string
   employeeId: string
   employeeName: string
   department: string | null
+  workDirection?: string | null
   importBatchId: string
   importVersion: number | null
   sourceRowId: string
@@ -181,6 +220,11 @@ export interface EmployeeWorkItem {
   periodStart: string
   periodEnd: string
   title: string
+  workKind?: EmployeeWorkKind | null
+  classificationState?: 'CLASSIFIED' | 'LEGACY_UNCLASSIFIED'
+  plannedCompletionDate?: string | null
+  overdue?: boolean
+  source?: EmployeeWorkSource
   planText: string | null
   summaryText: string | null
   completionRate: number | null
@@ -189,11 +233,86 @@ export interface EmployeeWorkItem {
   riskText: string | null
   plannedHours: number | null
   actualHours: number | null
-  project: { id: string; code: string; name: string } | null
-  task: { id: string; code: string; title: string } | null
+  project: (EmployeeWorkReference & { name: string }) | null
+  task: (EmployeeWorkReference & { title: string }) | null
   riskId: string | null
   note: string | null
   links: EmployeeWorkItemLinks
+}
+
+export interface EmployeeWeekPlanLinks {
+  selfUrl: string
+  employeeProgressUrl: string
+  projectProgressUrl?: string
+  taskUrl?: string
+  sourceBatchUrl: string
+}
+
+export interface EmployeeWeekPlan {
+  id: string
+  employeeId: string
+  employeeName: string
+  department: string | null
+  workDirection: string | null
+  importBatchId: string
+  importVersion: number | null
+  sourceRowId: string
+  sourceBatchIds: string[]
+  periodStart: string
+  periodEnd: string
+  title: string
+  deliverableText: string | null
+  plannedCompletionDate: string | null
+  priority: EmployeePlanPriority
+  collaborationText: string | null
+  planText: string | null
+  note: string | null
+  workKind: EmployeeWorkKind
+  carryStatus: EmployeePlanCarryStatus
+  matchedWorkItemId: string | null
+  cancelReason: string | null
+  project: (EmployeeWorkReference & { name: string }) | null
+  task: (EmployeeWorkReference & { title: string }) | null
+  source: EmployeeWorkSource
+  links: EmployeeWeekPlanLinks
+}
+
+export interface EmployeeWeekPlanFilters {
+  periodType: EmployeeProgressPeriod
+  periodStart: string
+  employeeId?: string
+  department?: string
+  projectId?: string
+  carryStatus?: EmployeePlanCarryStatus
+  page?: number
+  pageSize?: number
+}
+
+export interface ListEmployeeWeekPlansResult {
+  period: ProgressPeriod
+  data: EmployeeWeekPlan[]
+  meta: PaginationMeta
+  sourceBatchIds: string[]
+}
+
+export interface UpdateEmployeeWeekPlanInput {
+  workKind?: EmployeeWorkKind
+  projectId?: string | null
+  taskId?: string | null
+  plannedCompletionAt?: string | null
+  priority?: EmployeePlanPriority
+  collaborationText?: string | null
+}
+
+export interface EmployeeWeekPlanTaskResult {
+  plan: EmployeeWeekPlan
+  task: {
+    id: string
+    projectId: string
+    code?: string
+    title: string
+  }
+  alreadyExists: boolean
 }
 
 export interface EmployeeWorkItemSummary {
@@ -214,6 +333,7 @@ export interface TeamEmployeeProgress {
   displayName: string
   department: string | null
   roleTitle: string | null
+  workDirection?: string | null
   metrics: EmployeeProgressMetrics
   sourceBatchIds: string[]
   employeeProgressUrl: string
@@ -234,6 +354,7 @@ export interface TeamProjectProgress {
 export interface TeamProgress {
   period: ProgressPeriod
   metrics: EmployeeProgressMetrics
+  nextPlanMetrics?: EmployeeNextPlanMetrics
   sourceBatchIds: string[]
   employees: BoundedCollection<TeamEmployeeProgress>
   projects: BoundedCollection<TeamProjectProgress>
@@ -257,6 +378,7 @@ export interface EmployeeProgress {
     | 'id'
     | 'displayName'
     | 'department'
+    | 'workDirection'
     | 'roleTitle'
     | 'managerName'
     | 'employmentStatus'
@@ -264,6 +386,7 @@ export interface EmployeeProgress {
   >
   period: ProgressPeriod
   metrics: EmployeeProgressMetrics
+  nextPlanMetrics?: EmployeeNextPlanMetrics
   sourceBatchIds: string[]
   projects: BoundedCollection<EmployeeProjectContribution>
   risks: BoundedCollection<EmployeeWorkItemSummary>
@@ -274,6 +397,7 @@ export interface ProjectEmployeeProgress {
   employeeId: string
   displayName: string
   department: string | null
+  workDirection?: string | null
   metrics: EmployeeProgressMetrics
   completedItems: BoundedCollection<{ workItemId: string; title: string }>
   nextPlans: BoundedCollection<{ workItemId: string; text: string }>
@@ -292,6 +416,7 @@ export interface ProjectTeamProgress {
   }
   period: ProgressPeriod
   metrics: EmployeeProgressMetrics
+  nextPlanMetrics?: EmployeeNextPlanMetrics
   sourceBatchIds: string[]
   employees: BoundedCollection<ProjectEmployeeProgress>
   risks: BoundedCollection<EmployeeWorkItemSummary>

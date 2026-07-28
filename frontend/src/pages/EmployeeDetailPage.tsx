@@ -1,29 +1,65 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banner, Button, Skeleton, Tag } from '@douyinfe/semi-ui'
+import { Banner, Button, Input, Modal, Select, Skeleton, Tag, TextArea } from '@douyinfe/semi-ui'
 import { IconChevronLeft } from '@douyinfe/semi-icons'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ROUTES } from '@/constants/routes'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import {
+  cancelEmployeeWeekPlan,
+  convertEmployeeWeekPlanToTask,
   convertEmployeeWorkItemRisk,
   getEmployeeProgress,
+  listEmployeeWeekPlans,
   listEmployeeWorkItems,
+  matchEmployeeWeekPlan,
+  unmatchEmployeeWeekPlan,
+  updateEmployeeWeekPlan,
 } from '@/modules/employees/api'
 import { EmployeeProgressFilters } from '@/modules/employees/components/EmployeeProgressFilters'
 import { EmployeeProgressMetrics } from '@/modules/employees/components/EmployeeProgressMetrics'
 import { EmployeeProgressTrend } from '@/modules/employees/components/EmployeeProgressTrend'
 import { EmployeeWorkTable } from '@/modules/employees/components/EmployeeWorkTable'
+import { EmployeeWeekPlanTable } from '@/modules/employees/components/EmployeeWeekPlanTable'
 import { percentage } from '@/modules/employees/format'
 import { EMPLOYEE_WORK_STATUS_COLORS, EMPLOYEE_WORK_STATUS_LABELS, EMPLOYMENT_STATUS_LABELS } from '@/modules/employees/labels'
 import { defaultPeriodStart, recentPeriodStarts, trendPeriodLabel } from '@/modules/employees/periods'
 import { employeeQueryKeys } from '@/modules/employees/queryKeys'
-import type { EmployeeWorkItem, EmployeeWorkStatus, ProgressFilters } from '@/modules/employees/types'
+import type {
+  EmployeePlanPriority,
+  EmployeeWeekPlan,
+  EmployeeWorkItem,
+  EmployeeWorkKind,
+  EmployeeWorkStatus,
+  ProgressFilters,
+  UpdateEmployeeWeekPlanInput,
+} from '@/modules/employees/types'
 import './EmployeeDetailPage.less'
 
 const PAGE_SIZE = 10
 const WORK_STATUS_VALUES = ['ALL', 'NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'AT_RISK', 'BLOCKED'] as const
+
+function nextPlanPeriodStart(periodType: ProgressFilters['periodType'], periodStart: string) {
+  if (periodType === 'MONTH') return periodStart
+  const value = new Date(`${periodStart}T00:00:00.000Z`)
+  value.setUTCDate(value.getUTCDate() + 7)
+  return value.toISOString().slice(0, 10)
+}
+
+type PlanDialog =
+  | { mode: 'edit'; plan: EmployeeWeekPlan }
+  | { mode: 'cancel'; plan: EmployeeWeekPlan }
+  | { mode: 'match'; plan: EmployeeWeekPlan }
+
+interface PlanDraft {
+  workKind: EmployeeWorkKind
+  projectId: string
+  taskId: string
+  plannedCompletionAt: string
+  priority: EmployeePlanPriority
+  collaborationText: string
+}
 
 export default function EmployeeDetailPage() {
   const { employeeId = '' } = useParams<{ employeeId: string }>()
@@ -35,6 +71,11 @@ export default function EmployeeDetailPage() {
   const status: EmployeeWorkStatus | undefined = statusParam === 'ALL' ? undefined : statusParam
   const focusedWorkItemId = searchParams.getString('workItemId') || undefined
   const page = searchParams.getPositiveInt('page', 1)
+  const nextPlanPage = searchParams.getPositiveInt('nextPlanPage', 1)
+  const [planDialog, setPlanDialog] = useState<PlanDialog | null>(null)
+  const [planDraft, setPlanDraft] = useState<PlanDraft | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [matchWorkItemId, setMatchWorkItemId] = useState('')
 
   const filters: ProgressFilters = { periodType, periodStart, status }
   const progressQuery = useQuery({
@@ -46,6 +87,23 @@ export default function EmployeeDetailPage() {
     queryKey: employeeQueryKeys.workItems({ ...filters, employeeId, page, pageSize: PAGE_SIZE }),
     queryFn: () =>
       listEmployeeWorkItems({ ...filters, employeeId, page, pageSize: PAGE_SIZE }),
+    enabled: Boolean(employeeId),
+  })
+  const planPeriodStart = nextPlanPeriodStart(periodType, periodStart)
+  const weekPlansQuery = useQuery({
+    queryKey: [
+      'employees',
+      'week-plans',
+      { periodType, periodStart: planPeriodStart, employeeId, page: nextPlanPage },
+    ],
+    queryFn: () =>
+      listEmployeeWeekPlans({
+        periodType,
+        periodStart: planPeriodStart,
+        employeeId,
+        page: nextPlanPage,
+        pageSize: PAGE_SIZE,
+      }),
     enabled: Boolean(employeeId),
   })
 
@@ -136,6 +194,101 @@ export default function EmployeeDetailPage() {
     },
   })
 
+  async function refreshPlans() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['employees', 'week-plans'] }),
+      queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all }),
+      queryClient.invalidateQueries({ queryKey: ['project', planDialog?.plan.project?.id ?? null] }),
+      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+    ])
+  }
+
+  function planActionSuccess(message: string) {
+    setPlanDialog(null)
+    setPlanDraft(null)
+    setCancelReason('')
+    setMatchWorkItemId('')
+    toast.success(message)
+    return refreshPlans()
+  }
+
+  const updatePlanMutation = useMutation({
+    mutationFn: ({ planId, input }: { planId: string; input: UpdateEmployeeWeekPlanInput }) =>
+      updateEmployeeWeekPlan(planId, input),
+    onSuccess: () => planActionSuccess('计划系统字段已更新'),
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '更新计划失败，请重试。'),
+  })
+  const cancelPlanMutation = useMutation({
+    mutationFn: ({ planId, reason }: { planId: string; reason: string }) =>
+      cancelEmployeeWeekPlan(planId, reason),
+    onSuccess: () => planActionSuccess('计划已取消'),
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '取消计划失败，请重试。'),
+  })
+  const matchPlanMutation = useMutation({
+    mutationFn: ({ planId, workItemId }: { planId: string; workItemId: string }) =>
+      matchEmployeeWeekPlan(planId, workItemId),
+    onSuccess: () => planActionSuccess('计划已承接到本周执行'),
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '承接计划失败，请重试。'),
+  })
+  const unmatchPlanMutation = useMutation({
+    mutationFn: (plan: EmployeeWeekPlan) => unmatchEmployeeWeekPlan(plan.id),
+    onSuccess: () => planActionSuccess('已撤销计划承接'),
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '撤销承接失败，请重试。'),
+  })
+  const convertPlanMutation = useMutation({
+    mutationFn: (plan: EmployeeWeekPlan) => convertEmployeeWeekPlanToTask(plan.id),
+    onSuccess: () => planActionSuccess('计划已转换为项目任务'),
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '转换任务失败，请重试。'),
+  })
+
+  function openEditPlan(plan: EmployeeWeekPlan) {
+    setPlanDraft({
+      workKind: plan.workKind,
+      projectId: plan.project?.id ?? '',
+      taskId: plan.task?.id ?? '',
+      plannedCompletionAt: plan.plannedCompletionDate ?? '',
+      priority: plan.priority,
+      collaborationText: plan.collaborationText ?? '',
+    })
+    setPlanDialog({ mode: 'edit', plan })
+  }
+
+  function submitPlanDialog() {
+    if (!planDialog) return
+    if (planDialog.mode === 'edit' && planDraft) {
+      updatePlanMutation.mutate({
+        planId: planDialog.plan.id,
+        input: {
+          workKind: planDraft.workKind,
+          projectId: planDraft.workKind === 'PROJECT' ? planDraft.projectId || null : null,
+          taskId: planDraft.workKind === 'PROJECT' ? planDraft.taskId || null : null,
+          plannedCompletionAt: planDraft.plannedCompletionAt || null,
+          priority: planDraft.priority,
+          collaborationText: planDraft.collaborationText.trim() || null,
+        },
+      })
+      return
+    }
+    if (planDialog.mode === 'cancel') {
+      if (!cancelReason.trim()) {
+        toast.error('请填写取消原因')
+        return
+      }
+      cancelPlanMutation.mutate({ planId: planDialog.plan.id, reason: cancelReason.trim() })
+      return
+    }
+    if (!matchWorkItemId) {
+      toast.error('请选择承接该计划的本周执行项')
+      return
+    }
+    matchPlanMutation.mutate({ planId: planDialog.plan.id, workItemId: matchWorkItemId })
+  }
+
   if (progressQuery.isPending) {
     return (
       <div className="employee-detail employee-detail--loading" aria-label="正在加载员工进展">
@@ -189,6 +342,10 @@ export default function EmployeeDetailPage() {
               <dd>{profile.roleTitle || '未设置'}</dd>
             </div>
             <div>
+              <dt>工作方向</dt>
+              <dd>{profile.workDirection || '未设置'}</dd>
+            </div>
+            <div>
               <dt>直属负责人</dt>
               <dd>{profile.managerName || '未设置'}</dd>
             </div>
@@ -233,11 +390,14 @@ export default function EmployeeDetailPage() {
           </div>
         ) : null}
 
-        <EmployeeProgressMetrics metrics={progress.metrics} />
+        <EmployeeProgressMetrics
+          metrics={progress.metrics}
+          nextPlanMetrics={progress.nextPlanMetrics}
+        />
 
-        <section className="employee-detail__section" aria-label="工作明细">
+        <section className="employee-detail__section" aria-label="本周执行">
           <header>
-            <h2>工作明细</h2>
+            <h2>本周执行</h2>
             <span>
               {progress.period.start} — {progress.period.end}
             </span>
@@ -269,6 +429,62 @@ export default function EmployeeDetailPage() {
                 showSizeChanger: false,
                 onPageChange: (nextPage: number) =>
                   searchParams.update({ page: nextPage }, { defaults: { page: 1 } }),
+              }}
+            />
+          )}
+        </section>
+
+        <section className="employee-detail__section" aria-label="下周计划">
+          <header>
+            <h2>下周计划</h2>
+            <span>
+              {weekPlansQuery.data?.period.start ?? planPeriodStart} —{' '}
+              {weekPlansQuery.data?.period.end ?? '—'}
+            </span>
+          </header>
+          {weekPlansQuery.isPending ? (
+            <div className="employee-detail__table-loading" aria-label="正在加载下周计划">
+              <Skeleton.Paragraph rows={3} />
+            </div>
+          ) : weekPlansQuery.isError ? (
+            <div className="employee-detail__feedback">
+              <Banner
+                type="danger"
+                fullMode={false}
+                title="无法读取下周计划"
+                description="请稍后重试。"
+                closeIcon={null}
+              >
+                <Button onClick={() => void weekPlansQuery.refetch()}>重试</Button>
+              </Banner>
+            </div>
+          ) : (
+            <EmployeeWeekPlanTable
+              plans={weekPlansQuery.data?.data ?? []}
+              onEdit={openEditPlan}
+              onCancel={(plan) => {
+                setCancelReason('')
+                setPlanDialog({ mode: 'cancel', plan })
+              }}
+              onMatch={(plan) => {
+                setMatchWorkItemId('')
+                setPlanDialog({ mode: 'match', plan })
+              }}
+              onUnmatch={(plan) => unmatchPlanMutation.mutate(plan)}
+              onConvertToTask={(plan) => convertPlanMutation.mutate(plan)}
+              pendingPlanId={
+                convertPlanMutation.isPending ? (convertPlanMutation.variables?.id ?? null) : null
+              }
+              pagination={{
+                currentPage: nextPlanPage,
+                pageSize: PAGE_SIZE,
+                total: weekPlansQuery.data?.meta.total ?? 0,
+                showSizeChanger: false,
+                onPageChange: (nextPage: number) =>
+                  searchParams.update(
+                    { nextPlanPage: nextPage },
+                    { defaults: { nextPlanPage: 1 } }
+                  ),
               }}
             />
           )}
@@ -351,6 +567,157 @@ export default function EmployeeDetailPage() {
           )}
         </section>
       </section>
+
+      <Modal
+        title={
+          planDialog?.mode === 'edit'
+            ? '编辑计划系统字段'
+            : planDialog?.mode === 'cancel'
+              ? '取消计划'
+              : '承接计划'
+        }
+        visible={Boolean(planDialog)}
+        width={560}
+        onCancel={() => setPlanDialog(null)}
+        footer={
+          <div className="workspace-modal-footer">
+            <Button onClick={() => setPlanDialog(null)}>取消</Button>
+            <Button
+              theme="solid"
+              type="primary"
+              loading={
+                updatePlanMutation.isPending ||
+                cancelPlanMutation.isPending ||
+                matchPlanMutation.isPending
+              }
+              onClick={submitPlanDialog}
+            >
+              确认
+            </Button>
+          </div>
+        }
+      >
+        {planDialog?.mode === 'edit' && planDraft ? (
+          <div className="employee-detail__plan-form">
+            <div className="employee-detail__plan-field">
+              <span>工作类型</span>
+              <Select
+                aria-label="工作类型"
+                value={planDraft.workKind}
+                optionList={[
+                  { value: 'PROJECT', label: '项目工作' },
+                  { value: 'NON_PROJECT', label: '非项目工作' },
+                ]}
+                onChange={(value) =>
+                  setPlanDraft((current) =>
+                    current ? { ...current, workKind: value as EmployeeWorkKind } : current
+                  )
+                }
+              />
+            </div>
+            {planDraft.workKind === 'PROJECT' ? (
+              <div className="workspace-modal-form__grid">
+                <div className="employee-detail__plan-field">
+                  <span>项目 ID</span>
+                  <Input
+                    aria-label="项目 ID"
+                    value={planDraft.projectId}
+                    onChange={(value) =>
+                      setPlanDraft((current) =>
+                        current ? { ...current, projectId: value } : current
+                      )
+                    }
+                  />
+                </div>
+                <div className="employee-detail__plan-field">
+                  <span>任务 ID</span>
+                  <Input
+                    aria-label="任务 ID"
+                    value={planDraft.taskId}
+                    onChange={(value) =>
+                      setPlanDraft((current) =>
+                        current ? { ...current, taskId: value } : current
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            ) : null}
+            <div className="workspace-modal-form__grid">
+              <div className="employee-detail__plan-field">
+                <span>计划完成日</span>
+                <Input
+                  aria-label="计划完成日"
+                  value={planDraft.plannedCompletionAt}
+                  placeholder="YYYY-MM-DD"
+                  onChange={(value) =>
+                    setPlanDraft((current) =>
+                      current ? { ...current, plannedCompletionAt: value } : current
+                    )
+                  }
+                />
+              </div>
+              <div className="employee-detail__plan-field">
+                <span>优先级</span>
+                <Select
+                  aria-label="优先级"
+                  value={planDraft.priority}
+                  optionList={[
+                    { value: 'UNSPECIFIED', label: '未指定' },
+                    { value: 'LOW', label: '低' },
+                    { value: 'MEDIUM', label: '中' },
+                    { value: 'HIGH', label: '高' },
+                    { value: 'URGENT', label: '紧急' },
+                  ]}
+                  onChange={(value) =>
+                    setPlanDraft((current) =>
+                      current ? { ...current, priority: value as EmployeePlanPriority } : current
+                    )
+                  }
+                />
+              </div>
+            </div>
+            <div className="employee-detail__plan-field">
+              <span>协作需求</span>
+              <TextArea
+                aria-label="协作需求"
+                value={planDraft.collaborationText}
+                onChange={(value) =>
+                  setPlanDraft((current) =>
+                    current ? { ...current, collaborationText: value } : current
+                  )
+                }
+              />
+            </div>
+          </div>
+        ) : null}
+        {planDialog?.mode === 'cancel' ? (
+          <div className="employee-detail__plan-form">
+            <span>取消原因</span>
+            <TextArea
+              aria-label="取消原因"
+              value={cancelReason}
+              onChange={setCancelReason}
+              placeholder="说明取消原因，便于后续追溯"
+            />
+          </div>
+        ) : null}
+        {planDialog?.mode === 'match' ? (
+          <div className="employee-detail__plan-form">
+            <span>承接到本周执行</span>
+            <Select
+              aria-label="承接到本周执行"
+              value={matchWorkItemId || undefined}
+              placeholder="选择同一员工的执行项"
+              optionList={(workItemsQuery.data?.data ?? []).map((item) => ({
+                value: item.id,
+                label: item.title,
+              }))}
+              onChange={(value) => setMatchWorkItemId(String(value))}
+            />
+          </div>
+        ) : null}
+      </Modal>
     </div>
   )
 }

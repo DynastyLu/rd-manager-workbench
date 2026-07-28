@@ -86,6 +86,32 @@
     padding: 14px 18px;
   }
 
+  &__table-loading {
+    padding: 14px 18px 22px;
+  }
+
+  &__plan-form {
+    display: grid;
+    gap: 14px;
+
+    .employee-detail__plan-field,
+    &.employee-detail__plan-form {
+      display: grid;
+      gap: 7px;
+    }
+
+    .employee-detail__plan-field > span,
+    > span {
+      color: var(--workspace-text-secondary);
+      font-size: 12px;
+      font-weight: 560;
+    }
+
+    .semi-select {
+      width: 100%;
+    }
+  }
+
   &__section {
     border-bottom: 1px solid var(--workspace-border);
 

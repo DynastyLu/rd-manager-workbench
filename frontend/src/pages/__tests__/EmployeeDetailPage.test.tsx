@@ -7,9 +7,15 @@ import { employeeQueryKeys } from '@/modules/employees/queryKeys'
 import EmployeeDetailPage from '../EmployeeDetailPage'
 
 const employeesApi = vi.hoisted(() => ({
+  cancelEmployeeWeekPlan: vi.fn(),
+  convertEmployeeWeekPlanToTask: vi.fn(),
   convertEmployeeWorkItemRisk: vi.fn(),
   getEmployeeProgress: vi.fn(),
+  listEmployeeWeekPlans: vi.fn(),
   listEmployeeWorkItems: vi.fn(),
+  matchEmployeeWeekPlan: vi.fn(),
+  unmatchEmployeeWeekPlan: vi.fn(),
+  updateEmployeeWeekPlan: vi.fn(),
 }))
 
 vi.mock('@/modules/employees/api', () => employeesApi)
@@ -221,6 +227,53 @@ const workItemsFixture = {
   links: { progressUrl: '/employee-progress?periodType=WEEK&periodStart=2026-07-20' },
 }
 
+const weekPlansFixture = {
+  period: { type: 'WEEK' as const, start: '2026-07-27', end: '2026-08-02' },
+  data: [
+    {
+      id: 'plan-1',
+      employeeId: 'employee-1',
+      employeeName: '张明',
+      department: '研发一组',
+      workDirection: '权限平台',
+      importBatchId: 'batch-1',
+      importVersion: 2,
+      sourceRowId: 'row-plan-1',
+      sourceBatchIds: ['batch-1'],
+      periodStart: '2026-07-27',
+      periodEnd: '2026-08-02',
+      title: '完成灰度发布',
+      deliverableText: '发布记录与回滚方案',
+      plannedCompletionDate: '2026-07-31',
+      priority: 'URGENT' as const,
+      collaborationText: '需要测试组协作',
+      planText: '先灰度再全量',
+      note: null,
+      workKind: 'PROJECT' as const,
+      carryStatus: 'PLANNED' as const,
+      matchedWorkItemId: null,
+      cancelReason: null,
+      project: { id: 'project-1', code: 'RD-026', name: '权限平台' },
+      task: null,
+      source: {
+        sheetName: '张明',
+        section: 'NEXT_WEEK_PLAN' as const,
+        rowNumber: 21,
+        key: '张明:NEXT_WEEK_PLAN:21',
+        label: '张明 / 下周计划 / 第 21 行',
+      },
+      links: {
+        selfUrl: '/employee-week-plans/plan-1',
+        employeeProgressUrl: '/employees/employee-1/progress',
+        projectProgressUrl: '/projects/project-1/team-progress',
+        sourceBatchUrl: '/employee-work-imports/batch-1',
+      },
+    },
+  ],
+  meta: { page: 1, pageSize: 10, total: 1 },
+  sourceBatchIds: ['batch-1'],
+}
+
 function progressForPeriod(periodStart: string) {
   const trendValues: Record<string, number | null> = {
     '2026-07-13': 70,
@@ -244,6 +297,7 @@ describe('EmployeeDetailPage', () => {
       Promise.resolve(progressForPeriod(filters.periodStart))
     )
     employeesApi.listEmployeeWorkItems.mockResolvedValue(workItemsFixture)
+    employeesApi.listEmployeeWeekPlans.mockResolvedValue(weekPlansFixture)
     employeesApi.convertEmployeeWorkItemRisk.mockResolvedValue({
       risk: {
         id: 'risk-1',
@@ -255,6 +309,27 @@ describe('EmployeeDetailPage', () => {
       },
       alreadyExists: false,
     })
+  })
+
+  it('keeps current execution and next-week plans in separate traceable tables', async () => {
+    const user = userEvent.setup()
+    renderPage('/employees/employee-1?periodType=WEEK&periodStart=2026-07-20')
+
+    expect(await screen.findByRole('heading', { name: '本周执行' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '下周计划' })).toBeInTheDocument()
+    expect(employeesApi.listEmployeeWeekPlans).toHaveBeenCalledWith({
+      periodType: 'WEEK',
+      periodStart: '2026-07-27',
+      employeeId: 'employee-1',
+      page: 1,
+      pageSize: 10,
+    })
+    expect(screen.getByText('完成灰度发布')).toBeInTheDocument()
+    expect(screen.getByText('需要测试组协作')).toBeInTheDocument()
+    expect(screen.getByText('张明 / 下周计划 / 第 21 行')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '编辑系统字段' }))
+    expect(screen.getByRole('dialog', { name: '编辑计划系统字段' })).toBeInTheDocument()
   })
 
   it('switches week/month in the URL and drills from one employee work item to its project', async () => {
@@ -275,7 +350,7 @@ describe('EmployeeDetailPage', () => {
         expect.objectContaining({ periodType: 'MONTH', periodStart: '2026-07-01' })
       )
     )
-    expect(screen.getByRole('link', { name: 'RD-026 权限平台' })).toHaveAttribute(
+    expect(screen.getAllByRole('link', { name: 'RD-026 权限平台' })[0]).toHaveAttribute(
       'href',
       '/spaces/projects/project-1/overview'
     )

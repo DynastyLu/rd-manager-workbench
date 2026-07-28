@@ -8,6 +8,11 @@ import { EMPLOYEE_WORK_STATUS_COLORS, EMPLOYEE_WORK_STATUS_LABELS } from '../lab
 import type { EmployeeWorkItem } from '../types'
 import './employee-progress.less'
 
+const WORK_KIND_LABELS = {
+  PROJECT: '项目工作',
+  NON_PROJECT: '非项目工作',
+} as const
+
 const hours = (item: EmployeeWorkItem) => {
   if (item.plannedHours === null && item.actualHours === null) return '暂无数据'
   return `${item.plannedHours ?? '—'} / ${item.actualHours ?? '—'}`
@@ -63,30 +68,40 @@ export function EmployeeWorkTable({
         ]
       : []),
     {
-      title: '项目',
-      dataIndex: 'project',
-      width: 190,
+      title: '工作类型',
+      dataIndex: 'workKind',
+      width: 112,
       render: (_value, item) =>
-        item.project ? (
-          <Link to={ROUTES.projectWorkspace(item.project.id, 'overview')}>
-            {item.project.code} {item.project.name}
-          </Link>
+        item.classificationState === 'LEGACY_UNCLASSIFIED' || !item.workKind ? (
+          <Tag size="small" color="grey">
+            历史未分类
+          </Tag>
         ) : (
-          <span className="employee-work-table__muted">未关联项目</span>
+          <Tag size="small" color={item.workKind === 'PROJECT' ? 'blue' : 'cyan'}>
+            {WORK_KIND_LABELS[item.workKind]}
+          </Tag>
         ),
     },
     {
-      title: '任务',
-      dataIndex: 'task',
-      width: 190,
-      render: (_value, item) =>
-        item.task && item.project ? (
-          <Link to={ROUTES.projectWorkspace(item.project.id, 'work-items')}>
-            {item.task.code} {item.task.title}
-          </Link>
-        ) : (
-          <span className="employee-work-table__muted">—</span>
-        ),
+      title: '项目 / 任务',
+      dataIndex: 'project',
+      width: 220,
+      render: (_value, item) => (
+        <div className="employee-work-table__reference">
+          {item.project ? (
+            <Link to={ROUTES.projectWorkspace(item.project.id, 'overview')}>
+              {item.project.code} {item.project.name}
+            </Link>
+          ) : (
+            <span className="employee-work-table__muted">未关联项目</span>
+          )}
+          {item.task && item.project ? (
+            <Link to={ROUTES.projectWorkspace(item.project.id, 'work-items')}>
+              {item.task.code} {item.task.title}
+            </Link>
+          ) : null}
+        </div>
+      ),
     },
     {
       title: '状态',
@@ -111,10 +126,19 @@ export function EmployeeWorkTable({
       render: (_value, item) => hours(item),
     },
     {
-      title: '下步计划',
-      dataIndex: 'nextPlanText',
-      width: 170,
-      render: (value: string | null) => value || '—',
+      title: '计划完成日',
+      dataIndex: 'plannedCompletionDate',
+      width: 118,
+      render: (_value, item) => (
+        <div className="employee-work-table__deadline">
+          <span>{item.plannedCompletionDate || '未设置'}</span>
+          {item.overdue ? (
+            <Tag size="small" color="red">
+              已逾期
+            </Tag>
+          ) : null}
+        </div>
+      ),
     },
     {
       title: '风险',
@@ -125,9 +149,11 @@ export function EmployeeWorkTable({
     },
     {
       title: '来源',
-      dataIndex: 'sourceRowNumber',
-      width: 120,
-      render: (_value, item) => `v${item.importVersion ?? '—'} · 第 ${item.sourceRowNumber} 行`,
+      dataIndex: 'source',
+      width: 220,
+      render: (_value, item) =>
+        item.source?.label ||
+        `v${item.importVersion ?? '—'} · 第 ${item.sourceRowNumber} 行`,
     },
     ...(onConvertRisk
       ? [
@@ -164,7 +190,7 @@ export function EmployeeWorkTable({
         columns={columns}
         dataSource={items}
         pagination={pagination}
-        scroll={{ x: 1500 }}
+        scroll={{ x: 1580 }}
         onRow={(record) => ({
           className:
             record && record.id === focusedWorkItemId ? 'employee-work-table__row--focused' : '',

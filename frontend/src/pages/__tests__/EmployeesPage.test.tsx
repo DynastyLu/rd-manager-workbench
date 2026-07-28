@@ -35,6 +35,7 @@ const employee = {
   displayName: '林晓',
   roleTitle: '高级研发工程师',
   department: '研发一组',
+  workDirection: '智能控制',
   managerName: '张工',
   employmentStatus: 'ACTIVE' as const,
   weeklyCapacityHours: 40,
@@ -106,11 +107,26 @@ const teamMetrics = {
   unlinkedCount: 0,
   dataComplete: false,
   missingWeeks: ['2026-07-13'],
+  overdueCount: 1,
+  projectWorkCount: 3,
+  nonProjectWorkCount: 1,
+  legacyUnclassifiedCount: 0,
+  missingHoursCount: 1,
+  hoursCompleteness: 75,
+  hoursUtilizationRate: 90,
 }
 
 const teamProgressFixture = {
   period: { type: 'WEEK' as const, start: '2026-07-20', end: '2026-07-26' },
   metrics: teamMetrics,
+  nextPlanMetrics: {
+    planCount: 4,
+    priorityDistribution: { UNSPECIFIED: 0, LOW: 1, MEDIUM: 1, HIGH: 1, URGENT: 1 },
+    highPriorityCount: 2,
+    collaborationCount: 2,
+    unmatchedCount: 3,
+    cancelledCount: 0,
+  },
   sourceBatchIds: ['batch-1'],
   employees: {
     data: [
@@ -118,6 +134,7 @@ const teamProgressFixture = {
         employeeId: 'employee-1',
         displayName: '林晓',
         department: '研发一组',
+        workDirection: '智能控制',
         roleTitle: '高级研发工程师',
         metrics: { ...teamMetrics, completionRate: 50, dataComplete: true, missingWeeks: [] },
         sourceBatchIds: ['batch-1'],
@@ -313,6 +330,31 @@ describe('EmployeesPage', () => {
     const profileLinks = screen.getAllByRole('link', { name: '查看林晓档案' })
     expect(profileLinks).toHaveLength(2)
     profileLinks.forEach((link) => expect(link).toHaveAttribute('href', '/employees/employee-1'))
+  })
+
+  it('creates, edits and filters employee profiles by work direction', async () => {
+    employeesApi.createEmployee.mockResolvedValue(employee)
+    const user = userEvent.setup()
+    renderEmployees('/employees?tab=directory&workDirection=%E6%99%BA%E8%83%BD%E6%8E%A7%E5%88%B6')
+
+    expect(await screen.findByText('林晓')).toBeInTheDocument()
+    expect(employeesApi.listEmployees).toHaveBeenCalledWith(
+      expect.objectContaining({ workDirection: '智能控制' })
+    )
+    expect(screen.getByRole('combobox', { name: '工作方向' })).toBeInTheDocument()
+    expect(screen.getAllByText('智能控制').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('button', { name: '新建员工' }))
+    const dialog = screen.getByRole('dialog', { name: '新建员工' })
+    await user.type(within(dialog).getByRole('textbox', { name: '姓名' }), '周岚')
+    await user.type(within(dialog).getByRole('textbox', { name: '工作方向' }), '算法平台')
+    await user.click(within(dialog).getByRole('button', { name: '保存员工档案' }))
+
+    await waitFor(() =>
+      expect(employeesApi.createEmployee).toHaveBeenCalledWith(
+        expect.objectContaining({ displayName: '周岚', workDirection: '算法平台' })
+      )
+    )
   })
 
   it('persists search and employment filters in the URL and requests explicit pages', async () => {
@@ -586,12 +628,18 @@ describe('EmployeesPage', () => {
       status: undefined,
     })
     expect(screen.getAllByText('88%').length).toBeGreaterThan(0)
+    expect(screen.getByLabelText('本周执行指标')).toHaveTextContent('项目工作3')
+    expect(screen.getByLabelText('本周执行指标')).toHaveTextContent('非项目工作1')
+    expect(screen.getByLabelText('下周计划指标')).toHaveTextContent('计划数4')
+    expect(screen.getByLabelText('下周计划指标')).toHaveTextContent('协作需求2')
+    expect(screen.getByLabelText('下周计划指标')).toHaveTextContent('未承接3')
     expect(screen.getAllByText('暂无数据').length).toBeGreaterThan(0)
     expect(screen.getByText(/2026-07-13/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '林晓' })).toHaveAttribute(
       'href',
       '/employees/employee-1?periodType=WEEK&periodStart=2026-07-20'
     )
+    expect(screen.getByText(/智能控制/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'RD-026 权限平台' })).toHaveAttribute(
       'href',
       '/spaces/projects/project-1/overview'

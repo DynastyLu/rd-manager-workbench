@@ -5,6 +5,7 @@ import type { EmploymentStatus } from '../types'
 export interface EmployeeProfileDraft {
   displayName: string
   department: string
+  workDirection: string
   roleTitle: string
   managerName: string
   employmentStatus: EmploymentStatus
@@ -94,6 +95,20 @@ export function EmployeeProfileForm({
             disabled={disabled}
           />
         </label>
+        <label htmlFor="employee-profile-work-direction">
+          <span>工作方向</span>
+          <Input
+            id="employee-profile-work-direction"
+            aria-label="工作方向"
+            value={value.workDirection}
+            onChange={(nextValue) => update('workDirection', nextValue)}
+            placeholder="例如：智能控制 / 材料平台"
+            disabled={disabled}
+          />
+        </label>
+      </div>
+
+      <div className="workspace-modal-form__grid">
         <label htmlFor="employee-profile-role">
           <span>岗位</span>
           <Input
@@ -105,9 +120,6 @@ export function EmployeeProfileForm({
             disabled={disabled}
           />
         </label>
-      </div>
-
-      <div className="workspace-modal-form__grid">
         <label htmlFor="employee-profile-manager">
           <span>直属负责人</span>
           <Input

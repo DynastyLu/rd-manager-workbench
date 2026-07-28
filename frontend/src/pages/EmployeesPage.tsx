@@ -70,6 +70,7 @@ const EMPLOYMENT_STATUS_COLORS: Record<EmploymentStatus, 'green' | 'amber' | 'gr
 const EMPTY_DRAFT: EmployeeProfileDraft = {
   displayName: '',
   department: '',
+  workDirection: '',
   roleTitle: '',
   managerName: '',
   employmentStatus: 'ACTIVE',
@@ -82,6 +83,7 @@ function employeeToDraft(employee: Employee): EmployeeProfileDraft {
   return {
     displayName: employee.displayName,
     department: employee.department ?? '',
+    workDirection: employee.workDirection ?? '',
     roleTitle: employee.roleTitle ?? '',
     managerName: employee.managerName ?? '',
     employmentStatus: employee.employmentStatus,
@@ -96,6 +98,7 @@ function draftToCreateInput(draft: EmployeeProfileDraft): CreateEmployeeInput {
   return {
     displayName: draft.displayName.trim(),
     department: optional(draft.department),
+    workDirection: optional(draft.workDirection),
     roleTitle: optional(draft.roleTitle),
     managerName: optional(draft.managerName),
     employmentStatus: draft.employmentStatus,
@@ -109,6 +112,7 @@ function draftToUpdateInput(draft: EmployeeProfileDraft): UpdateEmployeeInput {
   return {
     displayName: draft.displayName.trim(),
     department: draft.department.trim(),
+    workDirection: draft.workDirection.trim(),
     roleTitle: draft.roleTitle.trim(),
     managerName: draft.managerName.trim(),
     employmentStatus: draft.employmentStatus,
@@ -135,6 +139,7 @@ export default function EmployeesPage() {
   ) as EmployeeWorkspaceTab
   const search = searchParams.getString('query')
   const department = searchParams.getString('department')
+  const workDirection = searchParams.getString('workDirection')
   const statusParam = searchParams.getEnum(
     'employmentStatus',
     ['ALL', 'ACTIVE', 'ON_LEAVE', 'LEFT'] as const,
@@ -172,6 +177,7 @@ export default function EmployeesPage() {
   const filters: EmployeeFilters = {
     q: search || undefined,
     department: department || undefined,
+    workDirection: workDirection || undefined,
     employmentStatus,
     page,
     pageSize: PAGE_SIZE,
@@ -283,6 +289,13 @@ export default function EmployeesPage() {
     if (department) values.add(department)
     return [...values].sort((left, right) => left.localeCompare(right, 'zh-CN'))
   }, [department, employees])
+  const workDirectionOptions = useMemo(() => {
+    const values = new Set(
+      employees.flatMap((employee) => (employee.workDirection ? [employee.workDirection] : []))
+    )
+    if (workDirection) values.add(workDirection)
+    return [...values].sort((left, right) => left.localeCompare(right, 'zh-CN'))
+  }, [employees, workDirection])
 
   const teamProgress = teamProgressQuery.data
   const progressDepartmentOptions = useMemo(() => {
@@ -396,6 +409,12 @@ export default function EmployeesPage() {
       dataIndex: 'roleTitle',
       width: 180,
       render: (value: string | null) => value || '未设置',
+    },
+    {
+      title: '工作方向',
+      dataIndex: 'workDirection',
+      width: 170,
+      render: (value: string | null | undefined) => value || '未设置',
     },
     {
       title: '直属负责人',
@@ -547,7 +566,10 @@ export default function EmployeesPage() {
                   </div>
                 ) : null}
 
-                <EmployeeProgressMetrics metrics={teamProgress.metrics} />
+                <EmployeeProgressMetrics
+                  metrics={teamProgress.metrics}
+                  nextPlanMetrics={teamProgress.nextPlanMetrics}
+                />
 
                 <div className="employees-page__overview-grid">
                   <section className="employees-page__panel" aria-label="员工进展">
@@ -565,7 +587,10 @@ export default function EmployeesPage() {
                               >
                                 {entry.displayName}
                               </Link>
-                              <span>{entry.department || '未设置部门'}</span>
+                              <span>
+                                {entry.department || '未设置部门'} ·{' '}
+                                {entry.workDirection || '未设置工作方向'}
+                              </span>
                             </div>
                             <span>
                               完成度 {percentage(entry.metrics.averageCompletionRate)} · 工时{' '}
@@ -668,6 +693,24 @@ export default function EmployeesPage() {
               <span id="employee-status-filter-label" className="workspace-visually-hidden">
                 在职状态
               </span>
+              <span id="employee-work-direction-filter-label" className="workspace-visually-hidden">
+                工作方向
+              </span>
+              <Select
+                aria-labelledby="employee-work-direction-filter-label"
+                value={workDirection || undefined}
+                placeholder="全部工作方向"
+                showClear
+                filter
+                allowCreate
+                optionList={workDirectionOptions.map((value) => ({ value, label: value }))}
+                onChange={(value) =>
+                  searchParams.update(
+                    { workDirection: value ? String(value) : undefined, page: 1 },
+                    { defaults: { page: 1 } }
+                  )
+                }
+              />
               <Select
                 aria-labelledby="employee-status-filter-label"
                 value={employmentStatus ?? 'ALL'}
@@ -710,7 +753,7 @@ export default function EmployeesPage() {
                 loading={employeesQuery.isPending}
                 columns={columns}
                 dataSource={employees}
-                scroll={{ x: 1360 }}
+                scroll={{ x: 1530 }}
                 pagination={{
                   currentPage: page,
                   pageSize: PAGE_SIZE,

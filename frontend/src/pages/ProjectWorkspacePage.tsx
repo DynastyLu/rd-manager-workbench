@@ -18,7 +18,13 @@ import { listMeetings, listPartners, listRisks } from '@/modules/workbench/api/m
 import { archiveTask } from '@/modules/workbench/api/tasks'
 import { listNonProjectRd } from '@/modules/workbench/api/operations'
 import { request } from '@/lib/http'
-import { getProjectTeamProgress } from '@/modules/employees/api'
+import {
+  getProjectTeamProgress,
+  listEmployeeWeekPlans,
+  listEmployeeWorkItems,
+} from '@/modules/employees/api'
+import { EmployeeWeekPlanTable } from '@/modules/employees/components/EmployeeWeekPlanTable'
+import { EmployeeWorkTable } from '@/modules/employees/components/EmployeeWorkTable'
 import { defaultPeriodStart } from '@/modules/employees/periods'
 import { employeeQueryKeys } from '@/modules/employees/queryKeys'
 import type {
@@ -537,6 +543,36 @@ function ProjectTeamProgressSection({ projectId }: { projectId: string }) {
     queryKey: employeeQueryKeys.projectProgress(projectId, filters),
     queryFn: () => getProjectTeamProgress(projectId, filters),
   })
+  const reportPeriodStart = teamQuery.data?.period.start
+  const currentWorkQuery = useQuery({
+    queryKey: ['employees', 'project-current-work', projectId, reportPeriodStart],
+    queryFn: () =>
+      listEmployeeWorkItems({
+        periodType: 'WEEK',
+        periodStart: reportPeriodStart!,
+        projectId,
+        page: 1,
+        pageSize: 20,
+      }),
+    enabled: Boolean(reportPeriodStart),
+  })
+  const nextPeriodStart = useMemo(() => {
+    const value = new Date(`${reportPeriodStart ?? filters.periodStart}T00:00:00.000Z`)
+    value.setUTCDate(value.getUTCDate() + 7)
+    return value.toISOString().slice(0, 10)
+  }, [filters.periodStart, reportPeriodStart])
+  const futurePlansQuery = useQuery({
+    queryKey: ['employees', 'project-future-plans', projectId, nextPeriodStart],
+    queryFn: () =>
+      listEmployeeWeekPlans({
+        periodType: 'WEEK',
+        periodStart: nextPeriodStart,
+        projectId,
+        page: 1,
+        pageSize: 20,
+      }),
+    enabled: Boolean(reportPeriodStart),
+  })
 
   if (teamQuery.isPending) return <Skeleton.Paragraph rows={3} />
   if (teamQuery.isError || !teamQuery.data) {
@@ -555,7 +591,8 @@ function ProjectTeamProgressSection({ projectId }: { projectId: string }) {
     `${ROUTES.employeeDetail(employeeId)}?periodType=${team.period.type}&periodStart=${team.period.start}`
 
   return (
-    <section className="project-workspace__panel project-workspace__panel--section project-workspace__team-progress">
+    <>
+      <section className="project-workspace__panel project-workspace__panel--section project-workspace__team-progress">
       <header>
         <div>
           <h2>团队进展</h2>
@@ -608,7 +645,60 @@ function ProjectTeamProgressSection({ projectId }: { projectId: string }) {
       ) : (
         <p className="project-workspace__muted">当前周期还没有员工填报该项目的工作。</p>
       )}
-    </section>
+      </section>
+
+      <section className="project-workspace__panel project-workspace__panel--section project-workspace__employee-report-links">
+        <header>
+          <div>
+            <h2>当前工作</h2>
+            <span>{currentWorkQuery.data?.meta.total ?? 0}</span>
+          </div>
+          <Link
+            to={`${ROUTES.EMPLOYEES}?tab=work-items&periodType=WEEK&periodStart=${team.period.start}&projectId=${encodeURIComponent(projectId)}`}
+          >
+            查看全部
+          </Link>
+        </header>
+        {currentWorkQuery.isPending ? <Skeleton.Paragraph rows={3} /> : null}
+        {currentWorkQuery.isError ? (
+          <div className="project-workspace__inline-error">
+            <span>无法读取项目当前工作。</span>
+            <Button size="small" onClick={() => void currentWorkQuery.refetch()}>
+              重试
+            </Button>
+          </div>
+        ) : null}
+        {currentWorkQuery.data ? (
+          <EmployeeWorkTable items={currentWorkQuery.data.data} showEmployee />
+        ) : null}
+      </section>
+
+      <section className="project-workspace__panel project-workspace__panel--section project-workspace__employee-report-links">
+        <header>
+          <div>
+            <h2>未来计划</h2>
+            <span>{futurePlansQuery.data?.meta.total ?? 0}</span>
+          </div>
+          <Link
+            to={`${ROUTES.EMPLOYEES}?tab=overview&periodType=WEEK&periodStart=${team.period.start}&projectId=${encodeURIComponent(projectId)}`}
+          >
+            团队计划
+          </Link>
+        </header>
+        {futurePlansQuery.isPending ? <Skeleton.Paragraph rows={3} /> : null}
+        {futurePlansQuery.isError ? (
+          <div className="project-workspace__inline-error">
+            <span>无法读取项目未来计划。</span>
+            <Button size="small" onClick={() => void futurePlansQuery.refetch()}>
+              重试
+            </Button>
+          </div>
+        ) : null}
+        {futurePlansQuery.data ? (
+          <EmployeeWeekPlanTable plans={futurePlansQuery.data.data} showEmployee />
+        ) : null}
+      </section>
+    </>
   )
 }
 
