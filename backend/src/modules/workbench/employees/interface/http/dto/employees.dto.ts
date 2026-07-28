@@ -1,7 +1,10 @@
 import {
   EmployeeImportRowStatus,
+  EmployeePlanCarryStatus,
+  EmployeePlanPriority,
   EmployeeProgressPeriod,
   EmployeeWorkImportStatus,
+  EmployeeWorkKind,
   EmployeeWorkStatus,
   EmploymentStatus,
 } from '@prisma/client';
@@ -15,6 +18,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsString,
+  MaxLength,
   Matches,
   Max,
   Min,
@@ -164,6 +168,77 @@ export class ListEmployeeWorkItemsQueryDto extends ProgressPeriodQueryDto {
   @Min(1)
   @Max(MAX_EMPLOYEE_PAGE_SIZE)
   pageSize?: number;
+}
+
+export class ListEmployeeWeekPlansQueryDto extends ProgressPeriodQueryDto {
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  employeeId?: string;
+
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeePlanCarryStatus)
+  carryStatus?: EmployeePlanCarryStatus;
+
+  @Transform(toNumber)
+  @ValidateIf(isDefined)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE)
+  page?: number;
+
+  @Transform(toNumber)
+  @ValidateIf(isDefined)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_EMPLOYEE_PAGE_SIZE)
+  pageSize?: number;
+}
+
+export class UpdateEmployeeWeekPlanDto {
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeeWorkKind)
+  workKind?: EmployeeWorkKind;
+
+  @Transform(trimString)
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  projectId?: string | null;
+
+  @Transform(trimString)
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  taskId?: string | null;
+
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  plannedCompletionAt?: string | null;
+
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeePlanPriority)
+  priority?: EmployeePlanPriority;
+
+  @Transform(trimString)
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  @MaxLength(2_000)
+  collaborationText?: string | null;
+}
+
+export class CancelEmployeeWeekPlanDto {
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
+  reason!: string;
+}
+
+export class MatchEmployeeWeekPlanDto {
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  workItemId!: string;
 }
 
 export class ExportEmployeeWorkItemsQueryDto extends ProgressPeriodQueryDto {

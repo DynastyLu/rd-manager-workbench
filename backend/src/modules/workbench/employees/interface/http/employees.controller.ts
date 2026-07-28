@@ -14,15 +14,20 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { EmployeeProgressQueryService } from '../../application/employee-progress-query.service';
+import { EmployeeWeekPlansService } from '../../application/employee-week-plans.service';
 import { EmployeeWorkExportService } from '../../application/employee-work-export.service';
 import { EmployeeWorkRiskService } from '../../application/employee-work-risk.service';
 import { EmployeesService } from '../../application/employees.service';
 import {
+  CancelEmployeeWeekPlanDto,
   CreateEmployeeDto,
   ExportEmployeeWorkItemsQueryDto,
+  ListEmployeeWeekPlansQueryDto,
   ListEmployeeWorkItemsQueryDto,
   ListEmployeesQueryDto,
+  MatchEmployeeWeekPlanDto,
   ProgressPeriodQueryDto,
+  UpdateEmployeeWeekPlanDto,
   UpdateEmployeeDto,
 } from './dto/employees.dto';
 
@@ -63,6 +68,7 @@ export class EmployeeProgressController {
     private readonly progress: EmployeeProgressQueryService,
     private readonly workExport: EmployeeWorkExportService,
     private readonly workRisks: EmployeeWorkRiskService,
+    private readonly weekPlanActions: EmployeeWeekPlansService,
   ) {}
 
   @Get('employee-progress')
@@ -95,6 +101,51 @@ export class EmployeeProgressController {
   @Get('employee-work-items/:id')
   workItem(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.progress.workItem(id);
+  }
+
+  @Get('employee-week-plans')
+  weekPlans(@Query() query: ListEmployeeWeekPlansQueryDto) {
+    return this.progress.weekPlans(query);
+  }
+
+  @Get('employee-week-plans/:id')
+  weekPlan(@Param('id') id: string) {
+    return this.progress.weekPlan(id);
+  }
+
+  @Patch('employee-week-plans/:id')
+  updateWeekPlan(@Param('id') id: string, @Body() dto: UpdateEmployeeWeekPlanDto) {
+    const { plannedCompletionAt, ...systemFields } = dto;
+    return this.weekPlanActions.updateSystemFields(id, {
+      ...systemFields,
+      ...(plannedCompletionAt !== undefined
+        ? {
+            plannedCompletionAt: plannedCompletionAt
+              ? new Date(`${plannedCompletionAt}T00:00:00.000Z`)
+              : null,
+          }
+        : {}),
+    });
+  }
+
+  @Post('employee-week-plans/:id/cancel')
+  cancelWeekPlan(@Param('id') id: string, @Body() dto: CancelEmployeeWeekPlanDto) {
+    return this.weekPlanActions.cancel(id, dto.reason);
+  }
+
+  @Post('employee-week-plans/:id/match')
+  matchWeekPlan(@Param('id') id: string, @Body() dto: MatchEmployeeWeekPlanDto) {
+    return this.weekPlanActions.match(id, dto.workItemId);
+  }
+
+  @Post('employee-week-plans/:id/unmatch')
+  unmatchWeekPlan(@Param('id') id: string) {
+    return this.weekPlanActions.unmatch(id);
+  }
+
+  @Post('employee-week-plans/:id/convert-to-task')
+  convertWeekPlanToTask(@Param('id') id: string) {
+    return this.weekPlanActions.convertToTask(id);
   }
 
   @Post('employee-work-items/:id/convert-risk')
