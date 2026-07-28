@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { ChunkingService } from './chunking.service';
+import { EmbeddingService } from './embedding.service';
 
 @Injectable()
 export class IndexingService {
@@ -11,6 +12,7 @@ export class IndexingService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly chunking: ChunkingService,
+    private readonly embeddings: EmbeddingService,
   ) {}
 
   schedule(documentId: string): void {
@@ -41,26 +43,36 @@ export class IndexingService {
 
   async indexDocument(id: string, plainText: string) {
     const chunks = this.chunking.chunk(plainText, undefined, { documentId: id });
+    const vectors = await this.embeddings.embed(chunks.map((chunk) => chunk.content));
 
     await this.prisma.$transaction(async (tx) => {
       await tx.documentChunk.deleteMany({ where: { documentId: id } });
 
       if (chunks.length === 0) return;
 
-      for (const chunk of chunks) {
+      for (let index = 0; index < chunks.length; index++) {
+        const chunk = chunks[index];
+        const vector = vectors[index] ? `[${vectors[index]!.join(',')}]` : null;
         await tx.$executeRawUnsafe(
-          `INSERT INTO app.document_chunks (document_id, chunk_index, content, token_count, metadata)
-           VALUES ($1, $2, $3, $4, $5::jsonb)
+          `INSERT INTO app.document_chunks (document_id, chunk_index, content, token_count, metadata, embedding)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6::public.vector)
            ON CONFLICT (document_id, chunk_index) DO UPDATE
-           SET content = $3, token_count = $4, metadata = $5::jsonb, updated_at = now()`,
+           SET content = $3, token_count = $4, metadata = $5::jsonb,
+               embedding = $6::public.vector, updated_at = now()`,
           id,
           chunk.chunkIndex,
           chunk.content,
           chunk.tokenCount,
           JSON.stringify(chunk.metadata),
+          vector,
         );
       }
     });
+
+    return {
+      chunks: chunks.length,
+      embedded: vectors.filter((vector) => vector !== null).length,
+    };
   }
 
   async indexAll(): Promise<{ jobId: string }> {

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { DeepSeekHttpService } from './deepseek-http.service';
 import { ChunkCitation } from '../domain/knowledge.types';
+import { EmbeddingService } from './embedding.service';
 
 const SYSTEM_PROMPT = `你是一个本地研发知识库助手，服务于研发主管的日常决策。
 你的知识来源是用户本机的文档、会议纪要、方案和复盘。
@@ -28,6 +29,9 @@ interface ChunkRow {
   document_title: string;
   space_name: string | null;
   similarity: number;
+  page_number: number | null;
+  sheet_name: string | null;
+  location_label: string | null;
 }
 
 /** Extract 2+ character keywords from a question */
@@ -41,6 +45,7 @@ export class RagService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly deepseek: DeepSeekHttpService,
+    private readonly embeddings: EmbeddingService,
   ) {}
 
   async ask(params: {
@@ -52,6 +57,7 @@ export class RagService {
     // Primary: pg_trgm similarity search
     const trigramResults = await this.prisma.$queryRawUnsafe<ChunkRow[]>(
       `SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
+              dc.page_number, dc.sheet_name, dc.location_label,
               cd.title as document_title,
               ks.name as space_name,
               public.similarity(dc.content, $1) AS similarity
@@ -80,12 +86,40 @@ export class RagService {
       chunkMap.set(c.id, { ...c, score });
     }
 
+    const [questionEmbedding] = await this.embeddings.embed([params.question]);
+    if (questionEmbedding) {
+      const vectorLiteral = `[${questionEmbedding.join(',')}]`;
+      const vectorResults = await this.prisma.$queryRawUnsafe<ChunkRow[]>(
+        `SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
+                dc.page_number, dc.sheet_name, dc.location_label,
+                cd.title as document_title,
+                ks.name as space_name,
+                1 - (dc.embedding <=> $1::public.vector) AS similarity
+         FROM app.document_chunks dc
+         JOIN app.content_documents cd ON cd.id = dc.document_id
+         LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
+         WHERE cd.status = 'ACTIVE'
+           AND cd.trashed_at IS NULL
+           AND dc.embedding IS NOT NULL
+         ORDER BY dc.embedding <=> $1::public.vector
+         LIMIT $2`,
+        vectorLiteral,
+        TOP_K,
+      );
+      for (const chunk of vectorResults) {
+        const score = Number(chunk.similarity);
+        const existing = chunkMap.get(chunk.id);
+        if (!existing || score > existing.score) chunkMap.set(chunk.id, { ...chunk, score });
+      }
+    }
+
     // Fallback: if few trigram results, also do keyword LIKE search
     const aboveThreshold = [...chunkMap.values()].filter((c) => c.similarity >= SIMILARITY_THRESHOLD);
     if (aboveThreshold.length < 5 && keywords.length > 0) {
       for (const kw of keywords.slice(0, 5)) {
         const likeResults = await this.prisma.$queryRawUnsafe<ChunkRow[]>(
           `SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
+                  dc.page_number, dc.sheet_name, dc.location_label,
                   cd.title as document_title,
                   ks.name as space_name,
                   public.similarity(dc.content, $1) AS similarity
@@ -94,7 +128,7 @@ export class RagService {
            LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
            WHERE cd.status = 'ACTIVE'
              AND cd.trashed_at IS NULL
-             AND dc.content ILIKE ${`'%${kw.replace(/'/g, "''")}%'`}
+             AND dc.content ILIKE '%' || $1 || '%'
            ORDER BY public.similarity(dc.content, $1) DESC
            LIMIT 10`,
           kw,
@@ -135,7 +169,10 @@ export class RagService {
         text: chunk.content.slice(0, 200),
         content: chunk.content,
         spaceName: chunk.space_name || undefined,
-        similarity: chunk.similarity,
+        similarity: chunk.score,
+        pageNumber: chunk.page_number ?? undefined,
+        sheetName: chunk.sheet_name ?? undefined,
+        locationLabel: chunk.location_label ?? undefined,
       });
       contextUsed += chunkTokens;
     }

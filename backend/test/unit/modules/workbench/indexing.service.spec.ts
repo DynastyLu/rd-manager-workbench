@@ -1,7 +1,7 @@
 import { IndexingService } from '../../../../src/modules/workbench/knowledge/application/indexing.service';
 
 describe('IndexingService', () => {
-  let mockPrisma: any; let mockChunking: any; let service: IndexingService;
+  let mockPrisma: any; let mockChunking: any; let mockEmbeddings: any; let service: IndexingService;
 
   beforeEach(() => {
     mockChunking = { chunk: jest.fn() };
@@ -17,19 +17,28 @@ describe('IndexingService', () => {
       $executeRawUnsafe: tx.$executeRawUnsafe,
       $queryRawUnsafe: tx.$queryRawUnsafe,
     };
-    service = new IndexingService(mockPrisma, mockChunking);
+    mockEmbeddings = {
+      embed: jest.fn().mockResolvedValue([
+        Array(384).fill(0.1),
+        Array(384).fill(0.2),
+      ]),
+    };
+    service = new IndexingService(mockPrisma, mockChunking, mockEmbeddings);
   });
 
-  it('chunks and writes document chunks without embeddings', async () => {
+  it('chunks and writes local 384-dimensional embeddings with document chunks', async () => {
     mockChunking.chunk.mockReturnValue([
       { chunkIndex: 0, content: 'c1', tokenCount: 5, metadata: {} },
       { chunkIndex: 1, content: 'c2', tokenCount: 5, metadata: {} },
     ]);
     mockPrisma.contentDocument.findUnique.mockResolvedValue({ plainText: 'text' });
 
-    await service.indexDocument('doc1', 'text');
+    const result = await service.indexDocument('doc1', 'text');
+    expect(mockEmbeddings.embed).toHaveBeenCalledWith(['c1', 'c2']);
     expect(mockPrisma.$transaction).toHaveBeenCalled();
     expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.$executeRawUnsafe.mock.calls[0][6]).toContain('0.1');
+    expect(result).toEqual({ chunks: 2, embedded: 2 });
   });
 
   it('reports indexing status', async () => {

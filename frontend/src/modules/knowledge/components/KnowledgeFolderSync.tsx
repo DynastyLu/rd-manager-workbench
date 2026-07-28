@@ -6,6 +6,7 @@ import {
   listFolderWatches, startFolderWatch, stopFolderWatch, rescanFolder,
   type FolderWatchItem,
 } from '../api';
+import { KnowledgeEmbeddingStatus } from './KnowledgeEmbeddingStatus';
 
 const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : '';
 
@@ -142,6 +143,7 @@ export function KnowledgeFolderSync() {
 
   return (
     <div className="kb-folder-sync">
+      <KnowledgeEmbeddingStatus />
       <div className="kb-folder-sync__header">
         <h3><IconFolder /> 本地文件夹同步</h3>
         <Button icon={<IconPlus />} onClick={() => setModalOpen(true)}>添加文件夹</Button>

@@ -124,11 +124,13 @@ export class KnowledgeIngestionService {
           plainText: extracted.plainText,
         },
       });
-      await this.indexing.indexDocument(documentId, extracted.plainText);
+      const indexed = await this.indexing.indexDocument(documentId, extracted.plainText);
       await this.prisma.contentDocument.update({
         where: { id: documentId },
         data: {
-          indexStatus: KnowledgeProcessingStatus.READY,
+          indexStatus: indexed && indexed.embedded < indexed.chunks
+            ? KnowledgeProcessingStatus.PARTIAL
+            : KnowledgeProcessingStatus.READY,
           indexedAt: new Date(),
           processingError: null,
         },

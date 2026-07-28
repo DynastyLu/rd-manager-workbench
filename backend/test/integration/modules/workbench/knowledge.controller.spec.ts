@@ -7,6 +7,8 @@ import { HttpExceptionFilter } from '../../../../src/shared/filters/http-excepti
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
 import { FilesService } from '../../../../src/modules/workbench/content/application/files.service';
 
+jest.setTimeout(30_000);
+
 describe('KnowledgeController (integration)', () => {
   const prisma = new PrismaClient();
   const prefix = `TEST-KNOWLEDGE-${Date.now()}`;
@@ -182,7 +184,7 @@ describe('KnowledgeController (integration)', () => {
       where: { id: stored.id },
       select: { indexStatus: true, plainText: true },
     });
-    expect(processed.indexStatus).toBe('READY');
+    expect(processed.indexStatus).toBe('PARTIAL');
     expect(processed.plainText).toContain('需要保留的原文件内容');
 
     const source = await request(app.getHttpServer())

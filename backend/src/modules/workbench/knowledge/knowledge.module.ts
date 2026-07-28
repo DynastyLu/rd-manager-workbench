@@ -26,8 +26,7 @@ import { StorageModule } from '../../../infrastructure/storage/storage.module';
     {
       provide: EmbeddingService,
       useFactory: (cache: EmbeddingCache) => {
-        const apiKey = process.env.DEEPSEEK_API_KEY || '';
-        return new EmbeddingService(cache, apiKey);
+        return new EmbeddingService(cache);
       },
       inject: [EmbeddingCache],
     },

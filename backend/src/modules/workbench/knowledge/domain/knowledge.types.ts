@@ -24,6 +24,9 @@ export interface ChunkCitation {
   content: string;    // full chunk content
   spaceName?: string; // knowledge space name
   similarity: number; // pg_trgm score
+  pageNumber?: number;
+  sheetName?: string;
+  locationLabel?: string;
 }
 
 export interface RagAskParams {

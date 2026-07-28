@@ -11,6 +11,7 @@ import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
 import { KnowledgeIngestionService } from '../../application/knowledge-ingestion.service';
 import { KnowledgeFileService } from '../../application/knowledge-file.service';
+import { EmbeddingService } from '../../application/embedding.service';
 import { FolderWatchService } from '../../application/folder-watch.service';
 import { KnowledgeSpacesService } from '../../../content/application/knowledge-spaces.service';
 import type { UploadedContentFile } from '../../../content/application/files.service';
@@ -24,6 +25,7 @@ export class KnowledgeController {
     private readonly indexing: IndexingService,
     private readonly ingestion: KnowledgeIngestionService,
     private readonly knowledgeFiles: KnowledgeFileService,
+    private readonly embeddings: EmbeddingService,
     private readonly spaces: KnowledgeSpacesService,
     private readonly folderWatch: FolderWatchService,
   ) {}
@@ -164,6 +166,17 @@ export class KnowledgeController {
   @Get('usage')
   getUsage() {
     return this.sessions.getUsageStats();
+  }
+
+  @Get('embeddings/status')
+  getEmbeddingStatus() {
+    return this.embeddings.getStatus();
+  }
+
+  @Post('embeddings/prepare')
+  async prepareEmbeddingModel() {
+    await this.embeddings.prepare();
+    return this.embeddings.getStatus();
   }
 
   @Post('documents/upload')

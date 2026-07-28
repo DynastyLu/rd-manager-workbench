@@ -1,81 +1,65 @@
-import { EmbeddingService } from '../../../../src/modules/workbench/knowledge/application/embedding.service';
+import {
+  EmbeddingModelLoader,
+  EmbeddingService,
+} from '../../../../src/modules/workbench/knowledge/application/embedding.service';
 import { EmbeddingCache } from '../../../../src/modules/workbench/knowledge/domain/embedding-cache';
 
 describe('EmbeddingService', () => {
   let cache: EmbeddingCache;
-  let mockFetch: jest.Mock;
 
   beforeEach(() => {
     cache = new EmbeddingCache();
-    mockFetch = jest.fn();
   });
 
-  function makeService(apiKey = 'test-key') {
-    return new EmbeddingService(cache, apiKey, 'https://api.deepseek.com/v1', mockFetch);
+  function makeLoader(vectorValue = 0.1) {
+    const extractor = jest.fn(async (texts: string[]) => ({
+      tolist: () => texts.map(() => Array(384).fill(vectorValue)),
+    }));
+    const loader = jest.fn(async () => extractor) as unknown as EmbeddingModelLoader;
+    return { loader, extractor };
   }
 
-  it('returns cached embeddings for previously computed texts', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ data: [{ embedding: Array(1536).fill(0.1) }] }),
-    });
+  it('uses a local 384-dimensional model and caches embeddings by content', async () => {
+    const { loader, extractor } = makeLoader();
+    const service = new EmbeddingService(cache, loader);
 
-    const service = makeService();
-    const texts = ['hello world'];
-    const first = await service.embed(texts);
-    const second = await service.embed(texts);
+    const first = await service.embed(['你好，研发计划']);
+    const second = await service.embed(['你好，研发计划']);
 
     expect(first).toEqual(second);
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(first[0]).toHaveLength(384);
+    expect(loader).toHaveBeenCalledWith(false);
+    expect(extractor).toHaveBeenCalledTimes(1);
   });
 
-  it('batches requests into groups of 20', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: Array(20).fill({ embedding: Array(1536).fill(0.1) }) }),
-    });
+  it('batches local inference into groups of 20', async () => {
+    const { loader, extractor } = makeLoader();
+    const service = new EmbeddingService(cache, loader);
 
-    const service = makeService();
-    const texts = Array.from({ length: 45 }, (_, i) => `text ${i}`);
-    await service.embed(texts);
-    expect(mockFetch).toHaveBeenCalledTimes(3);
+    await service.embed(Array.from({ length: 45 }, (_, index) => `text ${index}`));
+
+    expect(extractor).toHaveBeenCalledTimes(3);
+    expect(extractor.mock.calls.map((call) => call[0].length)).toEqual([20, 20, 5]);
   });
 
-  it('retries on 429 with exponential backoff', async () => {
-    mockFetch
-      .mockRejectedValueOnce(new Error('429 Too Many Requests'))
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: [{ embedding: Array(1536).fill(0.1) }] }),
-      });
+  it('does not make a network request when the local model is unavailable', async () => {
+    const loader = jest.fn(async (allowRemote: boolean) => {
+      expect(allowRemote).toBe(false);
+      throw new Error('model not cached');
+    }) as unknown as EmbeddingModelLoader;
+    const service = new EmbeddingService(cache, loader);
 
-    const service = makeService();
-    const result = await service.embed(['text']);
-    expect(result).toHaveLength(1);
-    expect(mockFetch).toHaveBeenCalledTimes(2);
-  }, 10000);
+    await expect(service.embed(['text'])).resolves.toEqual([null]);
+    expect(service.getStatus()).toMatchObject({ state: 'UNAVAILABLE', ready: false });
+  });
 
-  it('returns null embeddings on persistent failure', async () => {
-    mockFetch.mockRejectedValue(new Error('500 Internal Server Error'));
+  it('downloads the model only through the explicit prepare action', async () => {
+    const { loader } = makeLoader(0.2);
+    const service = new EmbeddingService(cache, loader);
 
-    const service = makeService();
-    const result = await service.embed(['text']);
-    expect(result[0]).toBeNull();
-  }, 10000);
+    await service.prepare();
 
-  it('caches embeddings by SHA-256 content hash', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ data: [{ embedding: Array(1536).fill(0.2) }] }),
-    });
-
-    const service = makeService();
-    const text = 'unique content';
-    await service.embed([text]);
-    const result = await service.embed([text]);
-
-    expect(result.length).toBe(1);
-    expect(result[0]).not.toBeNull();
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(loader).toHaveBeenCalledWith(true);
+    expect(service.getStatus()).toMatchObject({ state: 'READY', ready: true, dimension: 384 });
   });
 });

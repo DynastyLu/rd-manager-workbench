@@ -23,6 +23,19 @@ export function getIndexStatus() { return request<IndexStatus>('/knowledge/reind
 export function triggerReindex() {
   return request<{ jobId: string }>('/knowledge/reindex', { method: 'POST' });
 }
+export interface EmbeddingStatus {
+  state: 'UNAVAILABLE' | 'DOWNLOADING' | 'LOADING' | 'READY' | 'ERROR';
+  ready: boolean;
+  modelId: string;
+  dimension: number;
+  lastError: string | null;
+}
+export function getEmbeddingStatus() {
+  return request<EmbeddingStatus>('/knowledge/embeddings/status');
+}
+export function prepareEmbeddingModel() {
+  return request<EmbeddingStatus>('/knowledge/embeddings/prepare', { method: 'POST' });
+}
 
 // Folder watch
 export interface FolderWatchItem {

@@ -195,6 +195,14 @@ export default function KnowledgeHomePage() {
     queryKey: ['document', selectedDocumentId],
     queryFn: () => getDocument(selectedDocumentId),
     enabled: Boolean(selectedDocumentId),
+    refetchInterval: (queryState) => {
+      const document = queryState.state.data
+      return document && (
+        document.indexStatus === 'PENDING'
+        || document.indexStatus === 'PROCESSING'
+        || document.previewStatus === 'PROCESSING'
+      ) ? 1200 : false
+    },
   })
 
 

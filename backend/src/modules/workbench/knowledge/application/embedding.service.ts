@@ -1,99 +1,135 @@
+import { resolve } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { EmbeddingCache } from '../domain/embedding-cache';
 
 const BATCH_SIZE = 20;
-const MAX_RETRIES = 3;
-const EMBEDDING_DIM = 1536;
+const EMBEDDING_DIMENSION = 384;
+const MODEL_ID = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
 
-interface DeepSeekEmbeddingResponse {
-  data: Array<{ embedding: number[]; index: number }>;
+interface TensorLike {
+  tolist(): unknown;
 }
+
+export type FeatureExtractor = (
+  texts: string[],
+  options: { pooling: 'mean'; normalize: true },
+) => Promise<TensorLike>;
+
+export type EmbeddingModelLoader = (allowRemote: boolean) => Promise<FeatureExtractor>;
+
+type ModelState = 'UNAVAILABLE' | 'DOWNLOADING' | 'LOADING' | 'READY' | 'ERROR';
 
 @Injectable()
 export class EmbeddingService {
   private readonly logger = new Logger(EmbeddingService.name);
+  private readonly loader: EmbeddingModelLoader;
+  private modelPromise: Promise<FeatureExtractor> | null = null;
+  private state: ModelState = 'UNAVAILABLE';
+  private lastError: string | null = null;
 
   constructor(
     private readonly cache: EmbeddingCache,
-    private readonly apiKey: string,
-    private readonly baseUrl = 'https://api.deepseek.com/v1',
-    private fetchImpl: typeof fetch = fetch,
-  ) {}
+    loader?: EmbeddingModelLoader,
+  ) {
+    this.loader = loader ?? ((allowRemote) => this.loadTransformersModel(allowRemote));
+  }
 
   async embed(texts: string[]): Promise<(number[] | null)[]> {
-    const results: (number[] | null)[] = new Array(texts.length);
-
+    const results: (number[] | null)[] = new Array(texts.length).fill(null);
     const uncached: Array<{ text: string; index: number }> = [];
-    texts.forEach((text, i) => {
+    texts.forEach((text, index) => {
       const cached = this.cache.get(text);
-      if (cached) {
-        results[i] = cached;
-      } else {
-        uncached.push({ text, index: i });
-      }
+      if (cached?.length === EMBEDDING_DIMENSION) results[index] = cached;
+      else uncached.push({ text, index });
     });
-
     if (uncached.length === 0) return results;
 
-    for (let i = 0; i < uncached.length; i += BATCH_SIZE) {
-      const batch = uncached.slice(i, i + BATCH_SIZE);
-      const batchTexts = batch.map((b) => b.text);
+    let extractor: FeatureExtractor;
+    try {
+      extractor = await this.getModel(false);
+    } catch (error) {
+      this.state = 'UNAVAILABLE';
+      this.lastError = error instanceof Error ? error.message : 'Local embedding model unavailable';
+      this.logger.warn('本地向量模型尚未准备，当前使用全文检索。');
+      return results;
+    }
 
+    for (let offset = 0; offset < uncached.length; offset += BATCH_SIZE) {
+      const batch = uncached.slice(offset, offset + BATCH_SIZE);
       try {
-        const embeddings = await this.fetchEmbeddings(batchTexts);
-        embeddings.forEach((emb, j) => {
-          const { index, text } = batch[j];
-          results[index] = emb;
-          if (emb) this.cache.set(text, emb);
+        const output = await extractor(
+          batch.map((item) => item.text),
+          { pooling: 'mean', normalize: true },
+        );
+        const vectors = output.tolist();
+        if (!Array.isArray(vectors)) throw new Error('Embedding model returned an invalid tensor');
+        batch.forEach((item, batchIndex) => {
+          const vector = vectors[batchIndex];
+          if (!Array.isArray(vector) || vector.length !== EMBEDDING_DIMENSION) return;
+          const normalized = vector.map(Number);
+          results[item.index] = normalized;
+          this.cache.set(item.text, normalized);
         });
       } catch (error) {
-        this.logger.error({ batchIndex: i, error }, 'Embedding batch failed');
-        batch.forEach(({ index }) => {
-          results[index] = null;
-        });
+        this.state = 'ERROR';
+        this.lastError = error instanceof Error ? error.message : 'Local embedding inference failed';
+        this.logger.error({ offset, error }, 'Local embedding batch failed');
       }
     }
 
     return results;
   }
 
-  private async fetchEmbeddings(texts: string[]): Promise<(number[] | null)[]> {
-    let lastError: unknown;
+  async prepare(): Promise<void> {
+    this.modelPromise = null;
+    this.state = 'DOWNLOADING';
+    this.lastError = null;
+    await this.getModel(true);
+  }
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      try {
-        const response = await this.fetchImpl(`${this.baseUrl}/embeddings`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.apiKey}`,
-          },
-          body: JSON.stringify({ model: 'deepseek-v4-pro', input: texts }),
-          signal: AbortSignal.timeout(10_000),
+  getStatus() {
+    return {
+      state: this.state,
+      ready: this.state === 'READY',
+      modelId: MODEL_ID,
+      dimension: EMBEDDING_DIMENSION,
+      lastError: this.lastError,
+    };
+  }
+
+  private async getModel(allowRemote: boolean): Promise<FeatureExtractor> {
+    if (!this.modelPromise) {
+      this.state = allowRemote ? 'DOWNLOADING' : 'LOADING';
+      this.modelPromise = this.loader(allowRemote)
+        .then((extractor) => {
+          this.state = 'READY';
+          this.lastError = null;
+          return extractor;
+        })
+        .catch((error: unknown) => {
+          this.modelPromise = null;
+          this.state = allowRemote ? 'ERROR' : 'UNAVAILABLE';
+          this.lastError = error instanceof Error ? error.message : 'Model loading failed';
+          throw error;
         });
-
-        if (!response.ok) {
-          if (response.status === 429) {
-            const retryAfter = response.headers.get('Retry-After');
-            const wait = retryAfter ? parseInt(retryAfter, 10) * 1000 : Math.pow(2, attempt) * 1000;
-            await new Promise((r) => setTimeout(r, wait));
-            continue;
-          }
-          throw new Error(`DeepSeek Embeddings API returned ${response.status}`);
-        }
-
-        const body = (await response.json()) as DeepSeekEmbeddingResponse;
-        return body.data
-          .sort((a, b) => a.index - b.index)
-          .map((d) => d.embedding.slice(0, EMBEDDING_DIM));
-      } catch (error) {
-        lastError = error;
-        if (attempt < MAX_RETRIES - 1) {
-          await new Promise((r) => setTimeout(r, Math.pow(2, attempt) * 1000));
-        }
-      }
     }
+    return this.modelPromise;
+  }
 
-    throw lastError;
+  private async loadTransformersModel(allowRemote: boolean): Promise<FeatureExtractor> {
+    const { pipeline } = await import('@huggingface/transformers');
+    const cacheDirectory = resolve(
+      process.env.LOCAL_AI_MODEL_CACHE || 'var/models/embeddings',
+    );
+    const extractor = await pipeline(
+      'feature-extraction',
+      MODEL_ID,
+      {
+        cache_dir: cacheDirectory,
+        local_files_only: !allowRemote,
+        dtype: 'q8',
+      },
+    );
+    return extractor as unknown as FeatureExtractor;
   }
 }

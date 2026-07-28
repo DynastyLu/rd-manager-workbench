@@ -1,12 +1,31 @@
 import { RagService } from '../../../../src/modules/workbench/knowledge/application/rag.service';
 
 describe('RagService', () => {
-  let mockPrisma: any; let mockDeepseek: any; let service: RagService;
+  let mockPrisma: any; let mockDeepseek: any; let mockEmbeddings: any; let service: RagService;
 
   beforeEach(() => {
     mockPrisma = { $queryRawUnsafe: jest.fn() } as any;
     mockDeepseek = { streamChat: jest.fn() } as any;
-    service = new RagService(mockPrisma, mockDeepseek);
+    mockEmbeddings = { embed: jest.fn().mockResolvedValue([null]) } as any;
+    service = new RagService(mockPrisma, mockDeepseek, mockEmbeddings);
+  });
+
+  it('combines local vector retrieval with full-text retrieval when the model is ready', async () => {
+    mockEmbeddings.embed.mockResolvedValue([Array(384).fill(0.1)]);
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([]);
+    mockPrisma.$queryRawUnsafe
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { id: 'c1', document_id: 'doc1', chunk_index: 0, content: '材料耐盐性能', metadata: {}, document_title: '材料方案', similarity: 0.86 },
+      ]);
+    mockDeepseek.streamChat.mockResolvedValue(new ReadableStream());
+
+    const result = await service.ask({ question: '耐盐材料', history: [] });
+
+    expect(mockPrisma.$queryRawUnsafe.mock.calls.some((call: unknown[]) =>
+      String(call[0]).includes('<=>'),
+    )).toBe(true);
+    expect(result.citations[0]).toMatchObject({ documentId: 'doc1', title: '材料方案' });
   });
 
   it('retrieves chunks, assembles prompt, returns stream', async () => {
