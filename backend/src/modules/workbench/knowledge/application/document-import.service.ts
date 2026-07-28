@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import type { UploadedContentFile } from '../../content/application/files.service';
 
 interface ExtractedDocument {
@@ -98,7 +97,6 @@ export class DocumentImportService {
 
     // Method 2: pdf-parse (pdf.js based) — works for some PDFs
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const pdfParseModule = await import('pdf-parse') as any;
       const { PDFParse } = pdfParseModule;
       const parser = new PDFParse(new Uint8Array(buffer));

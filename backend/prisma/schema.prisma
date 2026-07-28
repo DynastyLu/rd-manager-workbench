@@ -788,6 +788,18 @@ model ContentDocument {
   parentId          String?             @map("parent_id")
   projectId         String?             @map("project_id")
   meetingId         String?             @map("meeting_id")
+  sourceKind        KnowledgeSourceKind @default(LEGACY) @map("source_kind")
+  originalName      String?             @map("original_name")
+  mimeType          String?             @map("mime_type")
+  fileSize          Int?                @map("file_size")
+  sourceSha256      String?             @map("source_sha256")
+  sourceModifiedAt  DateTime?           @map("source_modified_at") @db.Timestamptz(6)
+  previewStatus     KnowledgeProcessingStatus @default(PENDING) @map("preview_status")
+  previewStorageKey String?             @map("preview_storage_key")
+  previewMimeType   String?             @map("preview_mime_type")
+  indexStatus       KnowledgeProcessingStatus @default(PENDING) @map("index_status")
+  processingError   String?             @map("processing_error")
+  indexedAt         DateTime?           @map("indexed_at") @db.Timestamptz(6)
   status            ContentStatus       @default(ACTIVE)
   trashedAt         DateTime?           @map("trashed_at") @db.Timestamptz(6)
   createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -808,6 +820,8 @@ model ContentDocument {
   @@index([spaceId, parentId, status])
   @@index([projectId, status, updatedAt])
   @@index([meetingId, status, updatedAt])
+  @@index([sourceKind, status, updatedAt])
+  @@index([previewStatus, indexStatus, status])
   @@map("content_documents")
   @@schema("app")
 }
@@ -2314,20 +2328,71 @@ enum MessageRole {
   @@schema("app")
 }
 
+enum KnowledgeSourceKind {
+  UPLOAD
+  LOCAL_FILE
+  LEGACY
+
+  @@schema("app")
+}
+
+enum KnowledgeProcessingStatus {
+  PENDING
+  PROCESSING
+  READY
+  PARTIAL
+  FAILED
+  MISSING
+
+  @@schema("app")
+}
+
+enum KnowledgeIndexJobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  INTERRUPTED
+
+  @@schema("app")
+}
+
 model DocumentChunk {
   id          String   @id @default(cuid())
   documentId  String   @map("document_id")
   chunkIndex  Int      @map("chunk_index")
   content     String
   tokenCount  Int      @default(0) @map("token_count")
-  embedding   Unsupported("public.vector(1536)")
+  embedding   Unsupported("public.vector(384)")?
   metadata    Json     @default("{}")
+  pageNumber    Int?   @map("page_number")
+  sheetName     String? @map("sheet_name")
+  locationLabel String? @map("location_label")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   document    ContentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, chunkIndex])
   @@map("document_chunks")
+  @@schema("app")
+}
+
+model KnowledgeIndexJob {
+  id             String                  @id @default(cuid())
+  status         KnowledgeIndexJobStatus @default(QUEUED)
+  totalFiles     Int                     @default(0) @map("total_files")
+  processedFiles Int                     @default(0) @map("processed_files")
+  failedFiles    Int                     @default(0) @map("failed_files")
+  currentFile    String?                 @map("current_file")
+  errors         Json                    @default("[]")
+  startedAt      DateTime?               @map("started_at") @db.Timestamptz(6)
+  finishedAt     DateTime?               @map("finished_at") @db.Timestamptz(6)
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([status, createdAt])
+  @@map("knowledge_index_jobs")
   @@schema("app")
 }
 
