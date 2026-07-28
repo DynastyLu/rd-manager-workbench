@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsDateString, IsInt, IsNotEmpty, IsString, Max, Min, ValidateIf } from 'class-validator';
+import { IsDateString, IsNotEmpty, IsString, ValidateIf } from 'class-validator';
 
 const trimString = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -16,14 +16,23 @@ export class UpdateProgressReportDto {
   @IsNotEmpty()
   summary?: string;
 
-  @ValidateIf(isDefined)
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  completionPercent?: number;
-
   @Transform(trimString)
   @ValidateIf(isDefined)
   @IsString()
   blockers?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  completedResults?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  nextSteps?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  milestoneId?: string;
 }

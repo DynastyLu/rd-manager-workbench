@@ -2,11 +2,8 @@ import { Transform } from 'class-transformer';
 import {
   IsDateString,
   IsDefined,
-  IsInt,
   IsNotEmpty,
   IsString,
-  Max,
-  Min,
   ValidateIf,
 } from 'class-validator';
 
@@ -24,14 +21,23 @@ export class CreateProgressReportDto {
   @IsNotEmpty()
   summary!: string;
 
-  @IsDefined()
-  @IsInt()
-  @Min(0)
-  @Max(100)
-  completionPercent!: number;
-
   @Transform(trimString)
   @ValidateIf(isDefined)
   @IsString()
   blockers?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  completedResults?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  nextSteps?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  milestoneId?: string;
 }

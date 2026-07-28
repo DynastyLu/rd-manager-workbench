@@ -6,6 +6,7 @@ import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { CreateProjectDto } from '../interface/http/dto/create-project.dto';
 import { ListProjectsQueryDto } from '../interface/http/dto/list-projects-query.dto';
 import { UpdateProjectDto } from '../interface/http/dto/update-project.dto';
+import { ProjectProgressService } from './project-progress.service';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
@@ -27,13 +28,17 @@ type ProjectFields = Partial<
     | 'actualEndAt'
     | 'phase'
     | 'status'
+    | 'weightMode'
     | 'healthOverride'
   >
 >;
 
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly projectProgressService?: ProjectProgressService,
+  ) {}
 
   async create(dto: CreateProjectDto) {
     try {
@@ -93,7 +98,12 @@ export class ProjectsService {
       where: { id, archivedAt: null },
       include: {
         milestones: {
-          orderBy: [{ plannedAt: 'asc' }, { id: 'asc' }],
+          orderBy: [
+            { plannedStartAt: 'asc' },
+            { plannedEndAt: 'asc' },
+            { plannedAt: 'asc' },
+            { id: 'asc' },
+          ],
         },
         tasks: {
           where: { archivedAt: null },
@@ -112,13 +122,31 @@ export class ProjectsService {
       throw new NotFoundException('Project not found');
     }
 
-    const { healthSnapshots, tasks, ...projectDetails } = project;
+    const progressSummary = this.projectProgressService
+      ? await this.projectProgressService.getSummary(this.prisma, id)
+      : null;
+    const milestoneProgress = new Map(
+      progressSummary?.milestones.map((milestone) => [milestone.id, milestone]) ?? [],
+    );
+    const { healthSnapshots, tasks, milestones, progressReports, ...projectDetails } = project;
     return {
       ...projectDetails,
+      milestones: milestones.map((milestone) => ({
+        ...milestone,
+        weightPercent: milestone.weightPercent?.toNumber() ?? null,
+        manualCompletionPercent: milestone.manualCompletionPercent?.toNumber() ?? null,
+        ...(milestoneProgress.get(milestone.id) ?? {}),
+      })),
       tasks: tasks.map(({ dependencies, ...task }) => ({
         ...task,
         dependencyIds: dependencies.map(({ dependsOnTaskId }) => dependsOnTaskId),
       })),
+      progressReports: progressReports.map((report) => ({
+        ...report,
+        completionPercent: report.completionPercent.toNumber(),
+        previousPercent: report.previousPercent?.toNumber() ?? null,
+      })),
+      progressSummary,
       latestHealthSnapshot: healthSnapshots[0] ?? null,
       effectiveHealth: projectDetails.healthOverride ?? healthSnapshots[0]?.health ?? null,
     };
@@ -184,6 +212,7 @@ export class ProjectsService {
       ...(typeof dto.actualEndAt === 'string' ? { actualEndAt: new Date(dto.actualEndAt) } : {}),
       ...(dto.phase !== undefined ? { phase: dto.phase } : {}),
       ...(dto.status !== undefined ? { status: dto.status } : {}),
+      ...(dto.weightMode !== undefined ? { weightMode: dto.weightMode } : {}),
       ...(dto.healthOverride !== undefined ? { healthOverride: dto.healthOverride } : {}),
     };
   }

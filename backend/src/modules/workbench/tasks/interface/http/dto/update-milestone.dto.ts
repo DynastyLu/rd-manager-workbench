@@ -1,5 +1,15 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsString, ValidateIf } from 'class-validator';
+import {
+  IsBoolean,
+  IsDateString,
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsString,
+  Max,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { MilestoneStatus } from '@prisma/client';
 
 const trimString = ({ value }: { value: unknown }) =>
@@ -19,6 +29,14 @@ export class UpdateMilestoneDto {
 
   @ValidateIf(isDefined)
   @IsDateString()
+  plannedStartAt?: string;
+
+  @ValidateIf(isDefined)
+  @IsDateString()
+  plannedEndAt?: string;
+
+  @ValidateIf(isDefined)
+  @IsDateString()
   actualAt?: string;
 
   @Transform(trimString)
@@ -33,4 +51,16 @@ export class UpdateMilestoneDto {
   @ValidateIf(isDefined)
   @IsEnum(MilestoneStatus)
   status?: MilestoneStatus;
+
+  @ValidateIf(isDefined)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  weightPercent?: number;
+
+  @ValidateIf(isDefined)
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  manualCompletionPercent?: number;
 }

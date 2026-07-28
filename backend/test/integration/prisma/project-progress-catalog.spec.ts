@@ -35,10 +35,12 @@ describe('project progress linkage catalog contract', () => {
     expect(milestone).toMatch(/progressReports\s+ProgressReport\[\]/);
     expect(workTask).toMatch(/progressReports\s+ProgressReport\[\]/);
     expect(progressReport).toMatch(/sourceType\s+ProgressReportSourceType/);
+    expect(progressReport).toMatch(/completionPercent\s+Decimal/);
     expect(progressReport).toMatch(/previousPercent\s+Decimal\?/);
     expect(progressReport).toMatch(/milestoneId\s+String\?/);
     expect(progressReport).toMatch(/taskId\s+String\?/);
     expect(progressReport).toMatch(/nextSteps\s+String\?/);
+    expect(progressReport).toMatch(/completedResults\s+String\?/);
     expect(progressReport).toMatch(/changeSnapshot\s+Json\?/);
     expect(progressReport).toContain('@@index([projectId, sourceType, reportedAt])');
   });

@@ -1,8 +1,62 @@
 import { NotFoundException } from '@nestjs/common';
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
 import { ProjectsService } from '../../../../src/modules/workbench/projects/application/projects.service';
+import { ProjectProgressService } from '../../../../src/modules/workbench/projects/application/project-progress.service';
 
 describe('ProjectsService', () => {
+  it('returns calculated project and milestone progress in project details', async () => {
+    const prisma = {
+      project: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'project-1',
+          healthOverride: null,
+          milestones: [{ id: 'milestone-1', name: '样机验证' }],
+          tasks: [],
+          progressReports: [],
+          healthSnapshots: [],
+        }),
+      },
+    } as unknown as PlatformPrismaService;
+    const progress = {
+      getSummary: jest.fn().mockResolvedValue({
+        actualPercent: 56,
+        timePercent: 64,
+        variancePercent: -8,
+        scheduleState: 'BEHIND',
+        weightMode: 'EQUAL',
+        currentMilestoneId: 'milestone-1',
+        milestones: [
+          {
+            id: 'milestone-1',
+            completionPercent: 68,
+            completionSource: 'TASKS',
+            effectiveWeightPercent: 100,
+            linkedTaskCount: 6,
+          },
+        ],
+      }),
+    } as unknown as ProjectProgressService;
+    const service = new ProjectsService(prisma, progress);
+
+    await expect(service.get('project-1')).resolves.toMatchObject({
+      progressSummary: {
+        actualPercent: 56,
+        timePercent: 64,
+        variancePercent: -8,
+        scheduleState: 'BEHIND',
+      },
+      milestones: [
+        {
+          id: 'milestone-1',
+          completionPercent: 68,
+          completionSource: 'TASKS',
+          effectiveWeightPercent: 100,
+          linkedTaskCount: 6,
+        },
+      ],
+    });
+  });
+
   it('filters by exact project identities alongside status and search', async () => {
     const findMany = jest.fn().mockReturnValue('find-many-query');
     const count = jest.fn().mockReturnValue('count-query');

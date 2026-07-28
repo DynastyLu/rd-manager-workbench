@@ -944,12 +944,13 @@ model ProgressReport {
   projectId         String                   @map("project_id")
   reportedAt        DateTime                 @map("reported_at") @db.Timestamptz(6)
   summary           String
-  completionPercent Int                      @map("completion_percent")
+  completionPercent Decimal                  @map("completion_percent") @db.Decimal(5, 2)
   previousPercent   Decimal?                 @map("previous_percent") @db.Decimal(5, 2)
   sourceType        ProgressReportSourceType @default(MANUAL) @map("source_type")
   milestoneId       String?                  @map("milestone_id")
   taskId            String?                  @map("task_id")
   blockers          String?
+  completedResults  String?                  @map("completed_results")
   nextSteps         String?                  @map("next_steps")
   changeSnapshot    Json?                    @map("change_snapshot")
   createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)

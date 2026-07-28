@@ -5,6 +5,10 @@ import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { ProjectHealthService } from '../../projects/application/project-health.service';
 import { ProjectHealthSnapshotService } from '../../projects/application/project-health-snapshot.service';
+import {
+  ProjectProgressService,
+  type ProgressRecalculationTrigger,
+} from '../../projects/application/project-progress.service';
 import { CreateMilestoneDto } from '../interface/http/dto/create-milestone.dto';
 import { CreateProgressReportDto } from '../interface/http/dto/create-progress-report.dto';
 import { CreateTaskDto } from '../interface/http/dto/create-task.dto';
@@ -49,6 +53,7 @@ export class TasksService {
     private readonly prisma: PlatformPrismaService,
     private readonly projectHealthService: ProjectHealthService,
     private readonly healthSnapshotService?: ProjectHealthSnapshotService,
+    private readonly projectProgressService?: ProjectProgressService,
   ) {}
 
   async createTask(dto: CreateTaskDto) {
@@ -79,7 +84,15 @@ export class TasksService {
         },
         include: TASK_RESPONSE_INCLUDE,
     });
-    if (task.projectId) await this.recalculateHealth(tx, task.projectId);
+    if (task.projectId) {
+      await this.recalculateHealth(tx, task.projectId);
+      await this.recalculateProgress(tx, task.projectId, {
+        sourceType: 'TASK_CHANGE',
+        taskId: task.id,
+        milestoneId: task.milestoneId ?? undefined,
+        summary: `创建工作项：${task.title}`,
+      });
+    }
     return this.toTaskResponse(task);
   }
 
@@ -262,6 +275,14 @@ export class TasksService {
       );
       for (const projectId of new Set(healthProjectIds))
         await this.recalculateHealth(tx, projectId);
+      for (const projectId of new Set(healthProjectIds)) {
+        await this.recalculateProgress(tx, projectId, {
+          sourceType: 'TASK_CHANGE',
+          taskId: task.id,
+          milestoneId: task.milestoneId ?? existing.milestoneId ?? undefined,
+          summary: `更新工作项：${task.title}`,
+        });
+      }
       return this.toTaskResponse(task);
     });
   }
@@ -276,7 +297,15 @@ export class TasksService {
       await tx.taskLater.deleteMany({ where: { taskId: id } });
       await this.archiveTaskReminderRules(tx, id, new Date());
       await tx.workTask.update({ where: { id }, data: { archivedAt: new Date() } });
-      if (task.projectId) await this.recalculateHealth(tx, task.projectId);
+      if (task.projectId) {
+        await this.recalculateHealth(tx, task.projectId);
+        await this.recalculateProgress(tx, task.projectId, {
+          sourceType: 'TASK_CHANGE',
+          taskId: task.id,
+          milestoneId: task.milestoneId ?? undefined,
+          summary: `归档工作项：${task.title}`,
+        });
+      }
     });
   }
 
@@ -284,18 +313,34 @@ export class TasksService {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
       await this.assertActiveProject(tx, projectId);
+      this.assertMilestoneRange(dto.plannedStartAt, dto.plannedEndAt);
       const milestone = await tx.milestone.create({
         data: {
           projectId,
           name: dto.name,
           ...(dto.plannedAt !== undefined ? { plannedAt: new Date(dto.plannedAt) } : {}),
+          ...(dto.plannedStartAt !== undefined
+            ? { plannedStartAt: new Date(dto.plannedStartAt) }
+            : {}),
+          ...(dto.plannedEndAt !== undefined
+            ? { plannedEndAt: new Date(dto.plannedEndAt) }
+            : {}),
           ...(dto.actualAt !== undefined ? { actualAt: new Date(dto.actualAt) } : {}),
           ...(dto.ownerName !== undefined ? { ownerName: dto.ownerName } : {}),
           ...(dto.isCritical !== undefined ? { isCritical: dto.isCritical } : {}),
           ...(dto.status !== undefined ? { status: dto.status } : {}),
+          ...(dto.weightPercent !== undefined ? { weightPercent: dto.weightPercent } : {}),
+          ...(dto.manualCompletionPercent !== undefined
+            ? { manualCompletionPercent: dto.manualCompletionPercent }
+            : {}),
         },
       });
       await this.recalculateHealth(tx, projectId);
+      await this.recalculateProgress(tx, projectId, {
+        sourceType: 'MILESTONE_CHANGE',
+        milestoneId: milestone.id,
+        summary: `创建里程碑：${milestone.name}`,
+      });
       return milestone;
     });
   }
@@ -306,18 +351,37 @@ export class TasksService {
       await this.assertActiveProject(tx, projectId);
       const milestone = await tx.milestone.findFirst({ where: { id: milestoneId, projectId } });
       if (!milestone) throw this.notFound(ErrorCodes.MILESTONE_NOT_FOUND, 'Milestone not found');
+      this.assertMilestoneRange(
+        dto.plannedStartAt ?? milestone.plannedStartAt?.toISOString(),
+        dto.plannedEndAt ?? milestone.plannedEndAt?.toISOString(),
+      );
       const updated = await tx.milestone.update({
         where: { id: milestoneId },
         data: {
           ...(dto.name !== undefined ? { name: dto.name } : {}),
           ...(dto.plannedAt !== undefined ? { plannedAt: new Date(dto.plannedAt) } : {}),
+          ...(dto.plannedStartAt !== undefined
+            ? { plannedStartAt: new Date(dto.plannedStartAt) }
+            : {}),
+          ...(dto.plannedEndAt !== undefined
+            ? { plannedEndAt: new Date(dto.plannedEndAt) }
+            : {}),
           ...(dto.actualAt !== undefined ? { actualAt: new Date(dto.actualAt) } : {}),
           ...(dto.ownerName !== undefined ? { ownerName: dto.ownerName } : {}),
           ...(dto.isCritical !== undefined ? { isCritical: dto.isCritical } : {}),
           ...(dto.status !== undefined ? { status: dto.status } : {}),
+          ...(dto.weightPercent !== undefined ? { weightPercent: dto.weightPercent } : {}),
+          ...(dto.manualCompletionPercent !== undefined
+            ? { manualCompletionPercent: dto.manualCompletionPercent }
+            : {}),
         },
       });
       await this.recalculateHealth(tx, projectId);
+      await this.recalculateProgress(tx, projectId, {
+        sourceType: 'MILESTONE_CHANGE',
+        milestoneId: updated.id,
+        summary: `更新里程碑：${updated.name}`,
+      });
       return updated;
     });
   }
@@ -330,6 +394,11 @@ export class TasksService {
       if (!milestone) throw this.notFound(ErrorCodes.MILESTONE_NOT_FOUND, 'Milestone not found');
       await tx.milestone.delete({ where: { id: milestoneId } });
       await this.recalculateHealth(tx, projectId);
+      await this.recalculateProgress(tx, projectId, {
+        sourceType: 'MILESTONE_CHANGE',
+        milestoneId,
+        summary: `删除里程碑：${milestone.name}`,
+      });
     });
   }
 
@@ -337,13 +406,20 @@ export class TasksService {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
       await this.assertActiveProject(tx, projectId);
+      const progressSummary = await this.projectProgressService?.getSummary(tx, projectId);
       const report = await tx.progressReport.create({
         data: {
           projectId,
           summary: dto.summary,
-          completionPercent: dto.completionPercent,
+          completionPercent: progressSummary?.actualPercent ?? 0,
+          sourceType: 'MANUAL',
           reportedAt: new Date(dto.reportedAt),
+          ...(dto.milestoneId !== undefined ? { milestoneId: dto.milestoneId } : {}),
           ...(dto.blockers !== undefined ? { blockers: dto.blockers } : {}),
+          ...(dto.completedResults !== undefined
+            ? { completedResults: dto.completedResults }
+            : {}),
+          ...(dto.nextSteps !== undefined ? { nextSteps: dto.nextSteps } : {}),
         },
       });
       await this.recalculateHealth(tx, projectId);
@@ -363,15 +439,24 @@ export class TasksService {
       if (!report) {
         throw this.notFound(ErrorCodes.PROGRESS_REPORT_NOT_FOUND, 'Progress report not found');
       }
+      if (report.sourceType !== 'MANUAL') {
+        throw new AppError({
+          code: ErrorCodes.VALIDATION_ERROR,
+          message: 'System progress reports cannot be edited',
+          statusCode: HttpStatus.BAD_REQUEST,
+        });
+      }
       const updated = await tx.progressReport.update({
         where: { id: reportId },
         data: {
           ...(dto.reportedAt !== undefined ? { reportedAt: new Date(dto.reportedAt) } : {}),
           ...(dto.summary !== undefined ? { summary: dto.summary } : {}),
-          ...(dto.completionPercent !== undefined
-            ? { completionPercent: dto.completionPercent }
-            : {}),
+          ...(dto.milestoneId !== undefined ? { milestoneId: dto.milestoneId } : {}),
           ...(dto.blockers !== undefined ? { blockers: dto.blockers } : {}),
+          ...(dto.completedResults !== undefined
+            ? { completedResults: dto.completedResults }
+            : {}),
+          ...(dto.nextSteps !== undefined ? { nextSteps: dto.nextSteps } : {}),
         },
       });
       await this.recalculateHealth(tx, projectId);
@@ -386,6 +471,13 @@ export class TasksService {
       const report = await tx.progressReport.findFirst({ where: { id: reportId, projectId } });
       if (!report) {
         throw this.notFound(ErrorCodes.PROGRESS_REPORT_NOT_FOUND, 'Progress report not found');
+      }
+      if (report.sourceType !== 'MANUAL') {
+        throw new AppError({
+          code: ErrorCodes.VALIDATION_ERROR,
+          message: 'System progress reports cannot be deleted',
+          statusCode: HttpStatus.BAD_REQUEST,
+        });
       }
       await tx.progressReport.delete({ where: { id: reportId } });
       await this.recalculateHealth(tx, projectId);
@@ -410,6 +502,28 @@ export class TasksService {
       ...(dto.sourceType !== undefined ? { sourceType: dto.sourceType } : {}),
       ...(dto.sourceId !== undefined ? { sourceId: dto.sourceId } : {}),
     };
+  }
+
+  private async recalculateProgress(
+    client: Prisma.TransactionClient,
+    projectId: string,
+    trigger: ProgressRecalculationTrigger,
+  ) {
+    await this.projectProgressService?.recalculate(client, projectId, trigger);
+  }
+
+  private assertMilestoneRange(plannedStartAt?: string, plannedEndAt?: string) {
+    if (
+      plannedStartAt &&
+      plannedEndAt &&
+      new Date(plannedEndAt).getTime() < new Date(plannedStartAt).getTime()
+    ) {
+      throw new AppError({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: 'Milestone planned end must not be before planned start',
+        statusCode: HttpStatus.BAD_REQUEST,
+      });
+    }
   }
 
   private buildMyWorkWhere(view: MyWorkView, now: Date): Prisma.WorkTaskWhereInput {
