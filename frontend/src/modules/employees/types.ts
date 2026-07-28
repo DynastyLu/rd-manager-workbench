@@ -35,6 +35,7 @@ export interface Employee {
   displayName: string
   roleTitle: string | null
   department: string | null
+  workDirection?: string | null
   managerName: string | null
   employmentStatus: EmploymentStatus
   weeklyCapacityHours: number
@@ -50,6 +51,7 @@ export interface Employee {
 export interface EmployeeFilters {
   q?: string
   department?: string
+  workDirection?: string
   employmentStatus?: EmploymentStatus
   page?: number
   pageSize?: number
@@ -82,6 +84,10 @@ export type EmployeeWorkImportStatus =
   | 'EXPIRED'
 export type EmployeeSnapshotStatus = 'NOT_STARTED' | 'GENERATING' | 'READY' | 'FAILED'
 export type EmployeeImportRowStatus = 'VALID' | 'ERROR' | 'UNRESOLVED'
+export type EmployeeWorkKind = 'PROJECT' | 'NON_PROJECT'
+export type EmployeeWorkSourceSection = 'CURRENT_WORK' | 'NEXT_WEEK_PLAN'
+export type EmployeePlanPriority = 'UNSPECIFIED' | 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+export type EmployeeRiskDecision = 'KEEP' | 'REMOVE' | 'EDIT'
 
 export interface ProgressFilters {
   periodType: EmployeeProgressPeriod
@@ -308,9 +314,15 @@ export interface ImportRowError {
 }
 
 export interface NormalizedEmployeeWorkRow {
+  sourceSection?: 'CURRENT_WORK'
   rowNumber: number
+  sourceSheetName?: string
+  sourceRowNumber?: number
   employeeName: string
+  department?: string | null
+  workDirection?: string | null
   title: string
+  plannedCompletionAt?: string | null
   planText: string | null
   summaryText: string | null
   completionRate: number | null
@@ -325,16 +337,48 @@ export interface NormalizedEmployeeWorkRow {
   rawValues: Record<string, string | number | null>
 }
 
+export interface NormalizedEmployeeWeekPlanRow {
+  sourceSection: 'NEXT_WEEK_PLAN'
+  rowNumber: number
+  sourceSheetName: string
+  sourceRowNumber: number
+  employeeName: string
+  department: string | null
+  workDirection: string | null
+  title: string
+  deliverableText: string | null
+  plannedCompletionAt: string | null
+  priority: EmployeePlanPriority
+  collaborationText: string | null
+  planText: string | null
+  note: string | null
+  rawValues: Record<string, string | number | null>
+}
+
+export type NormalizedEmployeeWorkbookRow =
+  | NormalizedEmployeeWorkRow
+  | NormalizedEmployeeWeekPlanRow
+
 export interface EmployeeWorkImportRow {
   id: string
   rowNumber: number
+  sourceSheetName?: string | null
+  sourceSection?: EmployeeWorkSourceSection | null
+  sourceRowNumber?: number | null
+  sourceKey?: string | null
   status: EmployeeImportRowStatus
   errors: ImportRowError[]
   rawValues: Record<string, string | number | null>
-  normalizedValues: NormalizedEmployeeWorkRow | Record<string, never>
+  normalizedValues: NormalizedEmployeeWorkbookRow | Record<string, never>
   resolvedEmployeeId: string | null
   resolvedProjectId: string | null
   resolvedTaskId: string | null
+  workKind?: EmployeeWorkKind | null
+  plannedHours?: number | null
+  actualHours?: number | null
+  riskCandidate?: boolean
+  riskDecision?: EmployeeRiskDecision | null
+  riskText?: string | null
   keepUnlinked: boolean
   workItemId: string | null
   links: {
@@ -348,6 +392,17 @@ export interface EmployeeImportLinks {
   source?: string
   errors?: string
   restore?: string
+}
+
+export interface EmployeeImportProfileWarning {
+  employeeName: string
+  sourceSheetName: string
+  field: 'department' | 'workDirection'
+  instructionValue?: string | null
+  sheetValue?: string | null
+  profileValue?: string | null
+  rowValue?: string | null
+  reason: string
 }
 
 export interface EmployeeWorkImportBatch {
@@ -379,6 +434,7 @@ export interface EmployeeWorkImportBatch {
   sourceBatchIds?: string[]
   links?: EmployeeImportLinks
   warning?: { code: string }
+  profileWarnings?: EmployeeImportProfileWarning[]
 }
 
 export interface EmployeeWorkImportDetail extends EmployeeWorkImportBatch {
@@ -392,10 +448,22 @@ export interface ListEmployeeWorkImportsResult extends PageResult<EmployeeWorkIm
 }
 
 export interface ResolveEmployeeImportRowInput {
-  rowNumber: number
+  rowNumber?: number
+  rowId?: string
   employeeId?: string | null
+  createEmployee?: {
+    displayName: string
+    department?: string
+    workDirection?: string
+  }
+  updateEmployeeProfile?: boolean
+  workKind?: EmployeeWorkKind
   projectId?: string | null
   taskId?: string | null
+  plannedHours?: number | null
+  actualHours?: number | null
+  riskDecision?: EmployeeRiskDecision
+  riskText?: string | null
   keepUnlinked?: boolean
 }
 

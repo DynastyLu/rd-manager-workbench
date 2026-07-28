@@ -46,7 +46,7 @@ function makeBatch(overrides: Partial<EmployeeWorkImportBatch> = {}): EmployeeWo
     snapshotError: null,
     originalName: '第七周计划与总结.xlsx',
     fileHash: 'hash-1',
-    templateVersion: 2,
+    templateVersion: 1,
     totalRows: 0,
     validRows: 0,
     errorRows: 0,
@@ -171,7 +171,10 @@ function makeDetail(
 }
 
 const resolvingDetail = makeDetail(resolvingBatch, [makeRow(), unresolvedRow])
-const readyDetail = makeDetail(readyBatch, [makeRow(), makeRow({ ...unresolvedRow, status: 'VALID', errors: [], resolvedEmployeeId: 'emp-1' })])
+const readyDetail = makeDetail(readyBatch, [
+  makeRow(),
+  makeRow({ ...unresolvedRow, status: 'VALID', errors: [], resolvedEmployeeId: 'emp-1' }),
+])
 
 const workbook = new File(['xlsx'], '第七周计划与总结.xlsx', {
   type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -245,6 +248,89 @@ describe('EmployeeImportWizard', () => {
     })
   })
 
+  it('opens one V2 field-completion table and continues to the summary after bulk resolution', async () => {
+    const v2Uploaded = makeBatch({ templateVersion: 2 })
+    const v2Resolving = makeBatch({
+      templateVersion: 2,
+      status: 'RESOLVING',
+      totalRows: 1,
+      unresolvedRows: 1,
+      hasErrors: true,
+    })
+    const v2Ready = makeBatch({
+      templateVersion: 2,
+      status: 'READY',
+      totalRows: 1,
+      validRows: 1,
+    })
+    const v2Row = makeRow({
+      id: 'row-v2',
+      rowNumber: 1,
+      sourceSheetName: '张明',
+      sourceSection: 'CURRENT_WORK',
+      sourceRowNumber: 7,
+      sourceKey: '张明:CURRENT_WORK:7',
+      status: 'UNRESOLVED',
+      workKind: null,
+      riskCandidate: true,
+      riskDecision: null,
+      riskText: '依赖服务不稳定',
+      errors: [{ field: 'workKind', code: 'WORK_KIND_REQUIRED', reason: '请选择工作类型' }],
+      normalizedValues: {
+        rowNumber: 1,
+        sourceSection: 'CURRENT_WORK',
+        sourceSheetName: '张明',
+        sourceRowNumber: 7,
+        employeeName: '张明',
+        title: '完成权限平台联调',
+        plannedCompletionAt: '2026-07-10',
+        planText: '完成接口联调',
+        summaryText: '依赖服务不稳定',
+        completionRate: 60,
+        status: 'AT_RISK',
+        nextPlanText: null,
+        riskText: '依赖服务不稳定',
+        plannedHours: null,
+        actualHours: null,
+        projectCode: null,
+        taskCode: null,
+        note: null,
+        rawValues: {},
+      },
+    })
+    employeesApi.uploadEmployeeWorkImport.mockResolvedValue(v2Uploaded)
+    employeesApi.previewEmployeeWorkImport.mockResolvedValue(v2Resolving)
+    employeesApi.getEmployeeWorkImport.mockResolvedValue(makeDetail(v2Resolving, [v2Row]))
+    employeesApi.resolveEmployeeWorkImport.mockResolvedValue(v2Ready)
+    const user = userEvent.setup()
+    renderWizard()
+
+    await user.upload(screen.getByLabelText('选择员工计划与总结 Excel'), workbook)
+    expect(await screen.findByRole('dialog', { name: '补全员工周报字段' })).toBeInTheDocument()
+    expect(screen.getByText('完成权限平台联调')).toBeInTheDocument()
+
+    await selectSemiOption(screen.getByLabelText('第 1 行工作类型'), 'NON_PROJECT')
+    await user.click(screen.getByRole('button', { name: '保留第 1 行风险' }))
+    await user.click(screen.getByRole('button', { name: '保存字段补全' }))
+
+    await waitFor(() =>
+      expect(employeesApi.resolveEmployeeWorkImport).toHaveBeenCalledWith('batch-1', {
+        rows: [
+          expect.objectContaining({
+            rowId: 'row-v2',
+            workKind: 'NON_PROJECT',
+            projectId: null,
+            taskId: null,
+            riskDecision: 'KEEP',
+          }),
+        ],
+      })
+    )
+    expect(await screen.findByText('本周工作 1 行')).toBeInTheDocument()
+    expect(screen.getByText('下周计划 0 行')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '确认导入' })).toBeEnabled()
+  })
+
   it('blocks commit until every employee and project error is resolved', async () => {
     employeesApi.uploadEmployeeWorkImport.mockResolvedValue(uploadedBatch)
     employeesApi.previewEmployeeWorkImport.mockResolvedValue(resolvingBatch)
@@ -270,14 +356,10 @@ describe('EmployeeImportWizard', () => {
     expect(screen.getByRole('button', { name: '确认导入' })).toBeDisabled()
 
     await user.click(screen.getByRole('button', { name: '为第 18 行选择员工' }))
-    await waitFor(() =>
-      expect(screen.queryByText('正在加载可选项…')).not.toBeInTheDocument()
-    )
+    await waitFor(() => expect(screen.queryByText('正在加载可选项…')).not.toBeInTheDocument())
     // The previously saved project resolution is prefilled even though the
     // project list came back empty (outside the first option page).
-    expect(
-      await screen.findByText('RD-2026-001 · 权限平台')
-    ).toBeInTheDocument()
+    expect(await screen.findByText('RD-2026-001 · 权限平台')).toBeInTheDocument()
     await selectSemiOption(screen.getByLabelText('第 18 行员工'), 'emp-1')
     await user.click(screen.getByRole('button', { name: '保存关联' }))
 
@@ -297,11 +379,11 @@ describe('EmployeeImportWizard', () => {
       errorRows: 150,
       hasErrors: true,
     })
-    const pageOneDetail = makeDetail(
-      crowdedBatch,
-      [unresolvedRow],
-      { page: 1, pageSize: 100, total: 150 }
-    )
+    const pageOneDetail = makeDetail(crowdedBatch, [unresolvedRow], {
+      page: 1,
+      pageSize: 100,
+      total: 150,
+    })
     const pageTwoDetail = makeDetail(
       crowdedBatch,
       [makeRow({ ...unresolvedRow, id: 'row-105', rowNumber: 105 })],
@@ -328,9 +410,7 @@ describe('EmployeeImportWizard', () => {
       'batch-1',
       expect.objectContaining({ rowsPage: 2, rowsPageSize: 100, issuesOnly: true })
     )
-    expect(
-      screen.getByRole('button', { name: '为第 105 行选择员工' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '为第 105 行选择员工' })).toBeInTheDocument()
   })
 
   it('prefills saved resolutions and re-saves them together with new choices', async () => {
@@ -351,17 +431,13 @@ describe('EmployeeImportWizard', () => {
     await user.upload(screen.getByLabelText('选择员工计划与总结 Excel'), workbook)
     await screen.findByText('错误 1 行')
     await user.click(screen.getByRole('button', { name: '为第 18 行选择员工' }))
-    await waitFor(() =>
-      expect(screen.queryByText('正在加载可选项…')).not.toBeInTheDocument()
-    )
+    await waitFor(() => expect(screen.queryByText('正在加载可选项…')).not.toBeInTheDocument())
 
     const resolver = screen.getByRole('region', { name: '第 18 行关联' })
     // emp-1 张明 is on the first option page; the saved project is not, so it
     // is injected once fetched by id.
     expect(await within(resolver).findByText('张明')).toBeInTheDocument()
-    expect(
-      await within(resolver).findByText('RD-2026-001 · 权限平台')
-    ).toBeInTheDocument()
+    expect(await within(resolver).findByText('RD-2026-001 · 权限平台')).toBeInTheDocument()
     expect(projectsApi.getProject).toHaveBeenCalledWith('project-1')
     expect(employeesApi.getEmployee).not.toHaveBeenCalled()
 
@@ -387,9 +463,7 @@ describe('EmployeeImportWizard', () => {
 
     await user.click(screen.getByRole('button', { name: '确认导入' }))
     expect(await screen.findByText('确认导入并生成新版本？')).toBeInTheDocument()
-    expect(
-      screen.getByText(/旧版本会被替换/)
-    ).toBeInTheDocument()
+    expect(screen.getByText(/旧版本会被替换/)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: '确认替换并导入' }))
     await waitFor(() =>

@@ -154,6 +154,59 @@ describe('employee workspace API', () => {
     })
   })
 
+  it('submits V2 bulk association rows with row ids and completion fields', async () => {
+    await resolveEmployeeWorkImport('batch / 1', {
+      rows: [
+        {
+          rowId: 'row / 1',
+          workKind: 'PROJECT',
+          projectId: 'project-1',
+          taskId: 'task-1',
+          plannedHours: 12.5,
+          actualHours: 9,
+          riskDecision: 'EDIT',
+          riskText: '依赖接口延期',
+        },
+        {
+          rowId: 'row-2',
+          workKind: 'NON_PROJECT',
+          projectId: null,
+          taskId: null,
+          plannedHours: null,
+          actualHours: null,
+          riskDecision: 'REMOVE',
+        },
+      ],
+    })
+
+    expect(request).toHaveBeenCalledWith('/employee-work-imports/batch%20%2F%201/resolutions', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        rows: [
+          {
+            rowId: 'row / 1',
+            workKind: 'PROJECT',
+            projectId: 'project-1',
+            taskId: 'task-1',
+            plannedHours: 12.5,
+            actualHours: 9,
+            riskDecision: 'EDIT',
+            riskText: '依赖接口延期',
+          },
+          {
+            rowId: 'row-2',
+            workKind: 'NON_PROJECT',
+            projectId: null,
+            taskId: null,
+            plannedHours: null,
+            actualHours: null,
+            riskDecision: 'REMOVE',
+          },
+        ],
+      }),
+    })
+  })
+
   it('uses the JSON employee create contract', async () => {
     await createEmployee({
       displayName: '张明',

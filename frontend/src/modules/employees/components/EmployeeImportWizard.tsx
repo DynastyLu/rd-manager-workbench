@@ -20,10 +20,13 @@ import { getProject, listProjects } from '@/modules/workbench/api/projects'
 import { getTask, listTasks } from '@/modules/workbench/api/tasks'
 import { saveDownloadedFile } from '../download'
 import { employeeQueryKeys } from '../queryKeys'
+import { EmployeeImportAssociationModal } from './EmployeeImportAssociationModal'
 import type {
   EmployeeImportDetailFilters,
   EmployeeWorkImportBatch,
+  EmployeeWorkImportDetail,
   EmployeeWorkImportRow,
+  ResolveEmployeeImportInput,
   ResolveEmployeeImportRowInput,
 } from '../types'
 
@@ -63,34 +66,65 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
   const [selectedTaskId, setSelectedTaskId] = useState('')
   const [rowsPage, setRowsPage] = useState(1)
   const [templatePending, setTemplatePending] = useState(false)
+  const [associationOpen, setAssociationOpen] = useState(false)
+  const [associationDismissed, setAssociationDismissed] = useState(false)
 
   const detailFilters = useMemo<EmployeeImportDetailFilters>(
-    () => ({ rowsPage, rowsPageSize: DETAIL_ROWS_PAGE_SIZE, issuesOnly: true }),
-    [rowsPage]
+    () => ({
+      rowsPage: batch?.templateVersion === 2 ? 1 : rowsPage,
+      rowsPageSize: DETAIL_ROWS_PAGE_SIZE,
+      issuesOnly: batch?.templateVersion === 2 ? false : true,
+    }),
+    [batch?.templateVersion, rowsPage]
   )
+  async function loadImportDetail(): Promise<EmployeeWorkImportDetail> {
+    const firstPage = await getEmployeeWorkImport(batch!.id, detailFilters)
+    if (batch!.templateVersion !== 2) return firstPage
+    const pageCount = Math.ceil(firstPage.rowMeta.total / DETAIL_ROWS_PAGE_SIZE)
+    if (pageCount <= 1) return firstPage
+    const remainingPages = await Promise.all(
+      Array.from({ length: pageCount - 1 }, (_, index) =>
+        getEmployeeWorkImport(batch!.id, {
+          rowsPage: index + 2,
+          rowsPageSize: DETAIL_ROWS_PAGE_SIZE,
+          issuesOnly: false,
+        })
+      )
+    )
+    return {
+      ...firstPage,
+      rows: [firstPage, ...remainingPages].flatMap((detail) => detail.rows),
+      rowMeta: {
+        ...firstPage.rowMeta,
+        page: 1,
+        pageSize: firstPage.rowMeta.total,
+      },
+    }
+  }
   const detailQuery = useQuery({
     queryKey: batch
       ? employeeQueryKeys.importDetail(batch.id, detailFilters)
       : ['employees', 'import', 'idle'],
-    queryFn: () => getEmployeeWorkImport(batch!.id, detailFilters),
+    queryFn: loadImportDetail,
     enabled: Boolean(batch) && (step === 'preflight' || step === 'resolutions'),
   })
 
   const resolverOpen = resolvingRow !== null
+  const optionsNeeded = resolverOpen || associationOpen
   const employeesQuery = useQuery({
     queryKey: employeeQueryKeys.list({ pageSize: OPTION_PAGE_SIZE }),
     queryFn: () => listEmployees({ pageSize: OPTION_PAGE_SIZE }),
-    enabled: resolverOpen,
+    enabled: optionsNeeded,
   })
   const projectsQuery = useQuery({
     queryKey: ['projects', 'list', { pageSize: OPTION_PAGE_SIZE }],
     queryFn: () => listProjects({ pageSize: OPTION_PAGE_SIZE }),
-    enabled: resolverOpen,
+    enabled: optionsNeeded,
   })
   const tasksQuery = useQuery({
     queryKey: ['tasks', 'list', { pageSize: OPTION_PAGE_SIZE }],
     queryFn: () => listTasks({ pageSize: OPTION_PAGE_SIZE }),
-    enabled: resolverOpen,
+    enabled: optionsNeeded,
   })
 
   // A partially-resolved row can reference entities outside the first option
@@ -151,7 +185,11 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     onSuccess: async (nextBatch) => {
       setBatch(nextBatch)
       setResolvingRow(null)
-      if (nextBatch.errorRows + nextBatch.unresolvedRows === 0) {
+      setAssociationOpen(false)
+      setAssociationDismissed(true)
+      if (nextBatch.templateVersion === 2) {
+        setStep('preflight')
+      } else if (nextBatch.errorRows + nextBatch.unresolvedRows === 0) {
         setStep('preflight')
       }
       await queryClient.invalidateQueries({
@@ -187,6 +225,8 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     setSelectedProjectId('')
     setSelectedTaskId('')
     setRowsPage(1)
+    setAssociationOpen(false)
+    setAssociationDismissed(false)
     uploadMutation.reset()
     previewMutation.reset()
     resolveMutation.reset()
@@ -198,6 +238,24 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     if (visible) resetWizard()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible])
+
+  useEffect(() => {
+    if (
+      batch?.templateVersion === 2 &&
+      step === 'resolutions' &&
+      detailQuery.isSuccess &&
+      detailQuery.data.rows.length > 0 &&
+      !associationDismissed
+    ) {
+      setAssociationOpen(true)
+    }
+  }, [
+    associationDismissed,
+    batch?.templateVersion,
+    detailQuery.data?.rows.length,
+    detailQuery.isSuccess,
+    step,
+  ])
 
   function finish() {
     resetWizard()
@@ -302,9 +360,19 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     () => (detailQuery.data?.rows ?? []).filter((row) => row.status !== 'VALID'),
     [detailQuery.data]
   )
+  const v2Rows = batch?.templateVersion === 2 ? (detailQuery.data?.rows ?? []) : []
+  const currentWorkRows = v2Rows.filter(
+    (row) =>
+      row.sourceSection === 'CURRENT_WORK' ||
+      (!row.sourceSection && row.normalizedValues.sourceSection !== 'NEXT_WEEK_PLAN')
+  ).length
+  const nextWeekPlanRows = v2Rows.filter(
+    (row) =>
+      row.sourceSection === 'NEXT_WEEK_PLAN' ||
+      row.normalizedValues.sourceSection === 'NEXT_WEEK_PLAN'
+  ).length
 
-  const flowError =
-    uploadMutation.error ?? previewMutation.error ?? commitMutation.error ?? null
+  const flowError = uploadMutation.error ?? previewMutation.error ?? commitMutation.error ?? null
 
   const canCommit =
     Boolean(batch) &&
@@ -379,10 +447,7 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     if (!resolvingRow) return null
     const rowNumber = resolvingRow.rowNumber
     return (
-      <section
-        className="employee-import-wizard__resolver"
-        aria-label={`第 ${rowNumber} 行关联`}
-      >
+      <section className="employee-import-wizard__resolver" aria-label={`第 ${rowNumber} 行关联`}>
         <h4>第 {rowNumber} 行：人工关联</h4>
         {employeesQuery.isPending || projectsQuery.isPending || tasksQuery.isPending ? (
           <p role="status">正在加载可选项…</p>
@@ -509,28 +574,49 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     if ((step === 'preflight' || step === 'resolutions') && batch) {
       return (
         <div className="employee-import-wizard__preflight">
-          <h3>{step === 'preflight' ? '预检通过' : '处理错误与待关联行'}</h3>
+          <h3>
+            {step === 'preflight'
+              ? '预检完成'
+              : batch.templateVersion === 2
+                ? '预检完成，等待字段补全'
+                : '处理错误与待关联行'}
+          </h3>
           <p className="employee-import-wizard__period">{periodText(batch)}</p>
           {renderCounts(batch)}
-          {step === 'resolutions' ? (
-            <div className="employee-import-wizard__rows">
-              {detailQuery.isPending ? (
-                <p role="status">正在加载数据行…</p>
+          {batch.templateVersion === 2 ? (
+            <div className="employee-import-wizard__v2-summary" aria-label="V2 导入汇总">
+              <span>本周工作 {currentWorkRows} 行</span>
+              <span>下周计划 {nextWeekPlanRows} 行</span>
+              {step === 'resolutions' ? (
+                <Button
+                  theme="solid"
+                  type="primary"
+                  disabled={detailQuery.isPending}
+                  onClick={() => {
+                    setAssociationDismissed(false)
+                    setAssociationOpen(true)
+                  }}
+                >
+                  打开字段补全
+                </Button>
               ) : null}
+            </div>
+          ) : step === 'resolutions' ? (
+            <div className="employee-import-wizard__rows">
+              {detailQuery.isPending ? <p role="status">正在加载数据行…</p> : null}
               {problemRows.map((row) => (
                 <div key={row.id} className="employee-import-wizard__row">
                   <div className="employee-import-wizard__row-header">
                     <Tag color={row.status === 'ERROR' ? 'red' : 'amber'}>
                       第 {row.rowNumber} 行
                     </Tag>
-                    <span>{isNormalizedRow(row) ? row.normalizedValues.title : '无法解析的行'}</span>
+                    <span>
+                      {isNormalizedRow(row) ? row.normalizedValues.title : '无法解析的行'}
+                    </span>
                   </div>
                   {renderRowErrors(row)}
                   {row.status === 'UNRESOLVED' ? (
-                    <Button
-                      size="small"
-                      onClick={() => openResolver(row)}
-                    >
+                    <Button size="small" onClick={() => openResolver(row)}>
                       {row.errors.some((error) => error.code === 'EMPLOYEE_NOT_FOUND')
                         ? `为第 ${row.rowNumber} 行选择员工`
                         : `为第 ${row.rowNumber} 行完善关联`}
@@ -564,7 +650,8 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
         <div className="employee-import-wizard__confirm">
           <h3>确认导入并生成新版本？</h3>
           <p>
-            导入将为「{periodText(batch)}」写入 {batch.validRows} 行工作计划与总结，并生成该周期的新版本。
+            导入将为「{periodText(batch)}」写入 {batch.validRows}{' '}
+            行工作计划与总结，并生成该周期的新版本。
             如该周期已有导入版本，旧版本会被替换并标记为「已被替换」，可随时在导入历史中恢复。
           </p>
           {renderCounts(batch)}
@@ -600,7 +687,10 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     }
     if (step === 'recognition') {
       return (
-        <Button disabled={uploadMutation.isPending || previewMutation.isPending} onClick={requestClose}>
+        <Button
+          disabled={uploadMutation.isPending || previewMutation.isPending}
+          onClick={requestClose}
+        >
           取消
         </Button>
       )
@@ -608,7 +698,9 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
     if (step === 'preflight' || step === 'resolutions') {
       return (
         <>
-          <Button disabled={uploadMutation.isPending} onClick={requestClose}>取消</Button>
+          <Button disabled={uploadMutation.isPending} onClick={requestClose}>
+            取消
+          </Button>
           <Button
             theme="solid"
             type="primary"
@@ -626,7 +718,9 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
           <Button
             disabled={commitMutation.isPending}
             onClick={() =>
-              setStep(batch && batch.errorRows + batch.unresolvedRows > 0 ? 'resolutions' : 'preflight')
+              setStep(
+                batch && batch.errorRows + batch.unresolvedRows > 0 ? 'resolutions' : 'preflight'
+              )
             }
           >
             返回检查
@@ -646,6 +740,42 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
       <Button theme="solid" type="primary" onClick={finish}>
         完成
       </Button>
+    )
+  }
+
+  if (visible && associationOpen) {
+    return (
+      <EmployeeImportAssociationModal
+        visible
+        rows={v2Rows}
+        employees={(employeesQuery.data?.data ?? []).map((employee) => ({
+          id: employee.id,
+          displayName: employee.displayName,
+        }))}
+        projects={(projectsQuery.data?.data ?? []).map((project) => ({
+          id: project.id,
+          code: project.code,
+          name: project.name,
+        }))}
+        tasks={(tasksQuery.data?.data ?? []).map((task) => ({
+          id: task.id,
+          projectId: task.projectId,
+          code: task.code,
+          title: task.title,
+        }))}
+        loading={
+          detailQuery.isPending ||
+          employeesQuery.isPending ||
+          projectsQuery.isPending ||
+          tasksQuery.isPending
+        }
+        saving={resolveMutation.isPending}
+        onCancel={() => {
+          setAssociationDismissed(true)
+          setAssociationOpen(false)
+        }}
+        onSubmit={(input: ResolveEmployeeImportInput) => resolveMutation.mutate(input)}
+      />
     )
   }
 
