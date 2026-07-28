@@ -2019,6 +2019,101 @@ describe('EmployeeImportsService', () => {
     });
   });
 
+  it('restores a V2 source whose global batch sequence starts at row 1', async () => {
+    const normalized = {
+      ...normalizedV2Current(),
+      rowNumber: 1,
+    };
+    const staged = {
+      id: 'row-v2-1',
+      batchId: 'batch-1',
+      rowNumber: 1,
+      sourceSheetName: '匿名员工',
+      sourceSection: 'CURRENT_WORK',
+      sourceRowNumber: 7,
+      sourceKey: '匿名员工:CURRENT_WORK:7',
+      rawValues: normalized.rawValues,
+      normalizedValues: normalized,
+      status: EmployeeImportRowStatus.VALID,
+      errors: [],
+      resolvedEmployeeId: 'employee-1',
+      resolvedProjectId: 'project-1',
+      resolvedTaskId: null,
+      keepUnlinked: false,
+      workKind: 'PROJECT',
+      plannedHours: 8,
+      actualHours: 7.5,
+      profileAction: 'KEEP',
+      riskDecision: 'KEEP',
+      riskText: normalized.riskText,
+    };
+    const previewFingerprint = employeeImportFingerprint({
+      fileHash: SOURCE_HASH,
+      templateVersion: 2,
+      periodType: 'WEEK',
+      periodStart: '2026-07-20',
+      periodEnd: '2026-07-26',
+      rows: [
+        {
+          rowNumber: staged.rowNumber,
+          rawValues: staged.rawValues,
+          normalizedValues: staged.normalizedValues,
+          status: staged.status,
+          errors: staged.errors,
+          resolvedEmployeeId: staged.resolvedEmployeeId,
+          resolvedProjectId: staged.resolvedProjectId,
+          resolvedTaskId: staged.resolvedTaskId,
+          keepUnlinked: staged.keepUnlinked,
+          sourceSheetName: staged.sourceSheetName,
+          sourceSection: staged.sourceSection,
+          sourceRowNumber: staged.sourceRowNumber,
+          sourceKey: staged.sourceKey,
+          workKind: staged.workKind,
+          plannedHours: staged.plannedHours,
+          actualHours: staged.actualHours,
+          profileAction: staged.profileAction,
+          riskDecision: staged.riskDecision,
+          riskText: staged.riskText,
+        },
+      ],
+    });
+    const source = batch({
+      version: 1,
+      status: EmployeeWorkImportStatus.SUPERSEDED,
+      templateVersion: 2,
+      previewFingerprint,
+      totalRows: 1,
+      validRows: 1,
+      importedRows: 1,
+      rows: [staged],
+    });
+    const commitService = {
+      commit: jest.fn().mockImplementation(async (id) => ({
+        id,
+        status: EmployeeWorkImportStatus.COMPLETED,
+        restoredFromBatchId: 'batch-1',
+      })),
+      rebuildSnapshots: jest.fn(),
+    };
+    const dependencies = createService({ foundBatch: source, commitService });
+    dependencies.tx.employeeWorkImportBatch.findUnique.mockResolvedValue(source);
+    dependencies.tx.employeeWorkImportRow.findMany.mockImplementation(
+      async ({ where }: { where: { rowNumber: { gt: number } } }) =>
+        where.rowNumber.gt < 1 ? [staged] : [],
+    );
+
+    await dependencies.service.restore('batch-1');
+
+    expect(dependencies.tx.employeeWorkImportRow.findMany.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        where: expect.objectContaining({ rowNumber: { gt: 0 } }),
+      }),
+    );
+    expect(dependencies.tx.employeeWorkImportRow.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ rowNumber: 1, sourceSection: 'CURRENT_WORK' })],
+    });
+  });
+
   it('reads and copies 50000 restored rows in chunks of at most 1000', async () => {
     const rowCount = 50_000;
     const source = batch({
@@ -2043,7 +2138,7 @@ describe('EmployeeImportsService', () => {
       async ({ where, take }: { where: any; take?: number }) => {
         expect(take).toBeDefined();
         expect(take).toBeLessThanOrEqual(1_000);
-        const after = where.rowNumber?.gt ?? 1;
+        const after = Math.max(where.rowNumber?.gt ?? 0, 1);
         if (after >= rowCount + 1) return [];
         const start = after + 1;
         const size = Math.min(take!, rowCount + 2 - start);

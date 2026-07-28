@@ -273,7 +273,7 @@ export class EmployeeImportsService {
         });
         const fingerprint = this.restoreFingerprint(source);
         let restoredRowCount = 0;
-        let afterRowNumber = 1;
+        let afterRowNumber = 0;
         while (true) {
           const rows = (
             await tx.employeeWorkImportRow.findMany({
