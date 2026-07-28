@@ -1,6 +1,8 @@
 import {
   EmployeeImportRowStatus,
   EmployeeProgressPeriod,
+  EmployeePlanCarryStatus,
+  EmployeePlanPriority,
   EmployeeWorkImportStatus,
   EmployeeWorkKind,
   EmployeeWorkStatus,
@@ -25,6 +27,11 @@ describe('EmployeeProgressQueryService', () => {
     },
     employeeWorkImportRow: {
       findMany: jest.fn(),
+      count: jest.fn(),
+    },
+    employeeWeekPlanItem: {
+      findMany: jest.fn(),
+      findFirst: jest.fn(),
       count: jest.fn(),
     },
     resourceProfile: {
@@ -114,6 +121,39 @@ describe('EmployeeProgressQueryService', () => {
     sourceRow: { rowNumber: 3 },
   };
 
+  const nextWeekPlan = {
+    id: 'plan-1',
+    employeeId: 'employee-1',
+    importBatchId: 'batch-2',
+    sourceRowId: 'row-plan-1',
+    periodStartAt: new Date('2026-07-27T00:00:00.000Z'),
+    periodEndAt: new Date('2026-08-02T00:00:00.000Z'),
+    title: '完成联调',
+    deliverableText: '交付验收记录',
+    plannedCompletionAt: new Date('2026-07-30T00:00:00.000Z'),
+    priority: EmployeePlanPriority.HIGH,
+    collaborationText: '需要测试协作',
+    planText: '完成接口联调',
+    note: '重点事项',
+    workKind: EmployeeWorkKind.PROJECT,
+    projectId: 'project-1',
+    taskId: 'task-1',
+    carryStatus: EmployeePlanCarryStatus.PLANNED,
+    matchedWorkItemId: null,
+    cancelReason: null,
+    employee: firstItem.employee,
+    project: firstItem.project,
+    task: firstItem.task,
+    importBatch: firstItem.importBatch,
+    sourceRow: {
+      rowNumber: 9,
+      sourceSheetName: '张三',
+      sourceSection: 'NEXT_WEEK_PLAN',
+      sourceRowNumber: 20,
+      sourceKey: '张三:NEXT_WEEK_PLAN:20',
+    },
+  };
+
   beforeEach(() => {
     jest.resetAllMocks();
     prisma.$transaction.mockImplementation((work) => work(prisma));
@@ -124,6 +164,9 @@ describe('EmployeeProgressQueryService', () => {
         : [firstItem, riskyItem];
     });
     prisma.employeeWorkItem.count.mockResolvedValue(2);
+    prisma.employeeWeekPlanItem.findMany.mockResolvedValue([nextWeekPlan]);
+    prisma.employeeWeekPlanItem.findFirst.mockResolvedValue(nextWeekPlan);
+    prisma.employeeWeekPlanItem.count.mockResolvedValue(1);
     prisma.employeeWorkImportBatch.findMany.mockResolvedValue([
       {
         id: 'batch-2',
@@ -409,6 +452,58 @@ describe('EmployeeProgressQueryService', () => {
           key: '张三:CURRENT_WORK:7',
           label: '张三 / 本周工作 / 第 7 行',
         },
+      }),
+    );
+  });
+
+  it('lists next-week plans separately with collaboration, carry status, and source links', async () => {
+    const service = createService();
+
+    const result = await service.weekPlans({
+      periodType: EmployeeProgressPeriod.WEEK,
+      periodStart: '2026-07-27',
+      employeeId: 'employee-1',
+      projectId: 'project-1',
+      carryStatus: EmployeePlanCarryStatus.PLANNED,
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        period: { type: 'WEEK', start: '2026-07-27', end: '2026-08-02' },
+        meta: { page: 1, pageSize: 20, total: 1 },
+        data: [
+          expect.objectContaining({
+            id: 'plan-1',
+            title: '完成联调',
+            deliverableText: '交付验收记录',
+            priority: EmployeePlanPriority.HIGH,
+            collaborationText: '需要测试协作',
+            carryStatus: EmployeePlanCarryStatus.PLANNED,
+            workDirection: '平台研发',
+            plannedCompletionDate: '2026-07-30',
+            source: expect.objectContaining({
+              label: '张三 / 下周计划 / 第 20 行',
+            }),
+            links: expect.objectContaining({
+              selfUrl: '/employee-week-plans/plan-1',
+              sourceBatchUrl: '/employee-work-imports/batch-2',
+              projectProgressUrl: expect.stringContaining('/projects/project-1/team-progress'),
+            }),
+          }),
+        ],
+      }),
+    );
+    expect(prisma.employeeWeekPlanItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          employeeId: 'employee-1',
+          projectId: 'project-1',
+          carryStatus: EmployeePlanCarryStatus.PLANNED,
+          archivedAt: null,
+        }),
+        take: 20,
       }),
     );
   });

@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   EmployeeImportRowStatus,
+  EmployeePlanCarryStatus,
   EmployeeProgressPeriod,
   EmployeeWorkImportBatch,
   EmployeeWorkImportStatus,
@@ -36,6 +37,17 @@ export interface EmployeeProgressQuery {
 
 export interface EmployeeWorkItemsQuery extends EmployeeProgressQuery {
   employeeId?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface EmployeeWeekPlansQuery {
+  periodType: EmployeeProgressPeriod;
+  periodStart: string;
+  employeeId?: string;
+  department?: string;
+  projectId?: string;
+  carryStatus?: EmployeePlanCarryStatus;
   page?: number;
   pageSize?: number;
 }
@@ -145,6 +157,53 @@ type QueryWorkItem = Prisma.EmployeeWorkItemGetPayload<{
       };
     };
   };
+}>;
+
+const WEEK_PLAN_SELECT = {
+  id: true,
+  employeeId: true,
+  importBatchId: true,
+  sourceRowId: true,
+  periodStartAt: true,
+  periodEndAt: true,
+  title: true,
+  deliverableText: true,
+  plannedCompletionAt: true,
+  priority: true,
+  collaborationText: true,
+  planText: true,
+  note: true,
+  workKind: true,
+  projectId: true,
+  taskId: true,
+  carryStatus: true,
+  matchedWorkItemId: true,
+  cancelReason: true,
+  employee: {
+    select: {
+      id: true,
+      displayName: true,
+      department: true,
+      roleTitle: true,
+      workDirection: true,
+    },
+  },
+  project: { select: { id: true, code: true, name: true, archivedAt: true } },
+  task: { select: { id: true, code: true, title: true, archivedAt: true } },
+  importBatch: { select: { id: true, version: true, status: true } },
+  sourceRow: {
+    select: {
+      rowNumber: true,
+      sourceSheetName: true,
+      sourceSection: true,
+      sourceRowNumber: true,
+      sourceKey: true,
+    },
+  },
+} as const satisfies Prisma.EmployeeWeekPlanItemSelect;
+
+type QueryWeekPlan = Prisma.EmployeeWeekPlanItemGetPayload<{
+  select: typeof WEEK_PLAN_SELECT;
 }>;
 
 interface PeriodBounds {
@@ -338,6 +397,79 @@ export class EmployeeProgressQueryService {
       this.dateOnly(item.periodStartAt),
     );
     return this.publicWorkItem(item, period);
+  }
+
+  async weekPlans(query: EmployeeWeekPlansQuery) {
+    const period = this.periodBounds(query.periodType, query.periodStart);
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.min(Math.max(1, query.pageSize ?? DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
+    const where: Prisma.EmployeeWeekPlanItemWhereInput = {
+      archivedAt: null,
+      periodEndAt: { gte: period.startAt, lte: period.endAt },
+      ...(period.type === EmployeeProgressPeriod.WEEK ? { periodStartAt: period.startAt } : {}),
+      ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+      ...(query.projectId ? { projectId: query.projectId } : {}),
+      ...(query.carryStatus ? { carryStatus: query.carryStatus } : {}),
+      employee: {
+        archivedAt: null,
+        ...(query.department ? { department: query.department } : {}),
+      },
+      importBatch: {
+        status: EmployeeWorkImportStatus.COMPLETED,
+        archivedAt: null,
+      },
+    };
+    const { data, total } = await this.prisma.$transaction(async (tx) => {
+      const [records, count] = await Promise.all([
+        tx.employeeWeekPlanItem.findMany({
+          where,
+          select: WEEK_PLAN_SELECT,
+          orderBy: [
+            { plannedCompletionAt: 'asc' },
+            { priority: 'desc' },
+            { createdAt: 'asc' },
+            { id: 'asc' },
+          ],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+        }),
+        tx.employeeWeekPlanItem.count({ where }),
+      ]);
+      return { data: records, total: count };
+    }, QUERY_TRANSACTION_OPTIONS);
+    return {
+      period: this.publicPeriod(period),
+      data: data.map((plan) => this.publicWeekPlan(plan, period)),
+      meta: { page, pageSize, total },
+      sourceBatchIds: [...new Set(data.map(({ importBatchId }) => importBatchId))],
+    };
+  }
+
+  async weekPlan(id: string) {
+    const plan = await this.prisma.employeeWeekPlanItem.findFirst({
+      where: {
+        id,
+        archivedAt: null,
+        employee: { archivedAt: null },
+        importBatch: {
+          status: EmployeeWorkImportStatus.COMPLETED,
+          archivedAt: null,
+        },
+      },
+      select: WEEK_PLAN_SELECT,
+    });
+    if (!plan) {
+      throw new AppError({
+        code: ErrorCodes.RESOURCE_NOT_FOUND,
+        message: 'Employee week plan not found',
+        statusCode: HttpStatus.NOT_FOUND,
+      });
+    }
+    const period = this.periodBounds(
+      EmployeeProgressPeriod.WEEK,
+      this.dateOnly(plan.periodStartAt),
+    );
+    return this.publicWeekPlan(plan, period);
   }
 
   async employee(id: string, query: EmployeeProgressQuery) {
@@ -1006,7 +1138,73 @@ export class EmployeeProgressQueryService {
     };
   }
 
-  private sourceLabel(source: QueryWorkItem['sourceRow']): string {
+  private publicWeekPlan(plan: QueryWeekPlan, period: PeriodBounds) {
+    return {
+      id: plan.id,
+      employeeId: plan.employeeId,
+      employeeName: plan.employee.displayName,
+      department: plan.employee.department,
+      workDirection: plan.employee.workDirection,
+      importBatchId: plan.importBatchId,
+      importVersion: plan.importBatch.version,
+      sourceRowId: plan.sourceRowId,
+      sourceBatchIds: [plan.importBatchId],
+      periodStart: this.dateOnly(plan.periodStartAt),
+      periodEnd: this.dateOnly(plan.periodEndAt),
+      title: plan.title,
+      deliverableText: plan.deliverableText,
+      plannedCompletionDate: plan.plannedCompletionAt
+        ? this.dateOnly(plan.plannedCompletionAt)
+        : null,
+      priority: plan.priority,
+      collaborationText: plan.collaborationText,
+      planText: plan.planText,
+      note: plan.note,
+      workKind: plan.workKind,
+      carryStatus: plan.carryStatus,
+      matchedWorkItemId: plan.matchedWorkItemId,
+      cancelReason: plan.cancelReason,
+      project: plan.project
+        ? {
+            id: plan.project.id,
+            code: plan.project.code,
+            name: plan.project.name,
+            archived: plan.project.archivedAt !== null,
+          }
+        : null,
+      task: plan.task
+        ? {
+            id: plan.task.id,
+            code: plan.task.code,
+            title: plan.task.title,
+            archived: plan.task.archivedAt !== null,
+          }
+        : null,
+      source: {
+        sheetName: plan.sourceRow.sourceSheetName,
+        section: plan.sourceRow.sourceSection,
+        rowNumber: plan.sourceRow.sourceRowNumber,
+        key: plan.sourceRow.sourceKey,
+        label: this.sourceLabel(plan.sourceRow),
+      },
+      links: {
+        selfUrl: `/employee-week-plans/${plan.id}`,
+        employeeProgressUrl: this.employeeProgressUrl(plan.employeeId, period),
+        ...(plan.projectId && plan.project?.archivedAt === null
+          ? { projectProgressUrl: this.projectProgressUrl(plan.projectId, period) }
+          : {}),
+        ...(plan.projectId &&
+        plan.project?.archivedAt === null &&
+        plan.taskId &&
+        plan.task?.archivedAt === null
+          ? { taskUrl: `/projects/${plan.projectId}?taskId=${encodeURIComponent(plan.taskId)}` }
+          : {}),
+        sourceBatchUrl: `/employee-work-imports/${plan.importBatchId}`,
+      },
+    };
+  }
+
+  private sourceLabel(source: QueryWorkItem['sourceRow'] | QueryWeekPlan['sourceRow']): string {
     if (!source.sourceSheetName || !source.sourceSection || !source.sourceRowNumber) {
       return `导入批次第 ${source.rowNumber} 行`;
     }
