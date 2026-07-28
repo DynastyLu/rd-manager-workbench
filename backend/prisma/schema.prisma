@@ -39,11 +39,27 @@ enum ProjectPhase {
   @@schema("app")
 }
 
+enum ProjectWeightMode {
+  EQUAL
+  CUSTOM
+
+  @@schema("app")
+}
+
 enum MilestoneStatus {
   PENDING
   IN_PROGRESS
   COMPLETED
   MISSED
+
+  @@schema("app")
+}
+
+enum ProgressReportSourceType {
+  MANUAL
+  TASK_CHANGE
+  MILESTONE_CHANGE
+  SYSTEM_RECALCULATION
 
   @@schema("app")
 }
@@ -588,6 +604,7 @@ model Project {
   actualEndAt                DateTime?                  @map("actual_end_at") @db.Timestamptz(6)
   phase                      ProjectPhase               @default(PLANNING)
   status                     ProjectStatus              @default(DRAFT)
+  weightMode                 ProjectWeightMode          @default(EQUAL) @map("weight_mode")
   healthOverride             ProjectHealth?             @map("health_override")
   archivedAt                 DateTime?                  @map("archived_at") @db.Timestamptz(6)
   createdAt                  DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -620,24 +637,30 @@ model Project {
 }
 
 model Milestone {
-  id         String          @id @default(cuid())
-  projectId  String          @map("project_id")
-  name       String
-  plannedAt  DateTime?       @map("planned_at") @db.Timestamptz(6)
-  actualAt   DateTime?       @map("actual_at") @db.Timestamptz(6)
-  ownerName  String?         @map("owner_name")
-  isCritical Boolean         @default(false) @map("is_critical")
-  status     MilestoneStatus @default(PENDING)
-  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
-  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  tasks      WorkTask[]
-  risks      Risk[]
-  issues     Issue[]
-  decisions  Decision[]
+  id                      String           @id @default(cuid())
+  projectId               String           @map("project_id")
+  name                    String
+  plannedAt               DateTime?        @map("planned_at") @db.Timestamptz(6)
+  plannedStartAt          DateTime?        @map("planned_start_at") @db.Timestamptz(6)
+  plannedEndAt            DateTime?        @map("planned_end_at") @db.Timestamptz(6)
+  actualAt                DateTime?        @map("actual_at") @db.Timestamptz(6)
+  ownerName               String?          @map("owner_name")
+  isCritical              Boolean          @default(false) @map("is_critical")
+  status                  MilestoneStatus  @default(PENDING)
+  weightPercent           Decimal?         @map("weight_percent") @db.Decimal(5, 2)
+  manualCompletionPercent Decimal?         @map("manual_completion_percent") @db.Decimal(5, 2)
+  createdAt               DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project                 Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks                   WorkTask[]
+  progressReports         ProgressReport[]
+  risks                   Risk[]
+  issues                  Issue[]
+  decisions               Decision[]
 
   @@index([projectId, plannedAt])
   @@index([plannedAt])
+  @@index([projectId, plannedStartAt, plannedEndAt])
   @@map("milestones")
   @@schema("app")
 }
@@ -678,6 +701,7 @@ model WorkTask {
   resourceLoadEntries        ResourceLoadEntry[]
   employeeWorkItems          EmployeeWorkItem[]
   resolvedEmployeeImportRows EmployeeWorkImportRow[]
+  progressReports            ProgressReport[]
 
   @@index([projectId, status, dueAt])
   @@index([milestoneId])
@@ -777,39 +801,39 @@ model KnowledgeSpace {
 }
 
 model ContentDocument {
-  id                String              @id @default(cuid())
+  id                String                    @id @default(cuid())
   type              ContentDocumentType
   title             String
-  content           Json                @default("{}")
-  plainText         String              @default("") @map("plain_text")
-  tags              String[]            @default([])
-  isFavorite        Boolean             @default(false) @map("is_favorite")
-  spaceId           String?             @map("space_id")
-  parentId          String?             @map("parent_id")
-  projectId         String?             @map("project_id")
-  meetingId         String?             @map("meeting_id")
-  sourceKind        KnowledgeSourceKind @default(LEGACY) @map("source_kind")
-  originalName      String?             @map("original_name")
-  mimeType          String?             @map("mime_type")
-  fileSize          Int?                @map("file_size")
-  sourceSha256      String?             @map("source_sha256")
-  sourceModifiedAt  DateTime?           @map("source_modified_at") @db.Timestamptz(6)
+  content           Json                      @default("{}")
+  plainText         String                    @default("") @map("plain_text")
+  tags              String[]                  @default([])
+  isFavorite        Boolean                   @default(false) @map("is_favorite")
+  spaceId           String?                   @map("space_id")
+  parentId          String?                   @map("parent_id")
+  projectId         String?                   @map("project_id")
+  meetingId         String?                   @map("meeting_id")
+  sourceKind        KnowledgeSourceKind       @default(LEGACY) @map("source_kind")
+  originalName      String?                   @map("original_name")
+  mimeType          String?                   @map("mime_type")
+  fileSize          Int?                      @map("file_size")
+  sourceSha256      String?                   @map("source_sha256")
+  sourceModifiedAt  DateTime?                 @map("source_modified_at") @db.Timestamptz(6)
   previewStatus     KnowledgeProcessingStatus @default(PENDING) @map("preview_status")
-  previewStorageKey String?             @map("preview_storage_key")
-  previewMimeType   String?             @map("preview_mime_type")
+  previewStorageKey String?                   @map("preview_storage_key")
+  previewMimeType   String?                   @map("preview_mime_type")
   indexStatus       KnowledgeProcessingStatus @default(PENDING) @map("index_status")
-  processingError   String?             @map("processing_error")
-  indexedAt         DateTime?           @map("indexed_at") @db.Timestamptz(6)
-  status            ContentStatus       @default(ACTIVE)
-  trashedAt         DateTime?           @map("trashed_at") @db.Timestamptz(6)
-  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
-  space             KnowledgeSpace?     @relation(fields: [spaceId], references: [id], onDelete: SetNull)
-  parent            ContentDocument?    @relation("ContentDocumentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children          ContentDocument[]   @relation("ContentDocumentHierarchy")
-  project           Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  meeting           Meeting?            @relation("MeetingDocuments", fields: [meetingId], references: [id], onDelete: SetNull)
-  minutesForMeeting Meeting?            @relation("MeetingMinutesDocument")
+  processingError   String?                   @map("processing_error")
+  indexedAt         DateTime?                 @map("indexed_at") @db.Timestamptz(6)
+  status            ContentStatus             @default(ACTIVE)
+  trashedAt         DateTime?                 @map("trashed_at") @db.Timestamptz(6)
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  space             KnowledgeSpace?           @relation(fields: [spaceId], references: [id], onDelete: SetNull)
+  parent            ContentDocument?          @relation("ContentDocumentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children          ContentDocument[]         @relation("ContentDocumentHierarchy")
+  project           Project?                  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  meeting           Meeting?                  @relation("MeetingDocuments", fields: [meetingId], references: [id], onDelete: SetNull)
+  minutesForMeeting Meeting?                  @relation("MeetingMinutesDocument")
   versions          DocumentVersion[]
   fileAssets        FileAsset[]
   chunks            DocumentChunk[]
@@ -916,17 +940,26 @@ model TaskDependency {
 }
 
 model ProgressReport {
-  id                String   @id @default(cuid())
-  projectId         String   @map("project_id")
-  reportedAt        DateTime @map("reported_at") @db.Timestamptz(6)
+  id                String                   @id @default(cuid())
+  projectId         String                   @map("project_id")
+  reportedAt        DateTime                 @map("reported_at") @db.Timestamptz(6)
   summary           String
-  completionPercent Int      @map("completion_percent")
+  completionPercent Int                      @map("completion_percent")
+  previousPercent   Decimal?                 @map("previous_percent") @db.Decimal(5, 2)
+  sourceType        ProgressReportSourceType @default(MANUAL) @map("source_type")
+  milestoneId       String?                  @map("milestone_id")
+  taskId            String?                  @map("task_id")
   blockers          String?
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nextSteps         String?                  @map("next_steps")
+  changeSnapshot    Json?                    @map("change_snapshot")
+  createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project           Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  milestone         Milestone?               @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  task              WorkTask?                @relation(fields: [taskId], references: [id], onDelete: SetNull)
 
   @@index([projectId, reportedAt])
+  @@index([projectId, sourceType, reportedAt])
   @@index([reportedAt])
   @@map("progress_reports")
   @@schema("app")
@@ -2319,12 +2352,14 @@ model ExternalSyncSession {
 enum KnowledgeSessionStatus {
   ACTIVE
   ARCHIVED
+
   @@schema("app")
 }
 
 enum MessageRole {
   USER
   ASSISTANT
+
   @@schema("app")
 }
 
@@ -2359,19 +2394,19 @@ enum KnowledgeIndexJobStatus {
 }
 
 model DocumentChunk {
-  id          String   @id @default(cuid())
-  documentId  String   @map("document_id")
-  chunkIndex  Int      @map("chunk_index")
-  content     String
-  tokenCount  Int      @default(0) @map("token_count")
-  embedding   Unsupported("public.vector(384)")?
-  metadata    Json     @default("{}")
-  pageNumber    Int?   @map("page_number")
-  sheetName     String? @map("sheet_name")
-  locationLabel String? @map("location_label")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  document    ContentDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  id            String                             @id @default(cuid())
+  documentId    String                             @map("document_id")
+  chunkIndex    Int                                @map("chunk_index")
+  content       String
+  tokenCount    Int                                @default(0) @map("token_count")
+  embedding     Unsupported("public.vector(384)")?
+  metadata      Json                               @default("{}")
+  pageNumber    Int?                               @map("page_number")
+  sheetName     String?                            @map("sheet_name")
+  locationLabel String?                            @map("location_label")
+  createdAt     DateTime                           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime                           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  document      ContentDocument                    @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, chunkIndex])
   @@map("document_chunks")
@@ -2397,11 +2432,11 @@ model KnowledgeIndexJob {
 }
 
 model KnowledgeSession {
-  id        String              @id @default(cuid())
+  id        String             @id @default(cuid())
   title     String
-  status    String              @default("ACTIVE")
-  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  status    String             @default("ACTIVE")
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
   messages  KnowledgeMessage[]
 
   @@map("knowledge_sessions")
@@ -2441,19 +2476,19 @@ model AiUsageLog {
 }
 
 model FolderWatch {
-  id           String       @id @default(cuid())
+  id           String    @id @default(cuid())
   label        String
-  folderPath   String       @map("folder_path")
-  spaceId      String       @map("space_id")
-  recursive    Boolean      @default(true)
-  status       String       @default("ACTIVE")
-  errorMessage String?      @map("error_message")
-  lastSyncAt   DateTime?    @map("last_sync_at") @db.Timestamptz(6)
-  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  folderPath   String    @map("folder_path")
+  spaceId      String    @map("space_id")
+  recursive    Boolean   @default(true)
+  status       String    @default("ACTIVE")
+  errorMessage String?   @map("error_message")
+  lastSyncAt   DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  space        KnowledgeSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  files        FolderFile[]
+  space KnowledgeSpace @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  files FolderFile[]
 
   @@map("folder_watches")
   @@schema("app")
