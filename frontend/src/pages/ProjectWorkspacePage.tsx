@@ -22,7 +22,6 @@ import { getProjectTeamProgress } from '@/modules/employees/api'
 import { defaultPeriodStart } from '@/modules/employees/periods'
 import { employeeQueryKeys } from '@/modules/employees/queryKeys'
 import type {
-  MilestoneStatus,
   ProjectDetail,
   ProjectHealth,
   ProjectStatus,
@@ -33,6 +32,7 @@ import type {
 } from '@/modules/workbench/types'
 import { ROUTES } from '@/constants/routes'
 import { ProgressReportForm } from '@/modules/workbench/components/ProgressReportForm'
+import { ProjectProgressTimeline } from '@/modules/workbench/components/ProjectProgressTimeline'
 import { TaskForm } from '@/modules/workbench/components/TaskForm'
 import { MilestoneForm } from '@/modules/workbench/components/MilestoneForm'
 import { ProjectDetailsForm } from '@/modules/workbench/components/ProjectDetailsForm'
@@ -73,13 +73,6 @@ const TASK_LABELS: Record<TaskStatus, string> = {
   BLOCKED: '阻塞',
   DONE: '已完成',
   CANCELLED: '已取消',
-}
-
-const MILESTONE_LABELS: Record<MilestoneStatus, string> = {
-  PENDING: '待开始',
-  IN_PROGRESS: '进行中',
-  COMPLETED: '已完成',
-  MISSED: '已逾期',
 }
 
 const HEALTH_LABELS: Record<ProjectHealth, string> = {
@@ -233,20 +226,18 @@ function OverviewSection({
   const openTasks = project.tasks.filter(
     (task) => task.status !== 'DONE' && task.status !== 'CANCELLED'
   )
-  const latestProgress = project.progressReports[0]
+  const latestProgress = project.progressReports.find((report) => report.sourceType === 'MANUAL')
   const health = project.effectiveHealth ?? project.healthOverride ?? project.latestHealthSnapshot?.health
   const completedMilestones = project.milestones.filter((item) => item.status === 'COMPLETED').length
-  const milestonePercent = project.milestones.length
-    ? Math.round((completedMilestones / project.milestones.length) * 100)
-    : 0
+  const calculatedProgress = project.progressSummary
 
   return (
     <div className="project-workspace__overview">
       <section className="project-workspace__metrics" aria-label="项目摘要">
         <div>
           <span>当前进度</span>
-          <strong>{latestProgress?.completionPercent ?? 0}%</strong>
-          <Progress percent={latestProgress?.completionPercent ?? 0} showInfo={false} />
+          <strong>{calculatedProgress?.actualPercent === null ? '未规划' : `${calculatedProgress?.actualPercent ?? 0}%`}</strong>
+          <Progress percent={calculatedProgress?.actualPercent ?? 0} showInfo={false} />
         </div>
         <div>
           <span>待处理工作项</span>
@@ -292,24 +283,14 @@ function OverviewSection({
             <div><h2>里程碑</h2><span>{completedMilestones}/{project.milestones.length} 已完成</span></div>
             <Button size="small" theme="borderless" icon={<IconPlus />} aria-label="新建里程碑" onClick={onCreateMilestone}>新建</Button>
           </header>
-          <div className="project-workspace__milestone-progress">
-            <Progress percent={milestonePercent} showInfo={false} aria-label="里程碑完成进度" />
-          </div>
-          {project.milestones.length ? (
-            <ul className="project-workspace__list project-workspace__milestones">
-              {project.milestones.map((milestone) => (
-                <li key={milestone.id}>
-                  <span className={`project-workspace__dot project-workspace__dot--${milestone.status.toLowerCase()}`} />
-                  <div><strong>{milestone.name}</strong><span>{formatDate(milestone.plannedAt)}</span></div>
-                  <Tag size="small" color={milestone.status === 'COMPLETED' ? 'blue' : milestone.status === 'IN_PROGRESS' ? 'green' : milestone.status === 'MISSED' ? 'red' : 'grey'}>{MILESTONE_LABELS[milestone.status]}</Tag>
-                  <div className="project-workspace__row-actions">
-                    <Button size="small" theme="borderless" onClick={() => onEditMilestone(milestone)}>编辑</Button>
-                    <Button size="small" theme="borderless" type="danger" onClick={() => onDeleteMilestone(milestone)}>删除</Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="project-workspace__muted">尚未创建里程碑。</p>}
+          {calculatedProgress ? (
+            <ProjectProgressTimeline
+              summary={calculatedProgress}
+              milestones={project.milestones}
+              onSelectMilestone={onEditMilestone}
+              onDeleteMilestone={onDeleteMilestone}
+            />
+          ) : <p className="project-workspace__muted">项目进度正在计算，请稍后刷新。</p>}
         </section>
 
         <section className="project-workspace__panel project-workspace__panel--wide">
@@ -388,7 +369,9 @@ function ProgressSection({
           <li key={report.id}>
             <span>{report.completionPercent}%</span>
             <div><strong>{report.summary}</strong><Progress percent={report.completionPercent} showInfo={false} aria-label={`${report.summary}项目进度`} /><time>{formatDate(report.reportedAt)}</time>{report.blockers ? <p>阻塞：{report.blockers}</p> : null}</div>
-            <div className="project-workspace__row-actions"><Button size="small" theme="borderless" onClick={() => onEdit(report)}>编辑</Button><Button size="small" theme="borderless" type="danger" onClick={() => onDelete(report)}>删除</Button></div>
+            {report.sourceType === 'MANUAL' ? (
+              <div className="project-workspace__row-actions"><Button size="small" theme="borderless" onClick={() => onEdit(report)}>编辑</Button><Button size="small" theme="borderless" type="danger" onClick={() => onDelete(report)}>删除</Button></div>
+            ) : <Tag size="small" color="blue">系统记录</Tag>}
           </li>
         ))}
       </ol>
@@ -823,7 +806,7 @@ export default function ProjectWorkspacePage() {
           <TaskForm projectId={project.id} task={dialog.task} onSuccess={() => setDialog(null)} />
         ) : null}
         {dialog?.type === 'progress' ? (
-          <ProgressReportForm projectId={project.id} report={dialog.report} onSuccess={() => setDialog(null)} />
+          <ProgressReportForm projectId={project.id} report={dialog.report} milestones={project.milestones} onSuccess={() => setDialog(null)} />
         ) : null}
         {dialog?.type === 'milestone' ? <MilestoneForm projectId={project.id} milestone={dialog.milestone} onSuccess={() => setDialog(null)} /> : null}
       </Modal> : null}

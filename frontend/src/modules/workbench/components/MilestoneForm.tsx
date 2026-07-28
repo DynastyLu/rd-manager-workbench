@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Button, Checkbox, DatePicker, Input, Select } from '@douyinfe/semi-ui'
+import { Banner, Button, Checkbox, DatePicker, Input, InputNumber, Select } from '@douyinfe/semi-ui'
 import { toast } from 'sonner'
 
 import { createMilestone, updateMilestone } from '@/modules/workbench/api/projects'
@@ -24,7 +24,16 @@ export function MilestoneForm({
 }) {
   const queryClient = useQueryClient()
   const [name, setName] = useState(milestone?.name ?? '')
-  const [plannedAt, setPlannedAt] = useState(milestone?.plannedAt?.slice(0, 10) ?? '')
+  const [plannedStartAt, setPlannedStartAt] = useState(milestone?.plannedStartAt?.slice(0, 10) ?? '')
+  const [plannedEndAt, setPlannedEndAt] = useState(
+    milestone?.plannedEndAt?.slice(0, 10) ?? milestone?.plannedAt?.slice(0, 10) ?? ''
+  )
+  const [weightPercent, setWeightPercent] = useState<number | undefined>(
+    milestone?.weightPercent ?? undefined
+  )
+  const [manualCompletionPercent, setManualCompletionPercent] = useState(
+    milestone?.manualCompletionPercent ?? milestone?.completionPercent ?? 0
+  )
   const [ownerName, setOwnerName] = useState(milestone?.ownerName ?? '')
   const [status, setStatus] = useState<MilestoneStatus>(milestone?.status ?? 'PENDING')
   const [isCritical, setIsCritical] = useState(milestone?.isCritical ?? false)
@@ -33,7 +42,10 @@ export function MilestoneForm({
     mutationFn: () => {
       const input = {
         name: name.trim(),
-        ...(plannedAt ? { plannedAt: new Date(`${plannedAt}T00:00:00`).toISOString() } : {}),
+        ...(plannedStartAt ? { plannedStartAt: new Date(`${plannedStartAt}T00:00:00`).toISOString() } : {}),
+        ...(plannedEndAt ? { plannedEndAt: new Date(`${plannedEndAt}T00:00:00`).toISOString() } : {}),
+        ...(weightPercent !== undefined ? { weightPercent } : {}),
+        ...(milestone?.completionSource !== 'TASKS' ? { manualCompletionPercent } : {}),
         ...(ownerName.trim() ? { ownerName: ownerName.trim() } : {}),
         status,
         isCritical,
@@ -59,6 +71,10 @@ export function MilestoneForm({
       setValidationMessage('请填写里程碑名称。')
       return
     }
+    if (plannedStartAt && plannedEndAt && plannedEndAt < plannedStartAt) {
+      setValidationMessage('计划结束时间不能早于计划开始时间。')
+      return
+    }
     setValidationMessage('')
     mutation.mutate()
   }
@@ -67,9 +83,18 @@ export function MilestoneForm({
     <form className="workspace-modal-form" onSubmit={submit} noValidate>
       <label htmlFor="milestone-name"><span>里程碑名称</span><Input id="milestone-name" value={name} onChange={setName} /></label>
       <div className="workspace-modal-form__field" role="group" aria-labelledby="milestone-date-label">
-        <span id="milestone-date-label">计划日期</span>
-        <DatePicker aria-labelledby="milestone-date-label" type="date" format="yyyy-MM-dd" value={plannedAt} onChange={(_, value) => setPlannedAt(String(value ?? ''))} style={{ width: '100%' }} showClear />
+        <span id="milestone-date-label">计划时间</span>
+        <div className="workspace-modal-form__range">
+          <DatePicker aria-label="计划开始" type="date" format="yyyy-MM-dd" value={plannedStartAt} onChange={(_, value) => setPlannedStartAt(String(value ?? ''))} style={{ width: '100%' }} showClear />
+          <DatePicker aria-label="计划结束" type="date" format="yyyy-MM-dd" value={plannedEndAt} onChange={(_, value) => setPlannedEndAt(String(value ?? ''))} style={{ width: '100%' }} showClear />
+        </div>
       </div>
+      <label htmlFor="milestone-weight"><span>里程碑权重（自定义权重模式）</span><InputNumber id="milestone-weight" min={0} max={100} suffix="%" value={weightPercent} onNumberChange={(value) => setWeightPercent(value === undefined ? undefined : Number(value))} style={{ width: '100%' }} /></label>
+      {milestone?.completionSource === 'TASKS' ? (
+        <Banner type="info" description={`当前进度由 ${milestone.linkedTaskCount} 个工作项自动计算`} />
+      ) : (
+        <label htmlFor="milestone-manual-progress"><span>手工完成进度</span><InputNumber id="milestone-manual-progress" aria-label="手工完成进度" min={0} max={100} suffix="%" value={manualCompletionPercent} onNumberChange={(value) => setManualCompletionPercent(Number(value ?? 0))} style={{ width: '100%' }} /></label>
+      )}
       <label htmlFor="milestone-owner"><span>负责人</span><Input id="milestone-owner" value={ownerName} onChange={setOwnerName} /></label>
       <div className="workspace-modal-form__field" role="group" aria-labelledby="milestone-status-label">
         <span id="milestone-status-label">状态</span>

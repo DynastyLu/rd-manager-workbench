@@ -171,10 +171,18 @@ const project = {
       projectId: 'project-1',
       name: '完成初筛',
       plannedAt: '2026-08-01T00:00:00.000Z',
+      plannedStartAt: '2026-07-01T00:00:00.000Z',
+      plannedEndAt: '2026-08-01T00:00:00.000Z',
       actualAt: null,
       ownerName: '张工',
       isCritical: true,
       status: 'IN_PROGRESS',
+      weightPercent: null,
+      manualCompletionPercent: null,
+      completionPercent: 68,
+      completionSource: 'TASKS',
+      effectiveWeightPercent: 100,
+      linkedTaskCount: 1,
       createdAt: '2026-07-01T00:00:00.000Z',
       updatedAt: '2026-07-18T00:00:00.000Z',
     },
@@ -208,7 +216,14 @@ const project = {
       projectId: 'project-1',
       summary: '已完成样本准备',
       completionPercent: 35,
+      previousPercent: null,
+      sourceType: 'MANUAL',
+      milestoneId: null,
+      taskId: null,
       blockers: null,
+      completedResults: null,
+      nextSteps: null,
+      changeSnapshot: null,
       reportedAt: '2026-07-18T00:00:00.000Z',
       createdAt: '2026-07-18T00:00:00.000Z',
       updatedAt: '2026-07-18T00:00:00.000Z',
@@ -222,6 +237,14 @@ const project = {
     calculatedAt: '2026-07-18T00:00:00.000Z',
   },
   effectiveHealth: 'YELLOW',
+  progressSummary: {
+    actualPercent: 56,
+    timePercent: 64,
+    variancePercent: -8,
+    scheduleState: 'BEHIND',
+    weightMode: 'EQUAL',
+    currentMilestoneId: 'milestone-1',
+  },
 } as const
 
 describe('ProjectWorkspacePage', () => {
@@ -278,6 +301,16 @@ describe('ProjectWorkspacePage', () => {
     expect(document.querySelector('.project-workspace__status')).toHaveClass('project-workspace__status--active')
   })
 
+  it('shows calculated actual, elapsed time, variance, and milestone progress', async () => {
+    renderWorkspace()
+
+    expect((await screen.findAllByText('56%')).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('时间已过 64%')).toBeInTheDocument()
+    expect(screen.getByText('滞后 8%')).toBeInTheDocument()
+    expect(screen.getByText('68% · 权重 100%')).toBeInTheDocument()
+    expect(screen.queryByText('35%', { selector: 'strong' })).not.toBeInTheDocument()
+  })
+
   it('updates the URL when the user changes project sections', async () => {
     const user = userEvent.setup()
     renderWorkspace()
@@ -326,14 +359,15 @@ describe('ProjectWorkspacePage', () => {
 
     await user.click(await screen.findByRole('button', { name: '提交进展' }))
     await user.type(screen.getByLabelText('进展摘要'), '已完成第二轮验证')
-    await user.clear(screen.getByLabelText('完成百分比'))
-    await user.type(screen.getByLabelText('完成百分比'), '55')
+    await user.type(screen.getByLabelText('已完成成果（可选）'), '完成两轮实验')
+    await user.type(screen.getByLabelText('下一步计划（可选）'), '准备项目评审')
     await user.click(screen.getByRole('button', { name: '保存进展' }))
 
     await waitFor(() => {
       expect(createProgressReport).toHaveBeenCalledWith('project-1', {
         summary: '已完成第二轮验证',
-        completionPercent: 55,
+        completedResults: '完成两轮实验',
+        nextSteps: '准备项目评审',
         reportedAt: expect.any(String),
       })
     })

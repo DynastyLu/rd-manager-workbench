@@ -2,21 +2,24 @@ import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { Button, Input, InputNumber, TextArea } from '@douyinfe/semi-ui'
+import { Button, Input, Select, TextArea } from '@douyinfe/semi-ui'
 import { createProgressReport, updateProgressReport } from '@/modules/workbench/api/projects'
-import type { ProgressReport } from '@/modules/workbench/types'
+import type { Milestone, ProgressReport } from '@/modules/workbench/types'
 
 interface ProgressReportFormProps {
   projectId: string
   onSuccess?: (report: ProgressReport) => void
   report?: ProgressReport
+  milestones?: Milestone[]
 }
 
-export function ProgressReportForm({ projectId, onSuccess, report }: ProgressReportFormProps) {
+export function ProgressReportForm({ projectId, onSuccess, report, milestones = [] }: ProgressReportFormProps) {
   const queryClient = useQueryClient()
   const [summary, setSummary] = useState(report?.summary ?? '')
-  const [completionPercent, setCompletionPercent] = useState(report?.completionPercent ?? 0)
+  const [milestoneId, setMilestoneId] = useState(report?.milestoneId ?? '')
+  const [completedResults, setCompletedResults] = useState(report?.completedResults ?? '')
   const [blockers, setBlockers] = useState(report?.blockers ?? '')
+  const [nextSteps, setNextSteps] = useState(report?.nextSteps ?? '')
   const [validationMessage, setValidationMessage] = useState('')
   const mutation = useMutation({
     mutationFn: ({
@@ -45,13 +48,8 @@ export function ProgressReportForm({ projectId, onSuccess, report }: ProgressRep
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const trimmedSummary = summary.trim()
-    const percent = completionPercent
     if (!trimmedSummary) {
       setValidationMessage('请填写进展摘要。')
-      return
-    }
-    if (!Number.isInteger(percent) || percent < 0 || percent > 100) {
-      setValidationMessage('完成百分比必须是 0 到 100 的整数。')
       return
     }
     setValidationMessage('')
@@ -59,9 +57,11 @@ export function ProgressReportForm({ projectId, onSuccess, report }: ProgressRep
       projectId,
       input: {
         summary: trimmedSummary,
-        completionPercent: percent,
         reportedAt: new Date().toISOString(),
+        ...(milestoneId ? { milestoneId } : {}),
+        ...(completedResults.trim() ? { completedResults: completedResults.trim() } : {}),
         ...(blockers.trim() ? { blockers: blockers.trim() } : {}),
+        ...(nextSteps.trim() ? { nextSteps: nextSteps.trim() } : {}),
       },
     })
   }
@@ -77,18 +77,27 @@ export function ProgressReportForm({ projectId, onSuccess, report }: ProgressRep
           disabled={mutation.isPending}
         />
       </label>
-      <label htmlFor="progress-percent">
-        <span>完成百分比</span>
-        <InputNumber
-          id="progress-percent"
-          aria-label="完成百分比"
-          min={0}
-          max={100}
-          value={completionPercent}
-          suffix="%"
-          onNumberChange={(value) => setCompletionPercent(Number(value ?? 0))}
-          disabled={mutation.isPending}
+      <div className="workspace-modal-form__field" role="group" aria-labelledby="progress-milestone-label">
+        <span id="progress-milestone-label">关联里程碑（可选）</span>
+        <Select
+          aria-labelledby="progress-milestone-label"
+          value={milestoneId}
+          onChange={(value) => setMilestoneId(String(value ?? ''))}
+          optionList={[
+            { value: '', label: '不关联里程碑' },
+            ...milestones.map((milestone) => ({ value: milestone.id, label: milestone.name })),
+          ]}
           style={{ width: '100%' }}
+        />
+      </div>
+      <label htmlFor="progress-results">
+        <span>已完成成果（可选）</span>
+        <TextArea
+          id="progress-results"
+          value={completedResults}
+          onChange={setCompletedResults}
+          disabled={mutation.isPending}
+          autosize={{ minRows: 2, maxRows: 5 }}
         />
       </label>
       <label htmlFor="progress-blockers">
@@ -97,6 +106,16 @@ export function ProgressReportForm({ projectId, onSuccess, report }: ProgressRep
           id="progress-blockers"
           value={blockers}
           onChange={setBlockers}
+          disabled={mutation.isPending}
+          autosize={{ minRows: 2, maxRows: 5 }}
+        />
+      </label>
+      <label htmlFor="progress-next-steps">
+        <span>下一步计划（可选）</span>
+        <TextArea
+          id="progress-next-steps"
+          value={nextSteps}
+          onChange={setNextSteps}
           disabled={mutation.isPending}
           autosize={{ minRows: 2, maxRows: 5 }}
         />

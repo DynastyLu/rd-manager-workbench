@@ -449,3 +449,121 @@
     &__task-list li > time { display: none; }
   }
 }
+.project-progress {
+  margin-top: 16px;
+}
+
+.project-progress__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+
+  > div {
+    padding: 14px;
+    border: 1px solid var(--semi-color-border);
+    border-radius: 10px;
+    background: var(--semi-color-bg-0);
+  }
+
+  span,
+  small {
+    display: block;
+    color: var(--semi-color-text-2);
+  }
+
+  strong {
+    display: block;
+    margin: 6px 0;
+    font-size: 20px;
+  }
+}
+
+.project-progress__variance--ahead {
+  color: var(--semi-color-success);
+}
+
+.project-progress__variance--behind {
+  color: var(--semi-color-danger);
+}
+
+.project-progress__rail {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+
+  &::before {
+    position: absolute;
+    top: 18px;
+    right: 8%;
+    left: 8%;
+    height: 3px;
+    border-radius: 999px;
+    background: var(--semi-color-fill-1);
+    content: '';
+  }
+
+  li {
+    position: relative;
+    text-align: center;
+
+    > button:first-child {
+      display: flex;
+      width: 100%;
+      align-items: center;
+      flex-direction: column;
+      gap: 5px;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+    }
+  }
+
+  li.is-current .project-progress__node {
+    border-color: var(--semi-color-primary);
+    background: var(--semi-color-primary);
+    color: #fff;
+  }
+
+  small {
+    color: var(--semi-color-text-2);
+  }
+}
+
+.project-progress__node {
+  z-index: 1;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 3px solid var(--semi-color-border);
+  border-radius: 50%;
+  background: var(--semi-color-bg-0);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.project-progress__delete {
+  margin-top: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--semi-color-danger);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .project-progress__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .project-progress__rail {
+    grid-template-columns: repeat(var(--milestone-count, 4), 180px);
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+}

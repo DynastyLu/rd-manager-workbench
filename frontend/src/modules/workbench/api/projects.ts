@@ -10,6 +10,7 @@ import type {
   ProjectHealth,
   ProjectStatus,
   ProgressReport,
+  ProjectWeightMode,
 } from '@/modules/workbench/types'
 
 export interface ListProjectsParams {
@@ -37,6 +38,7 @@ export interface CreateProjectInput {
   status?: ProjectStatus
   phase?: ProjectPhase
   healthOverride?: ProjectHealth
+  weightMode?: ProjectWeightMode
 }
 
 export interface UpdateProjectInput {
@@ -55,29 +57,38 @@ export interface UpdateProjectInput {
   status?: ProjectStatus
   phase?: ProjectPhase
   healthOverride?: ProjectHealth | null
+  weightMode?: ProjectWeightMode
 }
 
 export interface CreateProgressReportInput {
   summary: string
-  completionPercent: number
   reportedAt: string
+  milestoneId?: string
+  completedResults?: string
   blockers?: string
+  nextSteps?: string
 }
 
 export interface UpdateProgressReportInput {
   summary?: string
-  completionPercent?: number
   reportedAt?: string
+  milestoneId?: string
+  completedResults?: string
   blockers?: string
+  nextSteps?: string
 }
 
 export interface CreateMilestoneInput {
   name: string
   plannedAt?: string
+  plannedStartAt?: string
+  plannedEndAt?: string
   actualAt?: string
   ownerName?: string
   isCritical?: boolean
   status?: MilestoneStatus
+  weightPercent?: number
+  manualCompletionPercent?: number
 }
 
 export type UpdateMilestoneInput = Partial<CreateMilestoneInput>

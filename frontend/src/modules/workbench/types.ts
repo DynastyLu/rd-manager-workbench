@@ -9,6 +9,14 @@ export type ProjectPhase =
   | 'DELIVERY'
 
 export type ProjectHealth = 'GREEN' | 'YELLOW' | 'RED'
+export type ProjectWeightMode = 'EQUAL' | 'CUSTOM'
+export type CompletionSource = 'COMPLETED' | 'TASKS' | 'MANUAL' | 'EMPTY'
+export type ScheduleState = 'AHEAD' | 'ON_TRACK' | 'BEHIND' | 'UNPLANNED'
+export type ProgressReportSourceType =
+  | 'MANUAL'
+  | 'TASK_CHANGE'
+  | 'MILESTONE_CHANGE'
+  | 'SYSTEM_RECALCULATION'
 
 export interface Project {
   id: string
@@ -26,6 +34,7 @@ export interface Project {
   actualEndAt: string | null
   status: ProjectStatus
   phase: ProjectPhase
+  weightMode: ProjectWeightMode
   healthOverride: ProjectHealth | null
   health: ProjectHealth | null
   archivedAt: string | null
@@ -45,8 +54,18 @@ export interface ProjectDetail extends Omit<Project, 'health'> {
   milestones: Milestone[]
   tasks: Array<WorkTask & { dependencyIds: string[] }>
   progressReports: ProgressReport[]
+  progressSummary: ProjectProgressSummary | null
   latestHealthSnapshot: ProjectHealthSnapshot | null
   effectiveHealth: ProjectHealth | null
+}
+
+export interface ProjectProgressSummary {
+  actualPercent: number | null
+  timePercent: number | null
+  variancePercent: number | null
+  scheduleState: ScheduleState
+  weightMode: ProjectWeightMode
+  currentMilestoneId: string | null
 }
 
 export type MilestoneStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'MISSED'
@@ -56,10 +75,18 @@ export interface Milestone {
   projectId: string
   name: string
   plannedAt: string | null
+  plannedStartAt: string | null
+  plannedEndAt: string | null
   actualAt: string | null
   ownerName: string | null
   isCritical: boolean
   status: MilestoneStatus
+  weightPercent: number | null
+  manualCompletionPercent: number | null
+  completionPercent: number
+  completionSource: CompletionSource
+  effectiveWeightPercent: number
+  linkedTaskCount: number
   createdAt: string
   updatedAt: string
 }
@@ -114,7 +141,14 @@ export interface ProgressReport {
   projectId: string
   summary: string
   completionPercent: number
+  previousPercent: number | null
+  sourceType: ProgressReportSourceType
+  milestoneId: string | null
+  taskId: string | null
   blockers: string | null
+  completedResults: string | null
+  nextSteps: string | null
+  changeSnapshot: unknown
   reportedAt: string
   createdAt: string
   updatedAt: string
