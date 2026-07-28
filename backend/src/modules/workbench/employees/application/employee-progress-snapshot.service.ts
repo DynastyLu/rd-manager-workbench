@@ -1,12 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { HttpStatus, Inject, Injectable, Optional } from '@nestjs/common';
 import {
+  EmployeePlanCarryStatus,
+  EmployeePlanPriority,
   EmployeeProgressPeriod,
   EmployeeProgressScope,
   EmployeeProgressSnapshot,
   EmployeeSnapshotStatus,
   EmployeeWorkImportBatch,
   EmployeeWorkImportStatus,
+  EmployeeWorkKind,
   EmployeeWorkStatus,
   Prisma,
 } from '@prisma/client';
@@ -25,6 +28,23 @@ const DAY_MS = 86_400_000;
 const SNAPSHOT_WRITE_CHUNK_SIZE = 500;
 const SNAPSHOT_VERSION_LOOKUP_CHUNK_SIZE = 10_000;
 const SNAPSHOT_TRANSACTION_ATTEMPTS = 3;
+const UNSET_WORK_DIRECTION = '未设置';
+
+export interface EmployeeWorkDirectionMetrics {
+  workDirection: string;
+  workItemCount: number;
+  completedCount: number;
+  completionRate: number;
+}
+
+export interface EmployeeNextPlanMetrics {
+  planCount: number;
+  priorityDistribution: Record<EmployeePlanPriority, number>;
+  highPriorityCount: number;
+  collaborationCount: number;
+  unmatchedCount: number;
+  cancelledCount: number;
+}
 
 export interface EmployeeProgressMetrics {
   workItemCount: number;
@@ -33,10 +53,19 @@ export interface EmployeeProgressMetrics {
   averageCompletionRate: number | null;
   plannedHours: number;
   actualHours: number;
+  hoursUtilizationRate: number | null;
+  missingHoursCount: number;
+  hoursCompleteness: number | null;
   riskCount: number;
   blockedCount: number;
+  overdueCount: number;
   projectCount: number;
   unlinkedCount: number;
+  projectWorkCount: number;
+  nonProjectWorkCount: number;
+  legacyUnclassifiedCount: number;
+  workDirectionDistribution: EmployeeWorkDirectionMetrics[];
+  nextPlanMetrics: EmployeeNextPlanMetrics;
   dataComplete: boolean;
   missingWeeks: string[];
 }
@@ -50,11 +79,23 @@ interface SnapshotWorkItem {
   id: string;
   employeeId: string;
   projectId: string | null;
+  workKind: EmployeeWorkKind | null;
+  plannedCompletionAt: Date | null;
   status: EmployeeWorkStatus;
   completionRate: number | null;
   plannedHours: Prisma.Decimal | number | null;
   actualHours: Prisma.Decimal | number | null;
   riskText: string | null;
+  employee: { workDirection: string | null };
+}
+
+interface SnapshotWeekPlan {
+  id: string;
+  employeeId: string;
+  projectId: string | null;
+  priority: EmployeePlanPriority;
+  collaborationText: string | null;
+  carryStatus: EmployeePlanCarryStatus;
 }
 
 interface SnapshotScope {
@@ -62,6 +103,7 @@ interface SnapshotScope {
   scopeKey: string;
   scopeId: string | null;
   items: SnapshotWorkItem[];
+  plans: SnapshotWeekPlan[];
 }
 
 type SnapshotGenerationRevision = Pick<
@@ -93,6 +135,7 @@ export class EmployeeProgressSnapshotService {
   metrics(
     items: SnapshotWorkItem[],
     completeness: { missingWeeks?: string[] } = {},
+    plans: SnapshotWeekPlan[] = [],
   ): EmployeeProgressMetrics {
     const workItemCount = items.length;
     const completedCount = items.filter(
@@ -101,6 +144,14 @@ export class EmployeeProgressSnapshotService {
     const reportedRates = items.flatMap(({ completionRate }) =>
       completionRate === null ? [] : [completionRate],
     );
+    const hoursItems = items.filter(({ plannedHours }) => plannedHours !== null);
+    const plannedHours = this.round(
+      hoursItems.reduce((total, item) => total + this.decimalNumber(item.plannedHours), 0),
+    );
+    const actualHoursForUtilization = this.round(
+      hoursItems.reduce((total, item) => total + this.decimalNumber(item.actualHours), 0),
+    );
+    const missingHoursCount = workItemCount - hoursItems.length;
     const missingWeeks = [...(completeness.missingWeeks ?? [])].sort();
     return {
       workItemCount,
@@ -113,18 +164,59 @@ export class EmployeeProgressSnapshotService {
           : this.round(
               reportedRates.reduce((total, value) => total + value, 0) / reportedRates.length,
             ),
-      plannedHours: this.round(
-        items.reduce((total, item) => total + this.decimalNumber(item.plannedHours), 0),
-      ),
+      plannedHours,
       actualHours: this.round(
         items.reduce((total, item) => total + this.decimalNumber(item.actualHours), 0),
       ),
+      hoursUtilizationRate:
+        plannedHours > 0 ? this.round((actualHoursForUtilization / plannedHours) * 100) : null,
+      missingHoursCount,
+      hoursCompleteness:
+        workItemCount === 0 ? null : this.round((hoursItems.length / workItemCount) * 100),
       riskCount: items.filter((item) => this.isRisk(item)).length,
       blockedCount: items.filter(({ status }) => status === EmployeeWorkStatus.BLOCKED).length,
+      overdueCount: items.filter((item) => this.isOverdue(item)).length,
       projectCount: new Set(items.flatMap(({ projectId }) => (projectId ? [projectId] : []))).size,
       unlinkedCount: items.filter(({ projectId }) => projectId === null).length,
+      projectWorkCount: items.filter(({ workKind }) => workKind === EmployeeWorkKind.PROJECT)
+        .length,
+      nonProjectWorkCount: items.filter(({ workKind }) => workKind === EmployeeWorkKind.NON_PROJECT)
+        .length,
+      legacyUnclassifiedCount: items.filter(({ workKind }) => workKind === null).length,
+      workDirectionDistribution: this.workDirectionDistribution(items),
+      nextPlanMetrics: this.nextPlanMetrics(plans),
       dataComplete: missingWeeks.length === 0,
       missingWeeks,
+    };
+  }
+
+  nextPlanMetrics(plans: SnapshotWeekPlan[]): EmployeeNextPlanMetrics {
+    const priorityDistribution: Record<EmployeePlanPriority, number> = {
+      [EmployeePlanPriority.UNSPECIFIED]: 0,
+      [EmployeePlanPriority.LOW]: 0,
+      [EmployeePlanPriority.MEDIUM]: 0,
+      [EmployeePlanPriority.HIGH]: 0,
+      [EmployeePlanPriority.URGENT]: 0,
+    };
+    for (const { priority } of plans) {
+      priorityDistribution[priority] += 1;
+    }
+    return {
+      planCount: plans.length,
+      priorityDistribution,
+      highPriorityCount: plans.filter(
+        ({ priority }) =>
+          priority === EmployeePlanPriority.HIGH || priority === EmployeePlanPriority.URGENT,
+      ).length,
+      collaborationCount: plans.filter(({ collaborationText }) =>
+        Boolean(collaborationText?.trim()),
+      ).length,
+      unmatchedCount: plans.filter(
+        ({ carryStatus }) => carryStatus === EmployeePlanCarryStatus.PLANNED,
+      ).length,
+      cancelledCount: plans.filter(
+        ({ carryStatus }) => carryStatus === EmployeePlanCarryStatus.CANCELLED,
+      ).length,
     };
   }
 
@@ -244,26 +336,44 @@ export class EmployeeProgressSnapshotService {
   }
 
   private async generateWeek(tx: Prisma.TransactionClient, batch: EmployeeWorkImportBatch) {
-    const items = await tx.employeeWorkItem.findMany({
-      where: { importBatchId: batch.id, archivedAt: null },
-      orderBy: { id: 'asc' },
-      select: {
-        id: true,
-        employeeId: true,
-        projectId: true,
-        status: true,
-        completionRate: true,
-        plannedHours: true,
-        actualHours: true,
-        riskText: true,
-      },
-    });
+    const [items, plans] = await Promise.all([
+      tx.employeeWorkItem.findMany({
+        where: { importBatchId: batch.id, archivedAt: null },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          employeeId: true,
+          projectId: true,
+          workKind: true,
+          plannedCompletionAt: true,
+          status: true,
+          completionRate: true,
+          plannedHours: true,
+          actualHours: true,
+          riskText: true,
+          employee: { select: { workDirection: true } },
+        },
+      }),
+      tx.employeeWeekPlanItem.findMany({
+        where: { importBatchId: batch.id, archivedAt: null },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          employeeId: true,
+          projectId: true,
+          priority: true,
+          collaborationText: true,
+          carryStatus: true,
+        },
+      }),
+    ]);
     return this.replacePeriodSnapshots(
       tx,
       EmployeeProgressPeriod.WEEK,
       batch.periodStartAt,
       batch.periodEndAt,
       items,
+      plans,
       [batch.id],
       [],
     );
@@ -286,23 +396,43 @@ export class EmployeeProgressSnapshotService {
       },
     });
     const sourceBatchIds = batches.map(({ id }) => id);
-    const items = await tx.employeeWorkItem.findMany({
-      where: {
-        importBatchId: { in: sourceBatchIds },
-        archivedAt: null,
-      },
-      orderBy: { id: 'asc' },
-      select: {
-        id: true,
-        employeeId: true,
-        projectId: true,
-        status: true,
-        completionRate: true,
-        plannedHours: true,
-        actualHours: true,
-        riskText: true,
-      },
-    });
+    const [items, plans] = await Promise.all([
+      tx.employeeWorkItem.findMany({
+        where: {
+          importBatchId: { in: sourceBatchIds },
+          archivedAt: null,
+        },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          employeeId: true,
+          projectId: true,
+          workKind: true,
+          plannedCompletionAt: true,
+          status: true,
+          completionRate: true,
+          plannedHours: true,
+          actualHours: true,
+          riskText: true,
+          employee: { select: { workDirection: true } },
+        },
+      }),
+      tx.employeeWeekPlanItem.findMany({
+        where: {
+          importBatchId: { in: sourceBatchIds },
+          archivedAt: null,
+        },
+        orderBy: { id: 'asc' },
+        select: {
+          id: true,
+          employeeId: true,
+          projectId: true,
+          priority: true,
+          collaborationText: true,
+          carryStatus: true,
+        },
+      }),
+    ]);
     const availableWeeks = new Set(
       batches.map(({ periodStartAt }) => this.dateOnly(periodStartAt)),
     );
@@ -313,6 +443,7 @@ export class EmployeeProgressSnapshotService {
       start,
       end,
       items,
+      plans,
       sourceBatchIds,
       missingWeeks,
     );
@@ -324,6 +455,7 @@ export class EmployeeProgressSnapshotService {
     periodStartAt: Date,
     periodEndAt: Date,
     items: SnapshotWorkItem[],
+    plans: SnapshotWeekPlan[],
     sourceBatchIds: string[],
     missingWeeks: string[],
   ) {
@@ -341,7 +473,7 @@ export class EmployeeProgressSnapshotService {
       where: { periodType, periodStartAt, archivedAt: null },
       data: { archivedAt: generatedAt },
     });
-    const scopes = this.scopes(items);
+    const scopes = this.scopes(items, plans);
     const versions: Array<{ scopeKey: string; _max: { version: number | null } }> = [];
     const scopeKeys = scopes.map(({ scopeKey }) => scopeKey);
     for (let offset = 0; offset < scopeKeys.length; offset += SNAPSHOT_VERSION_LOOKUP_CHUNK_SIZE) {
@@ -363,7 +495,7 @@ export class EmployeeProgressSnapshotService {
       versions.map(({ scopeKey, _max }) => [scopeKey, _max.version ?? 0]),
     );
     const created = scopes.map((scope) => {
-      const metrics = this.metrics(scope.items, { missingWeeks });
+      const metrics = this.metrics(scope.items, { missingWeeks }, scope.plans);
       return {
         id: randomUUID(),
         scopeType: scope.scopeType,
@@ -396,9 +528,11 @@ export class EmployeeProgressSnapshotService {
     return created as EmployeeProgressSnapshot[];
   }
 
-  private scopes(items: SnapshotWorkItem[]): SnapshotScope[] {
+  private scopes(items: SnapshotWorkItem[], plans: SnapshotWeekPlan[]): SnapshotScope[] {
     const employees = new Map<string, SnapshotWorkItem[]>();
     const projects = new Map<string, SnapshotWorkItem[]>();
+    const employeePlans = new Map<string, SnapshotWeekPlan[]>();
+    const projectPlans = new Map<string, SnapshotWeekPlan[]>();
     for (const item of items) {
       const employeeItems = employees.get(item.employeeId) ?? [];
       employeeItems.push(item);
@@ -409,28 +543,43 @@ export class EmployeeProgressSnapshotService {
         projects.set(item.projectId, projectItems);
       }
     }
+    for (const plan of plans) {
+      const plansForEmployee = employeePlans.get(plan.employeeId) ?? [];
+      plansForEmployee.push(plan);
+      employeePlans.set(plan.employeeId, plansForEmployee);
+      if (plan.projectId) {
+        const plansForProject = projectPlans.get(plan.projectId) ?? [];
+        plansForProject.push(plan);
+        projectPlans.set(plan.projectId, plansForProject);
+      }
+    }
+    const employeeIds = new Set([...employees.keys(), ...employeePlans.keys()]);
+    const projectIds = new Set([...projects.keys(), ...projectPlans.keys()]);
     return [
       {
         scopeType: EmployeeProgressScope.TEAM,
         scopeKey: 'TEAM',
         scopeId: null,
         items,
+        plans,
       },
-      ...[...employees.entries()]
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([employeeId, employeeItems]) => ({
+      ...[...employeeIds]
+        .sort((left, right) => left.localeCompare(right))
+        .map((employeeId) => ({
           scopeType: EmployeeProgressScope.EMPLOYEE,
           scopeKey: `EMPLOYEE:${employeeId}`,
           scopeId: employeeId,
-          items: employeeItems,
+          items: employees.get(employeeId) ?? [],
+          plans: employeePlans.get(employeeId) ?? [],
         })),
-      ...[...projects.entries()]
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([projectId, projectItems]) => ({
+      ...[...projectIds]
+        .sort((left, right) => left.localeCompare(right))
+        .map((projectId) => ({
           scopeType: EmployeeProgressScope.PROJECT,
           scopeKey: `PROJECT:${projectId}`,
           scopeId: projectId,
-          items: projectItems,
+          items: projects.get(projectId) ?? [],
+          plans: projectPlans.get(projectId) ?? [],
         })),
     ];
   }
@@ -628,6 +777,41 @@ export class EmployeeProgressSnapshotService {
       item.status === EmployeeWorkStatus.AT_RISK ||
       item.status === EmployeeWorkStatus.BLOCKED
     );
+  }
+
+  private isOverdue(item: SnapshotWorkItem): boolean {
+    return (
+      item.plannedCompletionAt !== null &&
+      item.status !== EmployeeWorkStatus.COMPLETED &&
+      this.dateOnly(item.plannedCompletionAt) < this.dateOnly(this.now())
+    );
+  }
+
+  private workDirectionDistribution(items: SnapshotWorkItem[]): EmployeeWorkDirectionMetrics[] {
+    const directionItems = new Map<string, SnapshotWorkItem[]>();
+    for (const item of items) {
+      const workDirection = item.employee.workDirection?.trim() || UNSET_WORK_DIRECTION;
+      const grouped = directionItems.get(workDirection) ?? [];
+      grouped.push(item);
+      directionItems.set(workDirection, grouped);
+    }
+    return [...directionItems.entries()]
+      .sort(([left], [right]) => {
+        if (left === UNSET_WORK_DIRECTION) return 1;
+        if (right === UNSET_WORK_DIRECTION) return -1;
+        return left.localeCompare(right);
+      })
+      .map(([workDirection, grouped]) => {
+        const completedCount = grouped.filter(
+          ({ status }) => status === EmployeeWorkStatus.COMPLETED,
+        ).length;
+        return {
+          workDirection,
+          workItemCount: grouped.length,
+          completedCount,
+          completionRate: this.round((completedCount / grouped.length) * 100),
+        };
+      });
   }
 
   private decimalNumber(value: Prisma.Decimal | number | null): number {

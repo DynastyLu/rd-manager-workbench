@@ -1,9 +1,12 @@
 import {
+  EmployeePlanCarryStatus,
+  EmployeePlanPriority,
   EmployeeProgressPeriod,
   EmployeeProgressScope,
   EmployeeSnapshotStatus,
   EmployeeWorkImportBatch,
   EmployeeWorkImportStatus,
+  EmployeeWorkKind,
   EmployeeWorkStatus,
   Prisma,
 } from '@prisma/client';
@@ -16,11 +19,26 @@ function workItem(id: string, overrides: Record<string, unknown> = {}) {
     id,
     employeeId: 'employee-1',
     projectId: 'project-1',
+    workKind: EmployeeWorkKind.PROJECT,
+    plannedCompletionAt: new Date('2026-07-25T00:00:00.000Z'),
     status: EmployeeWorkStatus.IN_PROGRESS,
     completionRate: 50,
     plannedHours: new Prisma.Decimal('8.00'),
     actualHours: new Prisma.Decimal('4.00'),
     riskText: null,
+    employee: { workDirection: '平台研发' },
+    ...overrides,
+  };
+}
+
+function weekPlan(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    employeeId: 'employee-1',
+    projectId: 'project-1',
+    priority: EmployeePlanPriority.MEDIUM,
+    collaborationText: null,
+    carryStatus: EmployeePlanCarryStatus.PLANNED,
     ...overrides,
   };
 }
@@ -28,6 +46,7 @@ function workItem(id: string, overrides: Record<string, unknown> = {}) {
 function createService(options: {
   batches?: Array<Record<string, unknown>>;
   items?: Array<ReturnType<typeof workItem>>;
+  plans?: Array<ReturnType<typeof weekPlan>>;
   snapshotCreateFailure?: Error;
   targetBatchOverrides?: Record<string, unknown>;
   beforeTransaction?: (transactionNumber: number) => Promise<void>;
@@ -58,6 +77,7 @@ function createService(options: {
         projectId: index % 2 === 0 ? 'project-1' : null,
       }),
     );
+  const plans = options.plans ?? [];
   const createdSnapshots: Array<Record<string, unknown>> = [];
   let currentBatchLookup = 0;
   let targetBatch = {
@@ -98,6 +118,9 @@ function createService(options: {
     },
     employeeWorkItem: {
       findMany: jest.fn().mockResolvedValue(items),
+    },
+    employeeWeekPlanItem: {
+      findMany: jest.fn().mockResolvedValue(plans),
     },
     employeeProgressSnapshot: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -162,6 +185,7 @@ function createService(options: {
     tx,
     batches,
     items,
+    plans,
     createdSnapshots,
     get targetBatch() {
       return targetBatch;
@@ -183,16 +207,38 @@ describe('EmployeeProgressSnapshotService', () => {
       averageCompletionRate: null,
       plannedHours: 0,
       actualHours: 0,
+      hoursUtilizationRate: null,
+      missingHoursCount: 0,
+      hoursCompleteness: null,
       riskCount: 0,
       blockedCount: 0,
+      overdueCount: 0,
       projectCount: 0,
       unlinkedCount: 0,
+      projectWorkCount: 0,
+      nonProjectWorkCount: 0,
+      legacyUnclassifiedCount: 0,
+      workDirectionDistribution: [],
+      nextPlanMetrics: {
+        planCount: 0,
+        priorityDistribution: {
+          UNSPECIFIED: 0,
+          LOW: 0,
+          MEDIUM: 0,
+          HIGH: 0,
+          URGENT: 0,
+        },
+        highPriorityCount: 0,
+        collaborationCount: 0,
+        unmatchedCount: 0,
+        cancelledCount: 0,
+      },
       dataComplete: true,
       missingWeeks: [],
     });
   });
 
-  it('reduces progress, hours, risks, projects, and unlinked work deterministically', () => {
+  it('reduces current-work classification, direction, overdue, and complete-hours metrics', () => {
     const { service } = createService({});
 
     expect(
@@ -200,30 +246,131 @@ describe('EmployeeProgressSnapshotService', () => {
         workItem('completed', {
           status: EmployeeWorkStatus.COMPLETED,
           completionRate: 100,
-          plannedHours: new Prisma.Decimal('3.25'),
-          actualHours: new Prisma.Decimal('4.50'),
+          plannedHours: new Prisma.Decimal('8.00'),
+          actualHours: new Prisma.Decimal('10.00'),
         }),
-        workItem('blocked', {
+        workItem('overdue-non-project', {
           projectId: null,
-          status: EmployeeWorkStatus.BLOCKED,
+          workKind: EmployeeWorkKind.NON_PROJECT,
+          plannedCompletionAt: new Date('2026-07-23T00:00:00.000Z'),
+          status: EmployeeWorkStatus.IN_PROGRESS,
           completionRate: null,
           plannedHours: null,
-          actualHours: new Prisma.Decimal('1.25'),
+          actualHours: new Prisma.Decimal('100.00'),
+          riskText: null,
+          employee: { workDirection: null },
+        }),
+        workItem('legacy-blocked', {
+          projectId: null,
+          workKind: null,
+          plannedCompletionAt: new Date('2026-07-25T00:00:00.000Z'),
+          status: EmployeeWorkStatus.BLOCKED,
+          completionRate: null,
+          plannedHours: new Prisma.Decimal('4.00'),
+          actualHours: new Prisma.Decimal('2.00'),
           riskText: 'blocked dependency',
         }),
       ]),
     ).toMatchObject({
-      workItemCount: 2,
+      workItemCount: 3,
       completedCount: 1,
-      completionRate: 50,
+      completionRate: 33.33,
       averageCompletionRate: 100,
-      plannedHours: 3.25,
-      actualHours: 5.75,
+      plannedHours: 12,
+      actualHours: 112,
+      hoursUtilizationRate: 100,
+      missingHoursCount: 1,
+      hoursCompleteness: 66.67,
       riskCount: 1,
       blockedCount: 1,
+      overdueCount: 1,
       projectCount: 1,
-      unlinkedCount: 1,
+      unlinkedCount: 2,
+      projectWorkCount: 1,
+      nonProjectWorkCount: 1,
+      legacyUnclassifiedCount: 1,
+      workDirectionDistribution: [
+        {
+          workDirection: '平台研发',
+          workItemCount: 2,
+          completedCount: 1,
+          completionRate: 50,
+        },
+        {
+          workDirection: '未设置',
+          workItemCount: 1,
+          completedCount: 0,
+          completionRate: 0,
+        },
+      ],
     });
+  });
+
+  it('keeps next-week plans separate from current completion and snapshots their own metrics', async () => {
+    const dependencies = createService({
+      batches: [
+        {
+          id: 'batch-jul-20',
+          periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+          periodEndAt: new Date('2026-07-26T00:00:00.000Z'),
+        },
+      ],
+      items: [
+        workItem('current-completed', {
+          status: EmployeeWorkStatus.COMPLETED,
+          completionRate: 100,
+        }),
+      ],
+      plans: [
+        weekPlan('urgent-unmatched', {
+          priority: EmployeePlanPriority.URGENT,
+          collaborationText: '需要平台组协作',
+        }),
+        weekPlan('high-matched', {
+          employeeId: 'employee-2',
+          projectId: 'project-2',
+          priority: EmployeePlanPriority.HIGH,
+          collaborationText: '   ',
+          carryStatus: EmployeePlanCarryStatus.MATCHED,
+        }),
+        weekPlan('cancelled-unspecified', {
+          employeeId: 'employee-2',
+          projectId: 'project-3',
+          priority: EmployeePlanPriority.UNSPECIFIED,
+          carryStatus: EmployeePlanCarryStatus.CANCELLED,
+        }),
+      ],
+    });
+
+    const snapshot = await dependencies.service.rebuildMonth(new Date('2026-07-26T00:00:00.000Z'));
+
+    expect(snapshot.metrics).toMatchObject({
+      workItemCount: 1,
+      completedCount: 1,
+      completionRate: 100,
+      nextPlanMetrics: {
+        planCount: 3,
+        priorityDistribution: {
+          UNSPECIFIED: 1,
+          LOW: 0,
+          MEDIUM: 0,
+          HIGH: 1,
+          URGENT: 1,
+        },
+        highPriorityCount: 2,
+        collaborationCount: 1,
+        unmatchedCount: 1,
+        cancelledCount: 1,
+      },
+    });
+    expect(dependencies.createdSnapshots.map(({ scopeKey }) => scopeKey)).toEqual([
+      'TEAM',
+      'EMPLOYEE:employee-1',
+      'EMPLOYEE:employee-2',
+      'PROJECT:project-1',
+      'PROJECT:project-2',
+      'PROJECT:project-3',
+    ]);
   });
 
   it('builds July from current COMPLETED weeks, excludes SUPERSEDED history, and reports UTC gaps', async () => {
