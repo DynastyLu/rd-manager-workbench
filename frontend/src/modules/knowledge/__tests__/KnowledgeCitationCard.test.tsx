@@ -26,9 +26,9 @@ describe('KnowledgeCitationCard', () => {
     expect(screen.getByText('项目文档')).toBeInTheDocument();
   });
 
-  it('shows content snippet', () => {
+  it('keeps long source content out of the conversation until the source is opened', () => {
     render(<KnowledgeCitationCard citations={[makeCitation({ text: '预览', content: '这是匹配的文本内容' })]} />);
-    expect(screen.getByText(/匹配的文本内容/)).toBeInTheDocument();
+    expect(screen.queryByText(/匹配的文本内容/)).not.toBeInTheDocument();
   });
 
   it('opens the cited file in the knowledge reader and shows its source location', () => {

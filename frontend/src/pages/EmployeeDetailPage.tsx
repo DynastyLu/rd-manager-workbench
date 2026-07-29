@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banner, Button, Input, Modal, Select, Skeleton, Tag, TextArea } from '@douyinfe/semi-ui'
+import { Banner, Button, Modal, Select, Skeleton, Tag, TextArea } from '@douyinfe/semi-ui'
 import { IconChevronLeft } from '@douyinfe/semi-icons'
 import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ROUTES } from '@/constants/routes'
+import { WorkspaceDatePicker } from '@/components/workspace/WorkspaceDatePicker'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
 import {
   cancelEmployeeWeekPlan,
@@ -15,12 +16,14 @@ import {
   listEmployeeWorkItems,
   matchEmployeeWeekPlan,
   unmatchEmployeeWeekPlan,
+  updateEmployeeWorkItem,
   updateEmployeeWeekPlan,
 } from '@/modules/employees/api'
 import { EmployeeProgressFilters } from '@/modules/employees/components/EmployeeProgressFilters'
 import { EmployeeProgressMetrics } from '@/modules/employees/components/EmployeeProgressMetrics'
 import { EmployeeProgressTrend } from '@/modules/employees/components/EmployeeProgressTrend'
 import { EmployeeWorkTable } from '@/modules/employees/components/EmployeeWorkTable'
+import { EmployeeWorkItemEditor } from '@/modules/employees/components/EmployeeWorkItemEditor'
 import { EmployeeWeekPlanTable } from '@/modules/employees/components/EmployeeWeekPlanTable'
 import { percentage } from '@/modules/employees/format'
 import { EMPLOYEE_WORK_STATUS_COLORS, EMPLOYEE_WORK_STATUS_LABELS, EMPLOYMENT_STATUS_LABELS } from '@/modules/employees/labels'
@@ -34,7 +37,11 @@ import type {
   EmployeeWorkStatus,
   ProgressFilters,
   UpdateEmployeeWeekPlanInput,
+  UpdateEmployeeWorkItemInput,
 } from '@/modules/employees/types'
+import { listProjects } from '@/modules/workbench/api/projects'
+import { listTasks } from '@/modules/workbench/api/tasks'
+import { loadAllPages } from '@/lib/loadAllPages'
 import './EmployeeDetailPage.less'
 
 const PAGE_SIZE = 10
@@ -70,12 +77,14 @@ export default function EmployeeDetailPage() {
   const statusParam = searchParams.getEnum('status', WORK_STATUS_VALUES, 'ALL')
   const status: EmployeeWorkStatus | undefined = statusParam === 'ALL' ? undefined : statusParam
   const focusedWorkItemId = searchParams.getString('workItemId') || undefined
+  const focusedPlanId = searchParams.getString('planItemId') || undefined
   const page = searchParams.getPositiveInt('page', 1)
   const nextPlanPage = searchParams.getPositiveInt('nextPlanPage', 1)
   const [planDialog, setPlanDialog] = useState<PlanDialog | null>(null)
   const [planDraft, setPlanDraft] = useState<PlanDraft | null>(null)
   const [cancelReason, setCancelReason] = useState('')
   const [matchWorkItemId, setMatchWorkItemId] = useState('')
+  const [editingWorkItem, setEditingWorkItem] = useState<EmployeeWorkItem | null>(null)
 
   const filters: ProgressFilters = { periodType, periodStart, status }
   const progressQuery = useQuery({
@@ -89,7 +98,9 @@ export default function EmployeeDetailPage() {
       listEmployeeWorkItems({ ...filters, employeeId, page, pageSize: PAGE_SIZE }),
     enabled: Boolean(employeeId),
   })
-  const planPeriodStart = nextPlanPeriodStart(periodType, periodStart)
+  const planPeriodStart = focusedPlanId
+    ? periodStart
+    : nextPlanPeriodStart(periodType, periodStart)
   const weekPlansQuery = useQuery({
     queryKey: [
       'employees',
@@ -106,6 +117,51 @@ export default function EmployeeDetailPage() {
       }),
     enabled: Boolean(employeeId),
   })
+  const matchingPlan = planDialog?.mode === 'match' ? planDialog.plan : null
+  const matchCandidatesQuery = useQuery({
+    queryKey: [
+      'employees',
+      'work-items',
+      'plan-match-candidates',
+      {
+        employeeId,
+        periodStart: matchingPlan?.periodStart,
+      },
+    ],
+    queryFn: () =>
+      loadAllPages((page, pageSize) =>
+        listEmployeeWorkItems({
+          periodType: 'WEEK',
+          periodStart: matchingPlan!.periodStart,
+          employeeId,
+          page,
+          pageSize,
+        })
+      ),
+    enabled: Boolean(employeeId && matchingPlan),
+  })
+  const editProjectsQuery = useQuery({
+    queryKey: ['projects', 'employee-work-item-editor'],
+    queryFn: () =>
+      loadAllPages((page, pageSize) => listProjects({ page, pageSize })),
+    enabled: Boolean(editingWorkItem || planDialog?.mode === 'edit'),
+  })
+  const editTasksQuery = useQuery({
+    queryKey: ['tasks', 'employee-work-item-editor'],
+    queryFn: () =>
+      loadAllPages((page, pageSize) => listTasks({ page, pageSize })),
+    enabled: Boolean(editingWorkItem || planDialog?.mode === 'edit'),
+  })
+  const suggestedMatchWorkItemId = useMemo(() => {
+    if (!matchingPlan || !matchCandidatesQuery.data) return ''
+    const normalizedTitle = matchingPlan.title.trim().toLocaleLowerCase()
+    return (
+      matchCandidatesQuery.data.data.find(
+        (item) => item.title.trim().toLocaleLowerCase() === normalizedTitle
+      )?.id ?? ''
+    )
+  }, [matchingPlan, matchCandidatesQuery.data])
+  const selectedMatchWorkItemId = matchWorkItemId || suggestedMatchWorkItemId
 
   // A deep-linked work item (?workItemId=) may live on a later page; scan the
   // remaining pages and move there so the row renders and gets highlighted.
@@ -153,6 +209,47 @@ export default function EmployeeDetailPage() {
     updateSearchParams,
   ])
 
+  useEffect(() => {
+    if (!focusedPlanId || !employeeId) return
+    const result = weekPlansQuery.data
+    if (!result) return
+    if (result.data.some((item) => item.id === focusedPlanId)) return
+    const totalPages = Math.ceil(result.meta.total / PAGE_SIZE)
+    if (nextPlanPage >= totalPages) return
+    let cancelled = false
+    void (async () => {
+      try {
+        for (let nextPage = nextPlanPage + 1; nextPage <= totalPages; nextPage += 1) {
+          const next = await listEmployeeWeekPlans({
+            periodType,
+            periodStart: planPeriodStart,
+            employeeId,
+            page: nextPage,
+            pageSize: PAGE_SIZE,
+          })
+          if (cancelled) return
+          if (next.data.some((item) => item.id === focusedPlanId)) {
+            updateSearchParams({ nextPlanPage: nextPage })
+            return
+          }
+        }
+      } catch {
+        // Best-effort locating; stay on the requested page when it fails.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    focusedPlanId,
+    employeeId,
+    weekPlansQuery.data,
+    nextPlanPage,
+    periodType,
+    planPeriodStart,
+    updateSearchParams,
+  ])
+
   const trendStarts = useMemo(
     () => recentPeriodStarts(periodType, periodStart, 4).reverse(),
     [periodType, periodStart]
@@ -192,6 +289,26 @@ export default function EmployeeDetailPage() {
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : '风险转换失败，请重试。')
     },
+  })
+  const updateWorkItemMutation = useMutation({
+    mutationFn: ({
+      item,
+      input,
+    }: {
+      item: EmployeeWorkItem
+      input: UpdateEmployeeWorkItemInput
+    }) => updateEmployeeWorkItem(item.id, input),
+    onSuccess: async () => {
+      setEditingWorkItem(null)
+      toast.success('工作系统字段已更新')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: employeeQueryKeys.all }),
+        queryClient.invalidateQueries({ queryKey: ['projects'] }),
+        queryClient.invalidateQueries({ queryKey: ['search'] }),
+      ])
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '更新工作项失败，请重试。'),
   })
 
   async function refreshPlans() {
@@ -282,11 +399,14 @@ export default function EmployeeDetailPage() {
       cancelPlanMutation.mutate({ planId: planDialog.plan.id, reason: cancelReason.trim() })
       return
     }
-    if (!matchWorkItemId) {
+    if (!selectedMatchWorkItemId) {
       toast.error('请选择承接该计划的本周执行项')
       return
     }
-    matchPlanMutation.mutate({ planId: planDialog.plan.id, workItemId: matchWorkItemId })
+    matchPlanMutation.mutate({
+      planId: planDialog.plan.id,
+      workItemId: selectedMatchWorkItemId,
+    })
   }
 
   if (progressQuery.isPending) {
@@ -418,6 +538,7 @@ export default function EmployeeDetailPage() {
             <EmployeeWorkTable
               items={workItemsQuery.data?.data ?? []}
               focusedWorkItemId={focusedWorkItemId}
+              onEdit={setEditingWorkItem}
               onConvertRisk={(item) => convertMutation.mutate(item)}
               convertingWorkItemId={
                 convertMutation.isPending ? (convertMutation.variables?.id ?? null) : null
@@ -461,6 +582,7 @@ export default function EmployeeDetailPage() {
           ) : (
             <EmployeeWeekPlanTable
               plans={weekPlansQuery.data?.data ?? []}
+              focusedPlanId={focusedPlanId}
               onEdit={openEditPlan}
               onCancel={(plan) => {
                 setCancelReason('')
@@ -568,6 +690,23 @@ export default function EmployeeDetailPage() {
         </section>
       </section>
 
+      <EmployeeWorkItemEditor
+        key={editingWorkItem?.id ?? 'closed'}
+        item={editingWorkItem}
+        projects={(editProjectsQuery.data?.data ?? []).map((project) => ({
+          value: project.id,
+          label: `${project.code} ${project.name}`,
+        }))}
+        tasks={(editTasksQuery.data?.data ?? []).map((task) => ({
+          value: task.id,
+          label: `${task.code} ${task.title}`,
+          projectId: task.projectId,
+        }))}
+        loading={updateWorkItemMutation.isPending}
+        onCancel={() => setEditingWorkItem(null)}
+        onSubmit={(item, input) => updateWorkItemMutation.mutate({ item, input })}
+      />
+
       <Modal
         title={
           planDialog?.mode === 'edit'
@@ -619,24 +758,41 @@ export default function EmployeeDetailPage() {
               <div className="workspace-modal-form__grid">
                 <div className="employee-detail__plan-field">
                   <span>项目 ID</span>
-                  <Input
+                  <Select
                     aria-label="项目 ID"
-                    value={planDraft.projectId}
+                    filter
+                    value={planDraft.projectId || undefined}
+                    placeholder="请选择项目"
+                    optionList={(editProjectsQuery.data?.data ?? []).map((project) => ({
+                      value: project.id,
+                      label: `${project.code} ${project.name}`,
+                    }))}
                     onChange={(value) =>
                       setPlanDraft((current) =>
-                        current ? { ...current, projectId: value } : current
+                        current
+                          ? { ...current, projectId: String(value), taskId: '' }
+                          : current
                       )
                     }
                   />
                 </div>
                 <div className="employee-detail__plan-field">
                   <span>任务 ID</span>
-                  <Input
+                  <Select
                     aria-label="任务 ID"
-                    value={planDraft.taskId}
+                    filter
+                    showClear
+                    value={planDraft.taskId || undefined}
+                    placeholder="请选择项目内任务"
+                    optionList={(editTasksQuery.data?.data ?? [])
+                      .filter((task) => task.projectId === planDraft.projectId)
+                      .map((task) => ({
+                        value: task.id,
+                        label: `${task.code} ${task.title}`,
+                      }))}
                     onChange={(value) =>
                       setPlanDraft((current) =>
-                        current ? { ...current, taskId: value } : current
+                        current ? { ...current, taskId: value ? String(value) : '' } : current
                       )
                     }
                   />
@@ -646,10 +802,10 @@ export default function EmployeeDetailPage() {
             <div className="workspace-modal-form__grid">
               <div className="employee-detail__plan-field">
                 <span>计划完成日</span>
-                <Input
+                <WorkspaceDatePicker
                   aria-label="计划完成日"
+                  mode="date"
                   value={planDraft.plannedCompletionAt}
-                  placeholder="YYYY-MM-DD"
                   onChange={(value) =>
                     setPlanDraft((current) =>
                       current ? { ...current, plannedCompletionAt: value } : current
@@ -704,12 +860,15 @@ export default function EmployeeDetailPage() {
         ) : null}
         {planDialog?.mode === 'match' ? (
           <div className="employee-detail__plan-form">
-            <span>承接到本周执行</span>
+            <span>承接到计划周期执行</span>
             <Select
-              aria-label="承接到本周执行"
-              value={matchWorkItemId || undefined}
-              placeholder="选择同一员工的执行项"
-              optionList={(workItemsQuery.data?.data ?? []).map((item) => ({
+              aria-label="承接到计划周期执行"
+              value={selectedMatchWorkItemId || undefined}
+              placeholder={
+                matchCandidatesQuery.isPending ? '正在加载计划周期执行项' : '选择同员工同周期执行项'
+              }
+              loading={matchCandidatesQuery.isPending}
+              optionList={(matchCandidatesQuery.data?.data ?? []).map((item) => ({
                 value: item.id,
                 label: item.title,
               }))}

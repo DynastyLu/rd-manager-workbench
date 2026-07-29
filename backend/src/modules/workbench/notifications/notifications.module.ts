@@ -6,15 +6,20 @@ import { RemindersController } from './interface/http/reminders.controller';
 import { ReminderSchedulerService } from './application/reminder-scheduler.service';
 import { NotificationsGateway } from './notifications.gateway';
 import { ExtensionsModule } from '../extensions/extensions.module';
+import { GovernanceModule } from '../governance/governance.module';
+import { EmployeeWeekPlanReminderCandidatesService } from './application/employee-week-plan-reminder-candidates.service';
+import { EmployeeWeekPlanReminderSyncService } from './application/employee-week-plan-reminder-sync.service';
 
 @Module({
-  imports: [ExtensionsModule],
+  imports: [ExtensionsModule, GovernanceModule],
   controllers: [NotificationsController, RemindersController],
   providers: [
     NotificationsService,
     RemindersService,
     ReminderSchedulerService,
     NotificationsGateway,
+    EmployeeWeekPlanReminderCandidatesService,
+    EmployeeWeekPlanReminderSyncService,
   ],
 })
 export class NotificationsModule {}

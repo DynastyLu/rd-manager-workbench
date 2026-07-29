@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ChunkCitation } from '../types';
-import { highlightTextSegments, copyToClipboard } from '../format';
+import { copyToClipboard } from '../format';
 import { IconCopy, IconFile } from '@douyinfe/semi-icons';
 import { Tooltip } from '@douyinfe/semi-ui';
 
@@ -11,12 +11,8 @@ interface Props {
   onSelect?: (citation: ChunkCitation) => void;
 }
 
-function truncateText(text: string, max = 100): string {
-  if (text.length <= max) return text;
-  return text.slice(0, max) + '…';
-}
-
-export function KnowledgeCitationCard({ citations, deletedIds, highlightTerms, onSelect }: Props) {
+export function KnowledgeCitationCard({ citations, deletedIds, onSelect }: Props) {
+  const [expanded, setExpanded] = useState(false);
   if (!citations || citations.length === 0) return null;
 
   const unique = new Map<string, ChunkCitation>();
@@ -28,73 +24,88 @@ export function KnowledgeCitationCard({ citations, deletedIds, highlightTerms, o
     }
   }
 
+  const sources = [...unique.values()];
+  const visibleSources = expanded ? sources : sources.slice(0, 4);
+
   return (
     <div className="kb-citation-card">
       <div className="kb-citation-card__header">
         <IconFile size="small" />
         <span>{unique.size} 个来源</span>
       </div>
-      {[...unique.values()].map((citation, idx) => {
+      <div className="kb-citation-card__items">
+      {visibleSources.map((citation, idx) => {
         const isDeleted = deletedIds?.has(citation.documentId) ?? false;
-        const terms = highlightTerms ?? [];
-        const content = citation.content || citation.text;
-        const segments = highlightTextSegments(truncateText(content, 200), terms);
 
         return (
           <SourceItem
             key={`${citation.documentId}-${idx}`}
             citation={citation}
             isDeleted={isDeleted}
-            segments={segments}
             onSelect={onSelect}
           />
         );
       })}
+      {sources.length > 4 ? (
+        <button
+          type="button"
+          className="kb-citation-card__toggle"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? '收起来源' : `查看全部 ${sources.length} 个来源`}
+        </button>
+      ) : null}
+      </div>
       <style>{`
-        .kb-citation-card { margin: 12px 0; }
+        .kb-citation-card { margin: 14px 0 4px; }
         .kb-citation-card__header {
           display: flex; align-items: center; gap: 6px;
-          font-size: 13px; font-weight: 600; color: #1f2b3d; margin-bottom: 8px;
+          font-size: 12px; font-weight: 550; color: #737983; margin-bottom: 8px;
+        }
+        .kb-citation-card__items {
+          display: flex; flex-wrap: wrap; align-items: center; gap: 7px;
         }
         .kb-source-item {
-          border: 1px solid #e5e6eb; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
-          background: #fafbfc; cursor: pointer; transition: border-color 0.2s;
+          display: flex; min-width: 0; max-width: 240px; align-items: center;
+          border: 1px solid #e4e6ea; border-radius: 999px; padding: 6px 8px;
+          background: #f8f9fa; cursor: pointer;
+          transition: border-color 0.15s, background 0.15s;
         }
-        .kb-source-item:hover { border-color: #1456f0; }
+        .kb-source-item:hover { border-color: #cfd3d9; background: #f1f2f4; }
         .kb-source-item__header {
-          display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;
+          display: flex; min-width: 0; align-items: center;
         }
         .kb-source-item__title {
-          font-size: 13px; font-weight: 600; color: #1456f0;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;
+          max-width: 145px; overflow: hidden; color: #3d434c; font-size: 11px;
+          font-weight: 550; text-overflow: ellipsis; white-space: nowrap;
         }
         .kb-source-item__space {
-          font-size: 11px; color: #8f959e; margin-left: 6px;
+          display: none;
         }
         .kb-source-item__location {
-          flex-shrink: 0; margin-left: 6px; padding: 1px 6px; border-radius: 4px;
-          background: #eef3ff; color: #1456f0; font-size: 11px;
+          flex-shrink: 0; margin-left: 5px; color: #9aa0a8; font-size: 10px;
         }
         .kb-source-item__copy {
-          flex-shrink: 0; color: #8f959e; font-size: 12px;
-          display: flex; align-items: center; gap: 4px; border: 0; background: none; cursor: pointer;
+          display: none; flex-shrink: 0; align-items: center; margin-left: 3px;
+          border: 0; background: none; color: #8f959e; cursor: pointer; font-size: 0;
         }
-        .kb-source-item__copy:hover { color: #1456f0; }
-        .kb-source-item__content {
-          font-size: 12px; line-height: 1.6; color: #4e5969;
-          overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-        }
-        .kb-source-item__content mark { background: #fff3b0; color: #1f2b3d; padding: 0 2px; border-radius: 2px; }
+        .kb-source-item:hover .kb-source-item__copy,
+        .kb-source-item:focus-within .kb-source-item__copy { display: flex; }
+        .kb-source-item__copy:hover { color: #1f2329; }
         .kb-source-item--deleted { opacity: 0.5; }
+        .kb-citation-card__toggle {
+          padding: 6px 9px; border: 0; background: transparent; color: #747b85;
+          cursor: pointer; font-size: 11px;
+        }
+        .kb-citation-card__toggle:hover { color: #1f2329; }
       `}</style>
     </div>
   );
 }
 
-function SourceItem({ citation, isDeleted, segments, onSelect }: {
+function SourceItem({ citation, isDeleted, onSelect }: {
   citation: ChunkCitation;
   isDeleted: boolean;
-  segments: ReturnType<typeof highlightTextSegments>;
   onSelect?: (citation: ChunkCitation) => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -134,7 +145,7 @@ function SourceItem({ citation, isDeleted, segments, onSelect }: {
       onKeyDown={(e) => { if (e.key === 'Enter') { handleClick(); } }}>
       <div className="kb-source-item__header">
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 }}>
-          <IconFile size="small" style={{ marginRight: 6, flexShrink: 0, color: '#8f959e' }} />
+          <IconFile size="small" style={{ marginRight: 5, flexShrink: 0, color: '#8f959e' }} />
           <span className="kb-source-item__title" title={citation.title}>{citation.title}</span>
           {citation.spaceName && <span className="kb-source-item__space">{citation.spaceName}</span>}
           {location && <span className="kb-source-item__location">{location}</span>}
@@ -145,11 +156,6 @@ function SourceItem({ citation, isDeleted, segments, onSelect }: {
             {copied ? '已复制' : '复制'}
           </button>
         </Tooltip>
-      </div>
-      <div className="kb-source-item__content">
-        {segments.map((seg, i) =>
-          seg.highlight ? <mark key={i}>{seg.text}</mark> : <span key={i}>{seg.text}</span>,
-        )}
       </div>
     </div>
   );

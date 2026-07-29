@@ -37,6 +37,8 @@ desktop/release/
 # Local machine files
 *.log
 .DS_Store
+.codex-tmp/
+outputs/
 -.html
 -[0-9]*.png
 backend/--*.jpg

@@ -30,6 +30,7 @@ import {
   restoreEmployeeWorkImport,
   unmatchEmployeeWeekPlan,
   updateEmployee,
+  updateEmployeeWorkItem,
   updateEmployeeWeekPlan,
   uploadEmployeeWorkImport,
 } from '../api'
@@ -67,6 +68,13 @@ describe('employee workspace API', () => {
       periodType: 'MONTH',
       periodStart: '2026-07-01',
       employeeId: 'employee / 1',
+      workDirection: '平台研发',
+      workKind: 'PROJECT',
+      projectId: 'project / 1',
+      taskId: 'task / 1',
+      dueDateFrom: '2026-07-01',
+      dueDateTo: '2026-07-31',
+      riskOnly: true,
       page: 3,
       pageSize: 20,
     })
@@ -86,7 +94,7 @@ describe('employee workspace API', () => {
         '/employee-progress?periodType=WEEK&periodStart=2026-07-20&department=%E7%A0%94%E5%8F%91+%2F+%E4%B8%80%E9%83%A8&status=AT_RISK',
       ],
       [
-        '/employee-work-items?periodType=MONTH&periodStart=2026-07-01&employeeId=employee+%2F+1&page=3&pageSize=20',
+        '/employee-work-items?periodType=MONTH&periodStart=2026-07-01&employeeId=employee+%2F+1&workDirection=%E5%B9%B3%E5%8F%B0%E7%A0%94%E5%8F%91&workKind=PROJECT&projectId=project+%2F+1&taskId=task+%2F+1&dueDateFrom=2026-07-01&dueDateTo=2026-07-31&riskOnly=true&page=3&pageSize=20',
       ],
       [
         '/employee-work-imports?periodType=WEEK&periodStart=2026-07-20&status=COMPLETED&page=1&pageSize=20',
@@ -101,6 +109,14 @@ describe('employee workspace API', () => {
     await archiveEmployee('employee / 1')
     await getEmployeeProgress('employee / 1', progress)
     await getEmployeeWorkItem('work / 1')
+    await updateEmployeeWorkItem('work / 1', {
+      workKind: 'NON_PROJECT',
+      projectId: null,
+      taskId: null,
+      plannedHours: 8,
+      actualHours: 6.5,
+      riskText: null,
+    })
     await getProjectTeamProgress('project / 1', progress)
     await getEmployeeWorkImport('batch / 1', { rowsPage: 2, rowsPageSize: 50 })
     await resolveEmployeeWorkImport('batch / 1', {
@@ -121,6 +137,20 @@ describe('employee workspace API', () => {
       ['/employees/employee%20%2F%201', { method: 'DELETE' }],
       ['/employees/employee%20%2F%201/progress?periodType=WEEK&periodStart=2026-07-20'],
       ['/employee-work-items/work%20%2F%201'],
+      [
+        '/employee-work-items/work%20%2F%201',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            workKind: 'NON_PROJECT',
+            projectId: null,
+            taskId: null,
+            plannedHours: 8,
+            actualHours: 6.5,
+            riskText: null,
+          }),
+        },
+      ],
       ['/projects/project%20%2F%201/team-progress?periodType=WEEK&periodStart=2026-07-20'],
       ['/employee-work-imports/batch%20%2F%201?rowsPage=2&rowsPageSize=50'],
       [
@@ -146,7 +176,11 @@ describe('employee workspace API', () => {
       periodStart: '2026-07-27',
       employeeId: 'employee / 1',
       department: '研发 一组',
-      projectId: '',
+      projectId: 'project / 1',
+      workDirection: '平台研发',
+      priority: 'HIGH',
+      dueDateFrom: '2026-07-28',
+      dueDateTo: '2026-07-31',
       carryStatus: 'PLANNED',
       page: 2,
       pageSize: 20,
@@ -167,7 +201,7 @@ describe('employee workspace API', () => {
 
     expect(request.mock.calls).toEqual([
       [
-        '/employee-week-plans?periodType=WEEK&periodStart=2026-07-27&employeeId=employee+%2F+1&department=%E7%A0%94%E5%8F%91+%E4%B8%80%E7%BB%84&carryStatus=PLANNED&page=2&pageSize=20',
+        '/employee-week-plans?periodType=WEEK&periodStart=2026-07-27&employeeId=employee+%2F+1&department=%E7%A0%94%E5%8F%91+%E4%B8%80%E7%BB%84&projectId=project+%2F+1&workDirection=%E5%B9%B3%E5%8F%B0%E7%A0%94%E5%8F%91&priority=HIGH&dueDateFrom=2026-07-28&dueDateTo=2026-07-31&carryStatus=PLANNED&page=2&pageSize=20',
       ],
       ['/employee-week-plans/plan%20%2F%201'],
       [
@@ -298,7 +332,7 @@ describe('employee workspace API', () => {
       })
     })
 
-    await downloadEmployeeWorkImportTemplate()
+    await downloadEmployeeWorkImportTemplate('2026-07-27')
     await downloadEmployeeImportSource('batch / 1')
     await downloadEmployeeImportErrors('batch / 1')
     await exportEmployeeWorkItems(
@@ -312,7 +346,7 @@ describe('employee workspace API', () => {
     )
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      'http://127.0.0.1:4311/api/employee-work-imports/template',
+      'http://127.0.0.1:4311/api/employee-work-imports/template?version=2&periodStart=2026-07-27',
       'http://127.0.0.1:4311/api/employee-work-imports/batch%20%2F%201/source',
       'http://127.0.0.1:4311/api/employee-work-imports/batch%20%2F%201/errors',
       'http://127.0.0.1:4311/api/employee-work-items/export?periodType=WEEK&periodStart=2026-07-20&employeeId=employee+%2F+1&status=BLOCKED&format=xlsx',

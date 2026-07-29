@@ -372,26 +372,12 @@ export default function KnowledgeHomePage() {
   if (activeTab === 'chat') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
-        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e5e6eb', padding: '0 20px', background: '#fff' }}>
-          <button onClick={() => selectTab('documents')} style={{
-            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
-            color: '#4e5969', fontSize: 14, borderBottom: '2px solid transparent',
-          }}>文档浏览</button>
-          <button data-active style={{
-            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
-            color: '#1456f0', fontSize: 14, fontWeight: 600,
-            borderBottom: '2px solid #1456f0',
-          }}>AI 问答</button>
-          <button onClick={() => selectTab('folders')} style={{
-            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
-            color: '#4e5969', fontSize: 14, borderBottom: '2px solid transparent',
-          }}>本地文件夹</button>
-        </div>
         <div className="knowledge-workspace--chat">
           <KnowledgeAssistantWorkspace
             sessionId={chatSessionId}
             onSessionChange={setChatSessionId}
             projectId={projectId}
+            onNavigate={selectTab}
           />
         </div>
       </div>

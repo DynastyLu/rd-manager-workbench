@@ -13,6 +13,7 @@ import { EmployeeWeekPlansService } from '../../../../src/modules/workbench/empl
 describe('EmployeeWeekPlansService', () => {
   const plan = {
     id: 'plan-1',
+    importBatchId: 'batch-1',
     employeeId: 'employee-1',
     title: '完成权限模型',
     deliverableText: '交付设计与实现',
@@ -24,6 +25,7 @@ describe('EmployeeWeekPlansService', () => {
     workKind: EmployeeWorkKind.PROJECT,
     projectId: 'project-1',
     taskId: null,
+    periodStartAt: new Date('2026-07-27T00:00:00.000Z'),
     carryStatus: EmployeePlanCarryStatus.PLANNED,
     matchedWorkItemId: null,
     cancelReason: null,
@@ -33,6 +35,7 @@ describe('EmployeeWeekPlansService', () => {
 
   function fixture(currentPlan: Record<string, unknown> = plan) {
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ acquired: true }]),
       $executeRaw: jest.fn().mockResolvedValue(0),
       employeeWeekPlanItem: {
         findFirst: jest.fn().mockResolvedValue(currentPlan),
@@ -66,8 +69,18 @@ describe('EmployeeWeekPlansService', () => {
     const audit = {
       record: jest.fn().mockResolvedValue({ id: 'audit-1' }),
     };
-    const service = new EmployeeWeekPlansService(prisma as never, tasks as never, audit as never);
-    return { service, prisma, tx, tasks, audit };
+    const snapshots = {
+      rebuildBatch: jest.fn().mockResolvedValue({
+        batch: { id: 'batch-1', snapshotStatus: 'READY' },
+      }),
+    };
+    const service = new EmployeeWeekPlansService(
+      prisma as never,
+      tasks as never,
+      audit as never,
+      snapshots as never,
+    );
+    return { service, prisma, tx, tasks, audit, snapshots };
   }
 
   it('gets only an active plan from a completed weekly import', async () => {
@@ -101,7 +114,7 @@ describe('EmployeeWeekPlansService', () => {
   });
 
   it('updates only system-owned fields in a locked transaction and audits changed fields', async () => {
-    const { service, prisma, tx, audit } = fixture();
+    const { service, prisma, tx, audit, snapshots } = fixture();
     const completion = new Date('2026-08-08T00:00:00.000Z');
 
     const result = await service.updateSystemFields('plan-1', {
@@ -116,6 +129,7 @@ describe('EmployeeWeekPlansService', () => {
     } as never);
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
     expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(tx.employeeWeekPlanItem.update).toHaveBeenCalledWith({
       where: { id: 'plan-1' },
@@ -140,6 +154,8 @@ describe('EmployeeWeekPlansService', () => {
       }),
       tx,
     );
+    expect(snapshots.rebuildBatch).toHaveBeenCalledWith('batch-1');
+    expect(result).toMatchObject({ snapshotStatus: 'READY' });
   });
 
   it('requires an active project and requires the task to belong to it', async () => {
@@ -188,7 +204,7 @@ describe('EmployeeWeekPlansService', () => {
   });
 
   it('cancels once, preserves the first reason on retry, and audits both outcomes', async () => {
-    const { service, tx, audit } = fixture();
+    const { service, tx, audit, snapshots } = fixture();
     const cancelled = {
       ...plan,
       carryStatus: EmployeePlanCarryStatus.CANCELLED,
@@ -200,10 +216,12 @@ describe('EmployeeWeekPlansService', () => {
     await expect(service.cancel('plan-1', '  优先级调整  ')).resolves.toEqual({
       plan: cancelled,
       alreadyCancelled: false,
+      snapshotStatus: 'READY',
     });
     await expect(service.cancel('plan-1', '第二次不同原因')).resolves.toEqual({
       plan: cancelled,
       alreadyCancelled: true,
+      snapshotStatus: 'READY',
     });
 
     expect(tx.employeeWeekPlanItem.update).toHaveBeenCalledTimes(1);
@@ -225,6 +243,9 @@ describe('EmployeeWeekPlansService', () => {
       }),
       tx,
     );
+    expect(snapshots.rebuildBatch).toHaveBeenCalledTimes(2);
+    expect(snapshots.rebuildBatch).toHaveBeenNthCalledWith(1, 'batch-1');
+    expect(snapshots.rebuildBatch).toHaveBeenNthCalledWith(2, 'batch-1');
   });
 
   it('matches a planned plan only to an active work item for the same employee and is idempotent', async () => {
@@ -233,21 +254,24 @@ describe('EmployeeWeekPlansService', () => {
       carryStatus: EmployeePlanCarryStatus.MATCHED,
       matchedWorkItemId: 'work-1',
     };
-    const { service, tx } = fixture();
+    const { service, tx, snapshots } = fixture();
     tx.employeeWeekPlanItem.findFirst.mockResolvedValueOnce(plan).mockResolvedValueOnce(matched);
     tx.employeeWorkItem.findFirst.mockResolvedValue({
       id: 'work-1',
       employeeId: plan.employeeId,
+      periodStartAt: plan.periodStartAt,
     });
     tx.employeeWeekPlanItem.update.mockResolvedValue(matched);
 
     await expect(service.match('plan-1', 'work-1')).resolves.toEqual({
       plan: matched,
       alreadyMatched: false,
+      snapshotStatus: 'READY',
     });
     await expect(service.match('plan-1', 'work-1')).resolves.toEqual({
       plan: matched,
       alreadyMatched: true,
+      snapshotStatus: 'READY',
     });
 
     expect(tx.employeeWeekPlanItem.update).toHaveBeenCalledTimes(1);
@@ -260,6 +284,7 @@ describe('EmployeeWeekPlansService', () => {
       },
       include: expect.any(Object),
     });
+    expect(snapshots.rebuildBatch).toHaveBeenCalledTimes(2);
   });
 
   it('rejects matching to a different employee or matching a cancelled plan', async () => {
@@ -267,6 +292,7 @@ describe('EmployeeWeekPlansService', () => {
     tx.employeeWorkItem.findFirst.mockResolvedValue({
       id: 'work-1',
       employeeId: 'employee-2',
+      periodStartAt: plan.periodStartAt,
     });
 
     await expect(service.match('plan-1', 'work-1')).rejects.toMatchObject({
@@ -280,9 +306,26 @@ describe('EmployeeWeekPlansService', () => {
     tx.employeeWorkItem.findFirst.mockResolvedValue({
       id: 'work-1',
       employeeId: plan.employeeId,
+      periodStartAt: plan.periodStartAt,
     });
 
     await expect(service.match('plan-1', 'work-1')).rejects.toBeInstanceOf(AppError);
+  });
+
+  it('rejects matching a next-week plan to an execution item from another week', async () => {
+    const { service, tx } = fixture();
+    tx.employeeWorkItem.findFirst.mockResolvedValue({
+      id: 'work-1',
+      employeeId: plan.employeeId,
+      periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+    });
+
+    await expect(service.match('plan-1', 'work-1')).rejects.toMatchObject({
+      code: ErrorCodes.VALIDATION_ERROR,
+      statusCode: 422,
+      message: 'Plan and matched work item must belong to the same reporting week',
+    });
+    expect(tx.employeeWeekPlanItem.update).not.toHaveBeenCalled();
   });
 
   it('unmatches to planned and is idempotent when already planned', async () => {
@@ -291,7 +334,7 @@ describe('EmployeeWeekPlansService', () => {
       carryStatus: EmployeePlanCarryStatus.MATCHED,
       matchedWorkItemId: 'work-1',
     };
-    const { service, tx } = fixture(matched);
+    const { service, tx, snapshots } = fixture(matched);
     const planned = { ...plan };
     tx.employeeWeekPlanItem.findFirst.mockResolvedValueOnce(matched).mockResolvedValueOnce(planned);
     tx.employeeWeekPlanItem.update.mockResolvedValue(planned);
@@ -299,10 +342,12 @@ describe('EmployeeWeekPlansService', () => {
     await expect(service.unmatch('plan-1')).resolves.toEqual({
       plan: planned,
       alreadyPlanned: false,
+      snapshotStatus: 'READY',
     });
     await expect(service.unmatch('plan-1')).resolves.toEqual({
       plan: planned,
       alreadyPlanned: true,
+      snapshotStatus: 'READY',
     });
 
     expect(tx.employeeWeekPlanItem.update).toHaveBeenCalledTimes(1);
@@ -315,12 +360,13 @@ describe('EmployeeWeekPlansService', () => {
       },
       include: expect.any(Object),
     });
+    expect(snapshots.rebuildBatch).toHaveBeenCalledTimes(2);
   });
 
   it('converts one project plan to a linked task and reuses that task on retry', async () => {
     const task = { id: 'task-1', projectId: 'project-1', title: plan.title };
     const linkedPlan = { ...plan, taskId: task.id };
-    const { service, tx, tasks, audit } = fixture();
+    const { service, tx, tasks, audit, snapshots } = fixture();
     tx.employeeWeekPlanItem.findFirst.mockResolvedValueOnce(plan).mockResolvedValueOnce(linkedPlan);
     tx.workTask.findFirst.mockResolvedValue(task);
     tx.employeeWeekPlanItem.update.mockResolvedValue(linkedPlan);
@@ -330,11 +376,13 @@ describe('EmployeeWeekPlansService', () => {
       plan: linkedPlan,
       task,
       alreadyExists: false,
+      snapshotStatus: 'READY',
     });
     await expect(service.convertToTask('plan-1')).resolves.toEqual({
       plan: linkedPlan,
       task,
       alreadyExists: true,
+      snapshotStatus: 'READY',
     });
 
     expect(tasks.createTaskInTransaction).toHaveBeenCalledTimes(1);
@@ -361,6 +409,31 @@ describe('EmployeeWeekPlansService', () => {
       }),
       tx,
     );
+    expect(snapshots.rebuildBatch).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns a visible failed snapshot status after preserving a successful plan mutation', async () => {
+    const { service, tx, snapshots } = fixture();
+    snapshots.rebuildBatch.mockResolvedValue({
+      batch: {
+        id: 'batch-1',
+        snapshotStatus: 'FAILED',
+        snapshotError: ErrorCodes.EMPLOYEE_SNAPSHOT_GENERATION_FAILED,
+      },
+      warning: { code: ErrorCodes.EMPLOYEE_SNAPSHOT_GENERATION_FAILED },
+    });
+
+    const result = await service.updateSystemFields('plan-1', {
+      priority: EmployeePlanPriority.URGENT,
+    });
+
+    expect(tx.employeeWeekPlanItem.update).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      priority: EmployeePlanPriority.URGENT,
+      snapshotStatus: 'FAILED',
+      snapshotError: ErrorCodes.EMPLOYEE_SNAPSHOT_GENERATION_FAILED,
+      snapshotWarning: { code: ErrorCodes.EMPLOYEE_SNAPSHOT_GENERATION_FAILED },
+    });
   });
 
   it('rejects converting a non-project plan', async () => {

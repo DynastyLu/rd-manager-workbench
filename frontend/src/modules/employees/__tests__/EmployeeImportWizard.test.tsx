@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { selectSemiOption } from '@/test-utils/selectSemiOption'
@@ -526,10 +526,13 @@ describe('EmployeeImportWizard', () => {
     const user = userEvent.setup()
     renderWizard()
 
+    fireEvent.change(screen.getByRole('textbox', { name: '模板周一日期' }), {
+      target: { value: '2026-07-27' },
+    })
     await user.click(screen.getByRole('button', { name: '下载导入模板' }))
 
     await waitFor(() =>
-      expect(employeesApi.downloadEmployeeWorkImportTemplate).toHaveBeenCalledTimes(1)
+      expect(employeesApi.downloadEmployeeWorkImportTemplate).toHaveBeenCalledWith('2026-07-27')
     )
     await waitFor(() => expect(createObjectURL).toHaveBeenCalled())
     vi.unstubAllGlobals()

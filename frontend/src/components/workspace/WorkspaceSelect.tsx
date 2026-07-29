@@ -75,6 +75,7 @@ export function WorkspaceSelect<T extends string = string>({
         filter={filter}
         id={id}
         inputProps={required ? { 'aria-required': true } : undefined}
+        motion={import.meta.env.MODE !== 'test'}
         onChange={updateValue}
         optionList={optionList}
         placeholder={placeholder}

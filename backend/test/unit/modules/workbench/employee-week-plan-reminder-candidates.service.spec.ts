@@ -35,8 +35,9 @@ describe('EmployeeWeekPlanReminderCandidatesService', () => {
 
   it('returns page and socket candidates without enabling SMS', async () => {
     const service = createService();
+    const now = new Date('2026-07-28T08:00:00.000Z');
 
-    const result = await service.reconcile([]);
+    const result = await service.reconcile([], now);
 
     expect(result.candidates).toEqual([
       {
@@ -77,8 +78,8 @@ describe('EmployeeWeekPlanReminderCandidatesService', () => {
     expect(prisma.employeeWeekPlanItem.findMany).toHaveBeenCalledWith({
       where: {
         archivedAt: null,
-        plannedCompletionAt: { not: null },
-        carryStatus: { not: EmployeePlanCarryStatus.CANCELLED },
+        plannedCompletionAt: { gte: new Date('2026-07-27T08:00:00.000Z') },
+        carryStatus: EmployeePlanCarryStatus.PLANNED,
         employee: { archivedAt: null },
         importBatch: {
           periodType: EmployeeProgressPeriod.WEEK,
@@ -89,6 +90,24 @@ describe('EmployeeWeekPlanReminderCandidatesService', () => {
       select: expect.any(Object),
       orderBy: [{ plannedCompletionAt: 'asc' }, { id: 'asc' }],
     });
+  });
+
+  it('does not schedule the historical backlog on its first reconciliation', async () => {
+    prisma.employeeWeekPlanItem.findMany.mockResolvedValue([]);
+    const service = createService();
+    const now = new Date('2026-07-28T08:00:00.000Z');
+
+    const result = await service.reconcile([], now);
+
+    expect(result.candidates).toEqual([]);
+    expect(result.changes).toEqual([]);
+    expect(prisma.employeeWeekPlanItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          plannedCompletionAt: { gte: new Date('2026-07-27T08:00:00.000Z') },
+        }),
+      }),
+    );
   });
 
   it('reports date changes as reschedules and missing or cancelled plans as archives', async () => {
@@ -129,8 +148,9 @@ describe('EmployeeWeekPlanReminderCandidatesService', () => {
       },
     ];
     const service = createService();
+    const now = new Date('2026-07-28T08:00:00.000Z');
 
-    const result = await service.reconcile(previous);
+    const result = await service.reconcile(previous, now);
 
     expect(result.changes).toEqual([
       {
@@ -162,9 +182,10 @@ describe('EmployeeWeekPlanReminderCandidatesService', () => {
 
   it('emits no lifecycle changes for an unchanged candidate', async () => {
     const service = createService();
-    const initial = await service.reconcile([]);
+    const now = new Date('2026-07-28T08:00:00.000Z');
+    const initial = await service.reconcile([], now);
 
-    const result = await service.reconcile(initial.candidates);
+    const result = await service.reconcile(initial.candidates, now);
 
     expect(result.changes).toEqual([]);
     expect(result.auditEvents).toEqual([]);

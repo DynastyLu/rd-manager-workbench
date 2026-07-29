@@ -1,5 +1,10 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { MeetingStatus, ReminderSourceType, TaskStatus } from '@prisma/client';
+import {
+  EmployeePlanCarryStatus,
+  MeetingStatus,
+  ReminderSourceType,
+  TaskStatus,
+} from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
@@ -73,14 +78,25 @@ export class RemindersService {
               where: { id: sourceId, archivedAt: null },
               select: { id: true },
             })
-          : await this.prisma.meeting.findFirst({
-              where: {
-                id: sourceId,
-                archivedAt: null,
-                status: { not: MeetingStatus.CANCELLED },
-              },
-              select: { id: true },
-            });
+          : sourceType === ReminderSourceType.EMPLOYEE_WEEK_PLAN
+            ? await this.prisma.employeeWeekPlanItem.findFirst({
+                where: {
+                  id: sourceId,
+                  archivedAt: null,
+                  carryStatus: EmployeePlanCarryStatus.PLANNED,
+                  employee: { archivedAt: null },
+                  importBatch: { archivedAt: null },
+                },
+                select: { id: true },
+              })
+            : await this.prisma.meeting.findFirst({
+                where: {
+                  id: sourceId,
+                  archivedAt: null,
+                  status: { not: MeetingStatus.CANCELLED },
+                },
+                select: { id: true },
+              });
     if (!source) {
       throw new AppError({
         code: ErrorCodes.REMINDER_SOURCE_NOT_FOUND,

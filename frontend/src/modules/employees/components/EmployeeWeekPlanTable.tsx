@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Empty, Table, Tag } from '@douyinfe/semi-ui'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
@@ -30,6 +31,7 @@ const CARRY_STATUS_LABELS = {
 interface EmployeeWeekPlanTableProps {
   plans: EmployeeWeekPlan[]
   showEmployee?: boolean
+  focusedPlanId?: string
   pagination?: false | Record<string, unknown>
   pendingPlanId?: string | null
   onEdit?: (plan: EmployeeWeekPlan) => void
@@ -42,6 +44,7 @@ interface EmployeeWeekPlanTableProps {
 export function EmployeeWeekPlanTable({
   plans,
   showEmployee = false,
+  focusedPlanId,
   pagination = false,
   pendingPlanId,
   onEdit,
@@ -50,7 +53,15 @@ export function EmployeeWeekPlanTable({
   onUnmatch,
   onConvertToTask,
 }: EmployeeWeekPlanTableProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const hasActions = Boolean(onEdit || onCancel || onMatch || onUnmatch || onConvertToTask)
+
+  useEffect(() => {
+    if (!focusedPlanId) return
+    const row = containerRef.current?.querySelector('.employee-week-plan-table__row--focused')
+    row?.scrollIntoView?.({ block: 'center' })
+  }, [focusedPlanId, plans])
+
   const columns: ColumnProps<EmployeeWeekPlan>[] = [
     {
       title: '计划事项',
@@ -60,6 +71,8 @@ export function EmployeeWeekPlanTable({
         <div className="employee-work-table__title">
           <strong>{plan.title}</strong>
           {plan.deliverableText ? <small>{plan.deliverableText}</small> : null}
+          {plan.planText ? <small>计划：{plan.planText}</small> : null}
+          {plan.note ? <small>备注：{plan.note}</small> : null}
         </div>
       ),
     },
@@ -200,7 +213,7 @@ export function EmployeeWeekPlanTable({
   ]
 
   return (
-    <div className="employee-week-plan-table">
+    <div ref={containerRef} className="employee-week-plan-table">
       <Table<EmployeeWeekPlan>
         rowKey="id"
         size="middle"
@@ -208,6 +221,12 @@ export function EmployeeWeekPlanTable({
         dataSource={plans}
         pagination={pagination}
         scroll={{ x: hasActions ? 1620 : 1360 }}
+        onRow={(record) => ({
+          className:
+            record && record.id === focusedPlanId
+              ? 'employee-week-plan-table__row--focused'
+              : '',
+        })}
         empty={<Empty title="下周暂无计划" description="提交 V2 周报后，未来计划会显示在这里。" />}
       />
     </div>

@@ -349,20 +349,29 @@ export class EmployeeWorkbookV2Service {
   }
 
   private parseDirectory(sheet: ExcelJS.Worksheet): Map<string, DirectoryEntry> {
-    if (
-      this.text(sheet.getCell('A4')) !== '员工姓名' ||
-      this.text(sheet.getCell('B4')) !== '部门' ||
-      this.text(sheet.getCell('C4')) !== '工作方向'
-    ) {
-      throw this.invalid('填写说明的员工目录表头必须位于 A4:C4', { field: 'directory' });
+    const hasDirectoryHeadersAt = (rowNumber: number) =>
+      this.text(sheet.getCell(rowNumber, 1)) === '员工姓名' &&
+      this.text(sheet.getCell(rowNumber, 2)) === '部门' &&
+      this.text(sheet.getCell(rowNumber, 3)) === '工作方向';
+    const directoryHeaderRow = hasDirectoryHeadersAt(4) ? 4 : hasDirectoryHeadersAt(5) ? 5 : null;
+    if (directoryHeaderRow === null) {
+      throw this.invalid('填写说明的员工目录表头必须位于 A4:C4 或 A5:C5', {
+        field: 'directory',
+      });
     }
-    const version = this.scalar(sheet.getCell('B2'), false);
-    if (version !== 2 && version !== '2') {
-      throw this.invalid('填写说明中的模板版本必须为 2', { field: 'templateVersion' });
+    if (directoryHeaderRow === 4) {
+      const version = this.scalar(sheet.getCell('B2'), false);
+      if (version !== 2 && version !== '2') {
+        throw this.invalid('填写说明中的模板版本必须为 2', { field: 'templateVersion' });
+      }
+    } else if (this.text(sheet.getCell('A1')) !== '员工周工作填写表（个人版）') {
+      throw this.invalid('填写说明标题与正式员工周工作模板不一致', {
+        field: 'templateTitle',
+      });
     }
     const result = new Map<string, DirectoryEntry>();
     sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber < 5) return;
+      if (rowNumber <= directoryHeaderRow) return;
       for (let columnNumber = 1; columnNumber <= 3; columnNumber += 1) {
         if (!this.isFormula(row.getCell(columnNumber).value)) continue;
         throw this.invalid('填写说明员工目录不允许公式', {
@@ -388,6 +397,9 @@ export class EmployeeWorkbookV2Service {
   }
 
   private parseSheetMeta(sheet: ExcelJS.Worksheet, date1904: boolean): EmployeeSheetMeta {
+    if (this.text(sheet.getCell('A3')) === '员工姓名') {
+      return this.parseApprovedSheetMeta(sheet, date1904);
+    }
     const expectedLabels: Array<[string, string]> = [
       ['A1', '员工姓名'],
       ['C1', '部门'],
@@ -429,6 +441,50 @@ export class EmployeeWorkbookV2Service {
       employeeName: this.requiredText(sheet.getCell('B1'), 'employeeName'),
       department: this.text(sheet.getCell('D1')),
       workDirection: this.text(sheet.getCell('F1')),
+      periodStart,
+      periodEnd,
+      nextPeriodStart,
+      nextPeriodEnd,
+    };
+  }
+
+  private parseApprovedSheetMeta(sheet: ExcelJS.Worksheet, date1904: boolean): EmployeeSheetMeta {
+    const expectedLabels: Array<[string, string]> = [
+      ['A3', '员工姓名'],
+      ['C3', '部门'],
+      ['E3', '工作方向'],
+      ['G3', '本周起始日期'],
+      ['A4', '本周结束日期'],
+      ['C18', '下周起始日期'],
+      ['E18', '下周结束日期'],
+    ];
+    for (const [address, expected] of expectedLabels) {
+      if (this.text(sheet.getCell(address)) !== expected) {
+        throw this.invalid(`员工工作表 ${sheet.name} 的元信息标签 ${address} 必须为 ${expected}`, {
+          field: address,
+        });
+      }
+    }
+    const periodStart = this.date(sheet.getCell('H3'), date1904, 'periodStart');
+    this.assertKnownMetadataFormula(sheet.getCell('B4'), 'H3+6', sheet.name);
+    this.assertKnownMetadataFormula(sheet.getCell('D18'), 'B4+1', sheet.name);
+    this.assertKnownMetadataFormula(sheet.getCell('F18'), 'B4+7', sheet.name);
+    const periodEnd = this.date(sheet.getCell('B4'), date1904, 'periodEnd', true);
+    this.assertWeek(periodStart, periodEnd, sheet.name);
+    const nextPeriodStart = this.date(sheet.getCell('D18'), date1904, 'nextPeriodStart', true);
+    const nextPeriodEnd = this.date(sheet.getCell('F18'), date1904, 'nextPeriodEnd', true);
+    if (
+      nextPeriodStart !== this.addDays(periodStart, 7) ||
+      nextPeriodEnd !== this.addDays(periodStart, 13)
+    ) {
+      throw this.invalid(`员工工作表 ${sheet.name} 的下周周期必须紧接本周周期`, {
+        field: 'nextPeriod',
+      });
+    }
+    return {
+      employeeName: this.requiredText(sheet.getCell('B3'), 'employeeName'),
+      department: this.text(sheet.getCell('D3')),
+      workDirection: this.text(sheet.getCell('F3')),
       periodStart,
       periodEnd,
       nextPeriodStart,

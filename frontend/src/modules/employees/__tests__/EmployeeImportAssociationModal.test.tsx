@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { selectSemiOption } from '@/test-utils/selectSemiOption'
@@ -93,21 +93,6 @@ const tasks = [
   { id: 'task-2', projectId: 'project-2', code: 'RD-002-T1', title: '压力测试' },
 ]
 
-async function selectActiveSemiOption(control: HTMLElement, value: string) {
-  fireEvent.click(control)
-  const listboxId = control.getAttribute('aria-controls')
-  const listbox = await waitFor(() => {
-    const element = listboxId ? document.getElementById(listboxId) : null
-    if (!element) throw new Error('Active Semi listbox was not mounted')
-    return element
-  })
-  const option = within(listbox)
-    .getAllByRole('option')
-    .find((candidate) => candidate.dataset.value === value)
-  if (!option) throw new Error(`Semi option with value "${value}" was not found`)
-  fireEvent.click(option)
-}
-
 describe('EmployeeImportAssociationModal', () => {
   it('filters rows by worksheet and source section without losing draft edits', async () => {
     render(
@@ -125,14 +110,18 @@ describe('EmployeeImportAssociationModal', () => {
     expect(screen.getByText('启动材料平台压测')).toBeInTheDocument()
 
     await selectSemiOption(screen.getByLabelText('第 1 行工作类型'), 'NON_PROJECT')
-    await selectActiveSemiOption(screen.getByLabelText('工作表筛选'), '李华')
-    expect(await screen.findByText('启动材料平台压测')).toBeInTheDocument()
+    await selectSemiOption(screen.getByLabelText('工作表筛选'), '李华')
+    expect(
+      await screen.findByText('启动材料平台压测', undefined, { timeout: 10_000 })
+    ).toBeInTheDocument()
     expect(screen.queryByText('完成权限平台联调')).not.toBeInTheDocument()
 
-    await selectActiveSemiOption(screen.getByLabelText('工作表筛选'), '张明')
-    expect(await screen.findByLabelText('第 1 行工作类型')).toHaveTextContent('非项目工作')
+    await selectSemiOption(screen.getByLabelText('工作表筛选'), '张明')
+    expect(
+      await screen.findByLabelText('第 1 行工作类型', undefined, { timeout: 10_000 })
+    ).toHaveTextContent('非项目工作')
 
-    await selectActiveSemiOption(screen.getByLabelText('区域筛选'), 'NEXT_WEEK_PLAN')
+    await selectSemiOption(screen.getByLabelText('区域筛选'), 'NEXT_WEEK_PLAN')
     expect(screen.queryByText('完成权限平台联调')).not.toBeInTheDocument()
     expect(screen.getByText('当前显示 0 / 2 行')).toBeInTheDocument()
   })
@@ -247,5 +236,189 @@ describe('EmployeeImportAssociationModal', () => {
     expect(screen.getByTestId('employee-import-association-footer')).toHaveClass(
       'employee-import-association__footer'
     )
+  })
+
+  it('can create a missing employee and restore an employee profile update decision', async () => {
+    const onSubmit = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <EmployeeImportAssociationModal
+        visible
+        rows={[
+          makeRow({
+            resolvedEmployeeId: null,
+            normalizedValues: {
+              ...currentRow.normalizedValues,
+              employeeName: '新员工',
+              department: '研发部',
+              workDirection: '平台研发',
+            },
+            workKind: 'NON_PROJECT',
+            riskCandidate: false,
+          }),
+          makeRow({
+            id: 'row-existing',
+            rowNumber: 2,
+            resolvedEmployeeId: 'employee-1',
+            profileAction: 'UPDATE',
+            normalizedValues: {
+              ...planRow.normalizedValues,
+              employeeName: '张明',
+              department: '研发部',
+              workDirection: '平台研发',
+            },
+            workKind: 'NON_PROJECT',
+            riskCandidate: false,
+          }),
+        ]}
+        employees={[{ id: 'employee-1', displayName: '张明' }]}
+        projects={projects}
+        tasks={tasks}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    )
+
+    expect(screen.getByText('将新建：新员工')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '用表内部门/方向更新档案' })).toBeChecked()
+    await user.click(screen.getByRole('button', { name: '保存字段补全' }))
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      rows: [
+        expect.objectContaining({
+          rowId: 'row-current',
+          createEmployee: {
+            displayName: '新员工',
+            department: '研发部',
+            workDirection: '平台研发',
+          },
+        }),
+        expect.objectContaining({
+          rowId: 'row-existing',
+          employeeId: 'employee-1',
+          updateEmployeeProfile: true,
+        }),
+      ],
+    })
+  })
+
+  it('submits one create directive for repeated rows belonging to the same employee', async () => {
+    const onSubmit = vi.fn()
+    const user = userEvent.setup()
+    const newEmployeeValues = {
+      ...currentRow.normalizedValues,
+      employeeName: '新员工',
+      department: '研发部',
+      workDirection: '平台研发',
+    }
+    render(
+      <EmployeeImportAssociationModal
+        visible
+        rows={[
+          makeRow({
+            resolvedEmployeeId: null,
+            normalizedValues: newEmployeeValues,
+            workKind: 'NON_PROJECT',
+            riskCandidate: false,
+          }),
+          makeRow({
+            id: 'row-current-2',
+            rowNumber: 2,
+            resolvedEmployeeId: null,
+            normalizedValues: {
+              ...newEmployeeValues,
+              rowNumber: 2,
+              sourceRowNumber: 8,
+              title: '补充回归测试',
+            },
+            workKind: 'NON_PROJECT',
+            riskCandidate: false,
+          }),
+        ]}
+        projects={projects}
+        tasks={tasks}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    )
+
+    expect(screen.getAllByText('将新建：新员工')).toHaveLength(1)
+    expect(screen.getByText('共 2 条工作/计划')).toBeInTheDocument()
+    expect(
+      screen.getAllByRole('button', {
+        name: '改为关联现有员工：新员工',
+      })
+    ).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: '保存字段补全' }))
+
+    const submittedRows = onSubmit.mock.calls[0]?.[0].rows
+    expect(submittedRows.filter((row) => row.createEmployee)).toHaveLength(1)
+    expect(submittedRows[1]).not.toHaveProperty('employeeId')
+  })
+
+  it('applies one existing employee selection to every row in the same employee group', async () => {
+    const onSubmit = vi.fn()
+    const user = userEvent.setup()
+    const newEmployeeValues = {
+      ...currentRow.normalizedValues,
+      employeeName: ' 新员工 ',
+      department: '研发部',
+      workDirection: '平台研发',
+    }
+    render(
+      <EmployeeImportAssociationModal
+        visible
+        rows={[
+          makeRow({
+            resolvedEmployeeId: null,
+            normalizedValues: newEmployeeValues,
+            workKind: 'NON_PROJECT',
+            riskCandidate: false,
+          }),
+          makeRow({
+            id: 'row-current-2',
+            rowNumber: 2,
+            resolvedEmployeeId: null,
+            normalizedValues: {
+              ...newEmployeeValues,
+              employeeName: '新员工',
+              rowNumber: 2,
+              sourceRowNumber: 8,
+              title: '补充回归测试',
+            },
+            workKind: 'NON_PROJECT',
+            riskCandidate: false,
+          }),
+        ]}
+        employees={[{ id: 'employee-existing', displayName: '王工程师' }]}
+        projects={projects}
+        tasks={tasks}
+        onCancel={vi.fn()}
+        onSubmit={onSubmit}
+      />
+    )
+
+    await user.click(
+      screen.getByRole('button', {
+        name: '改为关联现有员工：新员工',
+      })
+    )
+    await selectSemiOption(screen.getByLabelText('员工关联：新员工'), 'employee-existing')
+    await user.click(screen.getByRole('button', { name: '保存字段补全' }))
+
+    const submittedRows = onSubmit.mock.calls[0]?.[0].rows
+    expect(submittedRows).toHaveLength(2)
+    expect(submittedRows).toEqual([
+      expect.objectContaining({
+        rowId: 'row-current',
+        employeeId: 'employee-existing',
+      }),
+      expect.objectContaining({
+        rowId: 'row-current-2',
+        employeeId: 'employee-existing',
+      }),
+    ])
+    expect(submittedRows[0]).not.toHaveProperty('createEmployee')
+    expect(submittedRows[1]).not.toHaveProperty('createEmployee')
   })
 })

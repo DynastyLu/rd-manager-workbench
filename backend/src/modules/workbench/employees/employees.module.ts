@@ -10,6 +10,7 @@ import { EmployeeProgressQueryService } from './application/employee-progress-qu
 import { EmployeeProgressSnapshotService } from './application/employee-progress-snapshot.service';
 import { EmployeeWeekPlansService } from './application/employee-week-plans.service';
 import { EmployeeWorkExportService } from './application/employee-work-export.service';
+import { EmployeeWorkItemsService } from './application/employee-work-items.service';
 import { EmployeeWorkRiskService } from './application/employee-work-risk.service';
 import { EmployeeWorkbookService } from './application/employee-workbook.service';
 import { EmployeesService } from './application/employees.service';
@@ -31,6 +32,7 @@ import {
     EmployeeProgressSnapshotService,
     EmployeeWeekPlansService,
     EmployeeWorkExportService,
+    EmployeeWorkItemsService,
     EmployeeWorkRiskService,
     EmployeeImportsService,
   ],
@@ -43,6 +45,7 @@ import {
     EmployeeProgressSnapshotService,
     EmployeeWeekPlansService,
     EmployeeWorkExportService,
+    EmployeeWorkItemsService,
     EmployeeWorkRiskService,
     EmployeeImportsService,
   ],

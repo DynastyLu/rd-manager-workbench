@@ -18,13 +18,17 @@ describe('EmployeeProgressController week-plan routes', () => {
     unmatch: jest.fn(),
     convertToTask: jest.fn(),
   };
+  const workItems = {
+    updateSystemFields: jest.fn(),
+  };
 
   const controller = new (EmployeeProgressController as unknown as new (
     progress: unknown,
     workExport: unknown,
     workRisks: unknown,
     plans: unknown,
-  ) => EmployeeProgressController)(progress, {}, {}, plans);
+    workItems: unknown,
+  ) => EmployeeProgressController)(progress, {}, {}, plans, workItems);
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -73,5 +77,27 @@ describe('EmployeeProgressController week-plan routes', () => {
     expect(plans.match).toHaveBeenCalledWith('plan-1', 'work-1');
     expect(plans.unmatch).toHaveBeenCalledWith('plan-1');
     expect(plans.convertToTask).toHaveBeenCalledWith('plan-1');
+  });
+
+  it('delegates bounded current-work system field updates', async () => {
+    await controller.updateWorkItem('work-1', {
+      workKind: EmployeeWorkKind.NON_PROJECT,
+      projectId: null,
+      taskId: null,
+      plannedCompletionAt: '2026-07-30',
+      plannedHours: 8,
+      actualHours: 6.5,
+      riskText: null,
+    });
+
+    expect(workItems.updateSystemFields).toHaveBeenCalledWith('work-1', {
+      workKind: EmployeeWorkKind.NON_PROJECT,
+      projectId: null,
+      taskId: null,
+      plannedCompletionAt: new Date('2026-07-30T00:00:00.000Z'),
+      plannedHours: 8,
+      actualHours: 6.5,
+      riskText: null,
+    });
   });
 });

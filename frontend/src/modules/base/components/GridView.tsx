@@ -92,6 +92,10 @@ function quickFilterValue(field: DataField, rawValue: string): unknown {
   return rawValue
 }
 
+function quickFilterIdentity(filter: ViewFilter | undefined) {
+  return filter ? `${filter.fieldKey}\u0000${editableValueText(filter.value)}` : ''
+}
+
 function ComputedCell({ value, error }: { value: unknown; error?: ComputedFieldError }) {
   if (!error) return <span className="base-grid__readonly">{renderCompact(value)}</span>
   const text =
@@ -139,7 +143,12 @@ export function GridView({
   const [quickFilterInput, setQuickFilterInput] = useState(
     editableValueText(initialQuickFilter?.value)
   )
-  const synchronizedView = useRef({ id: view.id, config: view.config, fields })
+  const synchronizedView = useRef({
+    id: view.id,
+    config: view.config,
+    fields,
+    quickFilterIdentity: quickFilterIdentity(initialQuickFilter),
+  })
   useEffect(() => {
     if (
       synchronizedView.current.id === view.id &&
@@ -147,11 +156,22 @@ export function GridView({
       synchronizedView.current.fields === fields
     )
       return
-    synchronizedView.current = { id: view.id, config: view.config, fields }
-    setConfig(view.config)
     const nextQuickFilter = configuredFilters(view.config, fields)[0]
-    setQuickFilterFieldKey(nextQuickFilter?.fieldKey ?? '')
-    setQuickFilterInput(editableValueText(nextQuickFilter?.value))
+    const nextQuickFilterIdentity = quickFilterIdentity(nextQuickFilter)
+    const shouldSynchronizeQuickFilter =
+      synchronizedView.current.id !== view.id ||
+      synchronizedView.current.quickFilterIdentity !== nextQuickFilterIdentity
+    synchronizedView.current = {
+      id: view.id,
+      config: view.config,
+      fields,
+      quickFilterIdentity: nextQuickFilterIdentity,
+    }
+    setConfig(view.config)
+    if (shouldSynchronizeQuickFilter) {
+      setQuickFilterFieldKey(nextQuickFilter?.fieldKey ?? '')
+      setQuickFilterInput(editableValueText(nextQuickFilter?.value))
+    }
   }, [fields, view.id, view.config])
 
   const visibleFields = useMemo(() => orderedFields(fields, config), [fields, config])

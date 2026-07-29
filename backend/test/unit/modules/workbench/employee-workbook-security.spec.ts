@@ -2,6 +2,7 @@ import { deflateRawSync } from 'node:zlib';
 import ExcelJS from 'exceljs';
 import unzipper from 'unzipper';
 import { EmployeeWorkbookService } from '../../../../src/modules/workbench/employees/application/employee-workbook.service';
+import { preflightEmployeeWorkbookZip } from '../../../../src/modules/workbench/employees/application/employee-workbook-zip-preflight';
 
 interface ZipEntryFixture {
   path: string;
@@ -111,6 +112,18 @@ describe('EmployeeWorkbookService ZIP preflight', () => {
       openBuffer.mockRestore();
     }
   }
+
+  it('allows the standard binary printer settings part produced by Excel', async () => {
+    const buffer = createZip([
+      { path: 'xl/workbook.xml', data: Buffer.from('<workbook/>') },
+      {
+        path: 'xl/printerSettings/printerSettings1.bin',
+        data: Buffer.from([0x00, 0x01, 0x02, 0x03]),
+      },
+    ]);
+
+    await expect(preflightEmployeeWorkbookZip(buffer)).resolves.toBeUndefined();
+  });
 
   it('rejects a forged huge EOCD record count before opening the ZIP directory', async () => {
     const buffer = createZip([{ path: 'xl/workbook.xml', data: Buffer.from('<x/>') }]);

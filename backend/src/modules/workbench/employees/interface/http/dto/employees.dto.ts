@@ -16,6 +16,7 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNumber,
   IsNotEmpty,
   IsString,
   MaxLength,
@@ -155,6 +156,35 @@ export class ListEmployeeWorkItemsQueryDto extends ProgressPeriodQueryDto {
   @IsString()
   employeeId?: string;
 
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  workDirection?: string;
+
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeeWorkKind)
+  workKind?: EmployeeWorkKind;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  taskId?: string;
+
+  @ValidateIf(isDefined)
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dueDateFrom?: string;
+
+  @ValidateIf(isDefined)
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dueDateTo?: string;
+
+  @Transform(toBoolean)
+  @ValidateIf(isDefined)
+  @IsBoolean()
+  riskOnly?: boolean;
+
   @Transform(toNumber)
   @ValidateIf(isDefined)
   @IsInt()
@@ -175,6 +205,25 @@ export class ListEmployeeWeekPlansQueryDto extends ProgressPeriodQueryDto {
   @ValidateIf(isDefined)
   @IsString()
   employeeId?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  workDirection?: string;
+
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeePlanPriority)
+  priority?: EmployeePlanPriority;
+
+  @ValidateIf(isDefined)
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dueDateFrom?: string;
+
+  @ValidateIf(isDefined)
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  dueDateTo?: string;
 
   @ValidateIf(isDefined)
   @IsEnum(EmployeePlanCarryStatus)
@@ -224,6 +273,47 @@ export class UpdateEmployeeWeekPlanDto {
   @IsString()
   @MaxLength(2_000)
   collaborationText?: string | null;
+}
+
+export class UpdateEmployeeWorkItemDto {
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeeWorkKind)
+  workKind?: EmployeeWorkKind;
+
+  @Transform(trimString)
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  projectId?: string | null;
+
+  @Transform(trimString)
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  taskId?: string | null;
+
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  plannedCompletionAt?: string | null;
+
+  @Transform(toNumber)
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(10_000)
+  plannedHours?: number | null;
+
+  @Transform(toNumber)
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(10_000)
+  actualHours?: number | null;
+
+  @Transform(trimString)
+  @ValidateIf((_object, value) => value !== undefined && value !== null)
+  @IsString()
+  @MaxLength(2_000)
+  riskText?: string | null;
 }
 
 export class CancelEmployeeWeekPlanDto {

@@ -53,6 +53,10 @@ const IMPORT_TRANSACTION_OPTIONS = {
   timeout: 120_000,
 } as const;
 
+function normalizedEmployeeNameKey(displayName: string): string {
+  return displayName.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLowerCase();
+}
+
 const ERROR_HEADERS = [
   '员工姓名',
   '工作内容',
@@ -571,13 +575,60 @@ export class EmployeeImportsService {
         const rowsByNumber = new Map(rows.map((row) => [row.rowNumber, row]));
         const rowsById = new Map(rows.flatMap((row) => (row.id ? [[row.id, row] as const] : [])));
         const resolutionMap = new Map<number, EmployeeImportResolution>();
+        const requestedEmployeeNames = [
+          ...new Set(
+            input.rows.flatMap((resolution) =>
+              resolution.createEmployee ? [resolution.createEmployee.displayName] : [],
+            ),
+          ),
+        ];
+        const exactEmployeeProfiles =
+          requestedEmployeeNames.length === 0
+            ? []
+            : await tx.resourceProfile.findMany({
+                where: {
+                  archivedAt: null,
+                  employmentStatus: { not: EmploymentStatus.LEFT },
+                  displayName: { in: requestedEmployeeNames },
+                },
+                select: { id: true, displayName: true },
+              });
+        const exactEmployeeIdsByName = new Map<string, Set<string>>();
+        for (const profile of exactEmployeeProfiles) {
+          const employeeNameKey = normalizedEmployeeNameKey(profile.displayName);
+          const ids = exactEmployeeIdsByName.get(employeeNameKey) ?? new Set<string>();
+          ids.add(profile.id);
+          exactEmployeeIdsByName.set(employeeNameKey, ids);
+        }
+        const requestedEmployeeNameKeys = new Set(
+          requestedEmployeeNames.map(normalizedEmployeeNameKey),
+        );
+        for (const row of rows) {
+          if (!row.resolvedEmployeeId || !this.isNormalizedRow(row.normalizedValues)) {
+            continue;
+          }
+          const employeeNameKey = normalizedEmployeeNameKey(row.normalizedValues.employeeName);
+          if (!requestedEmployeeNameKeys.has(employeeNameKey)) continue;
+          const ids = exactEmployeeIdsByName.get(employeeNameKey) ?? new Set<string>();
+          ids.add(row.resolvedEmployeeId);
+          exactEmployeeIdsByName.set(employeeNameKey, ids);
+        }
+        const reusableEmployeeIdsByName = new Map<string, string>();
+        for (const [employeeNameKey, ids] of exactEmployeeIdsByName) {
+          if (ids.size > 1) {
+            throw this.resolutionInvalid(
+              'Created employee displayName matches multiple active employee profiles',
+            );
+          }
+          const employeeId = ids.values().next().value;
+          if (employeeId) reusableEmployeeIdsByName.set(employeeNameKey, employeeId);
+        }
+        const createdEmployeeNameKeys = new Set<string>();
         const changedRows: NormalizedEmployeeWorkbookRow[] = [];
         for (const resolution of input.rows) {
           const byId = resolution.rowId ? rowsById.get(resolution.rowId) : undefined;
           const byNumber =
-            resolution.rowNumber === undefined
-              ? undefined
-              : rowsByNumber.get(resolution.rowNumber);
+            resolution.rowNumber === undefined ? undefined : rowsByNumber.get(resolution.rowNumber);
           if (byId && byNumber && byId.id !== byNumber.id) {
             throw this.resolutionInvalid('rowId and rowNumber identify different staged rows');
           }
@@ -606,15 +657,28 @@ export class EmployeeImportsService {
                 'Created employee displayName must match the workbook employee name',
               );
             }
-            const created = await tx.resourceProfile.create({
-              data: {
-                displayName: resolution.createEmployee.displayName,
-                department: resolution.createEmployee.department,
-                workDirection: resolution.createEmployee.workDirection,
-              },
-              select: { id: true },
-            });
-            employeeId = created.id;
+            const employeeNameKey = normalizedEmployeeNameKey(
+              resolution.createEmployee.displayName,
+            );
+            employeeId = reusableEmployeeIdsByName.get(employeeNameKey);
+            if (!employeeId) {
+              const created = await tx.resourceProfile.create({
+                data: {
+                  displayName: resolution.createEmployee.displayName,
+                  department: resolution.createEmployee.department,
+                  workDirection: resolution.createEmployee.workDirection,
+                },
+                select: { id: true },
+              });
+              employeeId = created.id;
+              reusableEmployeeIdsByName.set(employeeNameKey, employeeId);
+              createdEmployeeNameKeys.add(employeeNameKey);
+            }
+          }
+          if (!employeeId && !resolution.createEmployee) {
+            employeeId = reusableEmployeeIdsByName.get(
+              normalizedEmployeeNameKey(staged.normalizedValues.employeeName),
+            );
           }
           if (resolution.updateEmployeeProfile) {
             if (!employeeId || !('sourceSection' in staged.normalizedValues)) {
@@ -653,7 +717,11 @@ export class EmployeeImportsService {
               actualHours:
                 resolution.actualHours !== undefined ? resolution.actualHours : staged.actualHours,
               profileAction: resolution.createEmployee
-                ? 'CREATE'
+                ? createdEmployeeNameKeys.has(
+                    normalizedEmployeeNameKey(resolution.createEmployee.displayName),
+                  )
+                  ? 'CREATE'
+                  : 'KEEP'
                 : resolution.updateEmployeeProfile
                   ? 'UPDATE'
                   : (staged.profileAction ?? undefined),
@@ -886,11 +954,7 @@ export class EmployeeImportsService {
   }
 
   private sourceMetadata(source: EmployeeWorkbookSourceRow) {
-    if (
-      !source.sourceSheetName ||
-      !source.sourceSection ||
-      source.sourceRowNumber === undefined
-    ) {
+    if (!source.sourceSheetName || !source.sourceSection || source.sourceRowNumber === undefined) {
       return {};
     }
     return {
@@ -995,11 +1059,9 @@ export class EmployeeImportsService {
       resolvedProjectId: validated.resolvedProjectId,
       resolvedTaskId: validated.resolvedTaskId,
       keepUnlinked: validated.keepUnlinked,
-      sourceSheetName:
-        'sourceSheetName' in validated.row ? validated.row.sourceSheetName : null,
+      sourceSheetName: 'sourceSheetName' in validated.row ? validated.row.sourceSheetName : null,
       sourceSection: 'sourceSection' in validated.row ? validated.row.sourceSection : null,
-      sourceRowNumber:
-        'sourceRowNumber' in validated.row ? validated.row.sourceRowNumber : null,
+      sourceRowNumber: 'sourceRowNumber' in validated.row ? validated.row.sourceRowNumber : null,
       sourceKey:
         'sourceSection' in validated.row
           ? `${validated.row.sourceSheetName}:${validated.row.sourceSection}:${validated.row.sourceRowNumber}`
@@ -1157,9 +1219,7 @@ export class EmployeeImportsService {
   private isNormalizedRow(
     value: NormalizedEmployeeWorkbookRow | Record<string, never>,
   ): value is NormalizedEmployeeWorkbookRow {
-    return (
-      isNormalizedEmployeeImportRow(value) || isNormalizedEmployeeWeekPlanImportRow(value)
-    );
+    return isNormalizedEmployeeImportRow(value) || isNormalizedEmployeeWeekPlanImportRow(value);
   }
 
   private async requireBatch(id: string) {

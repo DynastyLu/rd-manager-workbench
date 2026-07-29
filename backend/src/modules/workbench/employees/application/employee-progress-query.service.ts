@@ -2,9 +2,11 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import {
   EmployeeImportRowStatus,
   EmployeePlanCarryStatus,
+  EmployeePlanPriority,
   EmployeeProgressPeriod,
   EmployeeWorkImportBatch,
   EmployeeWorkImportStatus,
+  EmployeeWorkKind,
   EmployeeWorkStatus,
   Prisma,
 } from '@prisma/client';
@@ -13,6 +15,7 @@ import { StoragePort } from '../../../../infrastructure/storage/storage.port';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { isEmployeeImportBatchExpired } from './employee-import-lifecycle';
+import type { EmployeeProgressMetrics } from './employee-progress-snapshot.service';
 
 const DAY_MS = 86_400_000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -37,6 +40,12 @@ export interface EmployeeProgressQuery {
 
 export interface EmployeeWorkItemsQuery extends EmployeeProgressQuery {
   employeeId?: string;
+  workDirection?: string;
+  workKind?: EmployeeWorkKind;
+  taskId?: string;
+  dueDateFrom?: string;
+  dueDateTo?: string;
+  riskOnly?: boolean;
   page?: number;
   pageSize?: number;
 }
@@ -47,6 +56,10 @@ export interface EmployeeWeekPlansQuery {
   employeeId?: string;
   department?: string;
   projectId?: string;
+  workDirection?: string;
+  priority?: EmployeePlanPriority;
+  dueDateFrom?: string;
+  dueDateTo?: string;
   carryStatus?: EmployeePlanCarryStatus;
   page?: number;
   pageSize?: number;
@@ -279,7 +292,13 @@ export class EmployeeProgressQueryService {
       const period = this.periodBounds(query.periodType, query.periodStart);
       const sqlWhere = this.dashboardSqlWhere(query, period);
       const [facts, employeeRows, projectRows] = await Promise.all([
-        this.dashboardFactsFrom(tx, query, period, sqlWhere),
+        this.dashboardFactsFrom(
+          tx,
+          query,
+          period,
+          sqlWhere,
+          !query.department && !query.projectId && !query.status ? 'TEAM' : undefined,
+        ),
         this.employeeSummaryRows(tx, sqlWhere),
         this.projectSummaryRows(tx, sqlWhere),
       ]);
@@ -327,6 +346,7 @@ export class EmployeeProgressQueryService {
       return {
         period: this.publicPeriod(period),
         metrics: facts.metrics,
+        ...(facts.nextPlanMetrics ? { nextPlanMetrics: facts.nextPlanMetrics } : {}),
         sourceBatchIds: facts.sourceBatchIds,
         employees: this.boundedRows(employees, employeeRows, GROUP_SUMMARY_LIMIT),
         projects: this.boundedRows(projects, projectRows, GROUP_SUMMARY_LIMIT),
@@ -409,10 +429,13 @@ export class EmployeeProgressQueryService {
       ...(period.type === EmployeeProgressPeriod.WEEK ? { periodStartAt: period.startAt } : {}),
       ...(query.employeeId ? { employeeId: query.employeeId } : {}),
       ...(query.projectId ? { projectId: query.projectId } : {}),
+      ...(query.priority ? { priority: query.priority } : {}),
+      ...this.dueDateWhere(query.dueDateFrom, query.dueDateTo),
       ...(query.carryStatus ? { carryStatus: query.carryStatus } : {}),
       employee: {
         archivedAt: null,
         ...(query.department ? { department: query.department } : {}),
+        ...(query.workDirection ? { workDirection: query.workDirection } : {}),
       },
       importBatch: {
         status: EmployeeWorkImportStatus.COMPLETED,
@@ -488,9 +511,16 @@ export class EmployeeProgressQueryService {
             managerName: true,
             employmentStatus: true,
             weeklyCapacityHours: true,
+            workDirection: true,
           },
         }),
-        this.dashboardFactsFrom(tx, scopedQuery, period, sqlWhere),
+        this.dashboardFactsFrom(
+          tx,
+          scopedQuery,
+          period,
+          sqlWhere,
+          !query.department && !query.projectId && !query.status ? `EMPLOYEE:${id}` : undefined,
+        ),
         this.projectSummaryRows(tx, sqlWhere),
       ]);
       if (!employee) {
@@ -528,6 +558,7 @@ export class EmployeeProgressQueryService {
         employee,
         period: this.publicPeriod(period),
         metrics: facts.metrics,
+        ...(facts.nextPlanMetrics ? { nextPlanMetrics: facts.nextPlanMetrics } : {}),
         sourceBatchIds: facts.sourceBatchIds,
         projects: this.boundedRows(projects, projectRows, GROUP_SUMMARY_LIMIT),
         risks: this.boundedWithTotal(facts.risks, RISK_SUMMARY_LIMIT, facts.metrics.riskCount),
@@ -553,7 +584,13 @@ export class EmployeeProgressQueryService {
           where: { id, archivedAt: null },
           select: { id: true, code: true, name: true, status: true },
         }),
-        this.dashboardFactsFrom(tx, scopedQuery, period, sqlWhere),
+        this.dashboardFactsFrom(
+          tx,
+          scopedQuery,
+          period,
+          sqlWhere,
+          !query.department && !query.status ? `PROJECT:${id}` : undefined,
+        ),
         this.employeeSummaryRows(tx, sqlWhere),
       ]);
       if (!project) {
@@ -594,6 +631,7 @@ export class EmployeeProgressQueryService {
         project,
         period: this.publicPeriod(period),
         metrics: facts.metrics,
+        ...(facts.nextPlanMetrics ? { nextPlanMetrics: facts.nextPlanMetrics } : {}),
         sourceBatchIds: facts.sourceBatchIds,
         employees: this.boundedRows(employees, employeeRows, GROUP_SUMMARY_LIMIT),
         risks: this.boundedWithTotal(facts.risks, RISK_SUMMARY_LIMIT, facts.metrics.riskCount),
@@ -675,6 +713,7 @@ export class EmployeeProgressQueryService {
           take: rowsPageSize,
           include: {
             workItem: { select: { id: true, archivedAt: true } },
+            weekPlanItem: { select: { id: true, archivedAt: true } },
           },
         }),
         tx.employeeWorkImportRow.count({ where: rowWhere }),
@@ -698,14 +737,28 @@ export class EmployeeProgressQueryService {
         errors: row.errors,
         rawValues: row.rawValues,
         normalizedValues: row.normalizedValues,
+        sourceSheetName: row.sourceSheetName,
+        sourceSection: row.sourceSection,
+        sourceRowNumber: row.sourceRowNumber,
+        sourceKey: row.sourceKey,
         resolvedEmployeeId: row.resolvedEmployeeId,
         resolvedProjectId: row.resolvedProjectId,
         resolvedTaskId: row.resolvedTaskId,
+        workKind: row.workKind,
+        plannedHours: this.decimalNumber(row.plannedHours),
+        actualHours: this.decimalNumber(row.actualHours),
+        profileAction: row.profileAction,
+        riskDecision: row.riskDecision,
+        riskText: row.riskText,
         keepUnlinked: row.keepUnlinked,
         workItemId: row.workItem?.id ?? null,
+        weekPlanItemId: row.weekPlanItem?.id ?? null,
         links: {
           ...(row.workItem?.id && row.workItem.archivedAt === null
             ? { workItem: `/employee-work-items/${row.workItem.id}` }
+            : {}),
+          ...(row.weekPlanItem?.id && row.weekPlanItem.archivedAt === null
+            ? { weekPlanItem: `/employee-week-plans/${row.weekPlanItem.id}` }
             : {}),
           sourceBatch: `/employee-work-imports/${id}`,
         },
@@ -719,8 +772,9 @@ export class EmployeeProgressQueryService {
     query: EmployeeWorkItemsQuery,
     period: PeriodBounds,
     sqlWhere: Prisma.Sql,
+    snapshotScopeKey?: string,
   ) {
-    const [batches, metricsRows, riskIdRows] = await Promise.all([
+    const [batches, metricsRows, riskIdRows, snapshot] = await Promise.all([
       this.currentBatches(tx, period),
       tx.$queryRaw<RawMetricsRow[]>(Prisma.sql`
         /* employee_progress:metrics */
@@ -737,12 +791,33 @@ export class EmployeeProgressQueryService {
         ORDER BY wi.period_start_at ASC, wi.created_at ASC, wi.id ASC
         LIMIT ${RISK_SUMMARY_LIMIT}
       `),
+      snapshotScopeKey
+        ? tx.employeeProgressSnapshot.findFirst({
+            where: {
+              scopeKey: snapshotScopeKey,
+              periodType: period.type,
+              periodStartAt: period.startAt,
+              archivedAt: null,
+            },
+            orderBy: [{ version: 'desc' }, { generatedAt: 'desc' }, { id: 'desc' }],
+            select: { metrics: true },
+          })
+        : Promise.resolve(null),
     ]);
     const missingWeeks = this.missingWeeks(
       period,
       batches.map(({ periodStartAt }) => periodStartAt),
     );
-    const metrics = this.metricsFromRaw(metricsRows[0], missingWeeks);
+    const basicMetrics = this.metricsFromRaw(metricsRows[0], missingWeeks);
+    const snapshotMetrics = this.snapshotMetrics(snapshot?.metrics);
+    const metrics = snapshotMetrics
+      ? {
+          ...basicMetrics,
+          ...snapshotMetrics,
+          dataComplete: basicMetrics.dataComplete,
+          missingWeeks: basicMetrics.missingWeeks,
+        }
+      : basicMetrics;
     const riskIds = riskIdRows.map(({ id }) => id);
     const risks =
       riskIds.length === 0
@@ -763,6 +838,7 @@ export class EmployeeProgressQueryService {
       risks,
       missingWeeks,
       sourceBatchIds: batches.map(({ id }) => id),
+      nextPlanMetrics: snapshotMetrics?.nextPlanMetrics,
     };
   }
 
@@ -990,10 +1066,26 @@ export class EmployeeProgressQueryService {
       ...(period.type === EmployeeProgressPeriod.WEEK ? { periodStartAt: period.startAt } : {}),
       ...(query.employeeId ? { employeeId: query.employeeId } : {}),
       ...(query.projectId ? { projectId: query.projectId } : {}),
+      ...(query.taskId ? { taskId: query.taskId } : {}),
+      ...(query.workKind ? { workKind: query.workKind } : {}),
+      ...this.dueDateWhere(query.dueDateFrom, query.dueDateTo),
       ...(query.status ? { status: query.status } : {}),
+      ...(query.riskOnly
+        ? {
+            OR: [
+              { riskText: { not: null } },
+              {
+                status: {
+                  in: [EmployeeWorkStatus.AT_RISK, EmployeeWorkStatus.BLOCKED],
+                },
+              },
+            ],
+          }
+        : {}),
       employee: {
         archivedAt: null,
         ...(query.department ? { department: query.department } : {}),
+        ...(query.workDirection ? { workDirection: query.workDirection } : {}),
       },
       importBatch: {
         ...this.currentBatchWhere(period),
@@ -1275,6 +1367,39 @@ export class EmployeeProgressQueryService {
       dataComplete: missingWeeks.length === 0,
       missingWeeks,
     };
+  }
+
+  private snapshotMetrics(value: Prisma.JsonValue | undefined): EmployeeProgressMetrics | null {
+    if (!value || Array.isArray(value) || typeof value !== 'object') return null;
+    const candidate = value as unknown as Partial<EmployeeProgressMetrics>;
+    if (
+      typeof candidate.workItemCount !== 'number' ||
+      typeof candidate.overdueCount !== 'number' ||
+      !candidate.nextPlanMetrics ||
+      typeof candidate.nextPlanMetrics.planCount !== 'number'
+    ) {
+      return null;
+    }
+    return candidate as EmployeeProgressMetrics;
+  }
+
+  private dueDateWhere(
+    fromValue?: string,
+    toValue?: string,
+  ): { plannedCompletionAt?: { gte?: Date; lte?: Date } } {
+    const from = fromValue ? this.strictDateOnly(fromValue, 'dueDateFrom') : undefined;
+    const to = toValue ? this.strictDateOnly(toValue, 'dueDateTo') : undefined;
+    if (from && to && from > to) {
+      throw this.invalidPeriod('dueDateFrom must not be after dueDateTo');
+    }
+    return from || to
+      ? {
+          plannedCompletionAt: {
+            ...(from ? { gte: from } : {}),
+            ...(to ? { lte: to } : {}),
+          },
+        }
+      : {};
   }
 
   private periodBounds(type: EmployeeProgressPeriod, startValue: string): PeriodBounds {

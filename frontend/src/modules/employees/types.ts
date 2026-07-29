@@ -101,6 +101,12 @@ export interface ProgressFilters {
 
 export interface EmployeeWorkItemFilters extends ProgressFilters {
   employeeId?: string
+  workDirection?: string
+  workKind?: EmployeeWorkKind
+  taskId?: string
+  dueDateFrom?: string
+  dueDateTo?: string
+  riskOnly?: boolean
   page?: number
   pageSize?: number
 }
@@ -283,6 +289,10 @@ export interface EmployeeWeekPlanFilters {
   employeeId?: string
   department?: string
   projectId?: string
+  workDirection?: string
+  priority?: EmployeePlanPriority
+  dueDateFrom?: string
+  dueDateTo?: string
   carryStatus?: EmployeePlanCarryStatus
   page?: number
   pageSize?: number
@@ -302,6 +312,16 @@ export interface UpdateEmployeeWeekPlanInput {
   plannedCompletionAt?: string | null
   priority?: EmployeePlanPriority
   collaborationText?: string | null
+}
+
+export interface UpdateEmployeeWorkItemInput {
+  workKind?: EmployeeWorkKind
+  projectId?: string | null
+  taskId?: string | null
+  plannedCompletionAt?: string | null
+  plannedHours?: number | null
+  actualHours?: number | null
+  riskText?: string | null
 }
 
 export interface EmployeeWeekPlanTaskResult {
@@ -501,13 +521,16 @@ export interface EmployeeWorkImportRow {
   workKind?: EmployeeWorkKind | null
   plannedHours?: number | null
   actualHours?: number | null
+  profileAction?: 'KEEP' | 'CREATE' | 'UPDATE' | null
   riskCandidate?: boolean
   riskDecision?: EmployeeRiskDecision | null
   riskText?: string | null
   keepUnlinked: boolean
   workItemId: string | null
+  weekPlanItemId?: string | null
   links: {
     workItem?: string
+    weekPlanItem?: string
     sourceBatch: string
   }
 }

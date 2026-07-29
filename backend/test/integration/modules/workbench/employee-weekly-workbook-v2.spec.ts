@@ -15,6 +15,7 @@ import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
 import { EmployeeWorkbookService } from '../../../../src/modules/workbench/employees/application/employee-workbook.service';
+import { ErrorCodes } from '../../../../src/shared/errors/error-codes';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
 
@@ -123,6 +124,10 @@ describe('Employee weekly workbook V2 integration', () => {
         ...(errorStorageKey ? [storage.delete(errorStorageKey).catch(() => undefined)] : []),
       ]),
     );
+    for (const { id } of batches) {
+      await storage.delete(`employee-imports/${id}/errors`).catch(() => undefined);
+      await storage.delete(`employee-imports/${id}`).catch(() => undefined);
+    }
   }
 
   async function workbookBuffer(): Promise<Buffer> {
@@ -557,22 +562,19 @@ describe('Employee weekly workbook V2 integration', () => {
     const weekPlanByTitle = new Map(weekPlans.map((item) => [item.title, item] as const));
     const matchedPlan = weekPlanByTitle.get(matchedPlanTitle)!;
     const cancelledPlan = weekPlanByTitle.get(cancelledPlanTitle)!;
-    for (const alreadyMatched of [false, true]) {
-      await request(app.getHttpServer())
-        .post(`/api/employee-week-plans/${matchedPlan.id}/match`)
-        .send({ workItemId: workItemByTitle.get(riskTitle)!.id })
-        .expect(201)
-        .expect(({ body }) => {
-          expect(body.data).toMatchObject({
-            alreadyMatched,
-            plan: {
-              id: matchedPlan.id,
-              carryStatus: EmployeePlanCarryStatus.MATCHED,
-              matchedWorkItemId: workItemByTitle.get(riskTitle)!.id,
-            },
-          });
+    await request(app.getHttpServer())
+      .post(`/api/employee-week-plans/${matchedPlan.id}/match`)
+      .send({ workItemId: workItemByTitle.get(riskTitle)!.id })
+      .expect(422)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          success: false,
+          error: {
+            code: ErrorCodes.VALIDATION_ERROR,
+            message: 'Plan and matched work item must belong to the same reporting week',
+          },
         });
-    }
+      });
     for (const alreadyCancelled of [false, true]) {
       await request(app.getHttpServer())
         .post(`/api/employee-week-plans/${cancelledPlan.id}/cancel`)
@@ -676,5 +678,97 @@ describe('Employee weekly workbook V2 integration', () => {
     );
     expect(dateOnly(restoredWorkItems[0].periodStartAt)).toBe(periodStartText);
     expect(dateOnly(restoredWeekPlans[0].periodStartAt)).toBe(nextPeriodStartText);
+  });
+
+  it('creates one profile when current work and next plan resolve the same missing employee', async () => {
+    const duplicateEmployeeName = `待建档-${suffix}`;
+    const duplicateDepartment = `${prefix}-待建档部门`;
+    const duplicatePeriodStart = new Date(periodStart.getTime() + 28 * DAY_MS);
+    const duplicatePeriodStartText = dateOnly(duplicatePeriodStart);
+    const workbookService = app.get(EmployeeWorkbookService);
+    const template = await workbookService.template({
+      periodStart: duplicatePeriodStartText,
+      employees: [
+        {
+          employeeName: duplicateEmployeeName,
+          department: duplicateDepartment,
+          workDirection: `${prefix}-待建档方向`,
+        },
+      ],
+    });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(template as unknown as Parameters<typeof workbook.xlsx.load>[0], {
+      ignoreNodes: ['dataValidations'],
+    });
+    const sheet = workbook.getWorksheet(duplicateEmployeeName);
+    if (!sheet) throw new Error('Duplicate employee fixture worksheet is missing');
+    sheet.getRow(7).values = [
+      1,
+      `${prefix}-待建档本周工作`,
+      `${prefix}-本周交付`,
+      new Date(duplicatePeriodStart.getTime() + 4 * DAY_MS),
+      '已完成',
+      1,
+      `${prefix}-本周完成`,
+      null,
+    ];
+    sheet.getCell('F7').numFmt = '0%';
+    sheet.getRow(20).values = [
+      1,
+      `${prefix}-待建档下周计划`,
+      `${prefix}-下周交付`,
+      new Date(duplicatePeriodStart.getTime() + 10 * DAY_MS),
+      '中',
+      null,
+      `${prefix}-下周计划说明`,
+      null,
+    ];
+    const source = Buffer.from(await workbook.xlsx.writeBuffer());
+    const uploaded = await request(app.getHttpServer())
+      .post('/api/employee-work-imports')
+      .attach('file', source, {
+        filename: `${prefix}-duplicate-profile-weekly.xlsx`,
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      })
+      .expect(201);
+    const batchId = uploaded.body.data.id as string;
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${batchId}/preview`)
+      .send({})
+      .expect(200);
+    const detail = await request(app.getHttpServer())
+      .get(`/api/employee-work-imports/${batchId}`)
+      .query({ rowsPageSize: 20 })
+      .expect(200);
+    const stagedRows = detail.body.data.rows as Array<{ id: string }>;
+    expect(stagedRows).toHaveLength(2);
+
+    await request(app.getHttpServer())
+      .patch(`/api/employee-work-imports/${batchId}/resolutions`)
+      .send({
+        rows: stagedRows.map(({ id }, index) => ({
+          rowId: id,
+          ...(index === 0
+            ? {
+                createEmployee: {
+                  displayName: duplicateEmployeeName,
+                  department: duplicateDepartment,
+                  workDirection: `${prefix}-待建档方向`,
+                },
+              }
+            : {}),
+          workKind: EmployeeWorkKind.NON_PROJECT,
+        })),
+      })
+      .expect(200);
+
+    await expect(
+      prisma.resourceProfile.count({
+        where: {
+          archivedAt: null,
+          displayName: duplicateEmployeeName,
+        },
+      }),
+    ).resolves.toBe(1);
   });
 });

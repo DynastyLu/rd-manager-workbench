@@ -372,6 +372,7 @@ enum ReminderSourceType {
   TASK
   CALENDAR_EVENT
   MEETING
+  EMPLOYEE_WEEK_PLAN
 
   @@schema("app")
 }

@@ -13,6 +13,8 @@ import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { AuditLogService } from '../../governance/application/audit-log.service';
 import { TasksService } from '../../tasks/application/tasks.service';
+import { acquireReminderSchedulingLock } from '../../notifications/application/reminder-scheduling-lock';
+import { EmployeeProgressSnapshotService } from './employee-progress-snapshot.service';
 
 const ACTIVE_PLAN_INCLUDE = {
   employee: {
@@ -75,6 +77,7 @@ export class EmployeeWeekPlansService {
     private readonly prisma: PlatformPrismaService,
     private readonly tasks: TasksService,
     private readonly audit: AuditLogService,
+    private readonly snapshots: EmployeeProgressSnapshotService,
   ) {}
 
   async get(planId: string) {
@@ -87,7 +90,8 @@ export class EmployeeWeekPlansService {
   }
 
   async updateSystemFields(planId: string, input: UpdateEmployeeWeekPlanSystemFieldsInput) {
-    return this.prisma.$transaction(async (tx) => {
+    const mutation = await this.prisma.$transaction(async (tx) => {
+      await acquireReminderSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       const workKind = input.workKind ?? plan.workKind;
@@ -120,8 +124,9 @@ export class EmployeeWeekPlansService {
         },
         tx,
       );
-      return updated;
+      return { result: updated, importBatchId: plan.importBatchId };
     });
+    return this.withSnapshotResult(mutation);
   }
 
   async cancel(planId: string, reason: string) {
@@ -130,7 +135,8 @@ export class EmployeeWeekPlansService {
       throw this.invalid('Cancellation reason must not be empty');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const mutation = await this.prisma.$transaction(async (tx) => {
+      await acquireReminderSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       if (plan.carryStatus === EmployeePlanCarryStatus.CANCELLED) {
@@ -142,7 +148,10 @@ export class EmployeeWeekPlansService {
           'ALREADY_CANCELLED',
           plan.carryStatus,
         );
-        return { plan, alreadyCancelled: true };
+        return {
+          result: { plan, alreadyCancelled: true },
+          importBatchId: plan.importBatchId,
+        };
       }
 
       const updated = await tx.employeeWeekPlanItem.update({
@@ -162,12 +171,17 @@ export class EmployeeWeekPlansService {
         EmployeePlanCarryStatus.CANCELLED,
         plan.carryStatus,
       );
-      return { plan: updated, alreadyCancelled: false };
+      return {
+        result: { plan: updated, alreadyCancelled: false },
+        importBatchId: plan.importBatchId,
+      };
     });
+    return this.withSnapshotResult(mutation);
   }
 
   async match(planId: string, workItemId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const mutation = await this.prisma.$transaction(async (tx) => {
+      await acquireReminderSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       if (
@@ -182,7 +196,10 @@ export class EmployeeWeekPlansService {
           'ALREADY_MATCHED',
           plan.carryStatus,
         );
-        return { plan, alreadyMatched: true };
+        return {
+          result: { plan, alreadyMatched: true },
+          importBatchId: plan.importBatchId,
+        };
       }
       if (plan.carryStatus !== EmployeePlanCarryStatus.PLANNED) {
         throw this.invalid('Only a planned employee week plan can be matched', HttpStatus.CONFLICT);
@@ -200,13 +217,16 @@ export class EmployeeWeekPlansService {
             archivedAt: null,
           },
         },
-        select: { id: true, employeeId: true },
+        select: { id: true, employeeId: true, periodStartAt: true },
       });
       if (!workItem) {
         throw this.invalid('Matched employee work item must be active', HttpStatus.NOT_FOUND);
       }
       if (workItem.employeeId !== plan.employeeId) {
         throw this.invalid('Plan and matched work item must belong to the same employee');
+      }
+      if (workItem.periodStartAt.getTime() !== plan.periodStartAt.getTime()) {
+        throw this.invalid('Plan and matched work item must belong to the same reporting week');
       }
       const existingMatch = await tx.employeeWeekPlanItem.findUnique({
         where: { matchedWorkItemId: workItemId },
@@ -236,12 +256,17 @@ export class EmployeeWeekPlansService {
         EmployeePlanCarryStatus.MATCHED,
         plan.carryStatus,
       );
-      return { plan: updated, alreadyMatched: false };
+      return {
+        result: { plan: updated, alreadyMatched: false },
+        importBatchId: plan.importBatchId,
+      };
     });
+    return this.withSnapshotResult(mutation);
   }
 
   async unmatch(planId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const mutation = await this.prisma.$transaction(async (tx) => {
+      await acquireReminderSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       if (plan.carryStatus === EmployeePlanCarryStatus.PLANNED) {
@@ -253,7 +278,10 @@ export class EmployeeWeekPlansService {
           'ALREADY_PLANNED',
           plan.carryStatus,
         );
-        return { plan, alreadyPlanned: true };
+        return {
+          result: { plan, alreadyPlanned: true },
+          importBatchId: plan.importBatchId,
+        };
       }
       if (plan.carryStatus !== EmployeePlanCarryStatus.MATCHED) {
         throw this.invalid(
@@ -279,12 +307,17 @@ export class EmployeeWeekPlansService {
         EmployeePlanCarryStatus.PLANNED,
         plan.carryStatus,
       );
-      return { plan: updated, alreadyPlanned: false };
+      return {
+        result: { plan: updated, alreadyPlanned: false },
+        importBatchId: plan.importBatchId,
+      };
     });
+    return this.withSnapshotResult(mutation);
   }
 
   async convertToTask(planId: string) {
-    return this.prisma.$transaction(async (tx) => {
+    const mutation = await this.prisma.$transaction(async (tx) => {
+      await acquireReminderSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       if (plan.taskId) {
@@ -306,7 +339,10 @@ export class EmployeeWeekPlansService {
           'ALREADY_EXISTS',
           plan.carryStatus,
         );
-        return { plan, task, alreadyExists: true };
+        return {
+          result: { plan, task, alreadyExists: true },
+          importBatchId: plan.importBatchId,
+        };
       }
       if (plan.workKind !== EmployeeWorkKind.PROJECT || !plan.projectId) {
         throw this.invalid('Only a project employee week plan can be converted to a task');
@@ -338,8 +374,12 @@ export class EmployeeWeekPlansService {
         'CREATED',
         plan.carryStatus,
       );
-      return { plan: updated, task, alreadyExists: false };
+      return {
+        result: { plan: updated, task, alreadyExists: false },
+        importBatchId: plan.importBatchId,
+      };
     });
+    return this.withSnapshotResult(mutation);
   }
 
   private async findActivePlan(tx: Prisma.TransactionClient, planId: string) {
@@ -483,6 +523,19 @@ export class EmployeeWeekPlansService {
       },
       tx,
     );
+  }
+
+  private async withSnapshotResult<T extends object>(mutation: {
+    result: T;
+    importBatchId: string;
+  }) {
+    const snapshot = await this.snapshots.rebuildBatch(mutation.importBatchId);
+    return {
+      ...mutation.result,
+      snapshotStatus: snapshot.batch.snapshotStatus,
+      ...(snapshot.batch.snapshotError ? { snapshotError: snapshot.batch.snapshotError } : {}),
+      ...(snapshot.warning ? { snapshotWarning: snapshot.warning } : {}),
+    };
   }
 
   private invalid(message: string, statusCode: HttpStatus = HttpStatus.UNPROCESSABLE_ENTITY) {

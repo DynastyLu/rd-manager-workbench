@@ -2,16 +2,24 @@ import { useState } from 'react';
 import type { ChunkCitation, KnowledgeSession } from '../types';
 import { KnowledgeChatPanel } from './KnowledgeChatPanel';
 import { KnowledgeCitationDrawer } from './KnowledgeCitationDrawer';
+import { KnowledgeSessionHistory } from './KnowledgeSessionHistory';
 import { KnowledgeSessionList } from './KnowledgeSessionList';
 
 interface Props {
   sessionId: string | null;
   onSessionChange: (id: string | null) => void;
   projectId?: string;
+  onNavigate?: (tab: 'documents' | 'folders') => void;
 }
 
-export function KnowledgeAssistantWorkspace({ sessionId, onSessionChange, projectId }: Props) {
+export function KnowledgeAssistantWorkspace({
+  sessionId,
+  onSessionChange,
+  projectId,
+  onNavigate,
+}: Props) {
   const [citation, setCitation] = useState<ChunkCitation | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const openDocument = (source: ChunkCitation) => {
     const query = new URLSearchParams({
@@ -43,15 +51,29 @@ export function KnowledgeAssistantWorkspace({ sessionId, onSessionChange, projec
         }}
         onNew={() => {
           setCitation(null);
+          setHistoryOpen(false);
           onSessionChange(null);
         }}
+        onOpenHistory={() => setHistoryOpen(true)}
+        onNavigate={onNavigate}
       />
-      <KnowledgeChatPanel
-        sessionId={sessionId}
-        onSessionCreated={onSessionChange}
-        onCitationSelect={setCitation}
-        projectId={projectId}
-      />
+      {historyOpen ? (
+        <KnowledgeSessionHistory
+          onClose={() => setHistoryOpen(false)}
+          onSelect={(session) => {
+            setCitation(null);
+            setHistoryOpen(false);
+            onSessionChange(session.id);
+          }}
+        />
+      ) : (
+        <KnowledgeChatPanel
+          sessionId={sessionId}
+          onSessionCreated={onSessionChange}
+          onCitationSelect={setCitation}
+          projectId={projectId}
+        />
+      )}
       <KnowledgeCitationDrawer
         citation={citation}
         onClose={() => setCitation(null)}

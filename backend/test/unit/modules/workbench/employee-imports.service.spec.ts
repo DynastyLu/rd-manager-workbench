@@ -163,6 +163,7 @@ function createService(options: {
       update: jest.fn().mockImplementation(({ data }) => batch(data)),
     },
     resourceProfile: {
+      findMany: jest.fn().mockResolvedValue([]),
       create: jest.fn().mockImplementation(({ data }) => ({ id: 'employee-created', ...data })),
       update: jest.fn().mockImplementation(({ data }) => ({ id: 'employee-1', ...data })),
     },
@@ -529,6 +530,313 @@ describe('EmployeeImportsService', () => {
     expect(updateSql).toContain('"work_kind"');
     expect(updateSql).toContain('"planned_hours"');
     expect(updateSql).toContain('"risk_decision"');
+  });
+
+  it('creates one employee profile for repeated V2 rows with the same normalized name', async () => {
+    const current = normalizedV2Current();
+    const plan = normalizedV2Plan();
+    const stagedRows = [
+      {
+        ...restorableStoredRow(2),
+        id: 'row-v2-current',
+        normalizedValues: current,
+        sourceSheetName: current.sourceSheetName,
+        sourceSection: current.sourceSection,
+        sourceRowNumber: current.sourceRowNumber,
+        sourceKey: `${current.sourceSheetName}:${current.sourceSection}:${current.sourceRowNumber}`,
+        resolvedEmployeeId: null,
+        workKind: null,
+        plannedHours: null,
+        actualHours: null,
+        profileAction: 'KEEP',
+        riskDecision: 'KEEP',
+        riskText: current.riskText,
+      },
+      {
+        ...restorableStoredRow(3),
+        id: 'row-v2-plan',
+        normalizedValues: plan,
+        sourceSheetName: plan.sourceSheetName,
+        sourceSection: plan.sourceSection,
+        sourceRowNumber: plan.sourceRowNumber,
+        sourceKey: `${plan.sourceSheetName}:${plan.sourceSection}:${plan.sourceRowNumber}`,
+        resolvedEmployeeId: null,
+        workKind: null,
+        plannedHours: null,
+        actualHours: null,
+        profileAction: 'KEEP',
+        riskDecision: null,
+        riskText: null,
+      },
+    ];
+    const validRow = (
+      row: NormalizedEmployeeCurrentWorkRow | NormalizedEmployeeNextWeekPlanRow,
+    ) => ({
+      row,
+      status: EmployeeImportRowStatus.VALID,
+      errors: [],
+      warnings: [],
+      resolvedEmployeeId: 'employee-created',
+      resolvedProjectId: null,
+      resolvedTaskId: null,
+      keepUnlinked: false,
+      workKind: 'NON_PROJECT',
+      plannedHours: null,
+      actualHours: null,
+      profileAction: 'CREATE',
+      riskDecision: row.sourceSection === 'CURRENT_WORK' ? 'KEEP' : null,
+      riskText: row.sourceSection === 'CURRENT_WORK' ? row.riskText : null,
+    });
+    const dependencies = createService({
+      foundBatch: batch({
+        templateVersion: 2,
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: stagedRows,
+        totalRows: 2,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+      validation: [validRow(current), validRow(plan)],
+    });
+    dependencies.tx.$executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(2);
+
+    await dependencies.service.resolve('batch-1', {
+      rows: stagedRows.map((row, index) => ({
+        rowId: row.id,
+        ...(index === 0
+          ? {
+              createEmployee: {
+                displayName: '匿名员工',
+                department: '研发部',
+                workDirection: '平台工程',
+              },
+            }
+          : {}),
+        workKind: 'NON_PROJECT',
+        projectId: null,
+        taskId: null,
+        riskDecision: row.sourceSection === 'CURRENT_WORK' ? 'KEEP' : undefined,
+      })),
+    });
+
+    expect(dependencies.tx.resourceProfile.create).toHaveBeenCalledTimes(1);
+    const resolutions = dependencies.validator.validate.mock.calls[0][1] as Map<
+      number,
+      { employeeId?: string }
+    >;
+    expect(resolutions.get(2)?.employeeId).toBe('employee-created');
+    expect(resolutions.get(3)?.employeeId).toBe('employee-created');
+  });
+
+  it('reuses one exact active employee match instead of creating a duplicate profile', async () => {
+    const current = normalizedV2Current();
+    const staged = {
+      ...restorableStoredRow(2),
+      id: 'row-v2-current',
+      normalizedValues: current,
+      sourceSheetName: current.sourceSheetName,
+      sourceSection: current.sourceSection,
+      sourceRowNumber: current.sourceRowNumber,
+      sourceKey: `${current.sourceSheetName}:${current.sourceSection}:${current.sourceRowNumber}`,
+      resolvedEmployeeId: null,
+      workKind: null,
+      plannedHours: null,
+      actualHours: null,
+      profileAction: 'KEEP',
+      riskDecision: 'KEEP',
+      riskText: current.riskText,
+    };
+    const dependencies = createService({
+      foundBatch: batch({
+        templateVersion: 2,
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: [staged],
+        totalRows: 1,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+      validation: [
+        {
+          row: current,
+          status: EmployeeImportRowStatus.VALID,
+          errors: [],
+          warnings: [],
+          resolvedEmployeeId: 'employee-existing',
+          resolvedProjectId: null,
+          resolvedTaskId: null,
+          keepUnlinked: false,
+          workKind: 'NON_PROJECT',
+          plannedHours: null,
+          actualHours: null,
+          profileAction: 'CREATE',
+          riskDecision: 'KEEP',
+          riskText: current.riskText,
+        },
+      ],
+    });
+    dependencies.tx.resourceProfile.findMany.mockResolvedValue([
+      { id: 'employee-existing', displayName: '匿名员工' },
+    ]);
+    dependencies.tx.$executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+
+    await dependencies.service.resolve('batch-1', {
+      rows: [
+        {
+          rowId: staged.id,
+          createEmployee: {
+            displayName: '匿名员工',
+            department: '研发部',
+            workDirection: '平台工程',
+          },
+          workKind: 'NON_PROJECT',
+          riskDecision: 'KEEP',
+        },
+      ],
+    });
+
+    expect(dependencies.tx.resourceProfile.create).not.toHaveBeenCalled();
+    const resolutions = dependencies.validator.validate.mock.calls[0][1] as Map<
+      number,
+      { employeeId?: string }
+    >;
+    expect(resolutions.get(2)?.employeeId).toBe('employee-existing');
+  });
+
+  it('rejects employee creation when an exact name matches multiple active profiles', async () => {
+    const current = normalizedV2Current();
+    const staged = {
+      ...restorableStoredRow(2),
+      id: 'row-v2-current',
+      normalizedValues: current,
+      sourceSheetName: current.sourceSheetName,
+      sourceSection: current.sourceSection,
+      sourceRowNumber: current.sourceRowNumber,
+      sourceKey: `${current.sourceSheetName}:${current.sourceSection}:${current.sourceRowNumber}`,
+      resolvedEmployeeId: null,
+      workKind: null,
+      plannedHours: null,
+      actualHours: null,
+      profileAction: 'KEEP',
+      riskDecision: 'KEEP',
+      riskText: current.riskText,
+    };
+    const dependencies = createService({
+      foundBatch: batch({
+        templateVersion: 2,
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: [staged],
+        totalRows: 1,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+    });
+    dependencies.tx.resourceProfile.findMany.mockResolvedValue([
+      { id: 'employee-a', displayName: '匿名员工' },
+      { id: 'employee-b', displayName: '匿名员工' },
+    ]);
+
+    await expect(
+      dependencies.service.resolve('batch-1', {
+        rows: [
+          {
+            rowId: staged.id,
+            createEmployee: {
+              displayName: '匿名员工',
+              department: '研发部',
+              workDirection: '平台工程',
+            },
+            workKind: 'NON_PROJECT',
+            riskDecision: 'KEEP',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'EMPLOYEE_IMPORT_RESOLUTION_INVALID' });
+
+    expect(dependencies.tx.resourceProfile.create).not.toHaveBeenCalled();
+    expect(dependencies.validator.validate).not.toHaveBeenCalled();
+  });
+
+  it('reuses an employee already resolved by another row in the same import batch', async () => {
+    const current = normalizedV2Current();
+    const plan = normalizedV2Plan();
+    const resolvedRow = {
+      ...restorableStoredRow(2),
+      id: 'row-v2-current',
+      normalizedValues: current,
+      sourceSheetName: current.sourceSheetName,
+      sourceSection: current.sourceSection,
+      sourceRowNumber: current.sourceRowNumber,
+      sourceKey: `${current.sourceSheetName}:${current.sourceSection}:${current.sourceRowNumber}`,
+      resolvedEmployeeId: 'employee-from-previous-resolution',
+      workKind: 'NON_PROJECT',
+      plannedHours: null,
+      actualHours: null,
+      profileAction: 'CREATE',
+      riskDecision: 'KEEP',
+      riskText: current.riskText,
+    };
+    const unresolvedRow = {
+      ...restorableStoredRow(3),
+      id: 'row-v2-plan',
+      normalizedValues: plan,
+      sourceSheetName: plan.sourceSheetName,
+      sourceSection: plan.sourceSection,
+      sourceRowNumber: plan.sourceRowNumber,
+      sourceKey: `${plan.sourceSheetName}:${plan.sourceSection}:${plan.sourceRowNumber}`,
+      resolvedEmployeeId: null,
+      workKind: null,
+      plannedHours: null,
+      actualHours: null,
+      profileAction: 'KEEP',
+      riskDecision: null,
+      riskText: null,
+    };
+    const dependencies = createService({
+      foundBatch: batch({
+        templateVersion: 2,
+        status: EmployeeWorkImportStatus.RESOLVING,
+        rows: [resolvedRow, unresolvedRow],
+        totalRows: 2,
+        previewFingerprint: 'preview-fingerprint',
+      }),
+      validation: [
+        {
+          row: plan,
+          status: EmployeeImportRowStatus.VALID,
+          errors: [],
+          warnings: [],
+          resolvedEmployeeId: 'employee-from-previous-resolution',
+          resolvedProjectId: null,
+          resolvedTaskId: null,
+          keepUnlinked: false,
+          workKind: 'NON_PROJECT',
+          plannedHours: null,
+          actualHours: null,
+          profileAction: 'KEEP',
+          riskDecision: null,
+          riskText: null,
+        },
+      ],
+    });
+    dependencies.tx.$executeRaw.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+
+    await dependencies.service.resolve('batch-1', {
+      rows: [
+        {
+          rowId: unresolvedRow.id,
+          createEmployee: {
+            displayName: '匿名员工',
+            department: '研发部',
+            workDirection: '平台工程',
+          },
+          workKind: 'NON_PROJECT',
+        },
+      ],
+    });
+
+    expect(dependencies.tx.resourceProfile.create).not.toHaveBeenCalled();
+    const resolutions = dependencies.validator.validate.mock.calls[0][1] as Map<
+      number,
+      { employeeId?: string }
+    >;
+    expect(resolutions.get(3)?.employeeId).toBe('employee-from-previous-resolution');
   });
 
   it('rejects conflicting rowId and rowNumber coordinates', async () => {

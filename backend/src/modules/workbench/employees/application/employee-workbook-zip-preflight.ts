@@ -21,6 +21,7 @@ const ALLOWED_FILE_PATHS = [
   /^_rels\/(?:\.rels|[A-Za-z0-9._-]+\.rels)$/,
   /^docProps\/[A-Za-z0-9._-]+\.xml$/,
   /^xl\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.(?:xml|rels)$/,
+  /^xl\/printerSettings\/printerSettings[0-9]+\.bin$/,
 ] as const;
 
 const ALLOWED_DIRECTORY_PATH = /^(?:_rels|docProps|xl(?:\/[A-Za-z0-9._-]+)*)\/$/;

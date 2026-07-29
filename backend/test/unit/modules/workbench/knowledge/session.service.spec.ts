@@ -41,6 +41,39 @@ describe('SessionService workspace behavior', () => {
     );
   });
 
+  it('returns the latest message preview for the history page', async () => {
+    prisma.knowledgeSession.findMany.mockResolvedValue([
+      {
+        id: 's1',
+        title: '项目复盘',
+        scopeType: 'ALL',
+        scopeValue: null,
+        messages: [
+          {
+            content: '这是最近一条会话内容，用于历史列表摘要。',
+            createdAt: new Date('2026-07-28T10:00:00.000Z'),
+          },
+        ],
+      },
+    ]);
+
+    const result = await service.list();
+
+    expect(result[0]).toMatchObject({
+      preview: '这是最近一条会话内容，用于历史列表摘要。',
+      lastMessageAt: new Date('2026-07-28T10:00:00.000Z'),
+    });
+    expect(prisma.knowledgeSession.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          messages: expect.objectContaining({
+            take: 1,
+          }),
+        }),
+      }),
+    );
+  });
+
   it('renames, pins, and persists a normalized project scope', async () => {
     prisma.knowledgeSession.findUnique.mockResolvedValue({ id: 's1', archivedAt: null });
     prisma.knowledgeSession.update.mockResolvedValue({ id: 's1' });

@@ -6,7 +6,6 @@ import {
   HttpCode,
   HttpStatus,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -15,6 +14,7 @@ import {
 import type { Response } from 'express';
 import { EmployeeProgressQueryService } from '../../application/employee-progress-query.service';
 import { EmployeeWeekPlansService } from '../../application/employee-week-plans.service';
+import { EmployeeWorkItemsService } from '../../application/employee-work-items.service';
 import { EmployeeWorkExportService } from '../../application/employee-work-export.service';
 import { EmployeeWorkRiskService } from '../../application/employee-work-risk.service';
 import { EmployeesService } from '../../application/employees.service';
@@ -28,6 +28,7 @@ import {
   MatchEmployeeWeekPlanDto,
   ProgressPeriodQueryDto,
   UpdateEmployeeWeekPlanDto,
+  UpdateEmployeeWorkItemDto,
   UpdateEmployeeDto,
 } from './dto/employees.dto';
 
@@ -69,6 +70,7 @@ export class EmployeeProgressController {
     private readonly workExport: EmployeeWorkExportService,
     private readonly workRisks: EmployeeWorkRiskService,
     private readonly weekPlanActions: EmployeeWeekPlansService,
+    private readonly workItemActions: EmployeeWorkItemsService,
   ) {}
 
   @Get('employee-progress')
@@ -99,8 +101,23 @@ export class EmployeeProgressController {
   }
 
   @Get('employee-work-items/:id')
-  workItem(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+  workItem(@Param('id') id: string) {
     return this.progress.workItem(id);
+  }
+
+  @Patch('employee-work-items/:id')
+  updateWorkItem(@Param('id') id: string, @Body() dto: UpdateEmployeeWorkItemDto) {
+    const { plannedCompletionAt, ...systemFields } = dto;
+    return this.workItemActions.updateSystemFields(id, {
+      ...systemFields,
+      ...(plannedCompletionAt !== undefined
+        ? {
+            plannedCompletionAt: plannedCompletionAt
+              ? new Date(`${plannedCompletionAt}T00:00:00.000Z`)
+              : null,
+          }
+        : {}),
+    });
   }
 
   @Get('employee-week-plans')
@@ -149,7 +166,7 @@ export class EmployeeProgressController {
   }
 
   @Post('employee-work-items/:id/convert-risk')
-  convertRisk(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+  convertRisk(@Param('id') id: string) {
     return this.workRisks.convert(id);
   }
 

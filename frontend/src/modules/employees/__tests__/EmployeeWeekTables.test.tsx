@@ -70,7 +70,7 @@ const plan = {
   priority: 'URGENT',
   collaborationText: '需要测试组协作',
   planText: '先灰度再全量',
-  note: null,
+  note: '导入备注',
   workKind: 'PROJECT',
   carryStatus: 'PLANNED',
   matchedWorkItemId: null,
@@ -142,6 +142,8 @@ describe('employee weekly V2 tables', () => {
     expect(plannedRow).not.toBeNull()
     expect(within(plannedRow as HTMLElement).getByText('紧急')).toBeInTheDocument()
     expect(within(plannedRow as HTMLElement).getByText('需要测试组协作')).toBeInTheDocument()
+    expect(plannedRow).toHaveTextContent('计划：先灰度再全量')
+    expect(plannedRow).toHaveTextContent('备注：导入备注')
     expect(within(plannedRow as HTMLElement).getByText('待承接')).toBeInTheDocument()
     expect(within(plannedRow as HTMLElement).getByText('张明 / 下周计划 / 第 21 行')).toBeInTheDocument()
     expect(within(plannedRow as HTMLElement).getByRole('link', { name: 'RD-026 权限平台' })).toHaveAttribute(
@@ -163,5 +165,17 @@ describe('employee weekly V2 tables', () => {
     expect(matchedRow).not.toBeNull()
     await user.click(within(matchedRow as HTMLElement).getByRole('button', { name: '撤销承接' }))
     expect(onUnmatch).toHaveBeenCalledWith(expect.objectContaining({ id: 'plan-2' }))
+  })
+
+  it('highlights a deep-linked future plan', () => {
+    render(
+      <MemoryRouter>
+        <EmployeeWeekPlanTable plans={[plan]} focusedPlanId="plan-1" />
+      </MemoryRouter>
+    )
+
+    expect(screen.getByText('完成灰度发布').closest('tr')).toHaveClass(
+      'employee-week-plan-table__row--focused'
+    )
   })
 })

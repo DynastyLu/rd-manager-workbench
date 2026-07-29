@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { KnowledgeChatPanel } from '../components/KnowledgeChatPanel';
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { KnowledgeChatPanel } from '../components/KnowledgeChatPanel'
 
 // ---------------------------------------------------------------------------
 // Hoisted module-level mocks
@@ -13,7 +13,7 @@ const { getSession, createSession, chatStream, getIndexStatus, updateSession } =
   chatStream: vi.fn(),
   getIndexStatus: vi.fn(),
   updateSession: vi.fn(),
-}));
+}))
 
 vi.mock('../api', () => ({
   getSession,
@@ -21,13 +21,13 @@ vi.mock('../api', () => ({
   chatStream,
   getIndexStatus,
   updateSession,
-}));
+}))
 
 vi.mock('../components/KnowledgeMarkdown', () => ({
   KnowledgeMarkdown: ({ text }: { text: string }) => (
     <span data-testid="markdown-content">{text}</span>
   ),
-}));
+}))
 
 // ---------------------------------------------------------------------------
 // Helpers — manual mock objects that avoid jsdom ReadableStream reliance
@@ -38,11 +38,11 @@ vi.mock('../components/KnowledgeMarkdown', () => ({
  * (each line verbatim + "\n") and optionally hangs instead of closing.
  */
 function mockStreamResponse(lines: string[], hang = false) {
-  const encoder = new TextEncoder();
-  const data = lines.map((l) => l + '\n').join('');
-  const encoded = encoder.encode(data);
+  const encoder = new TextEncoder()
+  const data = lines.map((l) => l + '\n').join('')
+  const encoded = encoder.encode(data)
 
-  let readCount = 0;
+  let readCount = 0
   return {
     ok: true,
     status: 200,
@@ -51,17 +51,17 @@ function mockStreamResponse(lines: string[], hang = false) {
       getReader: () => ({
         read: (): Promise<ReadableStreamReadResult<Uint8Array>> => {
           if (readCount === 0) {
-            readCount++;
-            return Promise.resolve({ done: false, value: encoded });
+            readCount++
+            return Promise.resolve({ done: false, value: encoded })
           }
           if (hang) {
-            return new Promise(() => {});
+            return new Promise(() => {})
           }
-          return Promise.resolve({ done: true, value: undefined as never });
+          return Promise.resolve({ done: true, value: undefined as never })
         },
       }),
     },
-  };
+  }
 }
 
 /**
@@ -74,34 +74,30 @@ function mockHangingResponse() {
     status: 200,
     body: {
       getReader: () => ({
-        read: (): Promise<ReadableStreamReadResult<Uint8Array>> =>
-          new Promise(() => {}),
+        read: (): Promise<ReadableStreamReadResult<Uint8Array>> => new Promise(() => {}),
       }),
     },
-  };
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Test suite
 // ---------------------------------------------------------------------------
 describe('KnowledgeChatPanel', () => {
-  const onSessionCreated = vi.fn();
-  let queryClient: QueryClient;
-  let abortSpy: ReturnType<typeof vi.fn>;
+  const onSessionCreated = vi.fn()
+  let queryClient: QueryClient
+  let abortSpy: ReturnType<typeof vi.fn>
 
   function renderPanel(sessionId: string | null = null) {
     return render(
       <QueryClientProvider client={queryClient}>
-        <KnowledgeChatPanel
-          sessionId={sessionId}
-          onSessionCreated={onSessionCreated}
-        />
-      </QueryClientProvider>,
-    );
+        <KnowledgeChatPanel sessionId={sessionId} onSessionCreated={onSessionCreated} />
+      </QueryClientProvider>
+    )
   }
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.clearAllMocks()
 
     queryClient = new QueryClient({
       defaultOptions: {
@@ -111,7 +107,7 @@ describe('KnowledgeChatPanel', () => {
           gcTime: 0,
         },
       },
-    });
+    })
 
     // Sensible defaults for the API mocks.
     getSession.mockResolvedValue({
@@ -121,13 +117,13 @@ describe('KnowledgeChatPanel', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       messages: [],
-    });
+    })
     getIndexStatus.mockResolvedValue({
       indexedDocuments: 3,
       totalDocuments: 3,
       totalChunks: 12,
       complete: true,
-    });
+    })
 
     createSession.mockResolvedValue({
       id: 'new-s1',
@@ -135,43 +131,71 @@ describe('KnowledgeChatPanel', () => {
       status: 'ACTIVE' as const,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    });
+    })
 
-    chatStream.mockResolvedValue(
-      mockStreamResponse(['data: {"content":"Hello","index":0}']),
-    );
+    chatStream.mockResolvedValue(mockStreamResponse(['data: {"content":"Hello","index":0}']))
 
     // Spy on AbortController.prototype.abort so we can assert it was called.
-    abortSpy = vi.fn();
-    vi.spyOn(AbortController.prototype, 'abort').mockImplementation(abortSpy);
-  });
+    abortSpy = vi.fn()
+    vi.spyOn(AbortController.prototype, 'abort').mockImplementation(abortSpy)
+  })
 
   afterEach(() => {
-    vi.restoreAllMocks();
-  });
+    vi.restoreAllMocks()
+  })
 
   // -----------------------------------------------------------------------
   // 1. Empty state
   // -----------------------------------------------------------------------
   describe('empty state (no sessionId)', () => {
-    it('renders the heading and a textarea', () => {
-      renderPanel(null);
+    it('shows the animated NOVA wordmark above the new-chat composer', () => {
+      const { container } = renderPanel(null)
+      const letters = Array.from(
+        container.querySelectorAll<SVGPathElement>('.nova-wordmark__letter')
+      )
 
-      expect(screen.getByText('知识库 AI 问答')).toBeInTheDocument();
-      expect(
-        screen.getByPlaceholderText('输入问题，回车发送...'),
-      ).toBeInTheDocument();
-    });
+      expect(screen.getByLabelText('NOVA')).toBeInTheDocument()
+      expect(letters).toHaveLength(4)
+      expect(letters.map((letter) => letter.dataset.letter)).toEqual(['n', 'o', 'v', 'a'])
+
+      const timing = letters.map((letter) => ({
+        delay: Number(letter.dataset.delay),
+        duration: Number(letter.dataset.duration),
+      }))
+
+      for (let index = 1; index < timing.length; index += 1) {
+        expect(timing[index].delay).toBeGreaterThanOrEqual(
+          timing[index - 1].delay + timing[index - 1].duration
+        )
+      }
+
+      expect(letters[0]).toHaveAttribute('d', expect.stringContaining('L55 52 L55 13'))
+      expect(letters[3]).toHaveAttribute('d', expect.stringContaining('M190 38 L220 38'))
+    })
+
+    it('does not repeat the NOVA wordmark inside an existing conversation', async () => {
+      renderPanel('s1')
+
+      await screen.findByText('Test Session')
+      expect(screen.queryByLabelText('NOVA')).not.toBeInTheDocument()
+    })
+
+    it('renders a focused composer without a redundant empty-state heading', () => {
+      const { container } = renderPanel(null)
+
+      expect(screen.queryByText('知识库 AI 问答')).not.toBeInTheDocument()
+      expect(screen.getByPlaceholderText('输入问题，回车发送...')).toBeInTheDocument()
+      expect(container.querySelector('.kb-chat-composer--centered')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '发送问题' })).toBeDisabled()
+    })
 
     it('shows the subtitle about auto-created sessions and DeepSeek', () => {
-      renderPanel(null);
+      renderPanel(null)
 
-      expect(
-        screen.getByText(/新对话将自动创建/),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/DeepSeek 驱动/)).toBeInTheDocument();
-    });
-  });
+      expect(screen.getByText(/新对话将自动创建/)).toBeInTheDocument()
+      expect(screen.getByText(/DeepSeek 驱动/)).toBeInTheDocument()
+    })
+  })
 
   // -----------------------------------------------------------------------
   // 2. Loading spinner
@@ -179,23 +203,21 @@ describe('KnowledgeChatPanel', () => {
   describe('loading state', () => {
     it('shows a loading spinner when sessionId is set and data is loading', () => {
       // Keep the promise pending forever so isLoading stays true.
-      getSession.mockReturnValue(new Promise(() => {}));
+      getSession.mockReturnValue(new Promise(() => {}))
 
-      renderPanel('s1');
+      renderPanel('s1')
 
       // The empty-state UI must NOT be visible.
-      expect(screen.queryByText('知识库 AI 问答')).not.toBeInTheDocument();
-      expect(screen.queryByText('开始提问吧')).not.toBeInTheDocument();
+      expect(screen.queryByText('知识库 AI 问答')).not.toBeInTheDocument()
+      expect(screen.queryByText('开始提问吧')).not.toBeInTheDocument()
 
       // The messages area must NOT be rendered.
-      expect(
-        document.querySelector('.kb-chat-main__messages'),
-      ).not.toBeInTheDocument();
+      expect(document.querySelector('.kb-chat-main__messages')).not.toBeInTheDocument()
 
       // The kb-chat-main container is present (wraps the Spin).
-      expect(document.querySelector('.kb-chat-main')).toBeInTheDocument();
-    });
-  });
+      expect(document.querySelector('.kb-chat-main')).toBeInTheDocument()
+    })
+  })
 
   // -----------------------------------------------------------------------
   // 3. Messages rendering
@@ -224,15 +246,15 @@ describe('KnowledgeChatPanel', () => {
             createdAt: new Date().toISOString(),
           },
         ],
-      });
+      })
 
-      renderPanel('s1');
+      renderPanel('s1')
 
       await waitFor(() => {
-        expect(screen.getByText('什么是 RAG？')).toBeInTheDocument();
-      });
-      expect(screen.getByText('RAG 是检索增强生成...')).toBeInTheDocument();
-    });
+        expect(screen.getByText('什么是 RAG？')).toBeInTheDocument()
+      })
+      expect(screen.getByText('RAG 是检索增强生成...')).toBeInTheDocument()
+    })
 
     it('shows empty prompt when session has no messages and not streaming', async () => {
       getSession.mockResolvedValue({
@@ -242,14 +264,14 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
-      renderPanel('s2');
+      renderPanel('s2')
 
       await waitFor(() => {
-        expect(screen.getByText('输入问题开始搜索本地知识库')).toBeInTheDocument();
-      });
-    });
+        expect(screen.getByText('输入问题开始搜索本地知识库')).toBeInTheDocument()
+      })
+    })
 
     it('renders citations attached to an assistant message', async () => {
       getSession.mockResolvedValue({
@@ -288,23 +310,23 @@ describe('KnowledgeChatPanel', () => {
             createdAt: new Date().toISOString(),
           },
         ],
-      });
+      })
 
-      renderPanel('s1');
+      renderPanel('s1')
 
       await waitFor(() => {
-        expect(screen.getByText('RAG Paper')).toBeInTheDocument();
-      });
-      expect(screen.getByText('Survey')).toBeInTheDocument();
-    });
-  });
+        expect(screen.getByText('RAG Paper')).toBeInTheDocument()
+      })
+      expect(screen.getByText('Survey')).toBeInTheDocument()
+    })
+  })
 
   // -----------------------------------------------------------------------
   // 4. Sending a message and creating a new session
   // -----------------------------------------------------------------------
   describe('sending a message', () => {
     it('creates a new session when sessionId is null, then sends', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       // sessionId = null triggers the creation path.
       createSession.mockResolvedValue({
@@ -314,32 +336,30 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
       // chatStream returns a normal completed response.
-      chatStream.mockResolvedValue(
-        mockStreamResponse(['data: {"content":"Answer!","index":0}']),
-      );
+      chatStream.mockResolvedValue(mockStreamResponse(['data: {"content":"Answer!","index":0}']))
 
-      renderPanel(null);
+      renderPanel(null)
 
-      const textarea = screen.getByPlaceholderText('输入问题，回车发送...');
-      await user.type(textarea, 'What is RAG?');
-      await user.keyboard('{Enter}');
+      const textarea = screen.getByPlaceholderText('输入问题，回车发送...')
+      await user.type(textarea, 'What is RAG?')
+      await user.keyboard('{Enter}')
 
       // Verify createSession was called with the question text.
       await waitFor(() => {
-        expect(createSession).toHaveBeenCalledWith('What is RAG?');
-      });
+        expect(createSession).toHaveBeenCalledWith('What is RAG?')
+      })
 
       // Verify onSessionCreated was called with the new session id.
       await waitFor(() => {
-        expect(onSessionCreated).toHaveBeenCalledWith('created-session-42');
-      });
-    });
+        expect(onSessionCreated).toHaveBeenCalledWith('created-session-42')
+      })
+    })
 
     it('sends a message on an existing session without creating a new one', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 'existing-s1',
@@ -348,49 +368,43 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
-      renderPanel('existing-s1');
+      renderPanel('existing-s1')
 
       // Wait for the loaded state (textarea with the "chat" placeholder).
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
 
-      await user.type(textarea, 'Hello');
-      await user.keyboard('{Enter}');
+      await user.type(textarea, 'Hello')
+      await user.keyboard('{Enter}')
 
       await waitFor(() => {
-        expect(chatStream).toHaveBeenCalledWith(
-          'existing-s1',
-          'Hello',
-          expect.any(AbortSignal),
-        );
-      });
+        expect(chatStream).toHaveBeenCalledWith('existing-s1', 'Hello', expect.any(AbortSignal))
+      })
 
       // createSession should NOT have been called.
-      expect(createSession).not.toHaveBeenCalled();
-    });
+      expect(createSession).not.toHaveBeenCalled()
+    })
 
     it('does not send an empty or whitespace-only message', async () => {
-      const user = userEvent.setup();
-      renderPanel(null);
+      const user = userEvent.setup()
+      renderPanel(null)
 
-      const textarea = screen.getByPlaceholderText('输入问题，回车发送...');
+      const textarea = screen.getByPlaceholderText('输入问题，回车发送...')
 
       // Press Enter with empty text.
-      await user.click(textarea);
-      await user.keyboard('{Enter}');
-      expect(createSession).not.toHaveBeenCalled();
+      await user.click(textarea)
+      await user.keyboard('{Enter}')
+      expect(createSession).not.toHaveBeenCalled()
 
       // Type only spaces and press Enter.
-      await user.type(textarea, '   ');
-      await user.keyboard('{Enter}');
-      expect(createSession).not.toHaveBeenCalled();
-    });
+      await user.type(textarea, '   ')
+      await user.keyboard('{Enter}')
+      expect(createSession).not.toHaveBeenCalled()
+    })
 
     it('sends via the send button click on an existing session', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 'existing-s2',
@@ -399,32 +413,91 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
-      renderPanel('existing-s2');
+      renderPanel('existing-s2')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'Hello from button');
-      await user.click(screen.getByText('发送'));
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'Hello from button')
+      await user.click(screen.getByRole('button', { name: '发送问题' }))
 
       await waitFor(() => {
         expect(chatStream).toHaveBeenCalledWith(
           'existing-s2',
           'Hello from button',
-          expect.any(AbortSignal),
-        );
-      });
-    });
-  });
+          expect.any(AbortSignal)
+        )
+      })
+    })
+  })
 
   // -----------------------------------------------------------------------
   // 5. Streaming content
   // -----------------------------------------------------------------------
   describe('streaming content', () => {
+    it('shows an animated thinking process immediately while waiting for retrieval events', async () => {
+      const user = userEvent.setup()
+      chatStream.mockResolvedValue(mockHangingResponse())
+
+      renderPanel('stream-thinking')
+
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, '分析项目风险')
+      await user.keyboard('{Enter}')
+
+      const thinking = await screen.findByLabelText('AI 思考过程')
+      expect(thinking).toHaveTextContent('正在思考')
+      expect(thinking).toHaveTextContent('正在理解问题')
+      expect(screen.getByLabelText('NOVA 正在思考')).toBeInTheDocument()
+      expect(thinking).not.toHaveClass('kb-ai-thinking--searching')
+      expect(thinking.querySelector('.nova-bot__orb')).toBeInTheDocument()
+      expect(thinking.querySelectorAll('.nova-bot__eye')).toHaveLength(2)
+      const groundShadow = thinking.querySelector('.nova-bot__ground-shadow')
+      expect(groundShadow).toBeInTheDocument()
+      expect(groundShadow?.querySelector('.nova-bot__ground-shadow-shape')).toBeInTheDocument()
+      expect(thinking.querySelector('.nova-bot__antenna')).not.toBeInTheDocument()
+      expect(thinking.querySelector('.nova-bot__smile')).not.toBeInTheDocument()
+      expect(thinking.querySelector('.nova-bot__halo')).not.toBeInTheDocument()
+      expect(thinking.querySelectorAll('.kb-ai-thinking__ellipsis i')).toHaveLength(3)
+
+      await user.click(screen.getByRole('button', { name: '收起思考过程' }))
+      expect(screen.queryByText('正在理解问题')).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '展开思考过程' })).toBeInTheDocument()
+    })
+
+    it('updates the thinking process as retrieval completes and answer generation starts', async () => {
+      const user = userEvent.setup()
+      chatStream.mockResolvedValue(
+        mockStreamResponse(
+          [
+            'event: retrieval_started',
+            'data: {"scope":{"type":"ALL"}}',
+            '',
+            'event: retrieval_completed',
+            'data: {"searchedDocumentCount":3,"relevantCount":5,"hasEvidence":true}',
+            '',
+            'event: answer_delta',
+            'data: {"text":"正在生成的回答"}',
+            '',
+          ],
+          true
+        )
+      )
+
+      renderPanel('stream-progress')
+
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, '查询研发资料')
+      await user.keyboard('{Enter}')
+
+      await waitFor(() => {
+        expect(screen.getByText('已从 3 个文件中找到 5 个可引用片段')).toBeInTheDocument()
+        expect(screen.getByText('正在生成回答')).toBeInTheDocument()
+      })
+    })
+
     it('enters streaming mode — stop button and disabled textarea appear', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 'stream-s4',
@@ -433,35 +506,29 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
       // A hanging stream keeps the component in "streaming" mode.
-      chatStream.mockResolvedValue(mockHangingResponse());
+      chatStream.mockResolvedValue(mockHangingResponse())
 
-      renderPanel('stream-s4');
+      renderPanel('stream-s4')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'Explain');
-      await user.keyboard('{Enter}');
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'Explain')
+      await user.keyboard('{Enter}')
 
       // Textarea changes placeholder and becomes disabled.
       await waitFor(() => {
-        expect(
-          screen.getByPlaceholderText('等待回复完成...'),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByPlaceholderText('等待回复完成...'),
-        ).toBeDisabled();
+        expect(screen.getByPlaceholderText('等待回复完成...')).toBeInTheDocument()
+        expect(screen.getByPlaceholderText('等待回复完成...')).toBeDisabled()
         // Stop button replaces the send button.
-        expect(screen.getByText('停止')).toBeInTheDocument();
-        expect(screen.queryByText('发送')).not.toBeInTheDocument();
-      });
-    });
+        expect(screen.getByRole('button', { name: '停止生成' })).toBeInTheDocument()
+        expect(screen.queryByText('发送')).not.toBeInTheDocument()
+      })
+    })
 
     it('shows thinking steps when streaming is in progress', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 'stream-s2',
@@ -470,31 +537,30 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
       // Simulate a stream that sends a status event then hangs
-      chatStream.mockResolvedValue(mockStreamResponse([
-        'event: status',
-        'data: {"phase":"searching","message":"正在检索本地知识库..."}',
-        '',
-      ], true));
+      chatStream.mockResolvedValue(
+        mockStreamResponse(
+          ['event: status', 'data: {"phase":"searching","message":"正在检索本地知识库..."}', ''],
+          true
+        )
+      )
 
-      renderPanel('stream-s2');
+      renderPanel('stream-s2')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'Ping');
-      await user.keyboard('{Enter}');
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'Ping')
+      await user.keyboard('{Enter}')
 
       // Status event appears as a thinking step
       await waitFor(() => {
-        expect(screen.getByText('正在检索本地知识库...')).toBeInTheDocument();
-      });
-    });
+        expect(screen.getByText('正在检索本地知识库...')).toBeInTheDocument()
+      })
+    })
 
     it('calls chatStream with correct parameters when sending', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 'stream-s6',
@@ -503,27 +569,95 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
-      chatStream.mockResolvedValue(mockHangingResponse());
+      chatStream.mockResolvedValue(mockHangingResponse())
 
-      renderPanel('stream-s6');
+      renderPanel('stream-s6')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'My question');
-      await user.keyboard('{Enter}');
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'My question')
+      await user.keyboard('{Enter}')
 
       await waitFor(() => {
-        expect(chatStream).toHaveBeenCalledWith(
-          'stream-s6',
-          'My question',
-          expect.any(AbortSignal),
-        );
-      });
-    });
-  });
+        expect(chatStream).toHaveBeenCalledWith('stream-s6', 'My question', expect.any(AbortSignal))
+      })
+    })
+  })
+
+  describe('assistant answer actions', () => {
+    it('uses one aligned toolbar for copy, regenerate, task conversion, and feedback', async () => {
+      getSession.mockResolvedValue({
+        id: 'assistant-actions',
+        title: '回答工具栏',
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: [
+          {
+            id: 'u-actions',
+            role: 'USER',
+            content: '请总结',
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: 'a-actions',
+            role: 'ASSISTANT',
+            content: '这是总结结果',
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      })
+
+      const { container } = renderPanel('assistant-actions')
+
+      const toolbar = await screen.findByRole('toolbar', { name: '回答操作' })
+      expect(screen.getByLabelText('NOVA 助手')).toBeInTheDocument()
+      expect(toolbar).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '复制回答' })).toHaveClass(
+        'knowledge-assistant__message-action'
+      )
+      expect(screen.getByRole('button', { name: '重新生成回答' })).toHaveClass(
+        'knowledge-assistant__message-action'
+      )
+      expect(screen.getByRole('button', { name: '转为工作项' })).toHaveClass(
+        'knowledge-assistant__message-action'
+      )
+      expect(
+        container.querySelectorAll('.knowledge-assistant__message-action-icon').length
+      ).toBeGreaterThanOrEqual(3)
+    })
+
+    it('allows local positive and negative feedback on an answer', async () => {
+      const user = userEvent.setup()
+      getSession.mockResolvedValue({
+        id: 'assistant-feedback',
+        title: '回答反馈',
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messages: [
+          {
+            id: 'a-feedback',
+            role: 'ASSISTANT',
+            content: '回答内容',
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      })
+
+      renderPanel('assistant-feedback')
+
+      const helpful = await screen.findByRole('button', { name: '回答有帮助' })
+      await user.click(helpful)
+      expect(helpful).toHaveAttribute('aria-pressed', 'true')
+
+      const unhelpful = screen.getByRole('button', { name: '回答需改进' })
+      await user.click(unhelpful)
+      expect(unhelpful).toHaveAttribute('aria-pressed', 'true')
+      expect(helpful).toHaveAttribute('aria-pressed', 'false')
+    })
+  })
 
   // -----------------------------------------------------------------------
   // 6. Citations display
@@ -556,21 +690,21 @@ describe('KnowledgeChatPanel', () => {
             createdAt: new Date().toISOString(),
           },
         ],
-      });
+      })
 
-      renderPanel('s-cit');
+      renderPanel('s-cit')
 
       await waitFor(() => {
-        expect(screen.getByText('Alpha')).toBeInTheDocument();
-      });
-      expect(screen.getByText('Beta')).toBeInTheDocument();
+        expect(screen.getByText('Alpha')).toBeInTheDocument()
+      })
+      expect(screen.getByText('Beta')).toBeInTheDocument()
 
       // Citation source items have role="button"
-      const citationBtns = document.querySelectorAll('.kb-source-item[role="button"]');
-      expect(citationBtns).toHaveLength(2);
-      expect(citationBtns[0]).toHaveTextContent('Alpha');
-      expect(citationBtns[1]).toHaveTextContent('Beta');
-    });
+      const citationBtns = document.querySelectorAll('.kb-source-item[role="button"]')
+      expect(citationBtns).toHaveLength(2)
+      expect(citationBtns[0]).toHaveTextContent('Alpha')
+      expect(citationBtns[1]).toHaveTextContent('Beta')
+    })
 
     it('does not render citation area when message has no citations', async () => {
       getSession.mockResolvedValue({
@@ -596,48 +730,46 @@ describe('KnowledgeChatPanel', () => {
             createdAt: new Date().toISOString(),
           },
         ],
-      });
+      })
 
-      renderPanel('s-nocit');
+      renderPanel('s-nocit')
 
       // Wait for messages to load.
-      await screen.findAllByTestId('markdown-content');
+      await screen.findAllByTestId('markdown-content')
 
       // No citation container should exist.
-      expect(
-        document.querySelector('.kb-message__citations'),
-      ).not.toBeInTheDocument();
-    });
-  });
+      expect(document.querySelector('.kb-message__citations')).not.toBeInTheDocument()
+    })
+  })
 
   // -----------------------------------------------------------------------
   // 7. Error handling
   // -----------------------------------------------------------------------
   describe('error handling', () => {
     it('handles createSession failure — stays in empty state', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
-      createSession.mockRejectedValue(new Error('Network Error'));
+      createSession.mockRejectedValue(new Error('Network Error'))
 
-      renderPanel(null);
+      renderPanel(null)
 
-      const textarea = screen.getByPlaceholderText('输入问题，回车发送...');
-      await user.type(textarea, 'Error test');
-      await user.keyboard('{Enter}');
+      const textarea = screen.getByPlaceholderText('输入问题，回车发送...')
+      await user.type(textarea, 'Error test')
+      await user.keyboard('{Enter}')
 
       // createSession was called and rejected.
       await waitFor(() => {
-        expect(createSession).toHaveBeenCalledWith('Error test');
-      });
+        expect(createSession).toHaveBeenCalledWith('Error test')
+      })
 
       // Since sessionId is still null, the component stays in the empty state.
       // The error is set internally but the empty-state branch does not render it.
-      expect(screen.getByText('知识库 AI 问答')).toBeInTheDocument();
-      expect(onSessionCreated).not.toHaveBeenCalled();
-    });
+      expect(screen.getByPlaceholderText('输入问题，回车发送...')).toBeInTheDocument()
+      expect(onSessionCreated).not.toHaveBeenCalled()
+    })
 
     it('shows an error when chatStream returns a non-ok response', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 's-err',
@@ -646,34 +778,28 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
       chatStream.mockResolvedValue({
         ok: false,
         status: 500,
         text: () => Promise.resolve('Internal Server Error'),
-      });
+      })
 
-      renderPanel('s-err');
+      renderPanel('s-err')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'Cause error');
-      await user.keyboard('{Enter}');
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'Cause error')
+      await user.keyboard('{Enter}')
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/请求失败 \(500\)/),
-        ).toBeInTheDocument();
-        expect(
-          screen.getByText(/DeepSeek API Key/),
-        ).toBeInTheDocument();
-      });
-    });
+        expect(screen.getByText(/请求失败 \(500\)/)).toBeInTheDocument()
+        expect(screen.getByText(/DeepSeek API Key/)).toBeInTheDocument()
+      })
+    })
 
     it('shows an error when chatStream returns non-ok with JSON error body', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 's-err2',
@@ -682,34 +808,28 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
       chatStream.mockResolvedValue({
         ok: false,
         status: 400,
         text: () =>
-          Promise.resolve(
-            JSON.stringify({ error: { message: 'Bad request parameter' } }),
-          ),
-      });
+          Promise.resolve(JSON.stringify({ error: { message: 'Bad request parameter' } })),
+      })
 
-      renderPanel('s-err2');
+      renderPanel('s-err2')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'Bad request');
-      await user.keyboard('{Enter}');
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'Bad request')
+      await user.keyboard('{Enter}')
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/请求失败 \(400\)：Bad request parameter/),
-        ).toBeInTheDocument();
-      });
-    });
+        expect(screen.getByText(/请求失败 \(400\)：Bad request parameter/)).toBeInTheDocument()
+      })
+    })
 
     it('shows an error when the stream sends an SSE error event', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 's-sse-err',
@@ -718,33 +838,26 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
       // Simulate an SSE error event: "event: error" followed by data with error field.
       chatStream.mockResolvedValue(
-        mockStreamResponse([
-          'event: error',
-          'data: {"error":"DeepSeek API returned an error"}',
-        ]),
-      );
+        mockStreamResponse(['event: error', 'data: {"error":"DeepSeek API returned an error"}'])
+      )
 
-      renderPanel('s-sse-err');
+      renderPanel('s-sse-err')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'SSE error test');
-      await user.keyboard('{Enter}');
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'SSE error test')
+      await user.keyboard('{Enter}')
 
       await waitFor(() => {
-        expect(
-          screen.getByText('DeepSeek API returned an error'),
-        ).toBeInTheDocument();
-      });
-    });
+        expect(screen.getByText('DeepSeek API returned an error')).toBeInTheDocument()
+      })
+    })
 
     it('handles non-JSON data lines gracefully (skip without crashing)', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 's-malformed',
@@ -753,48 +866,39 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
       // Lines that are not valid JSON or have unexpected structure are
       // silently skipped by the catch block without throwing.
       chatStream.mockResolvedValue(
-        mockStreamResponse([
-          'data: not-valid-json',
-          'data: {"content":"Still works","index":0}',
-        ]),
-      );
+        mockStreamResponse(['data: not-valid-json', 'data: {"content":"Still works","index":0}'])
+      )
 
-      renderPanel('s-malformed');
+      renderPanel('s-malformed')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'Test');
-      await user.keyboard('{Enter}');
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'Test')
+      await user.keyboard('{Enter}')
 
       // Verify the stream was called — the malformed line is silently skipped.
       await waitFor(() => {
-        expect(chatStream).toHaveBeenCalledWith(
-          's-malformed',
-          'Test',
-          expect.any(AbortSignal),
-        );
-      });
+        expect(chatStream).toHaveBeenCalledWith('s-malformed', 'Test', expect.any(AbortSignal))
+      })
 
       // No error bubble should be present — the malformed data did not crash
       // the component or produce an error message.
       expect(
-        document.querySelector('.kb-message__bubble[style*="rgb(255, 243, 243)"]'),
-      ).not.toBeInTheDocument();
-    });
-  });
+        document.querySelector('.kb-message__bubble[style*="rgb(255, 243, 243)"]')
+      ).not.toBeInTheDocument()
+    })
+  })
 
   // -----------------------------------------------------------------------
   // 8. Stop button
   // -----------------------------------------------------------------------
   describe('stop button', () => {
     it('aborts the streaming request when stop is clicked', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 's-stop',
@@ -803,32 +907,30 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
       // A hanging stream keeps the component in "streaming" mode so the stop
       // button remains visible.
-      chatStream.mockResolvedValue(mockHangingResponse());
+      chatStream.mockResolvedValue(mockHangingResponse())
 
-      renderPanel('s-stop');
+      renderPanel('s-stop')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'Test');
-      await user.keyboard('{Enter}');
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'Test')
+      await user.keyboard('{Enter}')
 
       // Wait for the stop button to appear.
-      const stopButton = await screen.findByText('停止');
-      expect(stopButton).toBeInTheDocument();
+      const stopButton = await screen.findByRole('button', { name: '停止生成' })
+      expect(stopButton).toBeInTheDocument()
 
       // Click stop — it calls abortRef.current?.abort().
-      await user.click(stopButton);
+      await user.click(stopButton)
 
-      expect(abortSpy).toHaveBeenCalled();
-    });
+      expect(abortSpy).toHaveBeenCalled()
+    })
 
     it('shows the stop button (not send) while streaming is active', async () => {
-      const user = userEvent.setup();
+      const user = userEvent.setup()
 
       getSession.mockResolvedValue({
         id: 's-buttons',
@@ -837,32 +939,30 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
-      chatStream.mockResolvedValue(mockHangingResponse());
+      chatStream.mockResolvedValue(mockHangingResponse())
 
-      renderPanel('s-buttons');
+      renderPanel('s-buttons')
 
-      const textarea = await screen.findByPlaceholderText(
-        '输入问题，Enter 发送，Shift+Enter 换行',
-      );
-      await user.type(textarea, 'Test');
-      await user.keyboard('{Enter}');
+      const textarea = await screen.findByPlaceholderText('输入问题，Enter 发送，Shift+Enter 换行')
+      await user.type(textarea, 'Test')
+      await user.keyboard('{Enter}')
 
       await waitFor(() => {
-        expect(screen.getByText('停止')).toBeInTheDocument();
-        expect(screen.queryByText('发送')).not.toBeInTheDocument();
-      });
-    });
-  });
+        expect(screen.getByRole('button', { name: '停止生成' })).toBeInTheDocument()
+        expect(screen.queryByText('发送')).not.toBeInTheDocument()
+      })
+    })
+  })
 
   // -----------------------------------------------------------------------
   // 9. Query client interactions
   // -----------------------------------------------------------------------
   describe('query client interactions', () => {
     it('invalidates sessions query after creating a new session', async () => {
-      const user = userEvent.setup();
-      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+      const user = userEvent.setup()
+      const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
 
       createSession.mockResolvedValue({
         id: 'inv-s1',
@@ -871,27 +971,25 @@ describe('KnowledgeChatPanel', () => {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         messages: [],
-      });
+      })
 
-      chatStream.mockResolvedValue(
-        mockStreamResponse(['data: {"content":"OK","index":0}']),
-      );
+      chatStream.mockResolvedValue(mockStreamResponse(['data: {"content":"OK","index":0}']))
 
-      renderPanel(null);
+      renderPanel(null)
 
-      const textarea = screen.getByPlaceholderText('输入问题，回车发送...');
-      await user.type(textarea, 'Invalidate test');
-      await user.keyboard('{Enter}');
+      const textarea = screen.getByPlaceholderText('输入问题，回车发送...')
+      await user.type(textarea, 'Invalidate test')
+      await user.keyboard('{Enter}')
 
       await waitFor(() => {
         expect(invalidateSpy).toHaveBeenCalledWith(
           expect.objectContaining({
             queryKey: ['knowledge', 'sessions'],
-          }),
-        );
-      });
+          })
+        )
+      })
 
-      invalidateSpy.mockRestore();
-    });
-  });
-});
+      invalidateSpy.mockRestore()
+    })
+  })
+})

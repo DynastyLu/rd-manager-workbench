@@ -46,6 +46,10 @@ function extractKeywords(question: string): string[] {
   return [...new Set(matched)].sort((a, b) => b.length - a.length);
 }
 
+function isSummaryRequest(question: string): boolean {
+  return /(总结|汇总|摘要|概括|归纳|综述|回顾)/.test(question);
+}
+
 @Injectable()
 export class RagService {
   constructor(
@@ -82,7 +86,7 @@ export class RagService {
        LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
        WHERE cd.status = 'ACTIVE'
          AND cd.trashed_at IS NULL
-         AND cd.index_status = 'READY'
+         AND cd.index_status IN ('READY', 'PARTIAL')
          AND dc.content IS NOT NULL
          AND dc.content != ''
          ${scopeSql}
@@ -103,6 +107,32 @@ export class RagService {
       chunkMap.set(c.id, { ...c, score });
     }
 
+    // Summary requests need broad document coverage instead of only chunks whose
+    // wording resembles the command itself ("总结", "汇总", ...).
+    if (isSummaryRequest(params.question)) {
+      const recentResults = await this.prisma.$queryRaw<ChunkRow[]>(Prisma.sql`
+         SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, dc.metadata,
+                dc.page_number, dc.sheet_name, dc.location_label,
+                cd.title as document_title,
+                ks.name as space_name,
+                0.2::float8 AS similarity
+         FROM app.document_chunks dc
+         JOIN app.content_documents cd ON cd.id = dc.document_id
+         LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
+         WHERE cd.status = 'ACTIVE'
+           AND cd.trashed_at IS NULL
+           AND cd.index_status IN ('READY', 'PARTIAL')
+           AND dc.content IS NOT NULL
+           AND dc.content != ''
+           ${scopeSql}
+         ORDER BY cd.updated_at DESC, dc.chunk_index ASC
+         LIMIT ${TOP_K}
+      `);
+      for (const chunk of recentResults) {
+        if (!chunkMap.has(chunk.id)) chunkMap.set(chunk.id, { ...chunk, score: 0.2 });
+      }
+    }
+
     const [questionEmbedding] = await this.embeddings.embed([params.question]);
     if (questionEmbedding) {
       const vectorLiteral = `[${questionEmbedding.join(',')}]`;
@@ -117,7 +147,7 @@ export class RagService {
          LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
          WHERE cd.status = 'ACTIVE'
            AND cd.trashed_at IS NULL
-           AND cd.index_status = 'READY'
+           AND cd.index_status IN ('READY', 'PARTIAL')
            AND dc.embedding IS NOT NULL
            ${scopeSql}
          ORDER BY dc.embedding <=> ${vectorLiteral}::public.vector
@@ -145,7 +175,7 @@ export class RagService {
            LEFT JOIN app.knowledge_spaces ks ON ks.id = cd.space_id
            WHERE cd.status = 'ACTIVE'
              AND cd.trashed_at IS NULL
-             AND cd.index_status = 'READY'
+             AND cd.index_status IN ('READY', 'PARTIAL')
              AND dc.content ILIKE '%' || ${kw} || '%'
              ${scopeSql}
            ORDER BY public.similarity(dc.content, ${kw}) DESC

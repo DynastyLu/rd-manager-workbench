@@ -27,6 +27,57 @@ describe('EmployeeWorkbookV2Service', () => {
     return load(await v2.template({ periodStart: PERIOD_START, employees: [...EMPLOYEES] }));
   }
 
+  async function approvedWorkbookLayout(): Promise<ExcelJS.Workbook> {
+    const generated = await workbook();
+    const instructions = generated.getWorksheet('填写说明')!;
+    instructions.spliceRows(4, 0, []);
+    instructions.getCell('A1').value = '员工周工作填写表（个人版）';
+    instructions.getCell('A2').value = null;
+    instructions.getCell('B2').value = null;
+    instructions.getCell('A3').value =
+      '使用说明：请在本人姓名对应的工作表中填写。每行填写一项工作。';
+
+    for (const employee of EMPLOYEES) {
+      const sheet = generated.getWorksheet(employee.employeeName)!;
+      sheet.getRow(1).values = [`${employee.employeeName}｜员工周工作填写表`];
+      sheet.getRow(2).values = [];
+      sheet.getRow(3).values = [
+        '员工姓名',
+        employee.employeeName,
+        '部门',
+        employee.department,
+        '工作方向',
+        employee.workDirection,
+        '本周起始日期',
+        new Date('2026-07-20T00:00:00.000Z'),
+      ];
+      sheet.getRow(4).values = [
+        '本周结束日期',
+        {
+          formula: 'H3+6',
+          result: new Date('2026-07-26T00:00:00.000Z'),
+        },
+        '填写提示',
+        '黄色区域为主要填写区；状态与进度可从下拉菜单选择。',
+      ];
+      sheet.getRow(18).values = [
+        '下周工作计划',
+        '下周工作计划',
+        '下周起始日期',
+        {
+          formula: 'B4+1',
+          result: new Date('2026-07-27T00:00:00.000Z'),
+        },
+        '下周结束日期',
+        {
+          formula: 'B4+7',
+          result: new Date('2026-08-02T00:00:00.000Z'),
+        },
+      ];
+    }
+    return generated;
+  }
+
   it('generates a V2 template dynamically from anonymous employees', async () => {
     const generated = await workbook();
 
@@ -157,6 +208,35 @@ describe('EmployeeWorkbookV2Service', () => {
         sourceSheetName: '匿名员工甲',
         sourceSection: 'NEXT_WEEK_PLAN',
         sourceRowNumber: 20,
+      }),
+    ]);
+  });
+
+  it('accepts the approved workbook layout with its directory and metadata positions', async () => {
+    const approved = await approvedWorkbookLayout();
+    approved.getWorksheet('匿名员工甲')!.getRow(7).values = [
+      1,
+      '完成真实模板兼容',
+      '通过管理员导入',
+      new Date('2026-07-24T00:00:00.000Z'),
+      '进行中',
+      0.5,
+      '完成解析',
+      '继续联调',
+    ];
+
+    const result = await service.inspect(await save(approved));
+
+    expect(result.meta).toMatchObject({
+      templateVersion: 2,
+      periodStart: '2026-07-20',
+      periodEnd: '2026-07-26',
+    });
+    expect(result.rows).toEqual([
+      expect.objectContaining({
+        employeeName: '匿名员工甲',
+        title: '完成真实模板兼容',
+        plannedCompletionAt: '2026-07-24',
       }),
     ]);
   });

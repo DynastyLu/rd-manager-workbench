@@ -5,6 +5,8 @@ import { Banner, Button, Modal, Pagination, Spin, Tag } from '@douyinfe/semi-ui'
 import { IconDownload, IconUpload } from '@douyinfe/semi-icons'
 import { toast } from 'sonner'
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect'
+import { WorkspaceDatePicker } from '@/components/workspace/WorkspaceDatePicker'
+import { loadAllPages } from '@/lib/loadAllPages'
 import {
   archiveEmployeeWorkImport,
   commitEmployeeWorkImport,
@@ -46,6 +48,16 @@ const PERIOD_TYPE_LABELS = { WEEK: '周报', MONTH: '月报' } as const
 
 const COMMITTED_STATUSES = new Set(['COMPLETED', 'SUPERSEDED', 'EXPIRED'])
 
+function currentMondayDateOnly(now = new Date()): string {
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const day = monday.getDay()
+  monday.setDate(monday.getDate() - (day === 0 ? 6 : day - 1))
+  const year = monday.getFullYear()
+  const month = String(monday.getMonth() + 1).padStart(2, '0')
+  const date = String(monday.getDate()).padStart(2, '0')
+  return `${year}-${month}-${date}`
+}
+
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
@@ -66,6 +78,7 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
   const [selectedTaskId, setSelectedTaskId] = useState('')
   const [rowsPage, setRowsPage] = useState(1)
   const [templatePending, setTemplatePending] = useState(false)
+  const [templatePeriodStart, setTemplatePeriodStart] = useState(() => currentMondayDateOnly())
   const [associationOpen, setAssociationOpen] = useState(false)
   const [associationDismissed, setAssociationDismissed] = useState(false)
 
@@ -112,18 +125,30 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
   const resolverOpen = resolvingRow !== null
   const optionsNeeded = resolverOpen || associationOpen
   const employeesQuery = useQuery({
-    queryKey: employeeQueryKeys.list({ pageSize: OPTION_PAGE_SIZE }),
-    queryFn: () => listEmployees({ pageSize: OPTION_PAGE_SIZE }),
+    queryKey: ['employees', 'list', 'all-options'],
+    queryFn: () =>
+      loadAllPages(
+        (page, pageSize) => listEmployees({ page, pageSize }),
+        OPTION_PAGE_SIZE,
+      ),
     enabled: optionsNeeded,
   })
   const projectsQuery = useQuery({
-    queryKey: ['projects', 'list', { pageSize: OPTION_PAGE_SIZE }],
-    queryFn: () => listProjects({ pageSize: OPTION_PAGE_SIZE }),
+    queryKey: ['projects', 'list', { pageSize: 'all' }],
+    queryFn: () =>
+      loadAllPages(
+        (page, pageSize) => listProjects({ page, pageSize }),
+        OPTION_PAGE_SIZE,
+      ),
     enabled: optionsNeeded,
   })
   const tasksQuery = useQuery({
-    queryKey: ['tasks', 'list', { pageSize: OPTION_PAGE_SIZE }],
-    queryFn: () => listTasks({ pageSize: OPTION_PAGE_SIZE }),
+    queryKey: ['tasks', 'list', { pageSize: 'all' }],
+    queryFn: () =>
+      loadAllPages(
+        (page, pageSize) => listTasks({ page, pageSize }),
+        OPTION_PAGE_SIZE,
+      ),
     enabled: optionsNeeded,
   })
 
@@ -306,7 +331,7 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
   async function handleTemplateDownload() {
     setTemplatePending(true)
     try {
-      saveDownloadedFile(await downloadEmployeeWorkImportTemplate())
+      saveDownloadedFile(await downloadEmployeeWorkImportTemplate(templatePeriodStart))
     } catch (error) {
       toast.error(errorMessage(error, '模板下载失败，请重试。'))
     } finally {
@@ -527,14 +552,33 @@ export function EmployeeImportWizard({ visible, onClose }: EmployeeImportWizardP
             <span>仅支持 .xlsx 模板文件，上传后自动识别模板与周期并预检。</span>
             {uploadMutation.isPending ? <Spin size="small" /> : null}
           </label>
-          <Button
-            icon={<IconDownload aria-hidden="true" />}
-            aria-label="下载导入模板"
-            loading={templatePending}
-            onClick={() => void handleTemplateDownload()}
-          >
-            下载导入模板
-          </Button>
+          <div className="employee-import-wizard__template-download">
+            <div role="group" aria-label="模板周期选择区域">
+              <span>模板周一日期</span>
+              <WorkspaceDatePicker
+                aria-label="模板周一日期"
+                mode="date"
+                value={templatePeriodStart}
+                required
+                onChange={(value) => {
+                  const selected = new Date(`${value}T00:00:00`)
+                  if (!Number.isNaN(selected.getTime())) {
+                    setTemplatePeriodStart(currentMondayDateOnly(selected))
+                  }
+                }}
+              />
+            </div>
+            <span>请选择要填写周报的周期，选择其他日期会自动归到当周周一。</span>
+            <Button
+              icon={<IconDownload aria-hidden="true" />}
+              aria-label="下载导入模板"
+              loading={templatePending}
+              disabled={!templatePeriodStart}
+              onClick={() => void handleTemplateDownload()}
+            >
+              下载导入模板
+            </Button>
+          </div>
         </div>
       )
     }

@@ -12,7 +12,12 @@ describe('IndexingService', () => {
     };
     mockPrisma = {
       documentChunk: tx.documentChunk,
-      contentDocument: { findMany: jest.fn(), findUnique: jest.fn(), count: jest.fn() },
+      contentDocument: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        count: jest.fn(),
+        update: jest.fn().mockResolvedValue(undefined),
+      },
       knowledgeIndexJob: {
         create: jest.fn().mockResolvedValue({ id: 'job-1' }),
         update: jest.fn().mockResolvedValue(undefined),
@@ -48,15 +53,47 @@ describe('IndexingService', () => {
   });
 
   it('reports indexing status', async () => {
-    mockPrisma.$queryRawUnsafe
-      .mockResolvedValueOnce([{ count: 5n }])
-      .mockResolvedValueOnce([{ count: 0n }]);
-    mockPrisma.contentDocument.count.mockResolvedValue(8);
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([{ count: 5n }]);
+    mockPrisma.contentDocument.count
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(8);
 
     const status = await service.getStatus();
-    expect(status.indexedDocuments).toBe(5);
+    expect(status.indexedDocuments).toBe(0);
     expect(status.totalDocuments).toBe(8);
+    expect(status.totalChunks).toBe(5);
     expect(status.complete).toBe(false);
+  });
+
+  it('marks automatically scheduled documents searchable after writing chunks', async () => {
+    mockChunking.chunk.mockReturnValue([
+      { chunkIndex: 0, content: '可搜索内容', tokenCount: 5, metadata: {} },
+    ]);
+    mockEmbeddings.embed.mockResolvedValue([null]);
+    mockPrisma.contentDocument.findUnique.mockResolvedValue({ plainText: '可搜索内容' });
+
+    (service as any).pending.add('doc1');
+    await (service as any).flush();
+
+    expect(mockPrisma.contentDocument.update).toHaveBeenCalledWith({
+      where: { id: 'doc1' },
+      data: {
+        indexStatus: 'PARTIAL',
+        indexedAt: expect.any(Date),
+      },
+    });
+  });
+
+  it('marks automatically scheduled documents failed when indexing throws', async () => {
+    mockPrisma.contentDocument.findUnique.mockRejectedValue(new Error('broken file'));
+
+    (service as any).pending.add('doc1');
+    await (service as any).flush();
+
+    expect(mockPrisma.contentDocument.update).toHaveBeenCalledWith({
+      where: { id: 'doc1' },
+      data: { indexStatus: 'FAILED' },
+    });
   });
 
   it('persists reindex jobs so progress survives beyond an HTTP request', async () => {
@@ -73,5 +110,13 @@ describe('IndexingService', () => {
       where: { id: 'job-1' },
       data: expect.objectContaining({ status: 'SUCCEEDED' }),
     });
+  });
+
+  it('repairs legacy pending states when searchable chunks already exist', async () => {
+    await service.onModuleInit();
+
+    expect(mockPrisma.$executeRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining("SET index_status = 'PARTIAL'"),
+    );
   });
 });

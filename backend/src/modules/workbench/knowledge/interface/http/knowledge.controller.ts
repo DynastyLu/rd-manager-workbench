@@ -1,6 +1,19 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, HttpStatus, MessageEvent,
-  Param, Patch, Post, Query, Res, Sse, UploadedFile, UseInterceptors,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  MessageEvent,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+  Sse,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
@@ -88,18 +101,12 @@ export class KnowledgeController {
         Connection: 'keep-alive',
       });
       writeEvent('retrieval_started', { scope: session.scope });
-      const {
-        stream,
-        citations,
-        totalFound,
-        relevantCount,
-        searchedDocumentCount,
-        hasEvidence,
-      } = await this.rag.ask({
-        question: dto.question,
-        history: history.slice(0, -1),
-        scope: session.scope,
-      });
+      const { stream, citations, totalFound, relevantCount, searchedDocumentCount, hasEvidence } =
+        await this.rag.ask({
+          question: dto.question,
+          history: history.slice(0, -1),
+          scope: session.scope,
+        });
       writeEvent('retrieval_completed', {
         searchedDocumentCount,
         totalFound,
@@ -151,7 +158,9 @@ export class KnowledgeController {
                 fullContent += content;
                 writeEvent('answer_delta', { text: content });
               }
-            } catch { /* skip malformed upstream event */ }
+            } catch {
+              /* skip malformed upstream event */
+            }
           }
         }
       }
@@ -274,7 +283,9 @@ export class KnowledgeController {
   }
 
   @Post('folders')
-  async startWatchingFolder(@Body() body: { folderPath: string; label?: string; spaceId?: string; recursive?: boolean }) {
+  async startWatchingFolder(
+    @Body() body: { folderPath: string; label?: string; spaceId?: string; recursive?: boolean },
+  ) {
     if (!body.folderPath?.trim()) throw new Error('folderPath is required');
 
     // Auto-create a space if not provided
@@ -301,20 +312,28 @@ export class KnowledgeController {
   }
 
   @Post('folders/:id/rescan')
+  @HttpCode(HttpStatus.ACCEPTED)
   async rescanFolder(@Param('id') id: string) {
     return this.folderWatch.rescan(id);
   }
 
   @Sse('folders/:id/progress')
   folderProgress(@Param('id') id: string): Observable<MessageEvent> {
-    return this.folderWatch.getProgressStream(id).pipe(
-      map((data) => ({ data })),
-    );
+    return this.folderWatch.getProgressStream(id).pipe(map((data) => ({ data })));
   }
 
   @Get('folders/:id/progress-snapshot')
   folderProgressSnapshot(@Param('id') id: string) {
-    return this.folderWatch.getProgress(id) ?? { phase: 'done', total: 0, current: 0, currentFile: '', percent: 100 };
+    return (
+      this.folderWatch.getProgress(id) ?? {
+        phase: 'done',
+        total: 0,
+        current: 0,
+        scanned: 0,
+        currentFile: '',
+        percent: 100,
+      }
+    );
   }
 
   private sendFile(

@@ -43,6 +43,50 @@ describe('RagService', () => {
     expect(result.citations[0].title).toBe('Test Doc');
   });
 
+  it('searches partially indexed documents when text chunks are available', async () => {
+    mockPrisma.$queryRaw.mockResolvedValue([]);
+
+    await service.ask({ question: '总结周报', history: [], scope: { type: 'ALL' } });
+
+    const queryText = mockPrisma.$queryRaw.mock.calls
+      .map((call: unknown[]) => String((call[0] as { strings?: string[] }).strings?.join('')))
+      .join('\n');
+    expect(queryText).toContain("cd.index_status IN ('READY', 'PARTIAL')");
+  });
+
+  it('retrieves recent document chunks for summary requests', async () => {
+    mockPrisma.$queryRaw
+      .mockResolvedValue([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'c1',
+          document_id: 'doc1',
+          chunk_index: 0,
+          content: '本周完成项目评审并关闭两个风险。',
+          metadata: {},
+          document_title: '研发周报',
+          space_name: null,
+          similarity: 0.2,
+          page_number: null,
+          sheet_name: null,
+          location_label: null,
+        },
+      ]);
+    mockDeepseek.streamChat.mockResolvedValue(new ReadableStream());
+
+    const result = await service.ask({
+      question: '总结最近上传的研发资料',
+      history: [],
+      scope: { type: 'ALL' },
+    });
+
+    const summaryQuery = mockPrisma.$queryRaw.mock.calls[1][0] as { strings: string[] };
+    expect(summaryQuery.strings.join('')).toContain('ORDER BY cd.updated_at DESC');
+    expect(result.citations).toHaveLength(1);
+    expect(mockDeepseek.streamChat).toHaveBeenCalled();
+  });
+
   it('returns empty citations when no chunks above threshold', async () => {
     mockPrisma.$queryRaw.mockResolvedValue([]);
 

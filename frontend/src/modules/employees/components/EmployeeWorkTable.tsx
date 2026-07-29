@@ -23,6 +23,7 @@ interface EmployeeWorkTableProps {
   showEmployee?: boolean
   focusedWorkItemId?: string
   onConvertRisk?: (item: EmployeeWorkItem) => void
+  onEdit?: (item: EmployeeWorkItem) => void
   convertingWorkItemId?: string | null
   pagination?: false | Record<string, unknown>
 }
@@ -32,6 +33,7 @@ export function EmployeeWorkTable({
   showEmployee = false,
   focusedWorkItemId,
   onConvertRisk,
+  onEdit,
   convertingWorkItemId,
   pagination = false,
 }: EmployeeWorkTableProps) {
@@ -155,7 +157,7 @@ export function EmployeeWorkTable({
         item.source?.label ||
         `v${item.importVersion ?? '—'} · 第 ${item.sourceRowNumber} 行`,
     },
-    ...(onConvertRisk
+    ...(onConvertRisk || onEdit
       ? [
           {
             title: '操作',
@@ -163,18 +165,30 @@ export function EmployeeWorkTable({
             width: 130,
             fixed: 'right' as const,
             render: (_value: unknown, item: EmployeeWorkItem) => {
-              if (item.riskId) return <Tag size="small">已转风险</Tag>
-              if (!item.riskText || !item.project) return null
               return (
-                <Button
-                  size="small"
-                  theme="borderless"
-                  type="primary"
-                  loading={convertingWorkItemId === item.id}
-                  onClick={() => onConvertRisk(item)}
-                >
-                  转为项目风险
-                </Button>
+                <div className="employee-work-table__actions">
+                  {onEdit ? (
+                    <Button
+                      size="small"
+                      theme="borderless"
+                      onClick={() => onEdit(item)}
+                    >
+                      编辑
+                    </Button>
+                  ) : null}
+                  {onConvertRisk && item.riskId ? <Tag size="small">已转风险</Tag> : null}
+                  {onConvertRisk && !item.riskId && item.riskText && item.project ? (
+                    <Button
+                      size="small"
+                      theme="borderless"
+                      type="primary"
+                      loading={convertingWorkItemId === item.id}
+                      onClick={() => onConvertRisk(item)}
+                    >
+                      转为项目风险
+                    </Button>
+                  ) : null}
+                </div>
               )
             },
           } satisfies ColumnProps<EmployeeWorkItem>,

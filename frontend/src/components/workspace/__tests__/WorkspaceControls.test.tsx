@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { getSemiOptionValues, isSemiOptionDisabled, selectSemiOption } from '@/test-utils/selectSemiOption'
 import { WorkspaceSelect } from '../WorkspaceSelect'
 import { WorkspaceFormSelect } from '../WorkspaceFormSelect'
 import { WorkspaceFormActions } from '../WorkspaceForm'
@@ -55,6 +56,53 @@ describe('WorkspaceSelect', () => {
     )
 
     expect(screen.getByRole('combobox', { name: '负责人' })).toHaveTextContent('未指定')
+  })
+
+  it('selects from the requested control when a closing portal still contains the same option', async () => {
+    const onChange = vi.fn()
+    const staleOption = document.createElement('div')
+    staleOption.setAttribute('role', 'option')
+    staleOption.dataset.value = 'LOOKUP'
+    document.body.appendChild(staleOption)
+
+    try {
+      render(
+        <WorkspaceSelect
+          aria-label="字段类型"
+          value="TEXT"
+          onChange={onChange}
+          options={[
+            { value: 'TEXT', label: '文本' },
+            { value: 'LOOKUP', label: '查找引用' },
+          ]}
+        />,
+      )
+
+      await selectSemiOption(screen.getByRole('combobox', { name: '字段类型' }), 'LOOKUP')
+
+      expect(onChange).toHaveBeenCalledWith('LOOKUP')
+    } finally {
+      staleOption.remove()
+    }
+  })
+
+  it('closes the option portal after inspection helpers finish', async () => {
+    render(
+      <WorkspaceSelect
+        aria-label="优先级"
+        value="NORMAL"
+        options={[
+          { value: 'NORMAL', label: '普通' },
+          { value: 'HIGH', label: '高', disabled: true },
+        ]}
+      />,
+    )
+
+    const control = screen.getByRole('combobox', { name: '优先级' })
+    await expect(getSemiOptionValues(control)).resolves.toEqual(['NORMAL', 'HIGH'])
+    expect(control).toHaveAttribute('aria-expanded', 'false')
+    await expect(isSemiOptionDisabled(control, 'HIGH')).resolves.toBe(true)
+    expect(control).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('enforces required values and omits disabled values from native form data', () => {

@@ -65,9 +65,10 @@ vi.mock('@/modules/workbench/api/documents', () => ({
 }))
 
 vi.mock('@/modules/knowledge/components/KnowledgeChatPanel', () => ({
-  KnowledgeChatPanel: (props: { sessionId: string | null; onSessionCreated: (id: string) => void }) => (
-    <div data-testid="knowledge-chat-panel" data-session-id={String(props.sessionId)} />
-  ),
+  KnowledgeChatPanel: (props: {
+    sessionId: string | null
+    onSessionCreated: (id: string) => void
+  }) => <div data-testid="knowledge-chat-panel" data-session-id={String(props.sessionId)} />,
 }))
 
 vi.mock('@/modules/knowledge/components/KnowledgeSessionList', () => ({
@@ -75,7 +76,18 @@ vi.mock('@/modules/knowledge/components/KnowledgeSessionList', () => ({
     activeId?: string | null
     onSelect: (s: unknown) => void
     onNew: () => void
-  }) => <div data-testid="knowledge-session-list" data-active-id={String(props.activeId)} />,
+    onNavigate?: (tab: 'documents' | 'folders') => void
+  }) => (
+    <div data-testid="knowledge-session-list" data-active-id={String(props.activeId)}>
+      <span>AI 问答</span>
+      <button type="button" onClick={() => props.onNavigate?.('documents')}>
+        文档浏览
+      </button>
+      <button type="button" onClick={() => props.onNavigate?.('folders')}>
+        本地文件夹
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('@/modules/workbench/components/extensions/AiBusinessAction', () => ({
@@ -108,7 +120,7 @@ function renderKnowledgeHome() {
       <MemoryRouter>
         <KnowledgeHomePage />
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
 }
 
@@ -135,16 +147,12 @@ describe('KnowledgeHomePage', () => {
     mockCreateKnowledgeSpace.mockReset()
 
     // Default mock implementations: getEnum reads from mockSearchParams
-    mockGetEnum.mockImplementation(
-      (key: string, values: readonly string[], defaultVal: string) => {
-        const val = mockSearchParams.get(key)
-        if (val && (values as readonly string[]).includes(val)) return val
-        return defaultVal
-      },
-    )
-    mockGetString.mockImplementation((key: string) =>
-      mockSearchParams.get(key) ?? undefined,
-    )
+    mockGetEnum.mockImplementation((key: string, values: readonly string[], defaultVal: string) => {
+      const val = mockSearchParams.get(key)
+      if (val && (values as readonly string[]).includes(val)) return val
+      return defaultVal
+    })
+    mockGetString.mockImplementation((key: string) => mockSearchParams.get(key) ?? undefined)
 
     // Default API responses
     mockListDocuments.mockResolvedValue({ data: [] })
@@ -191,10 +199,7 @@ describe('KnowledgeHomePage', () => {
     expect(screen.getByTestId('knowledge-chat-panel')).toBeInTheDocument()
 
     // The chat panel receives chatSessionId (initially null)
-    expect(screen.getByTestId('knowledge-chat-panel')).toHaveAttribute(
-      'data-session-id',
-      'null',
-    )
+    expect(screen.getByTestId('knowledge-chat-panel')).toHaveAttribute('data-session-id', 'null')
   })
 
   it('switches between documents and chat tabs', () => {
@@ -205,10 +210,7 @@ describe('KnowledgeHomePage', () => {
 
     // Click AI 问答 tab
     fireEvent.click(screen.getByText('AI 问答'))
-    expect(mockUpdate).toHaveBeenCalledWith(
-      { tab: 'chat' },
-      { defaults: { tab: 'documents' } },
-    )
+    expect(mockUpdate).toHaveBeenCalledWith({ tab: 'chat' }, { defaults: { tab: 'documents' } })
   })
 
   it('shows empty documents state', async () => {

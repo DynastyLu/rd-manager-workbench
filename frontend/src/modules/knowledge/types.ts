@@ -11,6 +11,8 @@ export interface KnowledgeSession {
   scope?: KnowledgeScope;
   scopeType?: KnowledgeScope['type'];
   isPinned?: boolean;
+  preview?: string;
+  lastMessageAt?: string;
   archivedAt?: string | null;
   createdAt: string; updatedAt: string; messages?: KnowledgeMessage[];
 }

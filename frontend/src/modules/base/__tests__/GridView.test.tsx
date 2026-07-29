@@ -241,6 +241,48 @@ describe('GridView', () => {
     )
   })
 
+  it('keeps a pending quick-filter field when equivalent view props are recreated', async () => {
+    const multiFilterView: DataView = {
+      ...view,
+      config: {
+        filters: [
+          { fieldKey: 'name', operator: 'CONTAINS', value: '北斗' },
+          { fieldKey: 'active', operator: 'EQ', value: true },
+        ],
+      },
+    }
+    const renderGrid = (nextView: DataView, nextFields: DataField[]) => (
+      <MemoryRouter>
+        <GridView
+          fields={nextFields}
+          records={records}
+          view={nextView}
+          onRecordChange={vi.fn()}
+          onViewChange={vi.fn()}
+        />
+      </MemoryRouter>
+    )
+    const { rerender } = render(renderGrid(multiFilterView, fields))
+
+    await selectSemiOption(screen.getByLabelText('筛选字段'), 'budget')
+    expect(screen.getByLabelText('筛选值')).toHaveValue('')
+
+    rerender(
+      renderGrid(
+        {
+          ...multiFilterView,
+          config: {
+            ...multiFilterView.config,
+            filters: [...(multiFilterView.config.filters ?? [])],
+          },
+        },
+        [...fields]
+      )
+    )
+
+    expect(screen.getByLabelText('筛选值')).toHaveValue('')
+  })
+
   it('clears only the quick filter and keeps the remaining conditions', async () => {
     const onViewChange = vi.fn()
     const multiFilterView: DataView = {

@@ -1,7 +1,16 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Select, Spin, Toast, Tooltip } from '@douyinfe/semi-ui';
-import { IconCopy, IconEdit, IconRefresh, IconStop } from '@douyinfe/semi-icons';
+import {
+  IconCopy,
+  IconDislikeThumb,
+  IconEdit,
+  IconLikeThumb,
+  IconPlusCircle,
+  IconRefresh,
+  IconSend,
+  IconStop,
+} from '@douyinfe/semi-icons';
 import {
   chatStream,
   createSession,
@@ -12,6 +21,9 @@ import {
 import { knowledgeQueryKeys } from '../queryKeys';
 import { KnowledgeMarkdown } from './KnowledgeMarkdown';
 import { KnowledgeCitationCard } from './KnowledgeCitationCard';
+import { KnowledgeThinkingProcess } from './KnowledgeThinkingProcess';
+import { NovaWordmark } from './NovaWordmark';
+import { NovaBot } from './NovaBot';
 import { copyToClipboard, extractHighlightTerms } from '../format';
 import { createSseParser } from '../sse';
 import type { KnowledgeMessage, ChunkCitation, KnowledgeScope } from '../types';
@@ -31,6 +43,7 @@ export function KnowledgeChatPanel({
   projectId,
 }: Props) {
   const [streamingContent, setStreamingContent] = useState('');
+  const [draft, setDraft] = useState('');
   const [streamingCitations, setStreamingCitations] = useState<ChunkCitation[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +57,7 @@ export function KnowledgeChatPanel({
   const [pendingAnswer, setPendingAnswer] = useState<{ content: string; citations: ChunkCitation[] } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const activeSessionRef = useRef<string | null>(sessionId);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamContentRef = useRef('');       // capture streaming content for finally
   const streamCitationsRef = useRef<ChunkCitation[]>([]);
@@ -63,7 +76,8 @@ export function KnowledgeChatPanel({
   const highlightTerms = useMemo(() => extractHighlightTerms(lastQuestion), [lastQuestion]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesRef.current;
+    if (container) container.scrollTop = container.scrollHeight;
   }, [session?.messages, streamingContent]);
 
   // Clear pending answer once it appears in the loaded session messages
@@ -266,24 +280,25 @@ export function KnowledgeChatPanel({
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      const el = inputRef.current;
-      if (!el) return;
-      const text = el.value.trim();
-      if (text && !streaming) { el.value = ''; void send(text); }
+      const text = draft.trim();
+      if (text && !streaming) {
+        setDraft('');
+        void send(text);
+      }
     }
-  }, [send, streaming]);
+  }, [draft, send, streaming]);
 
   const handleSendClick = useCallback(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    const text = el.value.trim();
-    if (text && !streaming) { el.value = ''; void send(text); }
-  }, [send, streaming]);
+    const text = draft.trim();
+    if (text && !streaming) {
+      setDraft('');
+      void send(text);
+    }
+  }, [draft, send, streaming]);
 
   const editQuestion = useCallback((question: string) => {
-    if (!inputRef.current) return;
-    inputRef.current.value = question;
-    inputRef.current.focus();
+    setDraft(question);
+    inputRef.current?.focus();
   }, []);
 
   const createTaskFromAnswer = useCallback(async (message: KnowledgeMessage) => {
@@ -313,17 +328,38 @@ export function KnowledgeChatPanel({
   // Empty state (no session)
   if (!sessionId) {
     return (
-      <div className="kb-chat-main">
+      <div className="kb-chat-main kb-chat-main--empty-state">
         <div className="kb-chat-main__empty">
-          <div style={{ fontSize: 48, marginBottom: 8 }}>💬</div>
-          <h2>知识库 AI 问答</h2>
-          <p>只基于你本地或上传且已完成索引的文件回答，并给出可核对来源。</p>
-          <Select
-            className="knowledge-assistant__scope-select"
-            value={newScopeType}
-            onChange={(value) => setNewScopeType(value as typeof newScopeType)}
-            optionList={scopeOptions(Boolean(projectId))}
-          />
+          <NovaWordmark />
+          <div className="kb-chat-composer kb-chat-composer--centered">
+            <textarea
+              ref={inputRef}
+              className="kb-chat-composer__textarea"
+              placeholder="输入问题，回车发送..."
+              rows={2}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            <div className="kb-chat-composer__footer">
+              <Select
+                className="knowledge-assistant__scope-select"
+                value={newScopeType}
+                onChange={(value) => setNewScopeType(value as typeof newScopeType)}
+                optionList={scopeOptions(Boolean(projectId))}
+                borderless
+              />
+              <button
+                className="kb-chat-composer__send"
+                type="button"
+                aria-label="发送问题"
+                disabled={!draft.trim()}
+                onClick={handleSendClick}
+              >
+                <IconSend />
+              </button>
+            </div>
+          </div>
           <div className="knowledge-assistant__suggestions">
             {suggestions.map((suggestion) => (
               <button key={suggestion} type="button" onClick={() => void send(suggestion)}>
@@ -331,17 +367,7 @@ export function KnowledgeChatPanel({
               </button>
             ))}
           </div>
-          <div className="knowledge-assistant__empty-composer">
-            <textarea
-              ref={inputRef}
-              className="kb-chat-input-bar__textarea"
-              placeholder="输入问题，回车发送..."
-              rows={2}
-              onKeyDown={handleKeyDown}
-            />
-            <button type="button" onClick={handleSendClick}>发送</button>
-          </div>
-          <p style={{ fontSize: 12, color: '#bbb', marginTop: 8 }}>新对话将自动创建 · DeepSeek 驱动</p>
+          <p className="kb-chat-main__footnote">新对话将自动创建 · DeepSeek 驱动</p>
         </div>
       </div>
     );
@@ -362,14 +388,11 @@ export function KnowledgeChatPanel({
             已索引 {indexStatusQuery.data?.indexedDocuments ?? 0} 个文件
           </span>
         </div>
-        <Select
-          value={session?.scope?.type ?? 'ALL'}
-          onChange={(value) => void changeScope(value)}
-          optionList={scopeOptions(Boolean(projectId))}
-          className="knowledge-assistant__scope-select"
-        />
+        <span className="knowledge-assistant__index-state">
+          {indexStatusQuery.data?.complete ? '知识索引已就绪' : '知识索引处理中'}
+        </span>
       </header>
-      <div className="kb-chat-main__messages">
+      <div ref={messagesRef} className="kb-chat-main__messages">
         {messages.length === 0 && !streaming && (
           <div className="kb-chat-main__empty"><p>输入问题开始搜索本地知识库</p></div>
         )}
@@ -395,7 +418,9 @@ export function KnowledgeChatPanel({
         {/* Pending answer card (bridges the gap between streaming end and session refetch) */}
         {!streaming && pendingAnswer && (
           <div className="kb-message kb-message--assistant">
-            <div className="kb-message__avatar">AI</div>
+            <div className="kb-message__avatar kb-message__avatar--nova">
+              <NovaBot compact />
+            </div>
             <div className="kb-message__body">
               <div className="kb-message__bubble">
                 <KnowledgeMarkdown text={pendingAnswer.content} />
@@ -414,7 +439,9 @@ export function KnowledgeChatPanel({
         {/* Persistent empty result card (survives streaming=false) */}
         {!streaming && lastEmptyResult && (
           <div className="kb-message kb-message--assistant">
-            <div className="kb-message__avatar">AI</div>
+            <div className="kb-message__avatar kb-message__avatar--nova">
+              <NovaBot compact />
+            </div>
             <div className="kb-message__body">
               <div className="kb-message__bubble" style={{ background: '#fffbe6', border: '1px solid #ffe58f' }}>
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>未找到相关内容</div>
@@ -433,20 +460,12 @@ export function KnowledgeChatPanel({
 
         {/* Streaming bubble */}
         {streaming && (
-          <div className="kb-message kb-message--assistant">
-            <div className="kb-message__avatar">AI</div>
-            <div className="kb-message__body">
-              {/* Thinking steps */}
-              {thinkingSteps.length > 0 && (
-                <div className="kb-thinking">
-                  {thinkingSteps.map((step, i) => (
-                    <div key={i} className={`kb-thinking__step kb-thinking__step--${step.phase}`}>
-                      <span className="kb-thinking__dot" />
-                      <span>{step.message}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
+          <div className="kb-streaming-response">
+            <KnowledgeThinkingProcess
+              steps={thinkingSteps}
+              hasAnswerContent={Boolean(streamingContent)}
+            />
+            <div className="kb-streaming-response__answer">
               {/* Answer content */}
               {streamingContent && (
                 <div className="kb-message__bubble">
@@ -486,21 +505,45 @@ export function KnowledgeChatPanel({
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
+        <div />
       </div>
 
       {/* Input bar */}
-      <div className="kb-chat-input-bar">
-        <textarea ref={inputRef} className="kb-chat-input-bar__textarea"
+      <div className="kb-chat-composer-dock">
+        <div className="kb-chat-composer">
+          <textarea ref={inputRef} className="kb-chat-composer__textarea"
           placeholder={streaming ? '等待回复完成...' : '输入问题，Enter 发送，Shift+Enter 换行'}
-          rows={1} disabled={streaming} onKeyDown={handleKeyDown} />
-        {streaming ? (
-          <button className="kb-chat-input-bar__stop" onClick={stop}>
-            <IconStop size="small" style={{ marginRight: 4 }} />停止
-          </button>
-        ) : (
-          <button className="kb-chat-input-bar__send" onClick={handleSendClick}>发送</button>
-        )}
+            rows={2}
+            value={draft}
+            disabled={streaming}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <div className="kb-chat-composer__footer">
+            <Select
+              value={session?.scope?.type ?? 'ALL'}
+              onChange={(value) => void changeScope(value)}
+              optionList={scopeOptions(Boolean(projectId))}
+              className="knowledge-assistant__scope-select"
+              borderless
+            />
+            {streaming ? (
+              <button className="kb-chat-composer__stop" aria-label="停止生成" onClick={stop}>
+                <IconStop />
+              </button>
+            ) : (
+              <button
+                className="kb-chat-composer__send"
+                aria-label="发送问题"
+                disabled={!draft.trim()}
+                onClick={handleSendClick}
+              >
+                <IconSend />
+              </button>
+            )}
+          </div>
+        </div>
+        <small>AI 回答仅依据当前知识库，请通过引用来源核对重要信息。</small>
       </div>
 
     </div>
@@ -524,6 +567,7 @@ function MessageBubble({
   onCreateTask?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [feedback, setFeedback] = useState<'helpful' | 'unhelpful' | null>(null);
   const isUser = msg.role === 'USER';
 
   const handleCopy = () => {
@@ -532,33 +576,105 @@ function MessageBubble({
     });
   };
 
+  const handleFeedback = (value: 'helpful' | 'unhelpful') => {
+    setFeedback((current) => (current === value ? null : value));
+    Toast.success(value === 'helpful' ? '已记录：回答有帮助' : '已记录：回答需要改进');
+  };
+
   return (
     <div className={`kb-message kb-message--${isUser ? 'user' : 'assistant'}`}>
-      <div className="kb-message__avatar">{isUser ? 'U' : 'AI'}</div>
+      <div className={`kb-message__avatar${isUser ? '' : ' kb-message__avatar--nova'}`}>
+        {isUser ? 'U' : <NovaBot compact />}
+      </div>
       <div className="kb-message__body">
         <div className="kb-message__bubble">
           {isUser ? msg.content : <KnowledgeMarkdown text={msg.content} />}
         </div>
-        <div className="knowledge-assistant__message-actions">
+        <div
+          className="knowledge-assistant__message-actions"
+          role={!isUser ? 'toolbar' : undefined}
+          aria-label={!isUser ? '回答操作' : undefined}
+        >
           {isUser && onEdit ? (
-            <button type="button" onClick={onEdit}><IconEdit size="small" />编辑后再问</button>
+            <button
+              className="knowledge-assistant__message-action"
+              type="button"
+              onClick={onEdit}
+            >
+              <span className="knowledge-assistant__message-action-icon">
+                <IconEdit size="small" />
+              </span>
+              <span>编辑后再问</span>
+            </button>
           ) : null}
           {!isUser ? (
             <>
               <Tooltip content={copied ? '已复制' : '复制回答'}>
-                <button className="kb-message__copy-btn" onClick={handleCopy} type="button">
-                  <IconCopy size="small" />
-                  {copied ? '已复制' : '复制'}
+                <button
+                  className="knowledge-assistant__message-action kb-message__copy-btn"
+                  aria-label={copied ? '已复制回答' : '复制回答'}
+                  onClick={handleCopy}
+                  type="button"
+                >
+                  <span className="knowledge-assistant__message-action-icon">
+                    <IconCopy size="small" />
+                  </span>
+                  <span>{copied ? '已复制' : '复制'}</span>
                 </button>
               </Tooltip>
               {onRegenerate ? (
-                <button type="button" onClick={onRegenerate}>
-                  <IconRefresh size="small" />重新生成
+                <button
+                  className="knowledge-assistant__message-action"
+                  type="button"
+                  aria-label="重新生成回答"
+                  onClick={onRegenerate}
+                >
+                  <span className="knowledge-assistant__message-action-icon">
+                    <IconRefresh size="small" />
+                  </span>
+                  <span>重新生成</span>
                 </button>
               ) : null}
               {onCreateTask ? (
-                <button type="button" onClick={onCreateTask}>转为工作项</button>
+                <button
+                  className="knowledge-assistant__message-action"
+                  type="button"
+                  aria-label="转为工作项"
+                  onClick={onCreateTask}
+                >
+                  <span className="knowledge-assistant__message-action-icon">
+                    <IconPlusCircle size="small" />
+                  </span>
+                  <span>转为工作项</span>
+                </button>
               ) : null}
+              <span className="knowledge-assistant__message-action-divider" aria-hidden="true" />
+              <Tooltip content="回答有帮助">
+                <button
+                  className="knowledge-assistant__message-action knowledge-assistant__message-action--icon-only"
+                  type="button"
+                  aria-label="回答有帮助"
+                  aria-pressed={feedback === 'helpful'}
+                  onClick={() => handleFeedback('helpful')}
+                >
+                  <span className="knowledge-assistant__message-action-icon">
+                    <IconLikeThumb size="small" />
+                  </span>
+                </button>
+              </Tooltip>
+              <Tooltip content="回答需改进">
+                <button
+                  className="knowledge-assistant__message-action knowledge-assistant__message-action--icon-only"
+                  type="button"
+                  aria-label="回答需改进"
+                  aria-pressed={feedback === 'unhelpful'}
+                  onClick={() => handleFeedback('unhelpful')}
+                >
+                  <span className="knowledge-assistant__message-action-icon">
+                    <IconDislikeThumb size="small" />
+                  </span>
+                </button>
+              </Tooltip>
             </>
           ) : null}
         </div>

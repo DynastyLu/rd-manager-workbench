@@ -34,6 +34,9 @@ describe('EmployeeProgressQueryService', () => {
       findFirst: jest.fn(),
       count: jest.fn(),
     },
+    employeeProgressSnapshot: {
+      findFirst: jest.fn(),
+    },
     resourceProfile: {
       findFirst: jest.fn(),
     },
@@ -167,6 +170,7 @@ describe('EmployeeProgressQueryService', () => {
     prisma.employeeWeekPlanItem.findMany.mockResolvedValue([nextWeekPlan]);
     prisma.employeeWeekPlanItem.findFirst.mockResolvedValue(nextWeekPlan);
     prisma.employeeWeekPlanItem.count.mockResolvedValue(1);
+    prisma.employeeProgressSnapshot.findFirst.mockResolvedValue(null);
     prisma.employeeWorkImportBatch.findMany.mockResolvedValue([
       {
         id: 'batch-2',
@@ -452,6 +456,154 @@ describe('EmployeeProgressQueryService', () => {
           key: '张三:CURRENT_WORK:7',
           label: '张三 / 本周工作 / 第 7 行',
         },
+      }),
+    );
+  });
+
+  it('uses the current snapshot to expose V2 progress metrics and next-plan metrics', async () => {
+    prisma.employeeProgressSnapshot.findFirst.mockResolvedValue({
+      metrics: {
+        workItemCount: 2,
+        completedCount: 1,
+        completionRate: 50,
+        averageCompletionRate: 75,
+        plannedHours: 12,
+        actualHours: 12,
+        hoursUtilizationRate: 100,
+        missingHoursCount: 0,
+        hoursCompleteness: 100,
+        riskCount: 1,
+        blockedCount: 0,
+        overdueCount: 1,
+        projectCount: 1,
+        unlinkedCount: 1,
+        projectWorkCount: 1,
+        nonProjectWorkCount: 1,
+        legacyUnclassifiedCount: 0,
+        workDirectionDistribution: [
+          {
+            workDirection: '平台研发',
+            workItemCount: 2,
+            completedCount: 1,
+            completionRate: 50,
+          },
+        ],
+        nextPlanMetrics: {
+          planCount: 1,
+          priorityDistribution: {
+            UNSPECIFIED: 0,
+            LOW: 0,
+            MEDIUM: 0,
+            HIGH: 1,
+            URGENT: 0,
+          },
+          highPriorityCount: 1,
+          collaborationCount: 1,
+          unmatchedCount: 1,
+          cancelledCount: 0,
+        },
+        dataComplete: true,
+        missingWeeks: [],
+      },
+    });
+    const service = createService();
+
+    const result = await service.team({
+      periodType: EmployeeProgressPeriod.WEEK,
+      periodStart: '2026-07-20',
+    });
+
+    expect(result.metrics).toEqual(
+      expect.objectContaining({
+        overdueCount: 1,
+        projectWorkCount: 1,
+        nonProjectWorkCount: 1,
+        missingHoursCount: 0,
+        hoursCompleteness: 100,
+        hoursUtilizationRate: 100,
+        workDirectionDistribution: [
+          expect.objectContaining({ workDirection: '平台研发', workItemCount: 2 }),
+        ],
+      }),
+    );
+    expect(result.nextPlanMetrics).toEqual(
+      expect.objectContaining({
+        planCount: 1,
+        highPriorityCount: 1,
+        collaborationCount: 1,
+      }),
+    );
+    expect(prisma.employeeProgressSnapshot.findFirst).toHaveBeenCalledWith({
+      where: {
+        scopeKey: 'TEAM',
+        periodType: EmployeeProgressPeriod.WEEK,
+        periodStartAt: new Date('2026-07-20T00:00:00.000Z'),
+        archivedAt: null,
+      },
+      orderBy: [{ version: 'desc' }, { generatedAt: 'desc' }, { id: 'desc' }],
+      select: { metrics: true },
+    });
+  });
+
+  it('applies bounded V2 filters to current work and future plan queries', async () => {
+    const service = createService();
+
+    await service.workItems({
+      periodType: EmployeeProgressPeriod.WEEK,
+      periodStart: '2026-07-20',
+      workDirection: '平台研发',
+      workKind: EmployeeWorkKind.PROJECT,
+      projectId: 'project-1',
+      taskId: 'task-1',
+      dueDateFrom: '2026-07-21',
+      dueDateTo: '2026-07-25',
+      riskOnly: true,
+    });
+    await service.weekPlans({
+      periodType: EmployeeProgressPeriod.WEEK,
+      periodStart: '2026-07-27',
+      priority: EmployeePlanPriority.HIGH,
+      projectId: 'project-1',
+      workDirection: '平台研发',
+      dueDateFrom: '2026-07-28',
+      dueDateTo: '2026-07-31',
+    });
+
+    expect(prisma.employeeWorkItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          workKind: EmployeeWorkKind.PROJECT,
+          projectId: 'project-1',
+          taskId: 'task-1',
+          plannedCompletionAt: {
+            gte: new Date('2026-07-21T00:00:00.000Z'),
+            lte: new Date('2026-07-25T00:00:00.000Z'),
+          },
+          OR: [
+            { riskText: { not: null } },
+            { status: { in: [EmployeeWorkStatus.AT_RISK, EmployeeWorkStatus.BLOCKED] } },
+          ],
+          employee: expect.objectContaining({
+            archivedAt: null,
+            workDirection: '平台研发',
+          }),
+        }),
+      }),
+    );
+    expect(prisma.employeeWeekPlanItem.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          priority: EmployeePlanPriority.HIGH,
+          projectId: 'project-1',
+          plannedCompletionAt: {
+            gte: new Date('2026-07-28T00:00:00.000Z'),
+            lte: new Date('2026-07-31T00:00:00.000Z'),
+          },
+          employee: expect.objectContaining({
+            archivedAt: null,
+            workDirection: '平台研发',
+          }),
+        }),
       }),
     );
   });
@@ -790,7 +942,11 @@ describe('EmployeeProgressQueryService', () => {
       projectId: 'project-1',
     });
 
-    expect(result.employee).toMatchObject({ id: 'employee-1', displayName: '张三' });
+    expect(result.employee).toMatchObject({
+      id: 'employee-1',
+      displayName: '张三',
+      workDirection: '平台研发',
+    });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
       isolationLevel: 'RepeatableRead',
@@ -944,7 +1100,17 @@ describe('EmployeeProgressQueryService', () => {
     const issueRow = {
       id: 'row-issue',
       batchId: 'batch-detail',
-      rowNumber: 3,
+      rowNumber: 1,
+      sourceSheetName: '张三',
+      sourceSection: 'NEXT_WEEK_PLAN',
+      sourceRowNumber: 20,
+      sourceKey: '张三:NEXT_WEEK_PLAN:20',
+      workKind: EmployeeWorkKind.PROJECT,
+      plannedHours: 6.5,
+      actualHours: null,
+      profileAction: 'UPDATE',
+      riskDecision: 'KEEP',
+      riskText: '依赖资源确认',
       rawValues: {},
       normalizedValues: {},
       status: EmployeeImportRowStatus.ERROR,
@@ -954,6 +1120,7 @@ describe('EmployeeProgressQueryService', () => {
       resolvedTaskId: null,
       keepUnlinked: false,
       workItem: null,
+      weekPlanItem: { id: 'plan-1', archivedAt: null },
     };
     prisma.employeeWorkImportBatch.findUnique.mockResolvedValue(batch);
     prisma.employeeWorkImportRow.findMany.mockResolvedValue([issueRow]);
@@ -979,6 +1146,23 @@ describe('EmployeeProgressQueryService', () => {
     );
     expect(prisma.employeeWorkImportRow.count).toHaveBeenCalledWith({ where: filteredWhere });
     expect(filtered.rowMeta).toEqual({ page: 2, pageSize: 10, total: 1 });
+    expect(filtered.rows[0]).toMatchObject({
+      rowNumber: 1,
+      sourceSheetName: '张三',
+      sourceSection: 'NEXT_WEEK_PLAN',
+      sourceRowNumber: 20,
+      sourceKey: '张三:NEXT_WEEK_PLAN:20',
+      workKind: EmployeeWorkKind.PROJECT,
+      plannedHours: 6.5,
+      actualHours: null,
+      profileAction: 'UPDATE',
+      riskDecision: 'KEEP',
+      riskText: '依赖资源确认',
+      weekPlanItemId: 'plan-1',
+      links: {
+        weekPlanItem: '/employee-week-plans/plan-1',
+      },
+    });
 
     await service.getImport('batch-detail');
     expect(prisma.employeeWorkImportRow.findMany).toHaveBeenLastCalledWith(

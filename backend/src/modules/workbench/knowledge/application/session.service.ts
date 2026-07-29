@@ -25,6 +25,18 @@ const sessionSelect = {
   updatedAt: true,
 } satisfies Prisma.KnowledgeSessionSelect;
 
+const listSessionSelect = {
+  ...sessionSelect,
+  messages: {
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+    select: {
+      content: true,
+      createdAt: true,
+    },
+  },
+} satisfies Prisma.KnowledgeSessionSelect;
+
 @Injectable()
 export class SessionService {
   constructor(private readonly prisma: PlatformPrismaService) {}
@@ -42,9 +54,16 @@ export class SessionService {
         ...(search ? { title: { contains: search, mode: 'insensitive' as const } } : {}),
       },
       orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }],
-      select: sessionSelect,
+      select: listSessionSelect,
     });
-    return sessions.map((session) => this.presentSession(session));
+    return sessions.map(({ messages, ...session }) => {
+      const latestMessage = messages?.[0];
+      return {
+        ...this.presentSession(session),
+        preview: latestMessage?.content.replace(/\s+/g, ' ').trim().slice(0, 300) ?? '',
+        lastMessageAt: latestMessage?.createdAt ?? session.updatedAt,
+      };
+    });
   }
 
   async get(id: string) {

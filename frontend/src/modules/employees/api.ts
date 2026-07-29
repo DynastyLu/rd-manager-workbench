@@ -24,6 +24,7 @@ import type {
   ResolveEmployeeImportInput,
   TeamProgress,
   UpdateEmployeeInput,
+  UpdateEmployeeWorkItemInput,
   UpdateEmployeeWeekPlanInput,
 } from './types'
 
@@ -110,6 +111,16 @@ export function listEmployeeWorkItems(
 
 export function getEmployeeWorkItem(workItemId: string): Promise<EmployeeWorkItem> {
   return request(workItemPath(workItemId))
+}
+
+export function updateEmployeeWorkItem(
+  workItemId: string,
+  input: UpdateEmployeeWorkItemInput
+): Promise<EmployeeWorkItem> {
+  return request(workItemPath(workItemId), {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  })
 }
 
 export function listEmployeeWeekPlans(
@@ -224,8 +235,10 @@ export function convertEmployeeWorkItemRisk(
   return request(`${workItemPath(workItemId)}/convert-risk`, { method: 'POST' })
 }
 
-export function downloadEmployeeWorkImportTemplate() {
-  return download('/employee-work-imports/template')
+export function downloadEmployeeWorkImportTemplate(periodStart: string) {
+  return download(
+    `/employee-work-imports/template${queryString({ version: 2, periodStart })}`
+  )
 }
 
 export function downloadEmployeeImportSource(batchId: string) {

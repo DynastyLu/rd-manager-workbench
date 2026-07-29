@@ -24,6 +24,25 @@ export class IndexingService implements OnModuleInit {
         finishedAt: new Date(),
       },
     });
+    // Older automatic indexing wrote chunks but never promoted the document state.
+    // Text chunks are already sufficient for local full-text retrieval, even when
+    // optional embeddings are unavailable, so repair those legacy rows on startup.
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE app.content_documents cd
+       SET index_status = 'PARTIAL',
+           indexed_at = COALESCE(cd.indexed_at, now()),
+           updated_at = now()
+       WHERE cd.status = 'ACTIVE'
+         AND cd.trashed_at IS NULL
+         AND cd.index_status IN ('PENDING', 'PROCESSING')
+         AND EXISTS (
+           SELECT 1
+           FROM app.document_chunks dc
+           WHERE dc.document_id = cd.id
+             AND dc.content IS NOT NULL
+             AND dc.content <> ''
+         )`,
+    );
   }
 
   schedule(documentId: string): void {
@@ -44,10 +63,23 @@ export class IndexingService implements OnModuleInit {
           select: { plainText: true },
         });
         if (doc?.plainText) {
-          await this.indexDocument(id, doc.plainText);
+          const result = await this.indexDocument(id, doc.plainText);
+          await this.prisma.contentDocument.update({
+            where: { id },
+            data: {
+              indexStatus: result.embedded < result.chunks
+                ? KnowledgeProcessingStatus.PARTIAL
+                : KnowledgeProcessingStatus.READY,
+              indexedAt: new Date(),
+            },
+          });
         }
       } catch (error) {
         this.logger.error({ documentId: id, error }, 'Indexing failed');
+        await this.prisma.contentDocument.update({
+          where: { id },
+          data: { indexStatus: KnowledgeProcessingStatus.FAILED },
+        }).catch(() => undefined);
       }
     }
   }
@@ -200,15 +232,24 @@ export class IndexingService implements OnModuleInit {
   }
 
   async getStatus() {
-    const [indexedCount, totalCount, totalChunks] = await Promise.all([
-      this.prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
-        `SELECT COUNT(DISTINCT document_id) as count FROM app.document_chunks`,
-      ),
+    const [searchableCount, totalCount, totalChunks] = await Promise.all([
+      this.prisma.contentDocument.count({
+        where: {
+          status: 'ACTIVE',
+          trashedAt: null,
+          indexStatus: {
+            in: [KnowledgeProcessingStatus.READY, KnowledgeProcessingStatus.PARTIAL],
+          },
+        },
+      }),
       this.prisma.contentDocument.count({
         where: { status: 'ACTIVE', trashedAt: null },
       }),
       this.prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
-        `SELECT COUNT(*) as count FROM app.document_chunks`,
+        `SELECT COUNT(*) as count
+         FROM app.document_chunks dc
+         JOIN app.content_documents cd ON cd.id = dc.document_id
+         WHERE cd.status = 'ACTIVE' AND cd.trashed_at IS NULL`,
       ),
     ]);
 
@@ -216,10 +257,10 @@ export class IndexingService implements OnModuleInit {
       orderBy: { createdAt: 'desc' },
     });
     return {
-      indexedDocuments: Number(indexedCount[0]?.count ?? 0),
+      indexedDocuments: searchableCount,
       totalDocuments: totalCount,
       totalChunks: Number(totalChunks[0]?.count ?? 0),
-      complete: Number(indexedCount[0]?.count ?? 0) >= totalCount,
+      complete: searchableCount >= totalCount,
       latestJob,
     };
   }

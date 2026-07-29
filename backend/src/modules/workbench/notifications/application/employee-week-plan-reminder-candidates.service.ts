@@ -7,6 +7,8 @@ import {
 } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 
+const OVERDUE_GRACE_MS = 24 * 60 * 60 * 1000;
+
 const PLAN_SELECT = {
   id: true,
   employeeId: true,
@@ -77,12 +79,15 @@ export class EmployeeWeekPlanReminderCandidatesService {
 
   async reconcile(
     previous: readonly EmployeeWeekPlanReminderCandidate[],
+    now = new Date(),
+    client: Prisma.TransactionClient | PlatformPrismaService = this.prisma,
   ): Promise<EmployeeWeekPlanReminderCandidateReconciliation> {
-    const plans = await this.prisma.employeeWeekPlanItem.findMany({
+    const overdueCutoff = new Date(now.getTime() - OVERDUE_GRACE_MS);
+    const plans = await client.employeeWeekPlanItem.findMany({
       where: {
         archivedAt: null,
-        plannedCompletionAt: { not: null },
-        carryStatus: { not: EmployeePlanCarryStatus.CANCELLED },
+        plannedCompletionAt: { gte: overdueCutoff },
+        carryStatus: EmployeePlanCarryStatus.PLANNED,
         employee: { archivedAt: null },
         importBatch: {
           periodType: EmployeeProgressPeriod.WEEK,

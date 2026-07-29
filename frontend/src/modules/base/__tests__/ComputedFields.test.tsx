@@ -6,7 +6,11 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/lib/http'
-import { getSemiOptionValues, isSemiOptionDisabled, selectSemiOption } from '@/test-utils/selectSemiOption'
+import {
+  getSemiOptionValues,
+  isSemiOptionDisabled,
+  selectSemiOption,
+} from '@/test-utils/selectSemiOption'
 import { FieldManager } from '../components/FieldManager'
 import { FormView } from '../components/FormView'
 import { FormulaEditor } from '../components/FormulaEditor'
@@ -180,14 +184,14 @@ describe('computed and relational fields', () => {
     await user.click(screen.getByRole('button', { name: '新增字段' }))
     const typeSelect = screen.getByLabelText('字段类型')
     await expect(getSemiOptionValues(typeSelect)).resolves.toEqual(
-      expect.arrayContaining(['RELATION', 'LOOKUP', 'ROLLUP', 'FORMULA']),
+      expect.arrayContaining(['RELATION', 'LOOKUP', 'ROLLUP', 'FORMULA'])
     )
 
     await selectSemiOption(typeSelect, 'LOOKUP')
-    await selectSemiOption(screen.getByLabelText('关联字段'), relationField.id)
-    const targetField = screen.getByLabelText('目标字段')
+    await selectSemiOption(await screen.findByLabelText('关联字段'), relationField.id)
+    const targetField = await screen.findByLabelText('目标字段')
     await expect(getSemiOptionValues(targetField)).resolves.toEqual(
-      expect.arrayContaining(['field-position-title', 'field-position-score']),
+      expect.arrayContaining(['field-position-title', 'field-position-score'])
     )
     await expect(getSemiOptionValues(targetField)).resolves.not.toContain('field-position-computed')
   })
@@ -273,7 +277,7 @@ describe('computed and relational fields', () => {
     await selectSemiOption(screen.getByLabelText('关联方向'), 'TWO_WAY')
     expect(screen.getByLabelText('目标数据表')).toHaveTextContent('请选择数据表')
     await expect(getSemiOptionValues(screen.getByLabelText('目标数据表'))).resolves.not.toContain(
-      systemProjectTable.id,
+      systemProjectTable.id
     )
 
     await user.click(

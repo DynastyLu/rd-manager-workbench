@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react'
-import { Banner, Button, InputNumber, Modal, Table, Tag, TextArea } from '@douyinfe/semi-ui'
+import {
+  Banner,
+  Button,
+  Checkbox,
+  InputNumber,
+  Modal,
+  Table,
+  Tag,
+  TextArea,
+} from '@douyinfe/semi-ui'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect'
 import type {
@@ -49,6 +58,8 @@ interface AssociationDraft {
   taskId: string | null
   plannedHours: number | null
   actualHours: number | null
+  createEmployee: boolean
+  updateEmployeeProfile: boolean
   riskDecision: EmployeeRiskDecision | null
   riskText: string | null
 }
@@ -73,6 +84,19 @@ function normalizedTitle(row: EmployeeWorkImportRow): string {
 function normalizedEmployeeName(row: EmployeeWorkImportRow): string {
   const employeeName = row.normalizedValues.employeeName
   return typeof employeeName === 'string' ? employeeName : '未识别员工'
+}
+
+function employeeDisplayName(row: EmployeeWorkImportRow): string {
+  return normalizedEmployeeName(row).normalize('NFKC').trim().replace(/\s+/gu, ' ')
+}
+
+function normalizedEmployeeNameKey(row: EmployeeWorkImportRow): string {
+  return employeeDisplayName(row).toLowerCase()
+}
+
+function hasImportEmployeeName(row: EmployeeWorkImportRow): boolean {
+  const employeeName = row.normalizedValues.employeeName
+  return typeof employeeName === 'string' && employeeName.trim().length > 0
 }
 
 function rowSection(row: EmployeeWorkImportRow): EmployeeWorkSourceSection {
@@ -111,6 +135,8 @@ function makeDraft(row: EmployeeWorkImportRow): AssociationDraft {
       ('actualHours' in normalized && typeof normalized.actualHours === 'number'
         ? normalized.actualHours
         : null),
+    createEmployee: !row.resolvedEmployeeId && hasImportEmployeeName(row),
+    updateEmployeeProfile: Boolean(row.resolvedEmployeeId) && row.profileAction === 'UPDATE',
     riskDecision: row.riskDecision ?? null,
     riskText:
       row.riskText ??
@@ -126,7 +152,7 @@ function validateDraft(
   tasks: TaskOption[]
 ): DraftErrors {
   const errors: DraftErrors = {}
-  if (!draft.employeeId) errors.employee = '请选择员工'
+  if (!draft.employeeId && !draft.createEmployee) errors.employee = '请选择或新建员工'
   if (!draft.workKind) errors.workKind = '请选择工作类型'
   if (draft.workKind === 'PROJECT' && !draft.projectId) errors.project = '请选择项目'
   if (
@@ -140,10 +166,32 @@ function validateDraft(
   return errors
 }
 
-function toResolution(draft: AssociationDraft): ResolveEmployeeImportRowInput {
+function toResolution(
+  row: EmployeeWorkImportRow,
+  draft: AssociationDraft
+): ResolveEmployeeImportRowInput {
+  const normalized = row.normalizedValues
+  const employeeName = employeeDisplayName(row)
+  const department =
+    'department' in normalized && typeof normalized.department === 'string'
+      ? normalized.department
+      : undefined
+  const workDirection =
+    'workDirection' in normalized && typeof normalized.workDirection === 'string'
+      ? normalized.workDirection
+      : undefined
   return {
     rowId: draft.rowId,
-    employeeId: draft.employeeId,
+    ...(draft.createEmployee
+      ? {
+          createEmployee: {
+            displayName: employeeName,
+            ...(department ? { department } : {}),
+            ...(workDirection ? { workDirection } : {}),
+          },
+        }
+      : { employeeId: draft.employeeId }),
+    ...(draft.updateEmployeeProfile ? { updateEmployeeProfile: true } : {}),
     workKind: draft.workKind!,
     projectId: draft.workKind === 'PROJECT' ? draft.projectId : null,
     taskId: draft.workKind === 'PROJECT' ? draft.taskId : null,
@@ -154,6 +202,28 @@ function toResolution(draft: AssociationDraft): ResolveEmployeeImportRowInput {
       ? { riskText: draft.riskText }
       : {}),
   }
+}
+
+function toResolutions(
+  rows: EmployeeWorkImportRow[],
+  drafts: Record<string, AssociationDraft>
+): ResolveEmployeeImportRowInput[] {
+  const createdEmployeeNameKeys = new Set<string>()
+  return rows.map((row) => {
+    const draft = drafts[row.id]!
+    const resolution = toResolution(row, draft)
+    if (!draft.createEmployee) return resolution
+
+    const employeeNameKey = normalizedEmployeeNameKey(row)
+    if (!createdEmployeeNameKeys.has(employeeNameKey)) {
+      createdEmployeeNameKeys.add(employeeNameKey)
+      return resolution
+    }
+
+    const reusedResolution = { ...resolution }
+    delete reusedResolution.createEmployee
+    return reusedResolution
+  })
 }
 
 export function EmployeeImportAssociationModal({
@@ -182,15 +252,44 @@ export function EmployeeImportAssociationModal({
     ],
     [rows]
   )
-  const visibleRows = useMemo(
-    () =>
-      rows.filter(
-        (row) =>
-          (sheetFilter === 'ALL' || row.sourceSheetName === sheetFilter) &&
-          (sectionFilter === 'ALL' || rowSection(row) === sectionFilter)
-      ),
-    [rows, sectionFilter, sheetFilter]
-  )
+  const visibleRows = useMemo(() => {
+    const filteredRows = rows.filter(
+      (row) =>
+        (sheetFilter === 'ALL' || row.sourceSheetName === sheetFilter) &&
+        (sectionFilter === 'ALL' || rowSection(row) === sectionFilter)
+    )
+    const employeeGroups = new Map<string, EmployeeWorkImportRow[]>()
+    filteredRows.forEach((row) => {
+      const key = normalizedEmployeeNameKey(row)
+      const group = employeeGroups.get(key)
+      if (group) {
+        group.push(row)
+      } else {
+        employeeGroups.set(key, [row])
+      }
+    })
+    return [...employeeGroups.values()].flat()
+  }, [rows, sectionFilter, sheetFilter])
+  const visibleEmployeeGroups = useMemo(() => {
+    const groups = new Map<string, { rowSpan: number; groupCount: number }>()
+    let groupStart = 0
+    while (groupStart < visibleRows.length) {
+      const groupKey = normalizedEmployeeNameKey(visibleRows[groupStart]!)
+      let groupEnd = groupStart + 1
+      while (
+        groupEnd < visibleRows.length &&
+        normalizedEmployeeNameKey(visibleRows[groupEnd]!) === groupKey
+      ) {
+        groupEnd += 1
+      }
+      const groupCount = groupEnd - groupStart
+      visibleRows.slice(groupStart, groupEnd).forEach((row, index) => {
+        groups.set(row.id, { rowSpan: index === 0 ? groupCount : 0, groupCount })
+      })
+      groupStart = groupEnd
+    }
+    return groups
+  }, [visibleRows])
   const validation = useMemo(
     () =>
       Object.fromEntries(
@@ -212,6 +311,18 @@ export function EmployeeImportAssociationModal({
       ...current,
       [rowId]: { ...current[rowId]!, ...update },
     }))
+  }
+
+  function updateEmployeeGroup(row: EmployeeWorkImportRow, update: Partial<AssociationDraft>) {
+    const employeeNameKey = normalizedEmployeeNameKey(row)
+    setDrafts((current) => {
+      const next = { ...current }
+      rows.forEach((candidate) => {
+        if (normalizedEmployeeNameKey(candidate) !== employeeNameKey) return
+        next[candidate.id] = { ...current[candidate.id]!, ...update }
+      })
+      return next
+    })
   }
 
   function setWorkKind(rowId: string, workKind: EmployeeWorkKind) {
@@ -240,34 +351,92 @@ export function EmployeeImportAssociationModal({
   const columns: ColumnProps<EmployeeWorkImportRow>[] = [
     {
       title: '员工',
-      width: 150,
+      width: 190,
       render: (_, row) => {
+        const groupInfo = visibleEmployeeGroups.get(row.id) ?? { rowSpan: 1, groupCount: 1 }
+        if (groupInfo.rowSpan === 0) {
+          return { children: null, props: { rowSpan: 0 } }
+        }
         const draft = drafts[row.id]
         if (!draft) return null
-        return employees.length > 0 || !draft.employeeId ? (
-          <div className="employee-import-association__cell">
-            <WorkspaceSelect
-              aria-label={`第 ${row.rowNumber} 行员工`}
-              value={draft.employeeId ?? ''}
-              placeholder="选择员工"
-              filter
-              options={employees.map((employee) => ({
-                value: employee.id,
-                label: employee.displayName,
-              }))}
-              onChange={(value) => updateDraft(row.id, { employeeId: value || null })}
-            />
-            {validation[row.id]?.employee ? (
-              <small className="employee-import-association__error">
-                {validation[row.id]?.employee}
-              </small>
-            ) : (
-              <small>{normalizedEmployeeName(row)}</small>
-            )}
-          </div>
-        ) : (
-          <span>{normalizedEmployeeName(row)}</span>
-        )
+        const employeeName = employeeDisplayName(row)
+        const groupCount = groupInfo.groupCount
+        const normalized = row.normalizedValues
+        const hasProfileValues =
+          ('department' in normalized && Boolean(normalized.department)) ||
+          ('workDirection' in normalized && Boolean(normalized.workDirection))
+        const content =
+          employees.length > 0 || !draft.employeeId ? (
+            <div className="employee-import-association__cell">
+              {draft.createEmployee ? (
+                <Tag color="blue">将新建：{employeeName}</Tag>
+              ) : (
+                <WorkspaceSelect
+                  aria-label={`员工关联：${employeeName}`}
+                  value={draft.employeeId ?? ''}
+                  placeholder="选择员工"
+                  filter
+                  options={employees.map((employee) => ({
+                    value: employee.id,
+                    label: employee.displayName,
+                  }))}
+                  onChange={(value) =>
+                    updateEmployeeGroup(row, {
+                      employeeId: value || null,
+                      createEmployee: false,
+                      updateEmployeeProfile: false,
+                    })
+                  }
+                />
+              )}
+              {!draft.employeeId || draft.createEmployee ? (
+                <Button
+                  size="small"
+                  theme="borderless"
+                  aria-label={
+                    draft.createEmployee
+                      ? `改为关联现有员工：${employeeName}`
+                      : `新建员工档案：${employeeName}`
+                  }
+                  onClick={() =>
+                    updateEmployeeGroup(row, {
+                      employeeId: null,
+                      createEmployee: !draft.createEmployee,
+                      updateEmployeeProfile: false,
+                    })
+                  }
+                >
+                  {draft.createEmployee ? '改为关联现有员工' : '按表内姓名新建'}
+                </Button>
+              ) : null}
+              {draft.employeeId && hasProfileValues ? (
+                <Checkbox
+                  aria-label="用表内部门/方向更新档案"
+                  checked={draft.updateEmployeeProfile}
+                  onChange={(event) =>
+                    updateEmployeeGroup(row, {
+                      updateEmployeeProfile: Boolean(event.target.checked),
+                    })
+                  }
+                >
+                  用表内部门/方向更新档案
+                </Checkbox>
+              ) : null}
+              {validation[row.id]?.employee ? (
+                <small className="employee-import-association__error">
+                  {validation[row.id]?.employee}
+                </small>
+              ) : (
+                <small>共 {groupCount} 条工作/计划</small>
+              )}
+            </div>
+          ) : (
+            <div className="employee-import-association__cell">
+              <span>{employeeName}</span>
+              <small>共 {groupCount} 条工作/计划</small>
+            </div>
+          )
+        return { children: content, props: { rowSpan: groupInfo.rowSpan } }
       },
     },
     {
@@ -554,7 +723,7 @@ export function EmployeeImportAssociationModal({
             disabled={loading || saving || rows.length === 0 || invalidCount > 0}
             onClick={() =>
               onSubmit({
-                rows: rows.map((row) => toResolution(drafts[row.id]!)),
+                rows: toResolutions(rows, drafts),
               })
             }
           >

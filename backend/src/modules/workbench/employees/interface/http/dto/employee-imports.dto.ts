@@ -19,6 +19,11 @@ import {
 } from 'class-validator';
 
 export class EmployeeWorkbookTemplateQueryDto {
+  @Type(() => Number)
+  @IsInt()
+  @IsIn([2])
+  version!: number;
+
   @IsDateString({ strict: true })
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   periodStart!: string;
@@ -49,7 +54,7 @@ export class CreateEmployeeFromImportDto {
 export class ResolveEmployeeImportRowDto {
   @ValidateIf(isRowNumberRequired)
   @IsInt()
-  @Min(2)
+  @Min(1)
   @Max(1_048_576)
   rowNumber?: number;
 

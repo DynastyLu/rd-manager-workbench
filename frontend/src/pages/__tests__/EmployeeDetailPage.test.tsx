@@ -413,6 +413,92 @@ describe('EmployeeDetailPage', () => {
     )
   })
 
+  it('uses the deep-linked plan period directly and highlights the requested plan', async () => {
+    renderPage(
+      '/employees/employee-1?periodType=WEEK&periodStart=2026-07-27&sourceSection=NEXT_WEEK_PLAN&planItemId=plan-1'
+    )
+
+    const title = await screen.findByText('完成灰度发布')
+    expect(title.closest('tr')).toHaveClass('employee-week-plan-table__row--focused')
+    expect(employeesApi.listEmployeeWeekPlans).toHaveBeenCalledWith({
+      periodType: 'WEEK',
+      periodStart: '2026-07-27',
+      employeeId: 'employee-1',
+      page: 1,
+      pageSize: 10,
+    })
+    expect(employeesApi.listEmployeeWeekPlans).not.toHaveBeenCalledWith(
+      expect.objectContaining({ periodStart: '2026-08-03' })
+    )
+  })
+
+  it('locates a deep-linked plan on a later page and highlights it there', async () => {
+    const pageTwoPlan = {
+      ...weekPlansFixture.data[0],
+      id: 'plan-12',
+      title: '跨页计划',
+    }
+    employeesApi.listEmployeeWeekPlans.mockImplementation(({ page: requestedPage }: { page?: number }) =>
+      Promise.resolve(
+        requestedPage === 2
+          ? {
+              ...weekPlansFixture,
+              data: [pageTwoPlan],
+              meta: { page: 2, pageSize: 10, total: 12 },
+            }
+          : {
+              ...weekPlansFixture,
+              meta: { page: 1, pageSize: 10, total: 12 },
+            }
+      )
+    )
+    renderPage(
+      '/employees/employee-1?periodType=WEEK&periodStart=2026-07-27&planItemId=plan-12'
+    )
+
+    const title = await screen.findByText('跨页计划')
+    expect(title.closest('tr')).toHaveClass('employee-week-plan-table__row--focused')
+    expect(screen.getByTestId('location')).toHaveTextContent('nextPlanPage=2')
+  })
+
+  it('loads match candidates from the plan reporting week, not the displayed source week', async () => {
+    const user = userEvent.setup()
+    const nextWeekWork = {
+      ...workItemsFixture,
+      period: { type: 'WEEK' as const, start: '2026-07-27', end: '2026-08-02' },
+      data: [
+        {
+          ...workItemsFixture.data[0],
+          id: 'work-next',
+          title: '完成灰度发布',
+          periodStart: '2026-07-27',
+          periodEnd: '2026-08-02',
+        },
+      ],
+    }
+    employeesApi.listEmployeeWorkItems.mockImplementation(
+      ({ periodStart: requestedStart }: { periodStart: string }) =>
+        Promise.resolve(requestedStart === '2026-07-27' ? nextWeekWork : workItemsFixture)
+    )
+    renderPage('/employees/employee-1?periodType=WEEK&periodStart=2026-07-20')
+
+    await user.click(await screen.findByRole('button', { name: '承接' }))
+    const matchLabel = await screen.findByText('承接到计划周期执行')
+    const matchSelect = matchLabel.parentElement?.querySelector('[role="combobox"]')
+    expect(matchSelect).not.toBeNull()
+    await waitFor(() =>
+      expect(matchSelect as HTMLElement).toHaveTextContent('完成灰度发布')
+    )
+    expect(matchSelect as HTMLElement).not.toHaveTextContent('权限模型联调')
+    expect(employeesApi.listEmployeeWorkItems).toHaveBeenCalledWith({
+      periodType: 'WEEK',
+      periodStart: '2026-07-27',
+      employeeId: 'employee-1',
+      page: 1,
+      pageSize: 100,
+    })
+  })
+
   it('notes that the trend is not affected by the status filter', async () => {
     renderPage('/employees/employee-1?periodType=WEEK&periodStart=2026-07-20&status=AT_RISK')
 

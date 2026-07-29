@@ -65,6 +65,12 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, 'e2e/**', 'playwright.config.ts'],
     globals: true,
     setupFiles: './src/test-setup.ts',
+    // Semi UI mounts animated portals and several suites exercise them with
+    // Testing Library. Unbounded file workers starve those state transitions
+    // and leave closing listboxes visible to unrelated assertions. Keep a
+    // small parallel pool so the full suite has the same semantics as focused
+    // runs while still finishing substantially faster than serial execution.
+    maxWorkers: 4,
     // Default 5s is too tight under full parallelism: suites with heavy imports
     // (Semi UI, FullCalendar) starve each other on CPU and time out even though
     // they pass in isolation. 15s keeps the safety net without masking hangs.
