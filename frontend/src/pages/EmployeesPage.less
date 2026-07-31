@@ -1,9 +1,6 @@
 .employees-page {
   display: grid;
-  max-width: 1440px;
   gap: 18px;
-  margin: 0 auto;
-  padding: 24px 28px 40px;
 
   &__header {
     display: flex;
@@ -14,31 +11,26 @@
     h1 {
       margin: 0;
       color: var(--workspace-text);
-      font-size: 26px;
-      font-weight: 680;
-      letter-spacing: -0.03em;
+      font-size: 30px;
+      font-weight: 700;
     }
 
     p {
       margin: 7px 0 0;
       color: var(--workspace-text-secondary);
-      font-size: 13px;
+      font-size: 14px;
     }
   }
 
   &__surface {
     overflow: hidden;
-    border: 1px solid var(--workspace-border);
-    border-radius: var(--workspace-radius-lg);
-    background: var(--workspace-surface);
-    box-shadow: var(--workspace-shadow-panel);
   }
 
   &__tabs {
     > .semi-tabs-bar {
       min-height: 50px;
       padding-inline: 20px;
-      border-bottom-color: var(--workspace-border);
+      border-bottom-color: var(--workspace-border-strong);
     }
 
     .semi-tabs-content {
@@ -51,7 +43,7 @@
     grid-template-columns: minmax(240px, 1fr) 170px 170px 140px;
     gap: 10px;
     padding: 14px 18px;
-    border-bottom: 1px solid var(--workspace-border);
+    border-bottom: 1px solid var(--workspace-border-strong);
 
     .semi-select {
       width: 100%;
@@ -64,13 +56,13 @@
     }
 
     .semi-table-thead > .semi-table-row > .semi-table-row-head {
-      background: #fafbfc;
+      background: var(--workspace-surface-subtle);
       color: var(--workspace-text-secondary);
       font-weight: 540;
     }
 
     .semi-table-row:hover > .semi-table-row-cell {
-      background: #f8faff;
+      background: var(--workspace-surface-subtle);
     }
   }
 

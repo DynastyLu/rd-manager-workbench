@@ -18,6 +18,7 @@ import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ROUTES } from '@/constants/routes'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
+import { tableScrollWidth } from '@/lib/tableScrollWidth'
 import {
   archiveEmployee,
   createEmployee,
@@ -382,7 +383,7 @@ export default function EmployeesPage() {
     {
       title: '员工',
       dataIndex: 'displayName',
-      width: 210,
+      width: 180,
       render: (_value, employee) => (
         <div className="employee-name-cell">
           <span aria-hidden="true">{employee.displayName.slice(0, 1)}</span>
@@ -401,31 +402,31 @@ export default function EmployeesPage() {
     {
       title: '部门',
       dataIndex: 'department',
-      width: 150,
+      width: 120,
       render: (value: string | null) => value || '未设置',
     },
     {
       title: '岗位',
       dataIndex: 'roleTitle',
-      width: 180,
+      width: 150,
       render: (value: string | null) => value || '未设置',
     },
     {
       title: '工作方向',
       dataIndex: 'workDirection',
-      width: 170,
+      width: 140,
       render: (value: string | null | undefined) => value || '未设置',
     },
     {
       title: '直属负责人',
       dataIndex: 'managerName',
-      width: 150,
+      width: 130,
       render: (value: string | null) => value || '未设置',
     },
     {
       title: '状态',
       dataIndex: 'employmentStatus',
-      width: 100,
+      width: 90,
       render: (value: EmploymentStatus) => (
         <Tag color={EMPLOYMENT_STATUS_COLORS[value]}>{employmentStatusLabel(value)}</Tag>
       ),
@@ -433,13 +434,13 @@ export default function EmployeesPage() {
     {
       title: '每周容量',
       dataIndex: 'weeklyCapacityHours',
-      width: 110,
+      width: 100,
       render: (value: number) => `${value} 小时`,
     },
     {
       title: '技能',
       dataIndex: 'skills',
-      width: 220,
+      width: 180,
       render: (_value, employee) =>
         employee.skills.length > 0 ? (
           <div className="employees-page__skills">
@@ -455,7 +456,7 @@ export default function EmployeesPage() {
     {
       title: '操作',
       dataIndex: 'id',
-      width: 190,
+      width: 220,
       fixed: 'right',
       render: (_value, employee) => (
         <div className="employees-page__row-actions">
@@ -488,8 +489,9 @@ export default function EmployeesPage() {
   const isSaving = createMutation.isPending || updateMutation.isPending
 
   return (
-    <div className="employees-page">
-      <header className="employees-page__header">
+    <div className="employees-page workspace-page">
+      <div className="employees-page__inner workspace-page__inner">
+        <header className="employees-page__header">
         <div>
           <h1>员工</h1>
           <p>统一维护员工档案、工作计划和团队进展。</p>
@@ -505,7 +507,7 @@ export default function EmployeesPage() {
         </Button>
       </header>
 
-      <section className="employees-page__surface" aria-label="员工工作区">
+      <section className="employees-page__surface workspace-card" aria-label="员工工作区">
         <Tabs
           activeKey={tab}
           type="line"
@@ -753,7 +755,7 @@ export default function EmployeesPage() {
                 loading={employeesQuery.isPending}
                 columns={columns}
                 dataSource={employees}
-                scroll={{ x: 1530 }}
+                scroll={{ x: tableScrollWidth(columns) }}
                 pagination={{
                   currentPage: page,
                   pageSize: PAGE_SIZE,
@@ -895,6 +897,7 @@ export default function EmployeesPage() {
           error={formError}
         />
       </Modal>
+      </div>
     </div>
   )
 }
