@@ -39,11 +39,18 @@ export function AppShell({ skeleton = null }: AppShellProps) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const navigateRef = useRef(navigate)
+  const contentRef = useRef<HTMLElement>(null)
   const activeRoute = findActiveRoute(pathname)
 
   useEffect(() => {
     navigateRef.current = navigate
   }, [navigate])
+
+  useEffect(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollTop = 0
+    }
+  }, [pathname])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.rdWorkbenchDesktop) return undefined
@@ -58,7 +65,7 @@ export function AppShell({ skeleton = null }: AppShellProps) {
       <WorkspaceNavigation items={primaryNavigation} />
       <div className="app-shell__main">
         <WorkspaceHeader route={activeRoute} />
-        <main className="app-shell__content">
+        <main className="app-shell__content" ref={contentRef}>
           <AnimatePresence mode="wait">
             <motion.div
               key={pathname}

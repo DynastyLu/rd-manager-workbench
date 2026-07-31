@@ -3,9 +3,23 @@ import '@douyinfe/semi-ui/lib/es/react19-adapter'
 // 读完运行时配置后清除 window 引用，防止外部脚本篡改
 delete window.__APP_CONFIG__
 
-import { useThemeStore } from '@/stores/theme'
+function getPersistedTheme(): 'aurora' | 'eye-care' {
+  try {
+    const raw = localStorage.getItem('rd-workbench-theme')
+    if (!raw) return 'aurora'
+    const parsed: unknown = JSON.parse(raw)
+    const value =
+      parsed && typeof parsed === 'object' && 'state' in parsed
+        ? (parsed as { state?: unknown }).state
+        : parsed
+    if (value === 'aurora' || value === 'eye-care') return value
+  } catch {
+    // 忽略损坏的 localStorage 值，避免阻塞启动
+  }
+  return 'aurora'
+}
 
-const theme = useThemeStore.getState().theme
+const theme = getPersistedTheme()
 document.documentElement.setAttribute('data-theme', theme)
 
 import { type ReactNode } from 'react'

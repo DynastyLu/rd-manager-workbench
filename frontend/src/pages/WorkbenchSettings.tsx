@@ -45,8 +45,8 @@ function ThemeSection() {
 
 export default function WorkbenchSettings() {
   return (
-    <div className="app-page app-page--settings">
-      <div className="app-page__inner app-page__inner--narrow">
+    <div className="workspace-page workspace-page--settings">
+      <div className="workspace-page__inner workspace-page__inner--narrow">
         <div className="app-page__hero">
           <div>
             <p className="app-page__eyebrow">Local Preferences</p>

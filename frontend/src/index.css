@@ -1,4 +1,7 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/geist';
 
 [data-theme='classic'],
 :root {
@@ -32,14 +35,6 @@ body {
     background var(--transition),
     color var(--transition);
 }
-
-@import './animations.css';
-
-@import 'tw-animate-css';
-
-@import 'shadcn/tailwind.css';
-
-@import '@fontsource-variable/geist';
 
 @custom-variant dark (&:is(.dark *));
 

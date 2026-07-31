@@ -1,5 +1,6 @@
 import { forwardRef, useState, type InputHTMLAttributes } from 'react'
 import { Banner, Form, withField } from '@douyinfe/semi-ui'
+import { IconEyeClosedStroked, IconEyeOpened } from '@douyinfe/semi-icons'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { ROUTES } from '@/constants/routes'
@@ -32,6 +33,37 @@ const ControlledWorkspaceInput = forwardRef<HTMLInputElement, ControlledInputPro
 ControlledWorkspaceInput.displayName = 'ControlledWorkspaceInput'
 
 const FormWorkspaceInput = withField(ControlledWorkspaceInput, { maintainCursor: true })
+
+const ControlledPasswordInput = forwardRef<HTMLInputElement, ControlledInputProps>(
+  ({ value, onChange, type: _type, className = '', ...props }, ref) => {
+    const [showPassword, setShowPassword] = useState(false)
+    return (
+      <div className="relative">
+        <WorkspaceInput
+          ref={ref}
+          type={showPassword ? 'text' : 'password'}
+          value={value ?? ''}
+          onChange={(event) => onChange?.(event.currentTarget.value, event)}
+          className={`workspace-input pr-10 ${className}`}
+          {...props}
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={showPassword ? '隐藏密码' : '显示密码'}
+          aria-pressed={showPassword}
+          className="absolute inset-y-0 right-0 flex items-center justify-center px-3 text-[var(--workspace-text-muted)] hover:text-[var(--workspace-text-secondary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--workspace-brand)] rounded-r-lg"
+          onClick={() => setShowPassword((show) => !show)}
+        >
+          {showPassword ? <IconEyeOpened size="small" /> : <IconEyeClosedStroked size="small" />}
+        </button>
+      </div>
+    )
+  }
+)
+ControlledPasswordInput.displayName = 'ControlledPasswordInput'
+
+const FormPasswordInput = withField(ControlledPasswordInput, { maintainCursor: true })
 
 function safeReturnPath(value: unknown): string {
   if (
@@ -113,10 +145,9 @@ export default function LoginPage() {
             rules={[{ required: true, message: '请输入账号或工号' }]}
             className="aurora-login-form__field"
           />
-          <FormWorkspaceInput
+          <FormPasswordInput
             field="password"
             label="密码"
-            type="password"
             autoComplete="current-password"
             placeholder="请输入密码"
             rules={[{ required: true, message: '请输入密码' }]}

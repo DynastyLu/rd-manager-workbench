@@ -47,10 +47,10 @@
     height: 30px;
     place-items: center;
     border-radius: 9px;
-    background: linear-gradient(145deg, #4c7dff, #2458d6);
+    background: linear-gradient(145deg, var(--workspace-info), var(--workspace-info-text));
     box-shadow: 0 5px 14px rgba(51, 112, 255, 0.24);
-    color: #fff;
-    font-size: 11px;
+    color: var(--workspace-text-inverse);
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.04em;
   }
@@ -95,7 +95,7 @@
     transition: background-color 120ms ease, color 120ms ease;
 
     &:hover {
-      background: #f2f3f5;
+      background: var(--workspace-surface-hover);
       color: var(--workspace-text);
     }
 
@@ -106,7 +106,7 @@
 
     &--active {
       background: var(--workspace-brand-soft);
-      color: #245bdb;
+      color: var(--workspace-info-text);
       font-weight: 600;
     }
   }
@@ -189,9 +189,9 @@
 
     .semi-input-wrapper {
       min-height: 34px;
-      border-color: #e1e3e6;
+      border-color: var(--workspace-border-strong);
       border-radius: var(--workspace-radius);
-      background: #f5f6f7;
+      background: var(--workspace-canvas);
 
       &.semi-input-wrapper-disabled {
         cursor: not-allowed;
@@ -250,7 +250,7 @@
       flex: 0 0 auto;
       background: var(--workspace-brand-soft);
       color: var(--workspace-brand);
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
     }
   }
@@ -301,7 +301,7 @@
     font-size: 13px;
     text-decoration: none;
 
-    &:hover { background: #dbe7ff; text-decoration: none; }
+    &:hover { background: var(--workspace-info-soft); text-decoration: none; }
   }
 }
 

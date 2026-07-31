@@ -207,13 +207,13 @@ export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
           <button
             ref={searchEntryRef}
             type="button"
-            className="workspace-header__search-input flex min-h-9 w-full items-center gap-2 rounded-lg border border-[var(--workspace-border)] bg-[#f5f6f7] px-3 text-left text-sm text-[var(--workspace-text-muted)] hover:border-[var(--workspace-brand)] hover:bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--workspace-brand)]"
+            className="workspace-header__search-input flex min-h-9 w-full items-center gap-2 rounded-lg border border-[var(--workspace-border)] bg-[var(--workspace-canvas)] px-3 text-left text-sm text-[var(--workspace-text-muted)] hover:border-[var(--workspace-brand)] hover:bg-[var(--workspace-surface-elevated)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--workspace-brand)]"
             aria-label="全局搜索"
             onClick={openSearchWorkspace}
           >
             <IconSearch aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">搜索项目、任务、文档…</span>
-            <kbd className="rounded border border-[var(--workspace-border)] bg-white px-1.5 py-0.5 text-xs">
+            <kbd className="rounded border border-[var(--workspace-border)] bg-[var(--workspace-surface-elevated)] px-1.5 py-0.5 text-xs">
               ⌘ K
             </kbd>
           </button>

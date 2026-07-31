@@ -12,7 +12,7 @@ interface WorkspaceButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const sizeClasses: Record<WorkspaceButtonSize, string> = {
   sm: 'px-3 py-1.5 text-xs',
-  md: 'px-4 py-2 text-sm',
+  md: 'px-4 py-2 text-[14px]',
   lg: 'px-5 py-2.5 text-base',
 }
 
