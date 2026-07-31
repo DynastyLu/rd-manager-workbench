@@ -47,6 +47,14 @@
   --workspace-warning: #f59e0b;
   --workspace-danger: #ef4444;
   --workspace-info: #3b82f6;
+  --workspace-info-rgb: 59, 130, 246;
+  --workspace-info-soft: #eef5ff;
+  --workspace-info-text: #245bdb;
+  --workspace-info-text-muted: #4e72c8;
+  --workspace-info-border: rgba(var(--workspace-info-rgb), 0.42);
+  --workspace-info-ring: rgba(var(--workspace-info-rgb), 0.08);
+  --workspace-info-focus: rgba(var(--workspace-info-rgb), 0.16);
+  --workspace-surface-hover: #f0f2f5;
   --workspace-overlay: rgba(30, 27, 75, 0.45);
   --workspace-focus-ring: 0 0 0 3px rgba(139, 92, 246, 0.15);
   --workspace-shadow-panel: 0 8px 32px rgba(31, 35, 41, 0.06);

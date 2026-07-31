@@ -1,6 +1,4 @@
 .employee-detail {
-  display: grid;
-  gap: 16px;
 
   &--loading,
   &--error {
@@ -40,8 +38,8 @@
     flex: 0 0 52px;
     place-items: center;
     border-radius: 14px;
-    background: #e8f0ff;
-    color: #245bdb;
+    background: var(--workspace-info-soft);
+    color: var(--workspace-info-text);
     font-size: 20px;
     font-weight: 700;
   }
@@ -200,7 +198,7 @@
     code {
       padding: 3px 8px;
       border-radius: 6px;
-      background: #f2f4f7;
+      background: var(--workspace-surface-hover);
       color: var(--workspace-text);
       font-size: 12px;
     }
