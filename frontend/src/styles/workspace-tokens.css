@@ -479,5 +479,6 @@ body::after {
 .workspace-input:focus {
   border-color: var(--workspace-brand);
   box-shadow: var(--workspace-focus-ring);
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
