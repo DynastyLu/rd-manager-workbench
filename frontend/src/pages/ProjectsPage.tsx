@@ -119,7 +119,6 @@ export default function ProjectsPage() {
     {
       title: '项目',
       dataIndex: 'name',
-      width: 320,
       render: (_value, project) => (
         <div className="project-name-cell">
           <span className="project-name-cell__mark">{project.name.slice(0, 1)}</span>
@@ -170,7 +169,8 @@ export default function ProjectsPage() {
   ]
 
   return (
-    <div className="projects-page">
+    <div className="projects-page workspace-page">
+      <div className="projects-page__inner workspace-page__inner">
       <header className="projects-page__header">
         <div>
           <h1>项目</h1>
@@ -187,7 +187,7 @@ export default function ProjectsPage() {
         </Button>
       </header>
 
-      <section className="projects-page__surface" aria-label="项目目录">
+      <section className="projects-page__surface workspace-card" aria-label="项目目录">
         <div className="projects-page__tabs" role="tablist" aria-label="项目视图">
           <button
             id="projects-tab-recent"
@@ -297,6 +297,7 @@ export default function ProjectsPage() {
             loading={activeQuery.isPending}
             columns={columns}
             dataSource={projects}
+            scroll={{ x: '100%' }}
             empty={
               <Empty
                 title={
@@ -328,6 +329,7 @@ export default function ProjectsPage() {
         </p>
         <ProjectForm formId="projects-page-create-form" showActions={false} onSuccess={() => setIsCreateOpen(false)} />
       </Modal>
+      </div>
     </div>
   )
 }

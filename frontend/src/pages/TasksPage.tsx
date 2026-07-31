@@ -360,7 +360,8 @@ export default function TasksPage() {
         : '新的截止日期'
 
   return (
-    <div className="my-work-page">
+    <div className="my-work-page workspace-page">
+      <div className="my-work-page__inner workspace-page__inner">
       <header className="my-work-page__header">
         <div>
           <h1>我的工作</h1>
@@ -392,7 +393,7 @@ export default function TasksPage() {
         </section>
       ) : null}
 
-      <div className="my-work-page__workspace">
+      <div className="my-work-page__workspace workspace-card">
         <nav className="my-work-page__views" aria-label="我的工作视图">
           <span className="my-work-page__views-label">个人任务</span>
           {VIEW_OPTIONS.map(({ value, label, icon: ViewIcon }) => {
@@ -541,6 +542,7 @@ export default function TasksPage() {
       >
         <p>取消后任务将退出当前执行视图。历史记录仍会保留。</p>
       </Modal>
+      </div>
     </div>
   )
 }

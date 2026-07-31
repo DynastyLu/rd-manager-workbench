@@ -411,25 +411,29 @@ export default function EmployeeDetailPage() {
 
   if (progressQuery.isPending) {
     return (
-      <div className="employee-detail employee-detail--loading" aria-label="正在加载员工进展">
-        <Skeleton.Title style={{ width: 240 }} />
-        <Skeleton.Paragraph rows={6} />
+      <div className="employee-detail workspace-page">
+        <div className="employee-detail__inner workspace-page__inner employee-detail--loading" aria-label="正在加载员工进展">
+          <Skeleton.Title style={{ width: 240 }} />
+          <Skeleton.Paragraph rows={6} />
+        </div>
       </div>
     )
   }
 
   if (progressQuery.isError || !progressQuery.data) {
     return (
-      <div className="employee-detail employee-detail--error">
-        <Banner
-          type="danger"
-          fullMode={false}
-          title="无法读取员工进展"
-          description="请确认本地服务已启动后重试。"
-          closeIcon={null}
-        >
-          <Button onClick={() => void progressQuery.refetch()}>重试</Button>
-        </Banner>
+      <div className="employee-detail workspace-page">
+        <div className="employee-detail__inner workspace-page__inner employee-detail--error">
+          <Banner
+            type="danger"
+            fullMode={false}
+            title="无法读取员工进展"
+            description="请确认本地服务已启动后重试。"
+            closeIcon={null}
+          >
+            <Button onClick={() => void progressQuery.refetch()}>重试</Button>
+          </Banner>
+        </div>
       </div>
     )
   }
@@ -439,7 +443,8 @@ export default function EmployeeDetailPage() {
   const missingWeeks = progress.metrics.missingWeeks
 
   return (
-    <div className="employee-detail">
+    <div className="employee-detail workspace-page">
+      <div className="employee-detail__inner workspace-page__inner">
       <div className="employee-detail__back-row">
         <Link to={ROUTES.EMPLOYEES}>
           <IconChevronLeft /> 返回员工列表
@@ -481,7 +486,7 @@ export default function EmployeeDetailPage() {
         </div>
       </header>
 
-      <section className="employee-detail__surface" aria-label="员工周期进展">
+      <section className="employee-detail__surface workspace-card" aria-label="员工周期进展">
         <EmployeeProgressFilters
           value={{ periodType, periodStart, status }}
           showScopeFilters={false}
@@ -877,6 +882,7 @@ export default function EmployeeDetailPage() {
           </div>
         ) : null}
       </Modal>
+      </div>
     </div>
   )
 }

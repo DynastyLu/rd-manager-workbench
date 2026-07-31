@@ -1,9 +1,6 @@
 .my-work-page {
   display: grid;
-  max-width: 1440px;
   gap: 16px;
-  margin: 0 auto;
-  padding: 24px 28px 40px;
 
   &__header {
     display: flex;
@@ -14,15 +11,14 @@
     h1 {
       margin: 0;
       color: var(--workspace-text);
-      font-size: 26px;
-      font-weight: 680;
-      letter-spacing: -0.03em;
+      font-size: 30px;
+      font-weight: 700;
     }
 
     p {
       margin: 7px 0 0;
       color: var(--workspace-text-secondary);
-      font-size: 13px;
+      font-size: 14px;
     }
   }
 
@@ -60,10 +56,6 @@
     min-height: 600px;
     overflow: hidden;
     grid-template-columns: 214px minmax(0, 1fr);
-    border: 1px solid var(--workspace-border);
-    border-radius: var(--workspace-radius-lg);
-    background: var(--workspace-surface);
-    box-shadow: var(--workspace-shadow-panel);
   }
 
   &__views {
@@ -308,8 +300,6 @@
 
 @media (max-width: 900px) {
   .my-work-page {
-    padding-inline: 18px;
-
     &__workspace {
       grid-template-columns: 1fr;
     }
