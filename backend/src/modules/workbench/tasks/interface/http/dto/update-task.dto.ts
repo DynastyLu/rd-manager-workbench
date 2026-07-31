@@ -2,6 +2,7 @@ import { Transform } from 'class-transformer';
 import {
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsNotEmpty,
@@ -98,4 +99,8 @@ export class UpdateTaskDto {
   @ValidateIf(isDefined)
   @IsString()
   sourceId?: string;
+
+  @ValidateIf(isDefined)
+  @IsBoolean()
+  syncMeetingAction?: boolean;
 }

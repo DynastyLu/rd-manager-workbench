@@ -1,15 +1,16 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient, ProjectStatus } from '@prisma/client';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Intelligence catalog API', () => {
   const prisma = new PrismaClient();
   const prefix = `TEST-INTEL-${Date.now()}`;
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
   let projectId = '';
 
   beforeAll(async () => {
@@ -24,6 +25,7 @@ describe('Intelligence catalog API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+    authenticated = await authenticatedRequest(app, prisma, 'SUPER_ADMIN');
     projectId = (
       await prisma.project.create({
         data: { code: `${prefix}-PROJECT`, name: `${prefix} project`, status: ProjectStatus.ACTIVE },
@@ -67,13 +69,21 @@ describe('Intelligence catalog API', () => {
     await prisma.intelligenceTopic.deleteMany({ where: { name: { startsWith: prefix } } });
     await prisma.intelligenceSource.deleteMany({ where: { name: { startsWith: prefix } } });
     await prisma.project.deleteMany({ where: { code: { startsWith: prefix } } });
+    if (authenticated) {
+      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.user.delete({ where: { id: authenticated.user.id } });
+      await prisma.role.delete({ where: { id: authenticated.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    }
     await prisma.$disconnect();
     if (app) await app.close();
   });
 
   it('supports paged topic CRUD, filters, null clearing, project links and soft archive', async () => {
     const created = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post('/api/intelligence-topics')
         .send({
           name: `${prefix} AI policy`,
@@ -90,7 +100,7 @@ describe('Intelligence catalog API', () => {
     });
     expect(created.projects).toEqual([expect.objectContaining({ projectId })]);
 
-    const listed = await request(app.getHttpServer())
+    const listed = await authenticated.agent
       .get('/api/intelligence-topics')
       .query({ q: 'ai policy', projectId, page: 1, pageSize: 10 })
       .expect(200);
@@ -99,16 +109,16 @@ describe('Intelligence catalog API', () => {
       meta: { page: 1, pageSize: 10, total: 1 },
     });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/intelligence-topics/${created.id}`)
       .send({ description: null, keywords: [] })
       .expect(200)
       .expect(({ body }) => {
         expect(body.data).toMatchObject({ id: created.id, description: null, keywords: [] });
       });
-    await request(app.getHttpServer()).delete(`/api/intelligence-topics/${created.id}`).expect(204);
-    await request(app.getHttpServer()).get(`/api/intelligence-topics/${created.id}`).expect(404);
-    await request(app.getHttpServer())
+    await authenticated.agent.delete(`/api/intelligence-topics/${created.id}`).expect(204);
+    await authenticated.agent.get(`/api/intelligence-topics/${created.id}`).expect(404);
+    await authenticated.agent
       .get('/api/intelligence-topics')
       .query({ q: prefix })
       .expect(200)
@@ -117,7 +127,7 @@ describe('Intelligence catalog API', () => {
 
   it('validates source plans and records successful and failed manual runs without network work', async () => {
     const source = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post('/api/intelligence-sources')
         .send({
           name: `${prefix} Manual source`,
@@ -129,11 +139,11 @@ describe('Intelligence catalog API', () => {
         .expect(201)
     ).body.data;
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/intelligence-plans')
       .send({ sourceId: source.id, name: `${prefix} bad daily`, frequency: 'DAILY' })
       .expect(400);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/intelligence-plans')
       .send({
         sourceId: source.id,
@@ -142,7 +152,7 @@ describe('Intelligence catalog API', () => {
         runAtLocalTime: '09:00',
       })
       .expect(400);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/intelligence-plans')
       .send({
         sourceId: source.id,
@@ -154,7 +164,7 @@ describe('Intelligence catalog API', () => {
       .expect(400);
 
     const plan = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post('/api/intelligence-plans')
         .send({
           sourceId: source.id,
@@ -166,7 +176,7 @@ describe('Intelligence catalog API', () => {
         .expect(201)
     ).body.data;
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/intelligence-plans/${plan.id}`)
       .send({ name: `${prefix} weekly paste revised` })
       .expect(200)
@@ -178,17 +188,17 @@ describe('Intelligence catalog API', () => {
         });
       });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/intelligence-plans/${plan.id}/runs`)
       .send({ status: 'FAILED', itemCount: 0 })
       .expect(400);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/intelligence-plans/${plan.id}/runs`)
       .send({ status: 'SUCCEEDED', errorMessage: 'not allowed' })
       .expect(400);
 
     const failed = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post(`/api/intelligence-plans/${plan.id}/runs`)
         .send({
           status: 'FAILED',
@@ -210,7 +220,7 @@ describe('Intelligence catalog API', () => {
     });
 
     const succeeded = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post(`/api/intelligence-plans/${plan.id}/runs`)
         .send({
           status: 'SUCCEEDED',
@@ -224,13 +234,13 @@ describe('Intelligence catalog API', () => {
         .expect(201)
     ).body.data;
     expect(succeeded).toMatchObject({ status: 'SUCCEEDED', itemCount: 2, errorMessage: null });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get('/api/intelligence-items')
       .query({ q: `${prefix} collected`, pageSize: 10 })
       .expect(200)
       .expect(({ body }) => expect(body.data.meta.total).toBe(2));
 
-    const runs = await request(app.getHttpServer())
+    const runs = await authenticated.agent
       .get('/api/intelligence-runs')
       .query({ planId: plan.id, status: 'FAILED', page: 1, pageSize: 10 })
       .expect(200);
@@ -239,37 +249,37 @@ describe('Intelligence catalog API', () => {
       meta: { page: 1, pageSize: 10, total: 1 },
     });
 
-    await request(app.getHttpServer()).delete(`/api/intelligence-plans/${plan.id}`).expect(204);
-    await request(app.getHttpServer())
+    await authenticated.agent.delete(`/api/intelligence-plans/${plan.id}`).expect(204);
+    await authenticated.agent
       .post(`/api/intelligence-plans/${plan.id}/runs`)
       .send({ status: 'SUCCEEDED', itemCount: 0 })
       .expect(422)
       .expect(({ body }) => expect(body.error.code).toBe('INTELLIGENCE_INVALID_PLAN'));
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/intelligence-sources/${source.id}`)
       .send({ url: null, notes: null })
       .expect(200)
       .expect(({ body }) => expect(body.data).toMatchObject({ url: null, notes: null }));
-    await request(app.getHttpServer()).get(`/api/intelligence-sources/${source.id}`).expect(200);
-    await request(app.getHttpServer()).delete(`/api/intelligence-sources/${source.id}`).expect(204);
+    await authenticated.agent.get(`/api/intelligence-sources/${source.id}`).expect(200);
+    await authenticated.agent.delete(`/api/intelligence-sources/${source.id}`).expect(204);
   });
 
   it('rejects duplicate active names and archived project references with stable errors', async () => {
     const topicName = `${prefix} duplicate`;
-    const topic = await request(app.getHttpServer())
+    const topic = await authenticated.agent
       .post('/api/intelligence-topics')
       .send({ name: topicName })
       .expect(201);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/intelligence-topics/${topic.body.data.id}`)
       .send({ name: null })
       .expect(400);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/intelligence-topics/${topic.body.data.id}`)
       .send({ keywords: null })
       .expect(400);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/intelligence-topics')
       .send({ name: topicName.toUpperCase() })
       .expect(409)
@@ -282,7 +292,7 @@ describe('Intelligence catalog API', () => {
         archivedAt: new Date(),
       },
     });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/intelligence-topics')
       .send({ name: `${prefix} invalid project`, projectIds: [archivedProject.id] })
       .expect(404)
@@ -291,13 +301,13 @@ describe('Intelligence catalog API', () => {
 
   it('deduplicates cards, keeps conversions idempotent and freezes brief snapshots', async () => {
     const source = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post('/api/intelligence-sources')
         .send({ name: `${prefix} card source`, kind: 'WEBSITE' })
         .expect(201)
     ).body.data;
     const created = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post('/api/intelligence-items')
         .send({
           title: `${prefix} policy`,
@@ -312,7 +322,7 @@ describe('Intelligence catalog API', () => {
     expect(created.merged).toBe(false);
 
     const duplicate = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post('/api/intelligence-items')
         .send({
           title: `${prefix} incoming duplicate`,
@@ -327,9 +337,9 @@ describe('Intelligence catalog API', () => {
     expect(duplicate.item).toMatchObject({ title: `${prefix} policy`, summary: 'Original human summary' });
     expect(duplicate.item.occurrences).toHaveLength(2);
 
-    await request(app.getHttpServer()).delete(`/api/intelligence-items/${created.itemId}`).expect(204);
+    await authenticated.agent.delete(`/api/intelligence-items/${created.itemId}`).expect(204);
     const revived = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post('/api/intelligence-items')
         .send({
           title: `${prefix} revived duplicate`,
@@ -342,13 +352,13 @@ describe('Intelligence catalog API', () => {
     expect(revived).toMatchObject({ itemId: created.itemId, merged: true });
 
     const task = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post(`/api/intelligence-items/${created.itemId}/task`)
         .send({ title: `${prefix} review policy` })
         .expect(201)
     ).body.data;
     const taskAgain = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post(`/api/intelligence-items/${created.itemId}/task`)
         .send({ title: `${prefix} another title` })
         .expect(201)
@@ -356,7 +366,7 @@ describe('Intelligence catalog API', () => {
     expect(taskAgain).toMatchObject({ targetId: task.targetId, alreadyExists: true });
 
     const knowledge = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post(`/api/intelligence-items/${created.itemId}/knowledge-page`)
         .send({ title: `${prefix} knowledge page` })
         .expect(201)
@@ -364,23 +374,23 @@ describe('Intelligence catalog API', () => {
     expect(knowledge).toMatchObject({ kind: 'KNOWLEDGE', alreadyExists: false });
 
     const brief = (
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post('/api/intelligence-briefs')
         .send({ kind: 'DAILY', briefDate: '2026-07-20', itemIds: [created.itemId] })
         .expect(201)
     ).body.data;
     expect(brief.items[0].snapshot).toMatchObject({ summary: 'Original human summary' });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/intelligence-items/${created.itemId}`)
       .send({ summary: 'Edited after snapshot' })
       .expect(200);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get(`/api/intelligence-briefs/${brief.id}`)
       .expect(200)
       .expect(({ body }) =>
         expect(body.data.items[0].snapshot).toMatchObject({ summary: 'Original human summary' }),
       );
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/intelligence-briefs/${brief.id}`)
       .send({
         kind: 'WEEKLY',

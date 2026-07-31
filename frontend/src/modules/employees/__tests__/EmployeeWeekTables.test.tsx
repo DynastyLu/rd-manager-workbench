@@ -99,12 +99,15 @@ describe('employee weekly V2 tables', () => {
       source: undefined,
     }
 
-    render(
+    const { container } = render(
       <MemoryRouter>
         <EmployeeWorkTable items={[workItem, legacy]} />
       </MemoryRouter>
     )
 
+    expect(container.querySelector<HTMLElement>('.semi-table-body table')).toHaveStyle({
+      width: '1396px',
+    })
     const currentRow = screen.getByText('权限模型联调').closest('tr')
     expect(currentRow).not.toBeNull()
     expect(within(currentRow as HTMLElement).getByText('项目工作')).toBeInTheDocument()
@@ -125,7 +128,7 @@ describe('employee weekly V2 tables', () => {
     const onUnmatch = vi.fn()
     const onConvertToTask = vi.fn()
 
-    render(
+    const { container } = render(
       <MemoryRouter>
         <EmployeeWeekPlanTable
           plans={[plan, { ...plan, id: 'plan-2', title: '已承接计划', carryStatus: 'MATCHED', matchedWorkItemId: 'work-2' }]}
@@ -138,6 +141,9 @@ describe('employee weekly V2 tables', () => {
       </MemoryRouter>
     )
 
+    expect(container.querySelector<HTMLElement>('.semi-table-body table')).toHaveStyle({
+      width: '1610px',
+    })
     const plannedRow = screen.getByText('完成灰度发布').closest('tr')
     expect(plannedRow).not.toBeNull()
     expect(within(plannedRow as HTMLElement).getByText('紧急')).toBeInTheDocument()
@@ -177,5 +183,21 @@ describe('employee weekly V2 tables', () => {
     expect(screen.getByText('完成灰度发布').closest('tr')).toHaveClass(
       'employee-week-plan-table__row--focused'
     )
+  })
+
+  it('reserves enough horizontal canvas for all current-work actions', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <EmployeeWorkTable
+          items={[workItem]}
+          onEdit={vi.fn()}
+          onConvertRisk={vi.fn()}
+        />
+      </MemoryRouter>
+    )
+
+    expect(container.querySelector<HTMLElement>('.semi-table-body table')).toHaveStyle({
+      width: '1586px',
+    })
   })
 })

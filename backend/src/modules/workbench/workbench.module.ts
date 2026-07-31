@@ -17,6 +17,7 @@ import { ExtensionsModule } from './extensions/extensions.module';
 import { ReportingModule } from './reporting/reporting.module';
 import { EmployeesModule } from './employees/employees.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
+import { ActivityModule } from './activity/activity.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
     ReportingModule,
     EmployeesModule,
     KnowledgeModule,
+    ActivityModule,
   ],
   controllers: [WorkbenchStatusController],
 })

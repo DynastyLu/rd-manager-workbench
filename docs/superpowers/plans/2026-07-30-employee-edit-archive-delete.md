@@ -23,7 +23,7 @@
 
 1. Add failing frontend API tests for `archiveState=ARCHIVED`, `POST /employees/:id/restore`, and `DELETE /employees/:id/permanent`.
 2. Run `pnpm --dir frontend test -- --run src/modules/employees/__tests__/api.test.ts src/modules/employees/__tests__/queryKeys.test.ts` and confirm the new expectations fail.
-3. Add `ACTIVE | ARCHIVED` archive-state types, query-key participation, API methods, and the `EMPLOYEE_ARCHIVED_EXISTS` / `EMPLOYEE_DELETE_BLOCKED` / `EMPLOYEE_NOT_ARCHIVED` error codes.
+3. Add `ACTIVE | ARCHIVED` archive-state types, query-key participation, API methods, and the `EMPLOYEE_ARCHIVED_EXISTS` / `EMPLOYEE_DELETE_BLOCKED` error codes.
 4. Run the same focused frontend tests and confirm they pass.
 
 ## Task 2: Implement transactional backend lifecycle rules
@@ -72,3 +72,19 @@
 5. Run frontend type/build validation with `pnpm --dir frontend build`.
 6. Run the complete focused backend and frontend test sets touched by this change and review the final diff for unrelated files.
 
+## Task 5: Allow safe permanent deletion from the active directory
+
+**Files:**
+- Modify: `backend/src/modules/workbench/employees/application/employees.service.ts`
+- Modify: `frontend/src/pages/EmployeesPage.tsx`
+- Test: `backend/test/unit/modules/workbench/employees.service.spec.ts`
+- Test: `backend/test/integration/modules/workbench/employees.controller.spec.ts`
+- Test: `frontend/src/pages/__tests__/EmployeesPage.test.tsx`
+- Test: `frontend/e2e/employee-lifecycle.spec.ts`
+
+1. Add a failing backend test proving that an unused active employee may be permanently deleted while all four historical-reference checks still run.
+2. Add a failing frontend test proving that active rows expose a danger “删除” action and use the existing permanent-delete confirmation.
+3. Remove the archived-only precondition from `permanentDelete()` without weakening the transactional row lock or reference-count guard.
+4. Render “查看 / 编辑 / 归档 / 删除” for active rows and retain “查看 / 恢复并编辑 / 永久删除” for archived rows.
+5. Extend the browser lifecycle scenario to delete one unused active employee directly.
+6. Run the focused unit, integration, frontend, browser, lint, and build checks.

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Banner,
   Button,
+  Checkbox,
   Empty,
   Input,
   Modal,
@@ -158,6 +159,7 @@ function MeetingDetail({
   const [editActionTitle, setEditActionTitle] = useState('')
   const [editActionOwner, setEditActionOwner] = useState('')
   const [editActionDueAt, setEditActionDueAt] = useState('')
+  const [syncActionTask, setSyncActionTask] = useState(false)
   const [decisionTitle, setDecisionTitle] = useState('')
   const [decisionBackground, setDecisionBackground] = useState('')
   const [decisionConclusion, setDecisionConclusion] = useState('')
@@ -404,6 +406,7 @@ function MeetingDetail({
                           setEditActionTitle(action.title)
                           setEditActionOwner(action.ownerName ?? '')
                           setEditActionDueAt(toLocalDateTimeInput(action.dueAt))
+                          setSyncActionTask(false)
                         }}
                       >
                         编辑
@@ -485,7 +488,10 @@ function MeetingDetail({
         title="编辑行动项"
         visible={Boolean(editingAction)}
         footer={null}
-        onCancel={() => setEditingAction(null)}
+        onCancel={() => {
+          setEditingAction(null)
+          setSyncActionTask(false)
+        }}
         width={480}
       >
         <form
@@ -500,6 +506,7 @@ function MeetingDetail({
                 ownerName: editActionOwner.trim() || null,
                 dueAt: editActionDueAt ? new Date(editActionDueAt).toISOString() : null,
                 status: editingAction.status,
+                ...(editingAction.taskId ? { syncTask: syncActionTask } : {}),
               },
             })
           }}
@@ -507,6 +514,18 @@ function MeetingDetail({
           <Input aria-label="编辑行动项标题" value={editActionTitle} onChange={setEditActionTitle} />
           <Input aria-label="编辑行动项负责人" value={editActionOwner} onChange={setEditActionOwner} />
           <DateTimePickerField aria-label="编辑行动项截止时间" value={editActionDueAt} onChange={setEditActionDueAt} />
+          {editingAction?.taskId ? (
+            <div className="meeting-detail__sync-task">
+              <p>负责人或截止时间已关联任务，是否同步到任务？</p>
+              <Checkbox
+                aria-label="同步到关联任务"
+                checked={syncActionTask}
+                onChange={(event) => setSyncActionTask(Boolean(event.target.checked))}
+              >
+                同步到关联任务
+              </Checkbox>
+            </div>
+          ) : null}
           <Button htmlType="submit" theme="solid" type="primary" loading={updateActionMutation.isPending}>保存行动项</Button>
         </form>
       </Modal>

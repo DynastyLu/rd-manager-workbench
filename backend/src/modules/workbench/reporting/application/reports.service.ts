@@ -1,6 +1,8 @@
 import { HttpStatus, Injectable, Optional } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { safeExportText } from '../../../../shared/export/safe-export-text';
@@ -28,13 +30,20 @@ function csvCell(value: ExportCell) {
 export class ReportsService {
   constructor(
     private readonly prisma: PlatformPrismaService,
+    private readonly dataScope: DataScopeService,
+    private readonly requestContext: RequestContextService,
     @Optional() private readonly audit?: AuditLogService,
   ) {}
 
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
+
   async portfolio(query: ReportQueryDto) {
     const { from, endExclusive } = this.range(query);
+    const scope = this.dataScope.projects(this.principal());
     const projects = await this.prisma.project.findMany({
-      where: { archivedAt: null, createdAt: { lt: endExclusive } },
+      where: { archivedAt: null, createdAt: { lt: endExclusive }, AND: scope },
       orderBy: [{ code: 'asc' }, { id: 'asc' }],
       select: {
         id: true, code: true, name: true, status: true, phase: true,
@@ -73,8 +82,15 @@ export class ReportsService {
 
   async taskCompletionTrend(query: ReportQueryDto) {
     const range = this.range(query);
+    const scope = this.dataScope.tasks(this.principal());
     const tasks = await this.prisma.workTask.findMany({
-      where: { archivedAt: null, OR: [{ createdAt: { gte: range.from, lt: range.endExclusive } }, { completedAt: { gte: range.from, lt: range.endExclusive } }] },
+      where: {
+        archivedAt: null,
+        AND: [
+          { OR: [{ createdAt: { gte: range.from, lt: range.endExclusive } }, { completedAt: { gte: range.from, lt: range.endExclusive } }] },
+          scope,
+        ],
+      },
       select: { status: true, createdAt: true, completedAt: true },
     });
     const buckets = this.emptyBuckets(range.from, range.endExclusive, range.bucket, { created: 0, completed: 0 });
@@ -93,8 +109,9 @@ export class ReportsService {
 
   async riskTrend(query: ReportQueryDto) {
     const range = this.range(query);
+    const scope = this.dataScope.risks(this.principal());
     const risks = await this.prisma.risk.findMany({
-      where: { archivedAt: null, OR: [{ createdAt: { gte: range.from, lt: range.endExclusive } }, { closedAt: { gte: range.from, lt: range.endExclusive } }] },
+      where: { archivedAt: null, OR: [{ createdAt: { gte: range.from, lt: range.endExclusive } }, { closedAt: { gte: range.from, lt: range.endExclusive } }], AND: scope },
       select: { status: true, level: true, createdAt: true, closedAt: true },
     });
     const buckets = this.emptyBuckets(range.from, range.endExclusive, range.bucket, { created: 0, closed: 0 });
@@ -117,8 +134,9 @@ export class ReportsService {
     const { from, to } = this.resourceRange(query);
     const weekCount = Math.floor((to.getTime() - from.getTime()) / WEEK_MS) + 1;
     if (weekCount < 1 || weekCount > 13) this.invalidRange('Resource report range must contain between 1 and 13 weeks');
+    const scope = this.dataScope.employees(this.principal());
     const resources = await this.prisma.resourceProfile.findMany({
-      where: { archivedAt: null },
+      where: { archivedAt: null, AND: scope },
       orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
       select: { id: true, displayName: true, weeklyCapacityHours: true, loadEntries: { where: { archivedAt: null, weekStartAt: { gte: from, lte: to } }, select: { plannedHours: true, weekStartAt: true } } },
     });
@@ -144,8 +162,9 @@ export class ReportsService {
 
   async intelligence(query: ReportQueryDto) {
     const range = this.range(query);
+    const scope = this.dataScope.intelligenceItems(this.principal());
     const items = await this.prisma.intelligenceItem.findMany({
-      where: { archivedAt: null, createdAt: { gte: range.from, lt: range.endExclusive } },
+      where: { archivedAt: null, createdAt: { gte: range.from, lt: range.endExclusive }, AND: scope },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       select: { id: true, title: true, status: true, priority: true, createdAt: true, topics: { select: { topic: { select: { name: true } } } }, occurrences: { select: { source: { select: { name: true } } } }, conversions: { select: { kind: true } } },
     });

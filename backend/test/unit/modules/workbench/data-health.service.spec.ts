@@ -33,7 +33,18 @@ describe('DataHealthService', () => {
         ? Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' }))
         : Promise.resolve({ byteSize: 3, kind: 'FILE' }),
     );
-    return { service: new DataHealthService(prisma as never, storage as never), prisma, storage };
+    const tools = {
+      inspect: jest.fn().mockResolvedValue({
+        pgDump: { available: true, executable: 'pg_dump', version: 17 },
+        pgRestore: { available: true, executable: 'pg_restore', version: 17 },
+      }),
+    };
+    return {
+      service: new DataHealthService(prisma as never, storage as never, tools as never),
+      prisma,
+      storage,
+      tools,
+    };
   }
 
   it('reports schema drift, missing files, failed jobs and recent backup without mutating state', async () => {
@@ -45,10 +56,34 @@ describe('DataHealthService', () => {
         expect.objectContaining({ key: 'database.schema', status: 'FAIL' }),
         expect.objectContaining({ key: 'storage.files', status: 'FAIL', details: { checked: 2, missing: 1, mismatched: 0 } }),
         expect.objectContaining({ key: 'backup.recent', status: 'PASS' }),
+        expect.objectContaining({ key: 'postgres.tools', status: 'PASS' }),
       ]),
     );
     expect(f.prisma.fileVersion.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: undefined }));
     expect(f.prisma).not.toHaveProperty('$executeRaw');
+  });
+
+  it('reports missing or incompatible PostgreSQL client tools before a backup is attempted', async () => {
+    const f = fixture();
+    f.tools.inspect.mockResolvedValue({
+      pgDump: { available: false, executable: null, version: null },
+      pgRestore: { available: true, executable: 'C:\\PostgreSQL\\17\\bin\\pg_restore.exe', version: 14 },
+    });
+
+    const result = await f.service.check({
+      expectedMigrationHead: '20260720020000_data_governance',
+    });
+
+    expect(result.checks).toContainEqual(
+      expect.objectContaining({
+        key: 'postgres.tools',
+        status: 'FAIL',
+        details: expect.objectContaining({
+          pgDump: expect.objectContaining({ available: false }),
+          pgRestore: expect.objectContaining({ version: 14 }),
+        }),
+      }),
+    );
   });
 
   it('uses a bounded sample in fast mode', async () => {

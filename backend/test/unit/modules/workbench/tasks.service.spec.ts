@@ -1,7 +1,41 @@
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { TasksService } from '../../../../src/modules/workbench/tasks/application/tasks.service';
 import { ProjectHealthService } from '../../../../src/modules/workbench/projects/application/project-health.service';
 import { ProjectProgressService } from '../../../../src/modules/workbench/projects/application/project-progress.service';
+import { TaskStatus } from '@prisma/client';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  projects: jest.fn().mockReturnValue({}),
+  tasks: jest.fn().mockReturnValue({}),
+  employees: jest.fn().mockReturnValue({}),
+  employeeWork: jest.fn().mockReturnValue({}),
+  meetings: jest.fn().mockReturnValue({}),
+  documents: jest.fn().mockReturnValue({}),
+  knowledge: jest.fn().mockReturnValue({}),
+  decisions: jest.fn().mockReturnValue({}),
+  issues: jest.fn().mockReturnValue({}),
+  risks: jest.fn().mockReturnValue({}),
+  partners: jest.fn().mockReturnValue({}),
+  communications: jest.fn().mockReturnValue({}),
+  baseTables: jest.fn().mockReturnValue({}),
+  baseRecords: jest.fn().mockReturnValue({}),
+  activities: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 describe('TasksService dependency traversal', () => {
   it('walks only the proposed dependency frontier and ignores unrelated graph edges', async () => {
@@ -10,7 +44,7 @@ describe('TasksService dependency traversal', () => {
       .mockResolvedValueOnce([{ taskId: 'dependency', dependsOnTaskId: 'next' }])
       .mockResolvedValueOnce([]);
     const transaction = { taskDependency: { findMany } } as unknown as PlatformPrismaService;
-    const service = new TasksService({} as PlatformPrismaService, new ProjectHealthService());
+    const service = new TasksService({} as PlatformPrismaService, mockDataScope, mockRequestContext, new ProjectHealthService());
 
     await (
       service as unknown as {
@@ -47,7 +81,7 @@ describe('TasksService dependency traversal', () => {
       workTask: { count: jest.fn().mockResolvedValue(0) },
       projectHealthSnapshot: { create },
     } as unknown as PlatformPrismaService;
-    const service = new TasksService({} as PlatformPrismaService, new ProjectHealthService());
+    const service = new TasksService({} as PlatformPrismaService, mockDataScope, mockRequestContext, new ProjectHealthService());
 
     await (
       service as unknown as {
@@ -94,6 +128,8 @@ describe('TasksService project progress linkage', () => {
     } as unknown as ProjectProgressService;
     const service = new TasksService(
       prisma,
+      mockDataScope,
+      mockRequestContext,
       new ProjectHealthService(),
       undefined,
       progressService,
@@ -153,6 +189,8 @@ describe('TasksService project progress linkage', () => {
     } as unknown as ProjectProgressService;
     const service = new TasksService(
       prisma,
+      mockDataScope,
+      mockRequestContext,
       new ProjectHealthService(),
       undefined,
       progressService,
@@ -173,6 +211,48 @@ describe('TasksService project progress linkage', () => {
         blockers: '等待采购',
         nextSteps: '准备评审',
       }),
+    });
+  });
+});
+
+describe('TasksService meeting action synchronization', () => {
+  it.each([
+    [TaskStatus.DONE, 'DONE'],
+    [TaskStatus.CANCELLED, 'CANCELLED'],
+  ])('maps linked task status %s back to its source meeting action', async (taskStatus, actionStatus) => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const transaction = {
+      meetingAction: { updateMany },
+    } as unknown as PlatformPrismaService;
+    const service = new TasksService({} as PlatformPrismaService, mockDataScope, mockRequestContext, new ProjectHealthService());
+
+    await (
+      service as unknown as {
+        syncMeetingActionFromTask(
+          tx: PlatformPrismaService,
+          task: {
+            id: string;
+            sourceType: string | null;
+            sourceId: string | null;
+            status: TaskStatus;
+            dueAt: Date | null;
+          },
+        ): Promise<void>;
+      }
+    ).syncMeetingActionFromTask(transaction, {
+      id: 'task-1',
+      sourceType: 'MEETING_ACTION',
+      sourceId: 'action-1',
+      status: taskStatus,
+      dueAt: new Date('2026-08-03T00:00:00.000Z'),
+    });
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 'action-1', taskId: 'task-1', archivedAt: null },
+      data: {
+        status: actionStatus,
+        dueAt: new Date('2026-08-03T00:00:00.000Z'),
+      },
     });
   });
 });

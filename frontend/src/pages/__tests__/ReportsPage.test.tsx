@@ -13,11 +13,35 @@ vi.mock('@/modules/workbench/api/reports', () => api)
 
 describe('ReportsPage', () => {
   beforeEach(() => {
+    localStorage.clear()
     api.getPortfolioReport.mockResolvedValue({ total: 1, byStatus: { ACTIVE: 1 }, byPhase: { EXECUTION: 1 }, byHealth: { RED: 1 }, milestones: { total: 2, achieved: 1 }, overdueTasks: 1, highOrCriticalRisks: 1, rows: [{ id: 'p1', code: 'P-1', name: '平台升级', status: 'ACTIVE', phase: 'EXECUTION', health: 'RED', milestonePercent: 50, overdueTasks: 1, highOrCriticalRisks: 1 }] })
     api.getTaskTrendReport.mockResolvedValue({ totalCreated: 2, totalCompleted: 1, byStatus: { DONE: 1 }, buckets: [{ bucket: '2026-06-29', created: 2, completed: 1 }] })
     api.getRiskTrendReport.mockResolvedValue({ totalCreated: 2, totalClosed: 1, open: 1, highOrCritical: 1, byLevel: { HIGH: 1 }, buckets: [{ bucket: '2026-06-29', created: 2, closed: 1 }] })
     api.getResourceLoadReport.mockResolvedValue({ resourceCount: 1, plannedHours: 50, capacityHours: 40, utilizationPercent: 125, overloadedResources: 1, weeks: [{ weekStartAt: '2026-06-29', plannedHours: 50, capacityHours: 40, utilizationPercent: 125, overloaded: true }], rows: [] })
     api.getIntelligenceReport.mockResolvedValue({ total: 1, byTopic: { AI: 1 }, bySource: { 政策网站: 1 }, byPriority: { HIGH: 1 }, byConversionKind: { TASK: 1 }, buckets: [], rows: [{ id: 'i1', title: 'AI policy', status: 'REVIEWED', priority: 'HIGH', topics: ['AI'], sources: ['政策网站'], conversions: ['TASK'] }] })
+  })
+
+  it('saves reusable report filters and exposes visual drill-down controls', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const user = userEvent.setup()
+    render(<QueryClientProvider client={client}><MemoryRouter><ReportsPage /></MemoryRouter></QueryClientProvider>)
+
+    await screen.findByRole('table', { name: '项目组合明细' })
+    expect(screen.getByRole('img', { name: '项目健康度分布图' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '打开项目 平台升级' })).toHaveAttribute(
+      'href',
+      '/spaces/projects/p1/overview',
+    )
+
+    await user.type(screen.getByRole('textbox', { name: '视图名称' }), '季度复盘')
+    await user.click(screen.getByRole('button', { name: '保存当前视图' }))
+    expect(JSON.parse(localStorage.getItem('rd-workbench.report-views.v1') ?? '[]')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: '季度复盘' })]),
+    )
+    await user.click(screen.getByRole('button', { name: '保存快照' }))
+    expect(JSON.parse(localStorage.getItem('rd-workbench.report-snapshots.v1') ?? '[]')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'PORTFOLIO' })]),
+    )
   })
 
   it('renders five real-data report sections and an accessible trend table', async () => {

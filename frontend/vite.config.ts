@@ -70,7 +70,9 @@ export default defineConfig({
     // and leave closing listboxes visible to unrelated assertions. Keep a
     // small parallel pool so the full suite has the same semantics as focused
     // runs while still finishing substantially faster than serial execution.
-    maxWorkers: 4,
+    // Four workers still starve Semi portal transitions on loaded developer
+    // machines, so keep two deterministic workers for the full gate.
+    maxWorkers: 2,
     // Default 5s is too tight under full parallelism: suites with heavy imports
     // (Semi UI, FullCalendar) starve each other on CPU and time out even though
     // they pass in isolation. 15s keeps the safety net without masking hangs.
@@ -78,7 +80,7 @@ export default defineConfig({
     // 15s was too tight under full parallelism for heavy user-event flows
     // (PartnersPage multi-dialog sequences); raised to 30s to match
     // worst-case loaded runs without masking genuine hangs.
-    // Per-test awaits use testing-library's asyncUtilTimeout (10s),
+    // Per-test awaits use testing-library's asyncUtilTimeout (30s),
     // configured in src/test-setup.ts; this is the outer safety net.
     coverage: {
       provider: 'v8',

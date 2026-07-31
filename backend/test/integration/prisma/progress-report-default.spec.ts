@@ -25,7 +25,9 @@ describe('ProgressReport migration contract', () => {
   it('keeps the required reportedAt field without an ORM default', () => {
     const schema = readFileSync(schemaPath, 'utf8');
 
-    expect(schema).toContain('reportedAt        DateTime @map("reported_at") @db.Timestamptz(6)');
-    expect(schema).not.toContain('reportedAt        DateTime @default(now())');
+    expect(schema).toMatch(
+      /reportedAt\s+DateTime\s+@map\("reported_at"\)\s+@db\.Timestamptz\(6\)/,
+    );
+    expect(schema).not.toMatch(/reportedAt\s+DateTime\s+@default\(now\(\)\)/);
   });
 });

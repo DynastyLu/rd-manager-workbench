@@ -9,6 +9,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import { DataImportStatus, DataTableSource, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { StoragePort } from '../../../../infrastructure/storage/storage.port';
 import { UploadedContentFile } from '../../content/application/files.service';
 import { RelationSyncService } from '../relation-sync.service';
@@ -23,14 +25,27 @@ const BATCH_SIZE = 250;
 export class BaseImportService {
   constructor(
     private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
     private readonly storage: StoragePort,
     private readonly parser: BaseFileParserService,
     private readonly converter: ImportRowConverterService,
     private readonly relationSync: RelationSyncService,
   ) {}
 
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
+
   async upload(tableId: string, file: UploadedContentFile | undefined) {
-    const table = await this.prisma.dataTable.findFirst({ where: { id: tableId, archivedAt: null } });
+    const table = await this.prisma.dataTable.findFirst({
+      where: {
+        AND: [
+          { id: tableId, archivedAt: null },
+          this.dataScope.baseTables(this.principal()),
+        ],
+      },
+    });
     if (!table) throw new NotFoundException('Data table not found');
     if (table.source !== DataTableSource.CUSTOM) throw new BadRequestException('Imports are only available for custom tables');
     if (!file) throw new BadRequestException('Import file is required');
@@ -253,7 +268,21 @@ export class BaseImportService {
     if (session.status === DataImportStatus.EXPIRED || session.expiresAt <= new Date()) {
       throw new GoneException('Import session has expired');
     }
+    await this.assertReadableTable(session.tableId);
     return session;
+  }
+
+  private async assertReadableTable(tableId: string) {
+    const table = await this.prisma.dataTable.findFirst({
+      where: {
+        AND: [
+          { id: tableId, archivedAt: null },
+          this.dataScope.baseTables(this.principal()),
+        ],
+      },
+    });
+    if (!table) throw new NotFoundException('Data table not found');
+    return table;
   }
 
   private publicSession<T extends Record<string, unknown>>(

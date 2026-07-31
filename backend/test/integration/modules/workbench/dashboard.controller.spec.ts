@@ -1,10 +1,10 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 const localDay = (offset: number) => {
   const date = new Date();
@@ -23,6 +23,7 @@ describe('Dashboard API', () => {
   const prefix = `TEST-DASHBOARD-${Date.now()}`;
   const prisma = new PrismaClient();
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
   let baselineHealthDistribution: { GREEN: number; YELLOW: number; RED: number };
 
   const createProject = (suffix: string, archivedAt: Date | null = null) =>
@@ -46,17 +47,26 @@ describe('Dashboard API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+    authenticated = await authenticatedRequest(app, prisma, `${prefix}-ROLE`);
   });
 
   afterAll(async () => {
     await prisma.workTask.deleteMany({ where: { title: { startsWith: prefix } } });
     await prisma.project.deleteMany({ where: { code: { startsWith: prefix } } });
+    if (authenticated) {
+      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.user.delete({ where: { id: authenticated.user.id } });
+      await prisma.role.delete({ where: { id: authenticated.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    }
     await prisma.$disconnect();
     await app?.close();
   });
 
   it('returns the standard response envelope and all dashboard bucket keys', async () => {
-    const response = await request(app.getHttpServer()).get('/api/dashboard').expect(200);
+    const response = await authenticated.agent.get('/api/dashboard').expect(200);
 
     expect(response.body.success).toBe(true);
     expect(Object.keys(response.body.data).sort()).toEqual([
@@ -211,7 +221,7 @@ describe('Dashboard API', () => {
       ],
     });
 
-    const response = await request(app.getHttpServer()).get('/api/dashboard').expect(200);
+    const response = await authenticated.agent.get('/api/dashboard').expect(200);
     const data = response.body.data;
 
     expect(

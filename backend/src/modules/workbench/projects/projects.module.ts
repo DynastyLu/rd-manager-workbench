@@ -3,6 +3,7 @@ import { ProjectHealthService } from './application/project-health.service';
 import { ProjectHealthSnapshotService } from './application/project-health-snapshot.service';
 import { ProjectProgressService } from './application/project-progress.service';
 import { ProjectsService } from './application/projects.service';
+import { ProjectPlanService } from './application/project-plan.service';
 import { ProjectsController } from './interface/http/projects.controller';
 
 @Module({
@@ -11,12 +12,14 @@ import { ProjectsController } from './interface/http/projects.controller';
     ProjectHealthService,
     ProjectHealthSnapshotService,
     ProjectProgressService,
+    ProjectPlanService,
     ProjectsService,
   ],
   exports: [
     ProjectHealthService,
     ProjectHealthSnapshotService,
     ProjectProgressService,
+    ProjectPlanService,
     ProjectsService,
   ],
 })

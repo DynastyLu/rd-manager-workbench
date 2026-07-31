@@ -1,4 +1,7 @@
 import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { PERMISSIONS } from '../../../iam/interface/http/permissions.decorator';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import {
@@ -19,6 +22,25 @@ import {
 
 export const SEARCH_ADAPTERS = Symbol('SEARCH_ADAPTERS');
 
+const SEARCH_TYPE_PERMISSIONS: Record<SearchType, string> = {
+  PROJECT: PERMISSIONS.PROJECT_READ,
+  TASK: PERMISSIONS.TASK_READ,
+  APPLICATION_CASE: PERMISSIONS.APPLICATION_READ,
+  MEETING: PERMISSIONS.MEETING_READ,
+  DOCUMENT: PERMISSIONS.DOCUMENT_READ,
+  FILE: PERMISSIONS.DOCUMENT_READ,
+  RISK: PERMISSIONS.RISK_READ,
+  ISSUE: PERMISSIONS.ISSUE_READ,
+  DECISION: PERMISSIONS.DECISION_READ,
+  PARTNER: PERMISSIONS.PARTNER_READ,
+  COMMUNICATION: PERMISSIONS.PARTNER_READ,
+  NON_PROJECT_RD: PERMISSIONS.NON_PROJECT_RD_READ,
+  INTELLIGENCE_ITEM: PERMISSIONS.INTELLIGENCE_READ,
+  BASE_RECORD: PERMISSIONS.BASE_READ,
+  EMPLOYEE: PERMISSIONS.EMPLOYEE_READ,
+  EMPLOYEE_WORK: PERMISSIONS.EMPLOYEE_READ,
+};
+
 export interface SearchQuery {
   q: string;
   types?: SearchType[];
@@ -33,17 +55,26 @@ const DEFAULT_PAGE_SIZE = 20;
 
 @Injectable()
 export class SearchService {
-  constructor(@Inject(SEARCH_ADAPTERS) private readonly adapters: SearchAdapter[]) {}
+  constructor(
+    @Inject(SEARCH_ADAPTERS) private readonly adapters: SearchAdapter[],
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
+  ) {}
 
   async search(input: SearchQuery): Promise<GlobalSearchResult> {
     const query = this.normalizeQuery(input.q);
     const requestedTypes = input.types?.length ? [...new Set(input.types)] : [...SEARCH_TYPES];
+    const principal = this.requestContext.requirePrincipal();
+    const permittedTypes = requestedTypes.filter((type) =>
+      principal.roleCodes.includes('SUPER_ADMIN') ||
+      principal.permissions.some(({ code }) => code === SEARCH_TYPE_PERMISSIONS[type]),
+    );
     const page = input.page ?? 1;
     const pageSize = input.pageSize ?? DEFAULT_PAGE_SIZE;
     const selectedAdapters = this.adapters
       .map((adapter) => ({
         adapter,
-        types: adapter.types.filter((type) => requestedTypes.includes(type)),
+        types: adapter.types.filter((type) => permittedTypes.includes(type)),
       }))
       .filter(({ types }) => types.length > 0);
 

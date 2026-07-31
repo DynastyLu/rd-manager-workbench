@@ -1,6 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable } from '@nestjs/common';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
+import type { AuthenticatedPrincipal } from '../../modules/iam/domain/principal';
+import { AppError } from '../../shared/errors/app-error';
+import { ErrorCodes } from '../../shared/errors/error-codes';
 import type { RequestContext } from '../../shared/kernel/request-context';
 
 export interface RequestContextInput {
@@ -36,6 +39,18 @@ export class RequestContextService {
     }
 
     return context;
+  }
+
+  requirePrincipal(): AuthenticatedPrincipal {
+    const principal = this.requireContext().principal;
+    if (!principal) {
+      throw new AppError({
+        code: ErrorCodes.AUTH_REQUIRED,
+        message: 'Authentication required',
+        statusCode: HttpStatus.UNAUTHORIZED,
+      });
+    }
+    return principal;
   }
 
   setContext(patch: Partial<RequestContext>): RequestContext {

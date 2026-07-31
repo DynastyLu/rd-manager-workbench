@@ -1,5 +1,26 @@
 import { EmployeeProgressPeriod, EmployeeWorkImportStatus } from '@prisma/client';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { EmployeesSearchAdapter } from '../../../../src/modules/workbench/search/adapters/employees-search.adapter';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  employees: () => ({}),
+  employeeWork: () => ({}),
+  employeeWeekPlanItems: () => ({}),
+} as unknown as DataScopeService;
 
 describe('EmployeesSearchAdapter', () => {
   const prisma = {
@@ -75,7 +96,7 @@ describe('EmployeesSearchAdapter', () => {
   });
 
   it('finds current work and future plans with explicit result and source coordinates', async () => {
-    const adapter = new EmployeesSearchAdapter(prisma as never);
+    const adapter = new EmployeesSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const hits = await adapter.search('权限', ['EMPLOYEE', 'EMPLOYEE_WORK']);
 
@@ -105,9 +126,14 @@ describe('EmployeesSearchAdapter', () => {
     expect(prisma.resourceProfile.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          archivedAt: null,
-          OR: expect.arrayContaining([
-            { workDirection: { contains: '权限', mode: 'insensitive' } },
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              archivedAt: null,
+              OR: expect.arrayContaining([
+                { workDirection: { contains: '权限', mode: 'insensitive' } },
+              ]),
+            }),
+            {},
           ]),
         }),
         take: 100,
@@ -116,19 +142,24 @@ describe('EmployeesSearchAdapter', () => {
     expect(prisma.employeeWorkItem.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          archivedAt: null,
-          employee: { archivedAt: null },
-          importBatch: {
-            periodType: EmployeeProgressPeriod.WEEK,
-            status: EmployeeWorkImportStatus.COMPLETED,
-            archivedAt: null,
-          },
-          OR: expect.arrayContaining([
-            {
-              employee: {
-                workDirection: { contains: '权限', mode: 'insensitive' },
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              archivedAt: null,
+              employee: { archivedAt: null },
+              importBatch: {
+                periodType: EmployeeProgressPeriod.WEEK,
+                status: EmployeeWorkImportStatus.COMPLETED,
+                archivedAt: null,
               },
-            },
+              OR: expect.arrayContaining([
+                {
+                  employee: {
+                    workDirection: { contains: '权限', mode: 'insensitive' },
+                  },
+                },
+              ]),
+            }),
+            {},
           ]),
         }),
         select: expect.not.objectContaining({ rawRow: true }),
@@ -138,13 +169,18 @@ describe('EmployeesSearchAdapter', () => {
     expect(prisma.employeeWeekPlanItem.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          archivedAt: null,
-          employee: { archivedAt: null },
-          importBatch: {
-            periodType: EmployeeProgressPeriod.WEEK,
-            status: EmployeeWorkImportStatus.COMPLETED,
-            archivedAt: null,
-          },
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              archivedAt: null,
+              employee: { archivedAt: null },
+              importBatch: {
+                periodType: EmployeeProgressPeriod.WEEK,
+                status: EmployeeWorkImportStatus.COMPLETED,
+                archivedAt: null,
+              },
+            }),
+            { employee: {} },
+          ]),
         }),
         select: expect.not.objectContaining({ rawRow: true }),
         take: 100,
@@ -153,7 +189,7 @@ describe('EmployeesSearchAdapter', () => {
   });
 
   it('does not query unrequested employee search types', async () => {
-    const adapter = new EmployeesSearchAdapter(prisma as never);
+    const adapter = new EmployeesSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     await expect(adapter.search('权限', ['PROJECT'])).resolves.toEqual([]);
 

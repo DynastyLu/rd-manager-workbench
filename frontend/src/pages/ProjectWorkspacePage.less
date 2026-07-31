@@ -96,6 +96,9 @@
 
     button {
       position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       padding: 0;
       border: 0;
       background: transparent;
@@ -120,6 +123,20 @@
 
       &:focus-visible { outline: 2px solid var(--workspace-brand); outline-offset: -2px; }
     }
+  }
+
+  &__tab-badge {
+    display: inline-grid;
+    min-width: 18px;
+    height: 18px;
+    place-items: center;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--workspace-danger);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 620;
+    line-height: 1;
   }
 
   &__content {
@@ -565,5 +582,142 @@
     grid-template-columns: repeat(var(--milestone-count, 4), 180px);
     overflow-x: auto;
     padding-bottom: 8px;
+  }
+}
+.project-workspace__work-item-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+
+  [role='tablist'] {
+    display: inline-flex;
+    padding: 3px;
+    border: 1px solid var(--semi-color-border);
+    border-radius: 8px;
+    background: var(--semi-color-fill-0);
+}
+
+.project-workspace__plan {
+  display: grid;
+  gap: 16px;
+}
+
+.project-workspace__baseline-summary,
+.project-workspace__impact-preview,
+.project-workspace__gantt-markers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.project-workspace__baseline-summary {
+  padding: 12px 14px;
+  border: 1px solid var(--semi-color-border);
+  border-radius: 8px;
+  background: var(--semi-color-fill-0);
+
+  span {
+    color: var(--semi-color-text-2);
+    font-size: 12px;
+  }
+}
+
+.project-workspace__schedule-change {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(150px, 0.8fr) minmax(220px, 1.4fr) auto;
+  align-items: end;
+  gap: 12px;
+
+  .project-workspace__schedule-field {
+    display: grid;
+    gap: 6px;
+    color: var(--semi-color-text-2);
+    font-size: 12px;
+  }
+
+  input,
+  select {
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--semi-color-border);
+    border-radius: 7px;
+    background: var(--semi-color-bg-0);
+    color: var(--semi-color-text-0);
+  }
+}
+
+.project-workspace__impact-preview {
+  padding: 12px 14px;
+  border: 1px solid var(--semi-color-warning-light-hover);
+  border-radius: 8px;
+  background: var(--semi-color-warning-light-default);
+
+  button {
+    margin-left: auto;
+  }
+}
+
+.project-workspace__plan-changes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--semi-color-border);
+  }
+
+  span {
+    color: var(--semi-color-text-2);
+    font-size: 12px;
+  }
+}
+
+.project-workspace__gantt-plan {
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .project-workspace__schedule-change {
+    grid-template-columns: 1fr;
+  }
+}
+
+  [role='tab'] {
+    padding: 6px 14px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--semi-color-text-2);
+    cursor: pointer;
+
+    &[aria-selected='true'] {
+      background: var(--semi-color-bg-0);
+      color: var(--semi-color-primary);
+      box-shadow: 0 1px 3px rgb(31 35 41 / 10%);
+    }
+  }
+
+  input,
+  select {
+    min-height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--semi-color-border);
+    border-radius: 7px;
+    background: var(--semi-color-bg-0);
+    color: var(--semi-color-text-0);
+  }
+
+  input {
+    min-width: 220px;
   }
 }

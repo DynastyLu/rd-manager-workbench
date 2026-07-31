@@ -13,9 +13,11 @@ import { PlatformPrismaService } from '../../../../infrastructure/prisma/platfor
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { AuditLogService } from '../../governance/application/audit-log.service';
+import { ActivityService } from '../../activity/application/activity.service';
 import { NormalizedEmployeeWorkbookRow } from '../domain/employee-work.types';
 import { employeeImportFingerprint } from './employee-import-fingerprint';
 import { EmployeeProgressSnapshotService } from './employee-progress-snapshot.service';
+import { ProjectProgressDraftService } from './project-progress-draft.service';
 import {
   EmployeeImportResolution,
   EmployeeImportValidatorService,
@@ -35,6 +37,10 @@ const IMPORT_TRANSACTION_OPTIONS = {
   maxWait: 30_000,
   timeout: 120_000,
 } as const;
+
+function batchActivityAction(restoredFromBatchId: unknown): 'IMPORTED' | 'RESTORED' {
+  return restoredFromBatchId ? 'RESTORED' : 'IMPORTED';
+}
 
 type EmployeeImportCommitRevision = Pick<
   EmployeeWorkImportBatch,
@@ -61,6 +67,10 @@ export class EmployeeImportCommitService {
     clock?: () => Date,
     @Optional()
     private readonly snapshots?: EmployeeProgressSnapshotService,
+    @Optional()
+    private readonly progressDrafts?: ProjectProgressDraftService,
+    @Optional()
+    private readonly activities?: ActivityService,
   ) {
     this.now = clock ?? (() => new Date());
   }
@@ -315,13 +325,45 @@ export class EmployeeImportCommitService {
       }
       throw error;
     }
+    let draftWarning: { code: string } | undefined;
+    if (
+      this.progressDrafts &&
+      result.status === EmployeeWorkImportStatus.COMPLETED
+    ) {
+      try {
+        await this.progressDrafts.generateForBatch(id);
+      } catch {
+        draftWarning = { code: 'PROJECT_PROGRESS_DRAFT_GENERATION_FAILED' };
+      }
+    }
+    if (this.activities && result.status === EmployeeWorkImportStatus.COMPLETED) {
+      const employees = await this.prisma.employeeWorkItem.findMany({
+        where: { importBatchId: id, archivedAt: null },
+        distinct: ['employeeId'],
+        select: { employeeId: true, employee: { select: { displayName: true } } },
+      });
+      for (const item of employees) {
+        await this.activities.append({
+          actorKind: 'AUTOMATION',
+          objectType: 'EMPLOYEE_WORK_IMPORT',
+          objectId: id,
+          employeeId: item.employeeId,
+          action: batchActivityAction(result.restoredFromBatchId),
+          summary: `${item.employee.displayName} 的员工周报已导入`,
+          sourcePath: `/employee-work-imports/${encodeURIComponent(id)}`,
+        });
+      }
+    }
     if (
       this.snapshots &&
       result.status === EmployeeWorkImportStatus.COMPLETED &&
       result.snapshotStatus !== EmployeeSnapshotStatus.READY
     ) {
       try {
-        return this.publicSnapshotResult(await this.snapshots.ensureBatch(id));
+        return {
+          ...this.publicSnapshotResult(await this.snapshots.ensureBatch(id)),
+          ...(draftWarning ? { warning: draftWarning } : {}),
+        };
       } catch {
         return {
           ...result,
@@ -329,7 +371,7 @@ export class EmployeeImportCommitService {
         };
       }
     }
-    return result;
+    return { ...result, ...(draftWarning ? { warning: draftWarning } : {}) };
   }
 
   async rebuildSnapshots(id: string) {

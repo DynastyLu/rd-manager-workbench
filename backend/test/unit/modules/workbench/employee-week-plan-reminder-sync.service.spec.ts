@@ -46,6 +46,43 @@ describe('EmployeeWeekPlanReminderSyncService', () => {
     return { service, tx, candidates, audit };
   }
 
+  it('skips reconciliation when the shared scheduling lock is unavailable', async () => {
+    const { service, tx, candidates } = fixture();
+    tx.$queryRaw.mockResolvedValue([{ acquired: false }]);
+
+    await expect(service.sync()).resolves.toEqual({
+      skipped: true,
+      scheduled: 0,
+      archived: 0,
+    });
+
+    expect(candidates.reconcile).not.toHaveBeenCalled();
+    expect(tx.reminderRule.findMany).not.toHaveBeenCalled();
+  });
+
+  it('skips an overlapping in-process synchronization before opening a transaction', async () => {
+    const { service } = fixture();
+    const prisma = (service as unknown as { prisma: { $transaction: jest.Mock } }).prisma;
+    let finishFirstSync!: (value: { scheduled: number; archived: number }) => void;
+    const firstSync = new Promise<{ scheduled: number; archived: number }>((resolve) => {
+      finishFirstSync = resolve;
+    });
+    prisma.$transaction
+      .mockReturnValueOnce(firstSync)
+      .mockResolvedValueOnce({ scheduled: 0, archived: 0 });
+
+    const pending = service.sync();
+    await expect(service.sync()).resolves.toEqual({
+      skipped: true,
+      scheduled: 0,
+      archived: 0,
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+
+    finishFirstSync({ scheduled: 0, archived: 0 });
+    await expect(pending).resolves.toEqual({ scheduled: 0, archived: 0 });
+  });
+
   it('persists a reminder rule for every planned completion candidate', async () => {
     const { service, tx, candidates, audit } = fixture();
     const now = new Date('2026-07-28T08:00:00.000Z');
@@ -53,6 +90,11 @@ describe('EmployeeWeekPlanReminderSyncService', () => {
     await expect(service.sync(now)).resolves.toEqual({ scheduled: 1, archived: 0 });
 
     expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    const prisma = (service as unknown as { prisma: { $transaction: jest.Mock } }).prisma;
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 2_000,
+      timeout: 20_000,
+    });
     expect(candidates.reconcile).toHaveBeenCalledWith([], now, tx);
     expect(tx.reminderRule.upsert).toHaveBeenCalledWith({
       where: {

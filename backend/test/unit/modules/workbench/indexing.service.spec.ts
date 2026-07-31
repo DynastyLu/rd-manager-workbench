@@ -8,6 +8,7 @@ describe('IndexingService', () => {
     const tx = {
       documentChunk: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       $executeRawUnsafe: jest.fn(),
+      $queryRaw: jest.fn().mockResolvedValue([{ locked: true }]),
       $queryRawUnsafe: jest.fn(),
     };
     mockPrisma = {
@@ -24,7 +25,11 @@ describe('IndexingService', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         findFirst: jest.fn().mockResolvedValue(null),
       },
-      $transaction: jest.fn((fn: (t: any) => unknown) => fn(tx)),
+      $transaction: jest.fn((fn: (t: any) => unknown) => fn({
+        ...tx,
+        contentDocument: mockPrisma.contentDocument,
+        knowledgeIndexJob: mockPrisma.knowledgeIndexJob,
+      })),
       $executeRawUnsafe: tx.$executeRawUnsafe,
       $queryRawUnsafe: tx.$queryRawUnsafe,
     };
@@ -109,6 +114,81 @@ describe('IndexingService', () => {
     expect(mockPrisma.knowledgeIndexJob.update).toHaveBeenCalledWith({
       where: { id: 'job-1' },
       data: expect.objectContaining({ status: 'SUCCEEDED' }),
+    });
+  });
+
+  it('serializes concurrent full reindex creation and reuses the queued job', async () => {
+    let activeJob: { id: string } | null = null;
+    let transactionQueue = Promise.resolve();
+    const transactionClient = {
+      $queryRaw: jest.fn().mockResolvedValue([{ locked: true }]),
+      knowledgeIndexJob: {
+        findFirst: jest.fn(async () => activeJob),
+        create: jest.fn(async () => {
+          activeJob = { id: 'job-shared' };
+          return activeJob;
+        }),
+      },
+      contentDocument: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    mockPrisma.$transaction.mockImplementation(
+      (work: (tx: typeof transactionClient) => unknown) => {
+        const result = transactionQueue.then(() => work(transactionClient));
+        transactionQueue = result.then(() => undefined, () => undefined);
+        return result;
+      },
+    );
+    jest.spyOn(service as any, 'runIndexJob').mockResolvedValue(undefined);
+
+    await expect(Promise.all([service.indexAll(), service.indexAll()])).resolves.toEqual([
+      { jobId: 'job-shared' },
+      { jobId: 'job-shared' },
+    ]);
+
+    expect(transactionClient.$queryRaw).toHaveBeenCalledTimes(2);
+    expect(transactionClient.knowledgeIndexJob.create).toHaveBeenCalledTimes(1);
+    const query = transactionClient.$queryRaw.mock.calls[0]?.[0] as {
+      sql?: string;
+      text?: string;
+    };
+    expect(query.sql ?? query.text ?? '').toContain('pg_advisory_xact_lock');
+  });
+
+  it('returns only safe reindex job fields and never loads persisted raw errors', async () => {
+    mockPrisma.$queryRawUnsafe.mockResolvedValue([{ count: 5n }]);
+    mockPrisma.contentDocument.count
+      .mockResolvedValueOnce(5)
+      .mockResolvedValueOnce(5);
+    mockPrisma.knowledgeIndexJob.findFirst.mockResolvedValue({
+      id: 'job-1',
+      status: 'FAILED',
+      processedFiles: 2,
+      totalFiles: 3,
+      failedFiles: 1,
+      errors: [{ message: 'failed at C:\\Users\\secret\\model.onnx' }],
+    });
+
+    const status = await service.getStatus();
+
+    expect(status.latestJob).toEqual({
+      id: 'job-1',
+      status: 'FAILED',
+      processedFiles: 2,
+      totalFiles: 3,
+      failedFiles: 1,
+    });
+    expect(JSON.stringify(status)).not.toContain('C:\\\\Users\\\\secret');
+    expect(mockPrisma.knowledgeIndexJob.findFirst).toHaveBeenCalledWith({
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        status: true,
+        processedFiles: true,
+        totalFiles: true,
+        failedFiles: true,
+      },
     });
   });
 

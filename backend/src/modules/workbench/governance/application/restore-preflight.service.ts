@@ -9,6 +9,7 @@ import { ProcessRunner } from '../infrastructure/process-runner';
 import { parseBackupManifest } from './backup-manifest';
 import { AuditLogService } from './audit-log.service';
 import { GOVERNANCE_BACKUP_CONFIG, GovernanceBackupConfig } from './backups.service';
+import { PostgresToolsService } from './postgres-tools.service';
 
 export const RESTORE_CLOCK = Symbol('RESTORE_CLOCK');
 export const RESTORE_TOKEN_FACTORY = Symbol('RESTORE_TOKEN_FACTORY');
@@ -24,6 +25,7 @@ export class RestorePreflightService {
     @Optional() @Inject(RESTORE_CLOCK) private readonly clock: () => Date = () => new Date(),
     @Optional() @Inject(RESTORE_TOKEN_FACTORY)
     private readonly tokenFactory: () => string = () => randomBytes(32).toString('base64url'),
+    @Optional() private readonly tools?: PostgresToolsService,
   ) {}
 
   async create(backupId: string) {
@@ -66,17 +68,11 @@ export class RestorePreflightService {
       )) * 2n;
       if (stats.availableBytes < requiredBytes) throw new Error('Insufficient free space');
 
-      const toolVersion = await this.runner.run({
-        executable: 'pg_restore',
-        args: ['--version'],
-        env: process.env,
-      });
-      const majorVersion = Number(toolVersion.stdout.match(/(\d+)(?:\.\d+)?/)?.[1]);
-      if (!Number.isInteger(majorVersion) || majorVersion < 15) {
-        throw new Error('pg_restore version is incompatible');
-      }
+      const restoreTool = await (
+        this.tools ?? new PostgresToolsService(this.runner)
+      ).requireCompatible('pg_restore');
       await this.runner.run({
-        executable: 'pg_restore',
+        executable: restoreTool.executable,
         args: ['--list', 'database.dump'],
         cwd: await this.filesystem.absolutePath(backup.relativeDirectory, true),
         env: process.env,

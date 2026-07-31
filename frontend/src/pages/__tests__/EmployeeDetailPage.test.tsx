@@ -19,6 +19,9 @@ const employeesApi = vi.hoisted(() => ({
 }))
 
 vi.mock('@/modules/employees/api', () => employeesApi)
+vi.mock('@/modules/activity/api', () => ({
+  listActivities: vi.fn().mockResolvedValue({ data: [], nextCursor: null }),
+}))
 
 function LocationProbe() {
   const location = useLocation()

@@ -1,4 +1,6 @@
-import { config } from '@/lib/config'
+import { apiUrl } from '@/lib/api-url'
+import { useAuthStore } from '@/modules/auth/store'
+import type { LoginResponse } from '@/modules/auth/types'
 
 export class ApiError extends Error {
   constructor(
@@ -38,20 +40,6 @@ function isFailureEnvelope(value: unknown): value is ApiFailureEnvelope {
   return isRecord(value) && value.success === false && isRecord(value.error)
 }
 
-function getApiBaseUrl(): string {
-  const configuredBaseUrl = config.apiBaseUrl
-
-  if (configuredBaseUrl) {
-    return configuredBaseUrl.replace(/\/$/, '')
-  }
-
-  if (import.meta.env.DEV) {
-    return 'http://127.0.0.1:4311/api'
-  }
-
-  throw new Error('VITE_API_BASE_URL is required in production.')
-}
-
 function getEnvelopeError(payload: ApiFailureEnvelope, status: number): ApiError {
   const code = typeof payload.error.code === 'string' ? payload.error.code : 'API_ERROR'
   const message =
@@ -80,16 +68,16 @@ async function parseJson(response: Response): Promise<unknown> {
 }
 
 async function fetchApi(path: string, init?: RequestInit): Promise<Response> {
-  const url = `${getApiBaseUrl()}${path}`
+  const url = apiUrl(path)
   try {
-    return await fetch(url, init)
+    return await fetch(url, withAuthentication(path, init))
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Network request failed.'
     throw new ApiError(message, 0, 'NETWORK_ERROR')
   }
 }
 
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+function withAuthentication(path: string, init?: RequestInit): RequestInit {
   const headers = new Headers(init?.headers)
   headers.set('Accept', 'application/json')
 
@@ -101,8 +89,22 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetchApi(path, { ...init, headers })
+  const { accessToken, csrfToken } = useAuthStore.getState()
+  if (accessToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${accessToken}`)
+  }
+  if (csrfToken && isCsrfProtectedAuthPath(path) && !headers.has('X-CSRF-Token')) {
+    headers.set('X-CSRF-Token', csrfToken)
+  }
 
+  return {
+    ...init,
+    credentials: 'include',
+    headers,
+  }
+}
+
+async function parseApiResponse<T>(response: Response): Promise<T> {
   if (response.status === 204) {
     return undefined as T
   }
@@ -128,7 +130,142 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload.data
 }
 
+async function executeRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  return parseApiResponse<T>(await fetchApi(path, init))
+}
+
+interface AuthSnapshot {
+  authEpoch: number
+  accessToken?: string
+  userId?: string
+}
+
+interface RefreshFlight {
+  snapshot: AuthSnapshot
+  controller: AbortController
+  promise: Promise<boolean>
+}
+
+interface TokenRotation {
+  authEpoch: number
+  userId?: string
+  fromAccessToken?: string
+  toAccessToken: string
+}
+
+let refreshFlight: RefreshFlight | undefined
+let lastTokenRotation: TokenRotation | undefined
+
+useAuthStore.subscribe((state, previousState) => {
+  if (state.authEpoch === previousState.authEpoch) return
+  lastTokenRotation = undefined
+  refreshFlight?.controller.abort()
+})
+
+async function refreshAccessToken(snapshot: AuthSnapshot): Promise<boolean> {
+  if (refreshFlight && sameSnapshot(refreshFlight.snapshot, snapshot)) {
+    return refreshFlight.promise
+  }
+
+  const controller = new AbortController()
+  const flight: RefreshFlight = {
+    snapshot,
+    controller,
+    promise: Promise.resolve(false),
+  }
+  flight.promise = (async () => {
+    try {
+      const session = await executeRequest<LoginResponse>('/auth/refresh', {
+        method: 'POST',
+        signal: controller.signal,
+      })
+      const applied = useAuthStore.getState().applyRefresh(session, snapshot)
+      if (applied) {
+        lastTokenRotation = {
+          authEpoch: snapshot.authEpoch,
+          userId: snapshot.userId,
+          fromAccessToken: snapshot.accessToken,
+          toAccessToken: session.accessToken,
+        }
+      }
+      return applied
+    } catch (error) {
+      clearSessionForSnapshot(snapshot)
+      throw error
+    } finally {
+      if (refreshFlight === flight) refreshFlight = undefined
+    }
+  })()
+  refreshFlight = flight
+  return flight.promise
+}
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  cancelRefreshForIdentityBoundary(path)
+  const initialSnapshot = authSnapshot()
+  try {
+    return await executeRequest<T>(path, init)
+  } catch (error) {
+    if (!shouldRefresh(path, error)) {
+      if (isTerminalSessionError(error)) clearSessionForSnapshot(initialSnapshot)
+      throw error
+    }
+    if (!(await ensureFreshAccessToken(initialSnapshot))) throw error
+    const retrySnapshot = authSnapshot()
+    try {
+      return await executeRequest<T>(path, init)
+    } catch (retryError) {
+      if (retryError instanceof ApiError && retryError.status === 401) {
+        clearSessionForSnapshot(retrySnapshot)
+      }
+      throw retryError
+    }
+  }
+}
+
 export async function download(
+  path: string,
+  init?: RequestInit
+): Promise<{ blob: Blob; fileName: string }> {
+  cancelRefreshForIdentityBoundary(path)
+  const initialSnapshot = authSnapshot()
+  try {
+    return await executeDownload(path, init)
+  } catch (error) {
+    if (!shouldRefresh(path, error)) {
+      if (isTerminalSessionError(error)) clearSessionForSnapshot(initialSnapshot)
+      throw error
+    }
+    if (!(await ensureFreshAccessToken(initialSnapshot))) throw error
+    const retrySnapshot = authSnapshot()
+    try {
+      return await executeDownload(path, init)
+    } catch (retryError) {
+      if (retryError instanceof ApiError && retryError.status === 401) {
+        clearSessionForSnapshot(retrySnapshot)
+      }
+      throw retryError
+    }
+  }
+}
+
+async function ensureFreshAccessToken(snapshot: AuthSnapshot): Promise<boolean> {
+  const current = authSnapshot()
+  if (current.authEpoch !== snapshot.authEpoch || current.userId !== snapshot.userId) {
+    return false
+  }
+  if (current.accessToken !== snapshot.accessToken) {
+    return (
+      lastTokenRotation?.authEpoch === snapshot.authEpoch &&
+      lastTokenRotation.userId === snapshot.userId &&
+      lastTokenRotation.fromAccessToken === snapshot.accessToken &&
+      lastTokenRotation.toAccessToken === current.accessToken
+    )
+  }
+  return refreshAccessToken(snapshot)
+}
+
+async function executeDownload(
   path: string,
   init?: RequestInit
 ): Promise<{ blob: Blob; fileName: string }> {
@@ -147,4 +284,67 @@ export async function download(
     blob: await response.blob(),
     fileName: encoded ? decodeURIComponent(encoded) : fallback || 'download',
   }
+}
+
+function isCsrfProtectedAuthPath(path: string): boolean {
+  const normalized = path.replace(/^\/+/, '')
+  return normalized === 'auth/refresh' || normalized === 'auth/logout'
+}
+
+function isAuthPath(path: string): boolean {
+  return path.replace(/^\/+/, '').startsWith('auth/')
+}
+
+function isIdentityBoundaryPath(path: string): boolean {
+  const normalized = path.replace(/^\/+/, '')
+  return normalized === 'auth/login' || normalized === 'auth/logout'
+}
+
+function cancelRefreshForIdentityBoundary(path: string): void {
+  if (isIdentityBoundaryPath(path)) refreshFlight?.controller.abort()
+}
+
+function authSnapshot(): AuthSnapshot {
+  const state = useAuthStore.getState()
+  return {
+    authEpoch: state.authEpoch,
+    accessToken: state.accessToken,
+    userId: state.user?.id,
+  }
+}
+
+function sameSnapshot(left: AuthSnapshot, right: AuthSnapshot): boolean {
+  return (
+    left.authEpoch === right.authEpoch &&
+    left.accessToken === right.accessToken &&
+    left.userId === right.userId
+  )
+}
+
+function clearSessionForSnapshot(snapshot: AuthSnapshot): void {
+  const current = authSnapshot()
+  if (sameSnapshot(current, snapshot)) {
+    useAuthStore.getState().clearSessionIfEpoch(snapshot.authEpoch)
+  }
+}
+
+function shouldRefresh(path: string, error: unknown): boolean {
+  return (
+    !isAuthPath(path) &&
+    error instanceof ApiError &&
+    error.status === 401 &&
+    error.code !== 'AUTH_SESSION_REVOKED'
+  )
+}
+
+function isTerminalSessionError(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    [
+      'AUTH_REFRESH_INVALID',
+      'AUTH_REFRESH_REPLAYED',
+      'AUTH_SESSION_NOT_FOUND',
+      'AUTH_SESSION_REVOKED',
+    ].includes(error.code)
+  )
 }

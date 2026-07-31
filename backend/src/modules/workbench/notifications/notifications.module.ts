@@ -9,6 +9,7 @@ import { ExtensionsModule } from '../extensions/extensions.module';
 import { GovernanceModule } from '../governance/governance.module';
 import { EmployeeWeekPlanReminderCandidatesService } from './application/employee-week-plan-reminder-candidates.service';
 import { EmployeeWeekPlanReminderSyncService } from './application/employee-week-plan-reminder-sync.service';
+import { ReminderMaintenanceCoordinatorService } from './application/reminder-maintenance-coordinator.service';
 
 @Module({
   imports: [ExtensionsModule, GovernanceModule],
@@ -20,6 +21,8 @@ import { EmployeeWeekPlanReminderSyncService } from './application/employee-week
     NotificationsGateway,
     EmployeeWeekPlanReminderCandidatesService,
     EmployeeWeekPlanReminderSyncService,
+    ReminderMaintenanceCoordinatorService,
   ],
+  exports: [NotificationsGateway],
 })
 export class NotificationsModule {}

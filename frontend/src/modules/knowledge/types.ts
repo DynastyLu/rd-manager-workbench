@@ -14,7 +14,13 @@ export interface KnowledgeSession {
   preview?: string;
   lastMessageAt?: string;
   archivedAt?: string | null;
+  messageNextCursor?: string | null;
   createdAt: string; updatedAt: string; messages?: KnowledgeMessage[];
+}
+export interface KnowledgeCursorPage<T> {
+  pinned: T[];
+  items: T[];
+  nextCursor: string | null;
 }
 export interface KnowledgeMessage {
   id: string; role: 'USER' | 'ASSISTANT'; content: string;
@@ -31,6 +37,7 @@ export interface ChunkCitation {
 }
 export interface IndexStatus {
   indexedDocuments: number; totalDocuments: number;
+  excludedDocuments?: number;
   totalChunks: number; lastIndexedAt?: string; complete: boolean;
 }
 export interface AiUsageStats {

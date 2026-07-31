@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button, Input, Modal, Toast } from '@douyinfe/semi-ui'
 import {
   IconComment,
@@ -13,7 +13,8 @@ import {
 } from '@douyinfe/semi-icons'
 import { archiveSession, listSessions, updateSession } from '../api'
 import { knowledgeQueryKeys } from '../queryKeys'
-import type { KnowledgeSession } from '../types'
+import type { KnowledgeCursorPage, KnowledgeSession } from '../types'
+import { KnowledgeEmbeddingStatus } from './KnowledgeEmbeddingStatus'
 import { NovaBot } from './NovaBot'
 
 interface Props {
@@ -22,6 +23,44 @@ interface Props {
   onNew: () => void
   onOpenHistory?: () => void
   onNavigate?: (tab: 'documents' | 'folders') => void
+}
+
+function isKnowledgeSession(value: unknown): value is KnowledgeSession {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === 'string' &&
+    typeof (value as { title?: unknown }).title === 'string'
+  )
+}
+
+function normalizeSessionPage(page: unknown): KnowledgeCursorPage<KnowledgeSession> {
+  if (Array.isArray(page)) {
+    const sessions = page.filter(isKnowledgeSession)
+    return {
+      pinned: sessions.filter((session) => session.isPinned),
+      items: sessions.filter((session) => !session.isPinned),
+      nextCursor: null,
+    }
+  }
+  if (
+    typeof page === 'object' &&
+    page !== null &&
+    Array.isArray((page as { pinned?: unknown }).pinned) &&
+    Array.isArray((page as { items?: unknown }).items)
+  ) {
+    const candidate = page as {
+      pinned: unknown[]
+      items: unknown[]
+      nextCursor?: unknown
+    }
+    return {
+      pinned: candidate.pinned.filter(isKnowledgeSession),
+      items: candidate.items.filter(isKnowledgeSession),
+      nextCursor: typeof candidate.nextCursor === 'string' ? candidate.nextCursor : null,
+    }
+  }
+  return { pinned: [], items: [], nextCursor: null }
 }
 
 export function KnowledgeSessionList({
@@ -35,20 +74,29 @@ export function KnowledgeSessionList({
   const [menuId, setMenuId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
+  const [retrievalSettingsOpen, setRetrievalSettingsOpen] = useState(false)
 
-  const sessionsQuery = useQuery({
+  useEffect(() => {
+    if (!retrievalSettingsOpen) return undefined
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setRetrievalSettingsOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [retrievalSettingsOpen])
+
+  const sessionsQuery = useInfiniteQuery({
     queryKey: knowledgeQueryKeys.sessionList(''),
-    queryFn: () => listSessions(),
+    queryFn: ({ pageParam }) => listSessions(undefined, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) =>
+      Array.isArray(lastPage) ? undefined : lastPage.nextCursor ?? undefined,
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, input }: { id: string; input: Parameters<typeof updateSession>[1] }) =>
       updateSession(id, input),
-    onSuccess: (session) => {
-      queryClient.setQueriesData<KnowledgeSession[]>(
-        { queryKey: knowledgeQueryKeys.sessions },
-        (current) => current?.map((item) => (item.id === session.id ? session : item))
-      )
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: knowledgeQueryKeys.sessions })
     },
     onError: () => Toast.error('更新对话失败，请稍后重试'),
@@ -82,10 +130,14 @@ export function KnowledgeSessionList({
     updateMutation.mutate({ id: session.id, input: { title } })
   }
 
-  const allSessions = sessionsQuery.data ?? []
-  const pinnedSessions = allSessions.filter((session) => session.isPinned)
-  const regularSessions = allSessions.filter((session) => !session.isPinned)
-  const visibleRegularSessions = regularSessions.slice(0, 10)
+  const pages = sessionsQuery.data?.pages ?? []
+  const normalizedPages = pages.map(normalizeSessionPage)
+  const uniqueById = (sessions: KnowledgeSession[]) => [
+    ...new Map(sessions.map((session) => [session.id, session])).values(),
+  ]
+  const pinnedSessions = uniqueById(normalizedPages.flatMap((page) => page.pinned))
+  const regularSessions = uniqueById(normalizedPages.flatMap((page) => page.items))
+  const allSessions = [...pinnedSessions, ...regularSessions]
 
   const renderSession = (session: KnowledgeSession) => (
     <div
@@ -219,11 +271,23 @@ export function KnowledgeSessionList({
         </button>
       </nav>
 
-      <div className="knowledge-assistant__session-list">
+      <div
+        className="knowledge-assistant__session-list"
+        onScroll={(event) => {
+          const target = event.currentTarget
+          if (
+            sessionsQuery.hasNextPage &&
+            !sessionsQuery.isFetchingNextPage &&
+            target.scrollHeight - target.scrollTop - target.clientHeight < 80
+          ) {
+            void sessionsQuery.fetchNextPage()
+          }
+        }}
+      >
         {sessionsQuery.isLoading ? (
           <div className="knowledge-assistant__session-hint">正在读取对话…</div>
         ) : null}
-        {!sessionsQuery.isLoading && (sessionsQuery.data?.length ?? 0) === 0 ? (
+        {!sessionsQuery.isLoading && allSessions.length === 0 ? (
           <div className="knowledge-assistant__session-hint">还没有对话，点击上方开始</div>
         ) : null}
         {pinnedSessions.length > 0 ? (
@@ -239,22 +303,48 @@ export function KnowledgeSessionList({
             <header>
               <span>对话</span>
               <div>
-                <button type="button" onClick={onOpenHistory}>
-                  查看全部
+                <button type="button" aria-label="管理全部对话" onClick={onOpenHistory}>
+                  管理
                 </button>
               </div>
             </header>
-            {visibleRegularSessions.map(renderSession)}
+            {regularSessions.map(renderSession)}
+            {sessionsQuery.hasNextPage ? (
+              <Button
+                aria-label="加载更多对话"
+                loading={sessionsQuery.isFetchingNextPage}
+                onClick={() => void sessionsQuery.fetchNextPage()}
+              >
+                加载更多
+              </Button>
+            ) : null}
           </section>
         ) : null}
       </div>
-      <footer className="knowledge-assistant__sessions-footer">
-        <span className="knowledge-assistant__sessions-logo">RD</span>
-        <div>
-          <strong>本地知识库</strong>
-          <small>仅在本机检索</small>
+      {retrievalSettingsOpen ? (
+        <div
+          id="nova-retrieval-settings"
+          className="knowledge-assistant__retrieval-settings"
+          role="dialog"
+          aria-label="NOVA 本地检索设置"
+        >
+          <KnowledgeEmbeddingStatus />
         </div>
-      </footer>
+      ) : null}
+      <button
+        type="button"
+        className="knowledge-assistant__sessions-footer"
+        aria-label="本地检索设置"
+        aria-expanded={retrievalSettingsOpen}
+        aria-controls="nova-retrieval-settings"
+        onClick={() => setRetrievalSettingsOpen((open) => !open)}
+      >
+        <span className="knowledge-assistant__sessions-logo">RD</span>
+        <span>
+          <strong>本地知识库</strong>
+          <small>{retrievalSettingsOpen ? '收起检索设置' : '全文检索已可用'}</small>
+        </span>
+      </button>
     </aside>
   )
 }

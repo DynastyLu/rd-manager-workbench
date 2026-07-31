@@ -78,7 +78,7 @@ export function KnowledgeSessionHistory({ onClose, onSelect }: Props) {
 
   const sessionsQuery = useQuery({
     queryKey: knowledgeQueryKeys.sessionList(search),
-    queryFn: () => listSessions(search),
+    queryFn: () => listSessions(search, undefined, 100),
   });
 
   const updateMutation = useMutation({
@@ -101,7 +101,12 @@ export function KnowledgeSessionHistory({ onClose, onSelect }: Props) {
     onError: () => Toast.error('删除对话失败'),
   });
 
-  const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data]);
+  const sessions = useMemo(() => {
+    const page = sessionsQuery.data;
+    if (!page) return [];
+    if (Array.isArray(page)) return page as KnowledgeSession[];
+    return [...page.pinned, ...page.items];
+  }, [sessionsQuery.data]);
   const groups = useMemo(() => groupSessions(sessions), [sessions]);
 
   const saveTitle = (session: KnowledgeSession) => {

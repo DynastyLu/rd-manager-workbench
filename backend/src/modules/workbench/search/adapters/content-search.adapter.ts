@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ContentStatus, FileAssetStatus, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { SearchAdapter, SearchCandidate, SearchType } from '../domain/search.types';
 import { buildSearchSnippet, limitSearchCandidates } from '../domain/search-ranking';
 
@@ -10,7 +12,15 @@ const CANDIDATE_LIMIT = 100;
 export class ContentSearchAdapter implements SearchAdapter {
   readonly types = ['DOCUMENT', 'FILE'] as const;
 
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
+  ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   async search(query: string, types: readonly SearchType[]): Promise<SearchCandidate[]> {
     const documentsPromise = types.includes('DOCUMENT')
@@ -23,17 +33,22 @@ export class ContentSearchAdapter implements SearchAdapter {
 
   private async searchDocuments(query: string): Promise<SearchCandidate[]> {
     const where: Prisma.ContentDocumentWhereInput = {
-      status: ContentStatus.ACTIVE,
-      trashedAt: null,
       AND: [
-        { OR: [{ spaceId: null }, { space: { archivedAt: null } }] },
-        { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
-        { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
-      ],
-      OR: [
-        { title: { contains: query, mode: 'insensitive' } },
-        { plainText: { contains: query, mode: 'insensitive' } },
-        { tags: { has: query } },
+        {
+          status: ContentStatus.ACTIVE,
+          trashedAt: null,
+          AND: [
+            { OR: [{ spaceId: null }, { space: { archivedAt: null } }] },
+            { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
+            { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
+          ],
+          OR: [
+            { title: { contains: query, mode: 'insensitive' } },
+            { plainText: { contains: query, mode: 'insensitive' } },
+            { tags: { has: query } },
+          ],
+        },
+        this.dataScope.documents(this.principal()),
       ],
     };
     const documents = await this.prisma.contentDocument.findMany({
@@ -62,6 +77,7 @@ export class ContentSearchAdapter implements SearchAdapter {
   }
 
   private async searchFiles(query: string): Promise<SearchCandidate[]> {
+    const principal = this.principal();
     const where: Prisma.FileAssetWhereInput = {
       status: FileAssetStatus.ACTIVE,
       trashedAt: null,
@@ -78,19 +94,34 @@ export class ContentSearchAdapter implements SearchAdapter {
             { documentId: null },
             {
               document: {
-                status: ContentStatus.ACTIVE,
-                trashedAt: null,
                 AND: [
-                  { OR: [{ spaceId: null }, { space: { archivedAt: null } }] },
-                  { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
-                  { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
+                  {
+                    status: ContentStatus.ACTIVE,
+                    trashedAt: null,
+                    AND: [
+                      { OR: [{ spaceId: null }, { space: { archivedAt: null } }] },
+                      { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
+                      { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
+                    ],
+                  },
+                  this.dataScope.documents(principal),
                 ],
               },
             },
           ],
         },
-        { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
-        { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
+        {
+          OR: [
+            { projectId: null },
+            { project: { AND: [{ archivedAt: null }, this.dataScope.projects(principal)] } },
+          ],
+        },
+        {
+          OR: [
+            { meetingId: null },
+            { meeting: { AND: [{ archivedAt: null }, this.dataScope.meetings(principal)] } },
+          ],
+        },
       ],
       OR: [
         { name: { contains: query, mode: 'insensitive' } },

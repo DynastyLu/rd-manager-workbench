@@ -12,6 +12,10 @@ import {
 import { DataHealthService } from './application/data-health.service';
 import { GovernanceSettingsService } from './application/governance-settings.service';
 import { RestorePreflightService } from './application/restore-preflight.service';
+import {
+  postgresToolCandidates,
+  PostgresToolsService,
+} from './application/postgres-tools.service';
 import { BackupFilesystem } from './infrastructure/backup-filesystem';
 import { ProcessRunner } from './infrastructure/process-runner';
 import { RestoreEngine } from './infrastructure/restore-engine';
@@ -36,6 +40,7 @@ import { GovernanceSettingsController } from './interface/http/governance-settin
     BackupSchedulerService,
     DataHealthService,
     RestorePreflightService,
+    PostgresToolsService,
     RestoreEngine,
     {
       provide: BackupFilesystem,
@@ -45,7 +50,18 @@ import { GovernanceSettingsController } from './interface/http/governance-settin
       provide: ProcessRunner,
       useFactory: () =>
         new ProcessRunner({
-          allowedExecutables: ['pg_dump', 'pg_restore'],
+          allowedExecutables: [
+            ...postgresToolCandidates('pg_dump', {
+              platform: process.platform,
+              programFiles: process.env.ProgramFiles,
+              programFilesX86: process.env['ProgramFiles(x86)'],
+            }),
+            ...postgresToolCandidates('pg_restore', {
+              platform: process.platform,
+              programFiles: process.env.ProgramFiles,
+              programFilesX86: process.env['ProgramFiles(x86)'],
+            }),
+          ],
           defaultTimeoutMs: Number(process.env.BACKUP_PROCESS_TIMEOUT_MS || 300_000),
         }),
     },

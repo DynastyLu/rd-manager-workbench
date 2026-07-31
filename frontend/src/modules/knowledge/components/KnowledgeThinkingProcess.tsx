@@ -6,7 +6,6 @@ import {
   IconSearch,
   IconTick,
 } from '@douyinfe/semi-icons'
-import { motion, useReducedMotion } from 'framer-motion'
 import { NovaBot } from './NovaBot'
 
 export interface KnowledgeThinkingStep {
@@ -102,7 +101,6 @@ function StepIcon({ step }: { step: DisplayStep }) {
 
 export function KnowledgeThinkingProcess({ steps, hasAnswerContent }: Props) {
   const [expanded, setExpanded] = useState(true)
-  const reduceMotion = useReducedMotion()
   const displaySteps = useMemo(
     () => buildDisplaySteps(steps, hasAnswerContent),
     [hasAnswerContent, steps]
@@ -130,28 +128,7 @@ export function KnowledgeThinkingProcess({ steps, hasAnswerContent }: Props) {
             <strong>正在思考</strong>
             <span className="kb-ai-thinking__ellipsis" aria-hidden="true">
               {[0, 1, 2].map((dot) => (
-                <motion.i
-                  key={dot}
-                  animate={
-                    reduceMotion
-                      ? { opacity: 1, scale: 1, y: 0 }
-                      : {
-                          opacity: [0.42, 1, 0.42],
-                          scale: [0.82, 1.18, 0.82],
-                          y: [0, -5, 0],
-                        }
-                  }
-                  transition={
-                    reduceMotion
-                      ? { duration: 0 }
-                      : {
-                          delay: dot * 0.15,
-                          duration: 0.95,
-                          ease: 'easeInOut',
-                          repeat: Number.POSITIVE_INFINITY,
-                        }
-                  }
-                />
+                <i key={dot} />
               ))}
             </span>
           </div>

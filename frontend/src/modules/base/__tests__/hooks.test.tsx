@@ -210,8 +210,16 @@ describe('base hooks', () => {
       result.current.schedule('view-b', { query: 'b' })
       await vi.advanceTimersByTimeAsync(350)
     })
-    expect(save).toHaveBeenCalledWith('view-a', { query: 'a' })
-    expect(save).toHaveBeenCalledWith('view-b', { query: 'b' })
+    expect(save).toHaveBeenCalledWith(
+      'view-a',
+      { query: 'a' },
+      expect.objectContaining({ revision: 1, isLatest: expect.any(Function) }),
+    )
+    expect(save).toHaveBeenCalledWith(
+      'view-b',
+      { query: 'b' },
+      expect.objectContaining({ revision: 1, isLatest: expect.any(Function) }),
+    )
 
     await act(async () => {
       result.current.schedule('view-a', { query: 'old' })
@@ -219,7 +227,11 @@ describe('base hooks', () => {
       unmount()
       await Promise.resolve()
     })
-    expect(save).toHaveBeenLastCalledWith('view-a', { query: 'latest' })
+    expect(save).toHaveBeenLastCalledWith(
+      'view-a',
+      { query: 'latest' },
+      expect.objectContaining({ revision: 3, isLatest: expect.any(Function) }),
+    )
     expect(save).toHaveBeenCalledTimes(3)
   })
 
@@ -235,7 +247,11 @@ describe('base hooks', () => {
       await vi.advanceTimersByTimeAsync(350)
     })
 
-    expect(save).not.toHaveBeenCalledWith('view-a', expect.anything())
-    expect(save).toHaveBeenCalledWith('view-b', { query: 'kept' })
+    expect(save.mock.calls.some(([viewId]) => viewId === 'view-a')).toBe(false)
+    expect(save).toHaveBeenCalledWith(
+      'view-b',
+      { query: 'kept' },
+      expect.objectContaining({ revision: 1, isLatest: expect.any(Function) }),
+    )
   })
 })

@@ -4,6 +4,8 @@ import { PlatformPrismaService } from '../../../../infrastructure/prisma/platfor
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { TasksService } from '../../tasks/application/tasks.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import {
   CreateCommunicationDto,
   CreatePartnerAgreementDto,
@@ -34,23 +36,6 @@ const PARTNER_LIST_INCLUDE = {
   },
 } satisfies Prisma.PartnerInclude;
 
-const PARTNER_DETAIL_INCLUDE = {
-  contacts: { where: { archivedAt: null }, orderBy: { updatedAt: 'desc' as const } },
-  agreements: { where: { archivedAt: null }, orderBy: { updatedAt: 'desc' as const } },
-  communications: {
-    where: { archivedAt: null },
-    orderBy: { occurredAt: 'desc' as const },
-    include: { contact: true, project: true, task: true },
-  },
-  projects: {
-    orderBy: { createdAt: 'desc' as const },
-    include: { project: true },
-  },
-  _count: {
-    select: { fileAssets: { where: { status: FileAssetStatus.ACTIVE } } },
-  },
-} satisfies Prisma.PartnerInclude;
-
 type PartnerListEntity = Prisma.PartnerGetPayload<{ include: typeof PARTNER_LIST_INCLUDE }>;
 
 @Injectable()
@@ -58,38 +43,46 @@ export class PartnersService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly tasks: TasksService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
   ) {}
 
   async list(query: ListPartnersQueryDto) {
     const page = query.page ?? DEFAULT_PAGE;
     const pageSize = Math.min(query.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+    const principal = this.requestContext.requirePrincipal();
     const followUpRange: Prisma.DateTimeNullableFilter = {
       ...(query.nextFollowUpFrom ? { gte: new Date(query.nextFollowUpFrom) } : {}),
       ...(query.nextFollowUpBefore ? { lte: new Date(query.nextFollowUpBefore) } : {}),
     };
     const hasFollowUpRange = Boolean(query.nextFollowUpFrom || query.nextFollowUpBefore);
     const where: Prisma.PartnerWhereInput = {
-      archivedAt: null,
-      ...(query.q
-        ? {
-            OR: [
-              { name: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
-              { shortName: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
-              { category: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
-            ],
-          }
-        : {}),
-      ...(query.projectId ? { projects: { some: { projectId: query.projectId } } } : {}),
-      ...(hasFollowUpRange
-        ? {
-            communications: {
-              some: {
-                archivedAt: null,
-                nextFollowUpAt: followUpRange,
-              },
-            },
-          }
-        : {}),
+      AND: [
+        {
+          archivedAt: null,
+          ...(query.q
+            ? {
+                OR: [
+                  { name: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
+                  { shortName: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
+                  { category: { contains: query.q, mode: Prisma.QueryMode.insensitive } },
+                ],
+              }
+            : {}),
+          ...(query.projectId ? { projects: { some: { projectId: query.projectId } } } : {}),
+          ...(hasFollowUpRange
+            ? {
+                communications: {
+                  some: {
+                    archivedAt: null,
+                    nextFollowUpAt: followUpRange,
+                  },
+                },
+              }
+            : {}),
+        },
+        this.dataScope.partners(principal),
+      ],
     };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.partner.findMany({
@@ -139,9 +132,25 @@ export class PartnersService {
   }
 
   async get(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     const entity = await this.prisma.partner.findFirst({
-      where: { id, archivedAt: null },
-      include: PARTNER_DETAIL_INCLUDE,
+      where: { AND: [{ id, archivedAt: null }, this.dataScope.partners(principal)] },
+      include: {
+        contacts: { where: { archivedAt: null }, orderBy: { updatedAt: 'desc' as const } },
+        agreements: { where: { archivedAt: null }, orderBy: { updatedAt: 'desc' as const } },
+        communications: {
+          where: { AND: [{ archivedAt: null }, this.dataScope.communications(principal)] },
+          orderBy: { occurredAt: 'desc' as const },
+          include: { contact: true, project: true, task: true },
+        },
+        projects: {
+          orderBy: { createdAt: 'desc' as const },
+          include: { project: true },
+        },
+        _count: {
+          select: { fileAssets: { where: { status: FileAssetStatus.ACTIVE } } },
+        },
+      },
     });
     if (!entity) throw this.notFound(ErrorCodes.PARTNER_NOT_FOUND, 'Partner not found');
     const { _count, ...fields } = entity;
@@ -352,14 +361,20 @@ export class PartnersService {
 
   async listCommunications(partnerId: string, query: ListCommunicationsQueryDto) {
     await this.assertActivePartner(this.prisma, partnerId);
+    const principal = this.requestContext.requirePrincipal();
     const page = query.page ?? DEFAULT_PAGE;
     const pageSize = Math.min(query.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
     const where: Prisma.CommunicationRecordWhereInput = {
-      partnerId,
-      archivedAt: null,
-      ...(query.nextFollowUpBefore
-        ? { nextFollowUpAt: { lte: new Date(query.nextFollowUpBefore) } }
-        : {}),
+      AND: [
+        {
+          partnerId,
+          archivedAt: null,
+          ...(query.nextFollowUpBefore
+            ? { nextFollowUpAt: { lte: new Date(query.nextFollowUpBefore) } }
+            : {}),
+        },
+        this.dataScope.communications(principal),
+      ],
     };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.communicationRecord.findMany({

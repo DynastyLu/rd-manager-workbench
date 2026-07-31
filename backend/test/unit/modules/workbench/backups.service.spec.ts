@@ -61,14 +61,21 @@ describe('BackupsService', () => {
     };
     const runner = { run: jest.fn().mockResolvedValue({ stdout: '', stderr: '' }) };
     const audit = { record: jest.fn().mockResolvedValue(undefined) };
+    const tools = {
+      requireCompatible: jest.fn().mockResolvedValue({
+        executable: 'pg_dump',
+        version: 17,
+      }),
+    };
     const service = new BackupsService(
       prisma as never,
       filesystem as never,
       runner as never,
       audit as never,
       { databaseUrl, appVersion: '0.1.0' },
+      tools as never,
     );
-    return { service, prisma, tx, filesystem, runner, audit, ...overrides };
+    return { service, prisma, tx, filesystem, runner, audit, tools, ...overrides };
   }
 
   it('uses a fixed custom-format pg_dump invocation and only verifies after the second hash pass', async () => {
@@ -98,6 +105,17 @@ describe('BackupsService', () => {
       BackupStatus.VERIFIED,
     ]);
     expect(result.status).toBe(BackupStatus.VERIFIED);
+  });
+
+  it('blocks backup before creating records when pg_dump is missing or incompatible', async () => {
+    const f = fixture();
+    f.tools.requireCompatible.mockRejectedValue(new Error('POSTGRES_TOOL_UNAVAILABLE'));
+
+    await expect(f.service.createManual()).rejects.toMatchObject({
+      code: 'BACKUP_TOOL_UNAVAILABLE',
+    });
+    expect(f.prisma.backupRecord.create).not.toHaveBeenCalled();
+    expect(f.runner.run).not.toHaveBeenCalled();
   });
 
   it.each([

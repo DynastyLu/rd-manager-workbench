@@ -1,8 +1,10 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { KnowledgeIndexJobStatus, KnowledgeProcessingStatus } from '@prisma/client';
+import { KnowledgeIndexJobStatus, KnowledgeProcessingStatus, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { ChunkingService } from './chunking.service';
 import { EmbeddingService } from './embedding.service';
+
+const REINDEX_CREATION_LOCK_KEY = 77190426;
 
 @Injectable()
 export class IndexingService implements OnModuleInit {
@@ -135,33 +137,39 @@ export class IndexingService implements OnModuleInit {
   }
 
   async indexAll(): Promise<{ jobId: string }> {
-    const active = await this.prisma.knowledgeIndexJob.findFirst({
-      where: {
-        status: { in: [KnowledgeIndexJobStatus.QUEUED, KnowledgeIndexJobStatus.RUNNING] },
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
-    if (active) return { jobId: active.id };
+    const creation = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(${REINDEX_CREATION_LOCK_KEY})`,
+      );
+      const active = await tx.knowledgeIndexJob.findFirst({
+        where: {
+          status: { in: [KnowledgeIndexJobStatus.QUEUED, KnowledgeIndexJobStatus.RUNNING] },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true },
+      });
+      if (active) return { jobId: active.id, docs: null };
 
-    const docs = await this.prisma.contentDocument.findMany({
-      where: { status: 'ACTIVE', trashedAt: null, plainText: { not: '' } },
-      select: { id: true, plainText: true },
-    });
-    const job = await this.prisma.knowledgeIndexJob.create({
-      data: {
-        status: KnowledgeIndexJobStatus.QUEUED,
-        totalFiles: docs.length,
-      },
-      select: { id: true },
+      const docs = await tx.contentDocument.findMany({
+        where: { status: 'ACTIVE', trashedAt: null, plainText: { not: '' } },
+        select: { id: true, plainText: true },
+      });
+      const job = await tx.knowledgeIndexJob.create({
+        data: {
+          status: KnowledgeIndexJobStatus.QUEUED,
+          totalFiles: docs.length,
+        },
+        select: { id: true },
+      });
+      return { jobId: job.id, docs };
     });
 
-    setImmediate(() => {
-      void this.runIndexJob(job.id, docs).catch((error: unknown) => {
-        this.logger.error({ jobId: job.id, error }, 'Reindex job failed');
+    if (creation.docs) setImmediate(() => {
+      void this.runIndexJob(creation.jobId, creation.docs!).catch(() => {
+        this.logger.error({ jobId: creation.jobId }, 'Reindex job failed');
       });
     });
-    return { jobId: job.id };
+    return { jobId: creation.jobId };
   }
 
   private async runIndexJob(
@@ -255,13 +263,29 @@ export class IndexingService implements OnModuleInit {
 
     const latestJob = await this.prisma.knowledgeIndexJob.findFirst({
       orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        status: true,
+        processedFiles: true,
+        totalFiles: true,
+        failedFiles: true,
+      },
     });
     return {
       indexedDocuments: searchableCount,
       totalDocuments: totalCount,
+      excludedDocuments: Math.max(totalCount - searchableCount, 0),
       totalChunks: Number(totalChunks[0]?.count ?? 0),
       complete: searchableCount >= totalCount,
-      latestJob,
+      latestJob: latestJob
+        ? {
+            id: latestJob.id,
+            status: latestJob.status,
+            processedFiles: latestJob.processedFiles,
+            totalFiles: latestJob.totalFiles,
+            failedFiles: latestJob.failedFiles,
+          }
+        : null,
     };
   }
 }

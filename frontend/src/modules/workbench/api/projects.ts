@@ -11,6 +11,12 @@ import type {
   ProjectStatus,
   ProgressReport,
   ProjectWeightMode,
+  ProjectWorkItemViewConfig,
+  ProjectPlanBaseline,
+  ProjectPlanChange,
+  ProjectCriticalPath,
+  ProjectScheduleChangeInput,
+  ProjectScheduleImpact,
 } from '@/modules/workbench/types'
 
 export interface ListProjectsParams {
@@ -127,6 +133,67 @@ export function updateProject(id: string, input: UpdateProjectInput): Promise<Pr
 
 export function archiveProject(id: string): Promise<void> {
   return request<void>(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function updateProjectWorkItemView(
+  id: string,
+  config: ProjectWorkItemViewConfig
+): Promise<ProjectWorkItemViewConfig> {
+  return request<ProjectWorkItemViewConfig>(
+    `/projects/${encodeURIComponent(id)}/work-item-view`,
+    { method: 'PUT', body: JSON.stringify(config) }
+  )
+}
+
+export function createProjectPlanBaseline(
+  id: string,
+  input: { name?: string } = {}
+): Promise<ProjectPlanBaseline> {
+  return request<ProjectPlanBaseline>(`/projects/${encodeURIComponent(id)}/plan-baselines`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function listProjectPlanBaselines(id: string): Promise<ProjectPlanBaseline[]> {
+  return request<ProjectPlanBaseline[]>(`/projects/${encodeURIComponent(id)}/plan-baselines`)
+}
+
+export function getProjectPlanBaseline(
+  id: string,
+  baselineId: string
+): Promise<ProjectPlanBaseline> {
+  return request<ProjectPlanBaseline>(
+    `/projects/${encodeURIComponent(id)}/plan-baselines/${encodeURIComponent(baselineId)}`
+  )
+}
+
+export function listProjectPlanChanges(id: string): Promise<ProjectPlanChange[]> {
+  return request<ProjectPlanChange[]>(`/projects/${encodeURIComponent(id)}/plan-changes`)
+}
+
+export function getProjectCriticalPath(id: string): Promise<ProjectCriticalPath> {
+  return request<ProjectCriticalPath>(`/projects/${encodeURIComponent(id)}/critical-path`)
+}
+
+export function previewProjectScheduleImpact(
+  id: string,
+  input: ProjectScheduleChangeInput
+): Promise<ProjectScheduleImpact> {
+  return request<ProjectScheduleImpact>(`/projects/${encodeURIComponent(id)}/schedule-impact`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function applyProjectScheduleChange(
+  id: string,
+  input: ProjectScheduleChangeInput
+): Promise<{ change: ProjectPlanChange; impact: ProjectScheduleImpact }> {
+  return request(`/projects/${encodeURIComponent(id)}/schedule-changes`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
 }
 
 export function createProgressReport(

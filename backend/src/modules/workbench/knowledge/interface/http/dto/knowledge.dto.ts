@@ -13,6 +13,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { KnowledgeCursorPageDto } from './knowledge-pagination.dto';
 
 export class CreateSessionDto {
   @Transform(({ value }) => (typeof value === 'string' ? value : ''))
@@ -56,7 +57,7 @@ export class KnowledgeScopeDto {
   documentIds?: string[];
 }
 
-export class ListSessionsQueryDto {
+export class ListSessionsQueryDto extends KnowledgeCursorPageDto {
   @IsOptional()
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : undefined))
   @IsString()

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { EmployeeProgressPeriod, EmployeeWorkImportStatus, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { buildSearchSnippet, limitSearchCandidates } from '../domain/search-ranking';
 import { SearchAdapter, SearchCandidate, SearchType } from '../domain/search.types';
 
@@ -10,7 +12,15 @@ const CANDIDATE_LIMIT = 100;
 export class EmployeesSearchAdapter implements SearchAdapter {
   readonly types = ['EMPLOYEE', 'EMPLOYEE_WORK'] as const satisfies readonly SearchType[];
 
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
+  ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   async search(query: string, types: readonly SearchType[]): Promise<SearchCandidate[]> {
     const [employees, workItems, planItems] = await Promise.all([
@@ -25,15 +35,20 @@ export class EmployeesSearchAdapter implements SearchAdapter {
     const contains = { contains: query, mode: 'insensitive' as const };
     const employees = await this.prisma.resourceProfile.findMany({
       where: {
-        archivedAt: null,
-        OR: [
-          { displayName: contains },
-          { department: contains },
-          { roleTitle: contains },
-          { workDirection: contains },
-          { managerName: contains },
-          { developmentGoal: contains },
-          { notes: contains },
+        AND: [
+          {
+            archivedAt: null,
+            OR: [
+              { displayName: contains },
+              { department: contains },
+              { roleTitle: contains },
+              { workDirection: contains },
+              { managerName: contains },
+              { developmentGoal: contains },
+              { notes: contains },
+            ],
+          },
+          this.dataScope.employees(this.principal()),
         ],
       },
       select: {
@@ -71,27 +86,32 @@ export class EmployeesSearchAdapter implements SearchAdapter {
   private async searchWorkItems(query: string): Promise<SearchCandidate[]> {
     const contains = { contains: query, mode: 'insensitive' as const };
     const where: Prisma.EmployeeWorkItemWhereInput = {
-      archivedAt: null,
-      employee: { archivedAt: null },
-      importBatch: {
-        periodType: EmployeeProgressPeriod.WEEK,
-        status: EmployeeWorkImportStatus.COMPLETED,
-        archivedAt: null,
-      },
-      OR: [
-        { title: contains },
-        { planText: contains },
-        { summaryText: contains },
-        { nextPlanText: contains },
-        { riskText: contains },
-        { note: contains },
-        { employee: { displayName: contains } },
-        { employee: { department: contains } },
-        { employee: { workDirection: contains } },
-        { project: { code: contains } },
-        { project: { name: contains } },
-        { task: { code: contains } },
-        { task: { title: contains } },
+      AND: [
+        {
+          archivedAt: null,
+          employee: { archivedAt: null },
+          importBatch: {
+            periodType: EmployeeProgressPeriod.WEEK,
+            status: EmployeeWorkImportStatus.COMPLETED,
+            archivedAt: null,
+          },
+          OR: [
+            { title: contains },
+            { planText: contains },
+            { summaryText: contains },
+            { nextPlanText: contains },
+            { riskText: contains },
+            { note: contains },
+            { employee: { displayName: contains } },
+            { employee: { department: contains } },
+            { employee: { workDirection: contains } },
+            { project: { code: contains } },
+            { project: { name: contains } },
+            { task: { code: contains } },
+            { task: { title: contains } },
+          ],
+        },
+        this.dataScope.employeeWork(this.principal()),
       ],
     };
     const items = await this.prisma.employeeWorkItem.findMany({
@@ -162,30 +182,36 @@ export class EmployeesSearchAdapter implements SearchAdapter {
 
   private async searchPlanItems(query: string): Promise<SearchCandidate[]> {
     const contains = { contains: query, mode: 'insensitive' as const };
-    const items = await this.prisma.employeeWeekPlanItem.findMany({
-      where: {
-        archivedAt: null,
-        employee: { archivedAt: null },
-        importBatch: {
-          periodType: EmployeeProgressPeriod.WEEK,
-          status: EmployeeWorkImportStatus.COMPLETED,
+    const where: Prisma.EmployeeWeekPlanItemWhereInput = {
+      AND: [
+        {
           archivedAt: null,
+          employee: { archivedAt: null },
+          importBatch: {
+            periodType: EmployeeProgressPeriod.WEEK,
+            status: EmployeeWorkImportStatus.COMPLETED,
+            archivedAt: null,
+          },
+          OR: [
+            { title: contains },
+            { deliverableText: contains },
+            { collaborationText: contains },
+            { planText: contains },
+            { note: contains },
+            { employee: { displayName: contains } },
+            { employee: { department: contains } },
+            { employee: { workDirection: contains } },
+            { project: { code: contains } },
+            { project: { name: contains } },
+            { task: { code: contains } },
+            { task: { title: contains } },
+          ],
         },
-        OR: [
-          { title: contains },
-          { deliverableText: contains },
-          { collaborationText: contains },
-          { planText: contains },
-          { note: contains },
-          { employee: { displayName: contains } },
-          { employee: { department: contains } },
-          { employee: { workDirection: contains } },
-          { project: { code: contains } },
-          { project: { name: contains } },
-          { task: { code: contains } },
-          { task: { title: contains } },
-        ],
-      },
+        { employee: this.dataScope.employees(this.principal()) },
+      ],
+    };
+    const items = await this.prisma.employeeWeekPlanItem.findMany({
+      where,
       select: {
         id: true,
         title: true,

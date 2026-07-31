@@ -9,8 +9,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "prepare:app": "pnpm --dir ../frontend build && pnpm --dir ../backend build",
+    "rebuild:native": "electron-builder install-app-deps",
     "build": "pnpm prepare:app && tsc && electron-builder --dir",
-    "dist": "pnpm prepare:app && tsc && electron-builder"
+    "dist": "pnpm prepare:app && tsc && electron-builder",
+    "dist:windows": "pnpm rebuild:native && pnpm prepare:app && tsc && electron-builder --win nsis",
+    "smoke:windows": "vitest run src/startup-preflight.test.ts src/database-bootstrap.test.ts src/runtime.test.ts"
   },
   "dependencies": {
     "socket.io-client": "^4.8.1"

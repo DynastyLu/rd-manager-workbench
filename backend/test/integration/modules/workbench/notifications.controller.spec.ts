@@ -1,15 +1,17 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { PrismaClient } from '@prisma/client';
-import request from 'supertest';
+import { DataScope, PrismaClient } from '@prisma/client';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
+import { PERMISSIONS } from '../../../../src/modules/iam/domain/permission-catalog';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Notifications API', () => {
   const prisma = new PrismaClient();
   const prefix = `TEST-NOTIFICATION-${Date.now()}`;
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
 
   beforeAll(async () => {
     const { AppModule } = await import('../../../../src/app.module');
@@ -23,6 +25,10 @@ describe('Notifications API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+    authenticated = await authenticatedRequest(app, prisma, `${prefix}-ROLE`, [
+      { code: PERMISSIONS.TASK_READ, dataScope: DataScope.ALL },
+      { code: PERMISSIONS.TASK_UPDATE, dataScope: DataScope.ALL },
+    ]);
   });
 
   afterAll(async () => {
@@ -31,12 +37,20 @@ describe('Notifications API', () => {
     await prisma.workTask.deleteMany({ where: { id: { startsWith: prefix } } });
     await prisma.calendarEvent.deleteMany({ where: { id: { startsWith: prefix } } });
     await prisma.meeting.deleteMany({ where: { id: { startsWith: prefix } } });
+    if (authenticated) {
+      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.user.delete({ where: { id: authenticated.user.id } });
+      await prisma.role.delete({ where: { id: authenticated.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    }
     await prisma.$disconnect();
     await app?.close();
   });
 
   it('returns the unread notification collection contract', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await authenticated.agent
       .get('/api/notifications')
       .query({ status: 'UNREAD', page: 1, pageSize: 20 })
       .expect(200);
@@ -54,6 +68,7 @@ describe('Notifications API', () => {
           sourceType: 'TASK',
           sourceId: `${prefix}-${suffix}`,
           remindAt: new Date(`2026-08-0${suffix}T01:00:00.000Z`),
+          ownerUserId: authenticated.user.id,
         },
       });
       return prisma.notification.create({
@@ -75,7 +90,7 @@ describe('Notifications API', () => {
       createNotification('3'),
     ]);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .put(`/api/notifications/${readTarget.id}/read`)
       .expect(200)
       .expect(({ body }) => {
@@ -83,13 +98,13 @@ describe('Notifications API', () => {
         expect(body.data.readAt).toEqual(expect.any(String));
       });
 
-    await request(app.getHttpServer()).delete(`/api/notifications/${dismissTarget.id}`).expect(204);
+    await authenticated.agent.delete(`/api/notifications/${dismissTarget.id}`).expect(204);
     await expect(
       prisma.notification.findUniqueOrThrow({ where: { id: dismissTarget.id } }),
     ).resolves.toMatchObject({ status: 'DISMISSED', dismissedAt: expect.any(Date) });
 
     const snoozeUntil = '2027-08-01T01:00:00.000Z';
-    await request(app.getHttpServer())
+    await authenticated.agent
       .put(`/api/notifications/${snoozeTarget.id}/snooze`)
       .send({ snoozeUntil })
       .expect(200)
@@ -127,11 +142,17 @@ describe('Notifications API', () => {
       }),
     ]);
 
-    const createRule = async (sourceType: string, sourceId: string, remindAt: string) =>
-      request(app.getHttpServer())
+    const createRule = async (sourceType: string, sourceId: string, remindAt: string) => {
+      const response = await authenticated.agent
         .post('/api/reminders')
         .send({ sourceType, sourceId, remindAt })
         .expect(201);
+      await prisma.reminderRule.update({
+        where: { id: response.body.data.id },
+        data: { ownerUserId: authenticated.user.id },
+      });
+      return response;
+    };
     const firstTaskRule = (await createRule('TASK', taskId, '2026-08-31T23:00:00.000Z')).body.data;
     const duplicateTaskRule = (await createRule('TASK', taskId, '2026-08-31T23:00:00.000Z')).body
       .data;
@@ -140,7 +161,7 @@ describe('Notifications API', () => {
     await createRule('MEETING', meetingId, '2026-09-01T02:30:00.000Z');
 
     expect(duplicateTaskRule.id).toBe(firstTaskRule.id);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get('/api/reminders')
       .query({ sourceType: 'TASK', sourceId: taskId })
       .expect(200)
@@ -148,8 +169,8 @@ describe('Notifications API', () => {
         expect(body.data).toHaveLength(2);
       });
 
-    await request(app.getHttpServer()).delete(`/api/reminders/${firstTaskRule.id}`).expect(204);
-    await request(app.getHttpServer())
+    await authenticated.agent.delete(`/api/reminders/${firstTaskRule.id}`).expect(204);
+    await authenticated.agent
       .get('/api/reminders')
       .query({ sourceType: 'TASK', sourceId: taskId })
       .expect(200)
@@ -157,7 +178,7 @@ describe('Notifications API', () => {
         expect(body.data).toHaveLength(1);
       });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/reminders')
       .send({
         sourceType: 'TASK',
@@ -187,10 +208,11 @@ describe('Notifications API', () => {
         sourceType: 'TASK',
         sourceId: taskId,
         remindAt: new Date('2026-08-01T01:00:00.000Z'),
+        ownerUserId: authenticated.user.id,
       },
     });
 
-    const firstScan = await request(app.getHttpServer())
+    const firstScan = await authenticated.agent
       .post('/api/notifications/test/scan')
       .send({ now: '2026-08-01T01:01:00.000Z' })
       .expect(201);
@@ -207,14 +229,14 @@ describe('Notifications API', () => {
       }),
     ]);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/notifications/test/scan')
       .send({ now: '2026-08-01T01:01:00.000Z' })
       .expect(201)
       .expect(({ body }) => {
         expect(body.data).toMatchObject({ created: 0, resurfaced: 0, notifications: [] });
       });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/notifications/test/scan')
       .send({ now: '2026-08-01T00:30:00.000Z' })
       .expect(201)
@@ -226,11 +248,11 @@ describe('Notifications API', () => {
       where: { sourceId: taskId },
     });
     const snoozeUntil = '2027-08-01T01:00:00.000Z';
-    await request(app.getHttpServer())
+    await authenticated.agent
       .put(`/api/notifications/${notification.id}/snooze`)
       .send({ snoozeUntil })
       .expect(200);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/notifications/test/scan')
       .send({ now: '2027-08-01T01:01:00.000Z' })
       .expect(201)
@@ -265,7 +287,7 @@ describe('Notifications API', () => {
     });
     const remindAt = '2026-08-02T01:00:00.000Z';
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .put(`/api/tasks/${taskId}/reminder`)
       .send({ remindAt })
       .expect(200);
@@ -274,8 +296,12 @@ describe('Notifications API', () => {
         where: { sourceType: 'TASK', sourceId: taskId, archivedAt: null },
       }),
     ).resolves.toMatchObject({ remindAt: new Date(remindAt) });
+    await prisma.reminderRule.updateMany({
+      where: { sourceType: 'TASK', sourceId: taskId },
+      data: { ownerUserId: authenticated.user.id },
+    });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/notifications/test/scan')
       .send({ now: '2026-08-02T01:01:00.000Z' })
       .expect(201)
@@ -288,16 +314,20 @@ describe('Notifications API', () => {
     const notification = await prisma.notification.findFirstOrThrow({
       where: { sourceId: taskId },
     });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .put(`/api/notifications/${notification.id}/snooze`)
       .send({ snoozeUntil: '2027-08-02T02:00:00.000Z' })
       .expect(200);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .put(`/api/tasks/${taskId}/reminder`)
       .send({ remindAt: '2027-08-02T01:00:00.000Z' })
       .expect(200);
-    await request(app.getHttpServer())
+    await prisma.reminderRule.updateMany({
+      where: { sourceType: 'TASK', sourceId: taskId },
+      data: { ownerUserId: authenticated.user.id },
+    });
+    await authenticated.agent
       .patch(`/api/tasks/${taskId}`)
       .send({ status: 'DONE' })
       .expect(200);
@@ -309,7 +339,7 @@ describe('Notifications API', () => {
         }),
       ]),
     ).resolves.toEqual([0, 0]);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/notifications/test/scan')
       .send({ now: '2027-08-02T02:01:00.000Z' })
       .expect(201)
@@ -325,7 +355,7 @@ describe('Notifications API', () => {
       create: { id: taskId, title: `${prefix} 已完成任务`, status: 'DONE' },
       update: { status: 'DONE', archivedAt: null },
     });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/reminders')
       .send({
         sourceType: 'TASK',
@@ -341,7 +371,7 @@ describe('Notifications API', () => {
       },
     });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/notifications/test/scan')
       .send({ now: '2026-08-03T01:01:00.000Z' })
       .expect(201)

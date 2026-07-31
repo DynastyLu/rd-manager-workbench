@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Optional } from '@nestjs/common';
 import { BackupKind, BackupStatus, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
@@ -8,6 +8,7 @@ import { BackupFilesystem } from '../infrastructure/backup-filesystem';
 import { ProcessRunner } from '../infrastructure/process-runner';
 import { BackupManifest, BackupManifestEntry, parseBackupManifest } from './backup-manifest';
 import { AuditLogService } from './audit-log.service';
+import { PostgresToolsService } from './postgres-tools.service';
 
 export const GOVERNANCE_JOB_LOCK_KEY = 79_403_201;
 export const GOVERNANCE_BACKUP_CONFIG = Symbol('GOVERNANCE_BACKUP_CONFIG');
@@ -31,6 +32,7 @@ export class BackupsService {
     private readonly runner: ProcessRunner,
     private readonly audit: AuditLogService,
     @Inject(GOVERNANCE_BACKUP_CONFIG) private readonly config: GovernanceBackupConfig,
+    @Optional() private readonly tools?: PostgresToolsService,
   ) {}
 
   createManual() {
@@ -172,6 +174,19 @@ export class BackupsService {
   }
 
   private async create(kind: BackupKind, scheduledLocalDate?: Date) {
+    let dumpTool: Awaited<ReturnType<PostgresToolsService['requireCompatible']>>;
+    try {
+      dumpTool = await (this.tools ?? new PostgresToolsService(this.runner)).requireCompatible(
+        'pg_dump',
+      );
+    } catch (error) {
+      throw new AppError({
+        code: ErrorCodes.BACKUP_TOOL_UNAVAILABLE,
+        message: 'PostgreSQL backup tools version 15 or newer are required',
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        cause: error,
+      });
+    }
     if (this.busy) throw this.busyError();
     this.busy = true;
     let id: string = randomUUID();
@@ -234,7 +249,7 @@ export class BackupsService {
           await this.filesystem.createDirectory(temporaryDirectory);
           const database = this.databaseConnection();
           await this.runner.run({
-            executable: 'pg_dump',
+            executable: dumpTool.executable,
             args: [
               '--format=custom',
               '--no-owner',

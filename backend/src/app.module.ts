@@ -9,6 +9,7 @@ import { HealthModule } from './modules/system/health/health.module';
 import { QueueInfrastructureModule } from './infrastructure/queue/queue.module';
 import { StorageModule } from './infrastructure/storage/storage.module';
 import { WorkbenchModule } from './modules/workbench/workbench.module';
+import { IamModule } from './modules/iam/iam.module';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { WorkbenchModule } from './modules/workbench/workbench.module';
     HealthModule,
     QueueInfrastructureModule,
     StorageModule,
+    IamModule,
     WorkbenchModule,
   ],
   providers: [AppLoggerService, HttpExceptionFilter, ResponseInterceptor],

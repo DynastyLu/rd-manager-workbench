@@ -3,6 +3,7 @@ import { Banner, Button, Empty, Modal, Table, Tag } from '@douyinfe/semi-ui'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
 import { toast } from 'sonner'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
+import { tableScrollWidth } from '@/lib/tableScrollWidth'
 import {
   archiveEmployeeWorkImport,
   downloadEmployeeImportErrors,
@@ -226,7 +227,7 @@ export function EmployeeImportHistory() {
     {
       title: '操作',
       dataIndex: 'id',
-      width: 300,
+      width: 380,
       fixed: 'right',
       render: (_value, batch) => (
         <div className="employees-page__row-actions">
@@ -311,7 +312,7 @@ export function EmployeeImportHistory() {
       loading={historyQuery.isPending}
       columns={columns}
       dataSource={historyQuery.data?.data ?? []}
-      scroll={{ x: 1360 }}
+      scroll={{ x: tableScrollWidth(columns) }}
       pagination={{
         currentPage: page,
         pageSize: PAGE_SIZE,

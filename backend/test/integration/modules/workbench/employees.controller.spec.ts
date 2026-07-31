@@ -7,12 +7,12 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import ExcelJS from 'exceljs';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
 import { EmployeeWorkbookService } from '../../../../src/modules/workbench/employees/application/employee-workbook.service';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Employees API', () => {
   jest.setTimeout(120_000);
@@ -24,6 +24,7 @@ describe('Employees API', () => {
   const prisma = new PrismaClient();
   const importBatchIds: string[] = [];
   let app: INestApplication;
+  let admin: Awaited<ReturnType<typeof authenticatedRequest>>;
 
   beforeAll(async () => {
     const { AppModule } = await import('../../../../src/app.module');
@@ -37,6 +38,7 @@ describe('Employees API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+    admin = await authenticatedRequest(app, prisma, 'SUPER_ADMIN');
   });
 
   afterAll(async () => {
@@ -83,6 +85,15 @@ describe('Employees API', () => {
         await prisma.resourceProfile.deleteMany({
           where: { id: { in: employeeIds } },
         });
+      }
+      if (admin) {
+        await prisma.loginAudit.deleteMany({ where: { userId: admin.user.id } });
+        await prisma.authSession.deleteMany({ where: { userId: admin.user.id } });
+        await prisma.userRole.deleteMany({ where: { userId: admin.user.id } });
+        await prisma.rolePermission.deleteMany({ where: { roleId: admin.role.id } });
+        await prisma.user.delete({ where: { id: admin.user.id } });
+        await prisma.role.delete({ where: { id: admin.role.id } });
+        await prisma.resourceProfile.delete({ where: { id: admin.employee.id } });
       }
     } finally {
       try {
@@ -147,7 +158,7 @@ describe('Employees API', () => {
     const periodStart = new Date(Date.UTC(2030, 0, 7) + runOffset * 7 * DAY_MS);
     const periodEnd = new Date(periodStart.getTime() + 6 * DAY_MS);
     const source = await importWorkbookBuffer(employeeName, periodStart, periodEnd);
-    const uploaded = await request(app.getHttpServer())
+    const uploaded = await admin.agent
       .post('/api/employee-work-imports')
       .attach('file', source, {
         filename: 'archive-import-owned.xlsx',
@@ -156,11 +167,11 @@ describe('Employees API', () => {
       .expect(201);
     const batchId = uploaded.body.data.id as string;
     importBatchIds.push(batchId);
-    await request(app.getHttpServer())
+    await admin.agent
       .patch(`/api/employee-work-imports/${batchId}/preview`)
       .send({})
       .expect(200);
-    await request(app.getHttpServer())
+    await admin.agent
       .patch(`/api/employee-work-imports/${batchId}/resolutions`)
       .send({
         rows: [{ rowNumber: 3, projectId: null, taskId: null, keepUnlinked: true }],
@@ -169,7 +180,7 @@ describe('Employees API', () => {
       .expect(({ body }) => {
         expect(body.data.status).toBe(EmployeeWorkImportStatus.READY);
       });
-    await request(app.getHttpServer())
+    await admin.agent
       .post(`/api/employee-work-imports/${batchId}/commit`)
       .send({})
       .expect(201)
@@ -180,7 +191,7 @@ describe('Employees API', () => {
   }
 
   it('creates, filters, searches, retrieves, updates, and archives employee profiles', async () => {
-    const created = await request(app.getHttpServer())
+    const created = await admin.agent
       .post('/api/employees')
       .send({
         displayName: ` ${primaryName} `,
@@ -211,7 +222,7 @@ describe('Employees API', () => {
       },
     });
 
-    await request(app.getHttpServer())
+    await admin.agent
       .post('/api/employees')
       .send({
         displayName: secondaryName,
@@ -221,7 +232,7 @@ describe('Employees API', () => {
       })
       .expect(201);
 
-    const filtered = await request(app.getHttpServer())
+    const filtered = await admin.agent
       .get('/api/employees')
       .query({
         q: ` ${prefix} `,
@@ -246,7 +257,7 @@ describe('Employees API', () => {
       },
     });
 
-    const searchedByRole = await request(app.getHttpServer())
+    const searchedByRole = await admin.agent
       .get('/api/employees')
       .query({ q: '基础设施', employmentStatus: EmploymentStatus.ON_LEAVE })
       .expect(200);
@@ -254,7 +265,7 @@ describe('Employees API', () => {
       expect.objectContaining({ displayName: secondaryName, department: '平台部' }),
     ]);
 
-    const retrieved = await request(app.getHttpServer())
+    const retrieved = await admin.agent
       .get(`/api/employees/${employeeId}`)
       .expect(200);
     expect(retrieved.body.data).toMatchObject({
@@ -263,7 +274,7 @@ describe('Employees API', () => {
       loadEntries: [],
     });
 
-    const updated = await request(app.getHttpServer())
+    const updated = await admin.agent
       .patch(`/api/employees/${employeeId}`)
       .send({
         displayName: ` ${prefix}-更新后主管 `,
@@ -281,23 +292,32 @@ describe('Employees API', () => {
       skills: [],
     });
 
-    await request(app.getHttpServer()).delete(`/api/employees/${employeeId}`).expect(204);
+    await admin.agent.delete(`/api/employees/${employeeId}`).expect(204);
 
-    const afterArchive = await request(app.getHttpServer())
+    const afterArchive = await admin.agent
       .get('/api/employees')
       .query({ q: prefix })
       .expect(200);
     expect(afterArchive.body.data.data).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ id: employeeId })]),
     );
-    const archived = await request(app.getHttpServer())
+    const archivedList = await admin.agent
+      .get('/api/employees')
+      .query({ q: prefix, archiveState: 'ARCHIVED' })
+      .expect(200);
+    expect(archivedList.body.data.data).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: employeeId })]),
+    );
+
+    const archived = await admin.agent
       .get(`/api/employees/${employeeId}`)
-      .expect(404);
-    expect(archived.body).toMatchObject({
-      success: false,
-      error: { code: 'RESOURCE_NOT_FOUND', message: 'Employee not found' },
+      .expect(200);
+    expect(archived.body.data).toMatchObject({
+      id: employeeId,
+      displayName: `${prefix}-更新后主管`,
     });
-    const archivedUpdate = await request(app.getHttpServer())
+    expect(archived.body.data.archivedAt).not.toBeNull();
+    const archivedUpdate = await admin.agent
       .patch(`/api/employees/${employeeId}`)
       .send({ roleTitle: '不应更新' })
       .expect(404);
@@ -305,10 +325,37 @@ describe('Employees API', () => {
       success: false,
       error: { code: 'RESOURCE_NOT_FOUND' },
     });
+
+    const archivedDuplicate = await admin.agent
+      .post('/api/employees')
+      .send({ displayName: `${prefix}-更新后主管` })
+      .expect(409);
+    expect(archivedDuplicate.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'EMPLOYEE_ARCHIVED_EXISTS',
+        details: {
+          employeeId,
+          displayName: `${prefix}-更新后主管`,
+        },
+      },
+    });
+
+    await admin.agent
+      .post(`/api/employees/${employeeId}/restore`)
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.data).toMatchObject({ id: employeeId, archivedAt: null });
+      });
+    await admin.agent.delete(`/api/employees/${employeeId}`).expect(204);
+    await admin.agent
+      .delete(`/api/employees/${employeeId}/permanent`)
+      .expect(204);
+    await admin.agent.get(`/api/employees/${employeeId}`).expect(404);
   });
 
   it('rejects invalid capacity and unknown fields', async () => {
-    const invalidCapacity = await request(app.getHttpServer())
+    const invalidCapacity = await admin.agent
       .post('/api/employees')
       .send({ displayName: `${prefix}-INVALID-CAPACITY`, weeklyCapacityHours: 169 })
       .expect(400);
@@ -317,7 +364,7 @@ describe('Employees API', () => {
       error: { code: 'HTTP_ERROR' },
     });
 
-    const unknownField = await request(app.getHttpServer())
+    const unknownField = await admin.agent
       .post('/api/employees')
       .send({ displayName: `${prefix}-UNKNOWN`, unexpected: true })
       .expect(400);
@@ -328,7 +375,7 @@ describe('Employees API', () => {
   });
 
   it('rejects unsafe employee pagination values', async () => {
-    const oversizedPage = await request(app.getHttpServer())
+    const oversizedPage = await admin.agent
       .get('/api/employees')
       .query({ page: 1_000_001 })
       .expect(400);
@@ -337,7 +384,7 @@ describe('Employees API', () => {
       error: { code: 'HTTP_ERROR' },
     });
 
-    const oversizedPageSize = await request(app.getHttpServer())
+    const oversizedPageSize = await admin.agent
       .get('/api/employees')
       .query({ pageSize: 101 })
       .expect(400);
@@ -349,13 +396,13 @@ describe('Employees API', () => {
 
   it('rejects null or blank numeric, enum, and required employee values', async () => {
     const [nullCapacity, blankCapacity, nullStatus] = await Promise.all([
-      request(app.getHttpServer())
+      admin.agent
         .post('/api/employees')
         .send({ displayName: `${prefix}-NULL-CAPACITY`, weeklyCapacityHours: null }),
-      request(app.getHttpServer())
+      admin.agent
         .post('/api/employees')
         .send({ displayName: `${prefix}-BLANK-CAPACITY`, weeklyCapacityHours: '' }),
-      request(app.getHttpServer())
+      admin.agent
         .post('/api/employees')
         .send({ displayName: `${prefix}-NULL-STATUS`, employmentStatus: null }),
     ]);
@@ -367,11 +414,11 @@ describe('Employees API', () => {
       });
     }
 
-    const employee = await request(app.getHttpServer())
+    const employee = await admin.agent
       .post('/api/employees')
       .send({ displayName: `${prefix}-NULL-NAME-TARGET` })
       .expect(201);
-    const nullName = await request(app.getHttpServer())
+    const nullName = await admin.agent
       .patch(`/api/employees/${employee.body.data.id}`)
       .send({ displayName: null })
       .expect(400);
@@ -383,12 +430,12 @@ describe('Employees API', () => {
 
   it('returns RESOURCE_NAME_EXISTS for duplicate display names on create and update', async () => {
     const duplicateName = `${prefix}-DUPLICATE`;
-    const first = await request(app.getHttpServer())
+    const first = await admin.agent
       .post('/api/employees')
       .send({ displayName: duplicateName })
       .expect(201);
 
-    const duplicate = await request(app.getHttpServer())
+    const duplicate = await admin.agent
       .post('/api/employees')
       .send({ displayName: duplicateName })
       .expect(409);
@@ -397,11 +444,11 @@ describe('Employees API', () => {
       error: { code: 'RESOURCE_NAME_EXISTS', message: 'Employee name already exists' },
     });
 
-    const second = await request(app.getHttpServer())
+    const second = await admin.agent
       .post('/api/employees')
       .send({ displayName: `${prefix}-DUPLICATE-UPDATE` })
       .expect(201);
-    const duplicateUpdate = await request(app.getHttpServer())
+    const duplicateUpdate = await admin.agent
       .patch(`/api/employees/${second.body.data.id}`)
       .send({ displayName: first.body.data.displayName })
       .expect(409);
@@ -409,19 +456,32 @@ describe('Employees API', () => {
       success: false,
       error: { code: 'RESOURCE_NAME_EXISTS', message: 'Employee name already exists' },
     });
-    const unchanged = await request(app.getHttpServer())
+    const unchanged = await admin.agent
       .get(`/api/employees/${second.body.data.id}`)
       .expect(200);
     expect(unchanged.body.data.displayName).toBe(`${prefix}-DUPLICATE-UPDATE`);
   });
 
+  it('permanently deletes an unused active employee', async () => {
+    const employee = await admin.agent
+      .post('/api/employees')
+      .send({ displayName: `${prefix}-ACTIVE-PERMANENT-DELETE` })
+      .expect(201);
+    const employeeId = employee.body.data.id as string;
+
+    await admin.agent
+      .delete(`/api/employees/${employeeId}/permanent`)
+      .expect(204);
+    await admin.agent.get(`/api/employees/${employeeId}`).expect(404);
+  });
+
   it('blocks employee archival until active resource load entries are archived', async () => {
-    const employee = await request(app.getHttpServer())
+    const employee = await admin.agent
       .post('/api/employees')
       .send({ displayName: `${prefix}-ACTIVE-LOAD` })
       .expect(201);
     const employeeId = employee.body.data.id as string;
-    const loadEntry = await request(app.getHttpServer())
+    const loadEntry = await admin.agent
       .post(`/api/resources/${employeeId}/load-entries`)
       .send({
         weekStartAt: '2026-07-20',
@@ -430,7 +490,7 @@ describe('Employees API', () => {
       })
       .expect(201);
 
-    const blocked = await request(app.getHttpServer())
+    const blocked = await admin.agent
       .delete(`/api/employees/${employeeId}`)
       .expect(422);
     expect(blocked.body).toMatchObject({
@@ -440,16 +500,17 @@ describe('Employees API', () => {
         message: 'Archive load entries before archiving employee',
       },
     });
-    await request(app.getHttpServer()).get(`/api/employees/${employeeId}`).expect(200);
+    await admin.agent.get(`/api/employees/${employeeId}`).expect(200);
 
-    await request(app.getHttpServer())
+    await admin.agent
       .delete(`/api/resources/${employeeId}/load-entries/${loadEntry.body.data.id}`)
       .expect(204);
-    await request(app.getHttpServer()).delete(`/api/employees/${employeeId}`).expect(204);
+    await admin.agent.delete(`/api/employees/${employeeId}`).expect(204);
+    await admin.agent.get(`/api/employees/${employeeId}`).expect(200);
   });
 
   it('archives an employee whose only active load entries are import-owned', async () => {
-    const employee = await request(app.getHttpServer())
+    const employee = await admin.agent
       .post('/api/employees')
       .send({ displayName: `${prefix}-IMPORT-OWNED-LOAD` })
       .expect(201);
@@ -464,8 +525,27 @@ describe('Employees API', () => {
     expect(importLoadEntries[0].employeeWorkItemId).not.toBeNull();
     expect(Number(importLoadEntries[0].plannedHours)).toBe(8);
 
-    await request(app.getHttpServer()).delete(`/api/employees/${employeeId}`).expect(204);
-    await request(app.getHttpServer()).get(`/api/employees/${employeeId}`).expect(404);
+    await admin.agent.delete(`/api/employees/${employeeId}`).expect(204);
+    const archived = await admin.agent
+      .get(`/api/employees/${employeeId}`)
+      .expect(200);
+    expect(archived.body.data.archivedAt).toEqual(expect.any(String));
+
+    const blockedDelete = await admin.agent
+      .delete(`/api/employees/${employeeId}/permanent`)
+      .expect(409);
+    expect(blockedDelete.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'EMPLOYEE_DELETE_BLOCKED',
+        details: {
+          counts: {
+            workItems: 2,
+            loadEntries: 1,
+          },
+        },
+      },
+    });
 
     // Historical import data is preserved untouched by the archive.
     const preservedLoadEntries = await prisma.resourceLoadEntry.findMany({
@@ -480,7 +560,7 @@ describe('Employees API', () => {
 
   it('returns RESOURCE_NOT_FOUND for unknown employee IDs', async () => {
     const missingId = 'missing-employee-id';
-    const retrieved = await request(app.getHttpServer())
+    const retrieved = await admin.agent
       .get(`/api/employees/${missingId}`)
       .expect(404);
     expect(retrieved.body).toMatchObject({
@@ -488,7 +568,7 @@ describe('Employees API', () => {
       error: { code: 'RESOURCE_NOT_FOUND' },
     });
 
-    const updated = await request(app.getHttpServer())
+    const updated = await admin.agent
       .patch(`/api/employees/${missingId}`)
       .send({ roleTitle: '不存在' })
       .expect(404);
@@ -497,7 +577,7 @@ describe('Employees API', () => {
       error: { code: 'RESOURCE_NOT_FOUND' },
     });
 
-    const deleted = await request(app.getHttpServer())
+    const deleted = await admin.agent
       .delete(`/api/employees/${missingId}`)
       .expect(404);
     expect(deleted.body).toMatchObject({

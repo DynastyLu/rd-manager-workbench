@@ -1,5 +1,83 @@
 # 进度日志
 
+## 2026-07-31 企业级认证授权收口（阶段 16 收尾）
+
+- Task 16（历史归属迁移）已完成：后端分析/应用/复核/批量分配/完成 API、前端管理页面与测试均通过聚焦验证。
+- Task 17（进展草稿迁移）已完成：项目进展草稿从员工目录迁入项目审批工作流，相关接口与页面已收口。
+- 主线程修复了前端 admin 模块与 WorkspaceHeader、KnowledgeFolderSync 的 lint 错误，新增 `user-status.ts` 共享常量；尝试解封 `admin-pages.test.tsx` 中 5 个跳过的 Semi Select/Modal 交互测试，因 Semi `Form.Select` 在 Modal 内测试环境下弹出层关闭不同步而暂时恢复 skip，已补充更具体的 TODO 与组件可访问性改进（`aria-label`/`aria-labelledby`）。
+- 前端 lint/typecheck/build/test 全绿：134 files / 763 passed，5 skipped。
+- 后端 lint 已修复（删除未使用 import、修复 auth cleanup 外键顺序）。
+- 已派子代理处理 Task 18：为启用全局认证 Guard 后的集成测试补充 `authenticatedRequest` 夹具，替换匿名业务请求，保留匿名拒绝断言。
+- 当前门控状态：backend unit 950 passed、frontend test 763 passed/5 skipped、frontend lint/typecheck/build、desktop typecheck/test、backend lint/build 均通过；backend integration 由子代理修复中。
+- 已修复 `backend/test/integration/prisma/employee-work-progress-catalog.spec.ts` 中的索引断言：schema 为复合索引显式命名了 `map`，测试从 `toContain` 改为允许可选 `map` 的正则匹配。
+- 已修复 `backend/test/integration/prisma/knowledge-rag-catalog.spec.ts` 中的 schema 目录断言：`DocumentChunk.embedding` 实际为 `Unsupported("vector")`，`KnowledgeSession.status` 和 `KnowledgeMessage.role` 实际为 `String`，测试断言已同步为当前 schema。
+- 已修复 `backend/src/modules/workbench/interface/http/workbench-status.controller.ts`：`GET /api/workbench/status` 是 Electron 启动预检/健康端点，添加 `@Public()` 避免 E2E 测试在启用全局认证后被 401 拒绝。
+- Task 18 完成：子代理为 60+ 项业务集成测试补充 `authenticatedRequest` 夹具，按最小权限绑定角色；`ownership-migration.spec.ts` 增加 `cleanupOrphanTestRecords()` 隔离其他套件遗留数据。
+- 2026-08-01 登录体验优化：移除「首次初始化管理员」页面，改为后端启动时自动创建默认超级管理员（账号 `admin` / 工号 `ADMIN` / 密码 `RdManager2026!`，可通过 `.env` 覆盖）；首次登录强制改密。相关前端路由、API、类型和测试已同步清理；新增 `default-admin-bootstrap.spec.ts` 验证自动创建与登录。
+- 最终全量门控（2026-08-01）：
+  - backend unit：133 suites / 952 tests 通过
+  - backend integration：60 suites / 298 tests 通过
+  - backend e2e：1 suite / 3 tests 通过
+  - backend lint/build：通过
+  - frontend test：134 files / 761 passed，5 skipped
+  - frontend lint/typecheck/build：通过
+  - desktop typecheck/test：20 files / 59 tests 通过
+- Task 19 完成：已更新 `README.md` 运维与故障恢复、Windows/Electron 边界；`frontend/README.md` 认证与会话说明；`backend/README.md` 认证、授权与运维章节。Windows 实机安装与 runner 验收仍按既有边界由 CI 覆盖。
+- 权限矩阵验证由集成测试覆盖：通过 `authenticatedRequest` 为各业务套件分配 `SUPER_ADMIN` / 部门主管 / 项目经理 / 普通员工等最小角色，断言 200/403 边界；新增 `authorization-core.spec.ts`、`authorization-content.spec.ts`、`authorization-administration.spec.ts`、`project-progress-authorization.spec.ts`、`knowledge-authorization.spec.ts` 专门验证数据范围与越权拦截。
+- 阶段 16 全部 19 项任务已完成。
+
+## 2026-07-30 企业级认证授权设计
+
+- 检查现有 Prisma、NestJS 启动结构和前端 HTTP 封装，确认工程仍是无账号身份的本地单人基线。
+- 与用户逐项确认账号绑定、角色模型、数据边界、Token 无感刷新、管理页面、历史迁移和安全验收标准。
+- 新增 `docs/superpowers/specs/2026-07-30-enterprise-auth-authorization-design.md`，覆盖认证、RBAC、数据范围、模块权限、迁移、错误处理、测试和实施分期。
+- 用户已审核确认书面规格。
+- 新增 `docs/superpowers/plans/2026-07-30-enterprise-auth-authorization.md`，将交付拆为 19 个可测试、可独立提交的任务。
+- 认证实现已开始：新增并验证 JWT/Argon2/限流/Cookie/Helmet 依赖与安全配置，生产环境拒绝默认或公开占位密钥。
+- IAM 数据模型及两段前向迁移已部署到开发库和测试库；角色删除只清理分配关系，不删除员工、账号或权限，已校验迁移 checksum 与新旧环境最终态。
+- 密码服务采用 Argon2id（19 MiB、2 次、并行度 1），Token 服务采用 256-bit Refresh Token、数据库 SHA-256 摘要、绝对会话期限、逐次轮换、条件更新防并发和 Token Family 重放撤销；13 项单测、类型、Lint 和构建通过。
+- 修正实施计划中的 Jest 参数写法，统一使用 `--runInBand`，避免额外 `--` 被当作测试匹配参数产生假通过或并发 open-handle 警告。
+- 一次性超级管理员初始化、账号/工号登录、刷新、退出、改密和会话管理 API 已完成；引入事务 advisory lock、双层认证限流、统一失败时延、精确 Cookie/CSRF 处理和员工状态门禁。
+- 认证 API 最终通过 21 项真实 PostgreSQL 集成测试、127 suites / 906 项后端单测、构建、目标 Lint 与 diff check，并完成规格与攻击面两轮复审。
+- 当前进入全局身份 Guard、请求身份上下文和统一认证测试助手实现。
+- 全局 AuthenticationGuard、`@Public`、`@CurrentUser`、ALS principal 与首次改密门禁已完成；强制改密例外绑定具体 handler 元数据，不再依赖可伪造 URL。
+- 认证与代表项目回归共 28/28 通过，Task 5 已完成规格与安全复审；当前开始角色、权限目录与全局 PermissionGuard。
+- Task 6 已完成权限目录启动幂等同步、七个角色管理接口、细粒度 PermissionGuard、系统角色保护、权限版本失效、多角色数据范围并集和角色删除并发锁；规格复审确认细粒度权限码符合最终设计，质量复审 APPROVED。最终 IAM 单测 43 项、认证/角色/项目集成 33 项、构建和 Lint 通过。
+- Task 8 已由主线程完成前端内存会话、Cookie/CSRF 请求、并发 401 single-flight 刷新、精确一次重试、FormData/AbortSignal/下载文件名保持及 Query cache 身份隔离。复审发现并修复延迟 401 二次刷新、旧身份请求重放和旧响应清除新会话三类竞态；新增认证代际与条件轮换后聚焦测试 20/20、类型检查通过，复审 APPROVED。
+- Task 7 用户管理与安全审计首轮 15 项集成测试已通过；规格复审发现跨列账号标识并发、退出/越权审计和可选工号三项边界，正在按测试驱动补齐后复审。
+
+## 2026-07-30 5 个 P0 与 9 个 P1 功能实施
+
+- 四个并行工作流的生产代码已全部落入当前工作区：保存视图与项目计划、知识传输与索引修复、员工/会议/活动闭环、桌面启动/Windows/备份/报表。
+- 多维表格保存队列改为按视图串行处理，并在首次入队和卸载刷新时立即启动请求；旧响应不再覆盖较新草稿，删除视图会取消待处理保存。
+- Electron 正式包统一使用运行时 API 基址；首次启动会校验本地 PostgreSQL 角色/数据库、执行迁移、检查存储和端口，并在失败时提供修复重试或退出，不再打开损坏页面。
+- 本地文件夹扫描已提供发现阶段不确定进度、已知总量后的真实计数、SSE 断线轮询补偿和失败文件重试；NOVA 会话与消息改为游标分页，索引健康支持检查、修复、忽略和审计。
+- 项目工作项提供列表/看板/日历/甘特同源视图；新增计划基线、变更记录、关键路径和延期影响；员工周报可形成项目进展草稿，会议行动项与任务双向同步，项目与员工页接入统一活动时间线。
+- 报表增加图表、上期对比、钻取、保存视图和快照；备份/恢复会先探测兼容版本的 `pg_dump`/`pg_restore`，并对错误信息中的路径和凭据脱敏。
+- 当前开发库和测试库已成功部署 `20260729_activity_and_progress_drafts`、`20260729_project_plan_baseline` 与 `20260730010000_activity_link_cleanup` 三条迁移；最后一条允许项目/员工删除时仅清空活动外键，同时继续禁止活动正文更新和删除。
+- 最终全量验收：前端 125 files / 702 tests；后端 47 suites / 208 PostgreSQL integration；后端 lint、迁移链空库升级和聚焦单元测试均通过。桌面端 20 files / 59 tests、typecheck 与 Electron 目录打包已通过；Windows CI 工作流会在 Windows runner 原生重建依赖并生成 NSIS，Windows 实机安装结果不在 macOS 本机伪造。
+
+## 2026-07-29 功能问题与功能完善路线拆分
+
+- 按用户“先把功能做好”的要求，将现有问题和新增效率能力拆为两份独立产品文档，纯视觉问题不进入本轮范围。
+- 复核当前主路由、项目六页签、员工周报导入与项目关联、会议行动项、知识库/NOVA、多维表格、提醒、报表和 Electron 启动流程。
+- 确认已有收件箱、稍后提醒、任务依赖、会议行动项转任务、员工计划转任务/风险、情报卡转换、报表统计和导出等功能，避免在新路线中重复建设。
+- 单独复跑多维表格保存视图测试，稳定复现旧排序覆盖新排序：1 failed / 17 skipped，作为最高优先级真实功能缺陷记录。
+- 新增 `docs/product/2026-07-29-functional-issues.md`：5 个 P0、9 个 P1、4 个延期/边界问题，逐项记录现状、影响、证据和完成标准。
+- 新增 `docs/product/2026-07-29-productivity-feature-roadmap.md`：统一处理中心、项目计划引擎、周报自动汇总、会议闭环、活动流、NOVA 业务操作、自动简报、规则引擎、决策报表等，并按 6 个实施批次排序。
+- 文档自检通过：无 TBD/TODO/待定占位，无 `git diff --check` 格式错误；下一阶段应从多维视图保存和 Electron 知识请求基址两个可靠性问题开始。
+
+## 2026-07-29 全项目剩余问题与体验优化审计
+
+- 已开始按可运行性、功能完整性、交互体验、Windows/Electron 与数据安全五个方向复核，不把历史计划中的“已完成”直接视为当前代码仍然完整。
+- 审计仅输出有源码、测试、构建或真实页面证据的问题；本阶段不直接修改业务功能。
+- 后端完整单元测试通过：116 suites / 845 tests；Electron 测试通过：18 files / 52 tests；当前健康接口返回 200。
+- 前端完整测试结果为 118 files passed / 3 failed、671 tests passed / 9 failed。单线程复核三组失败后，关联字段组恢复通过，但 NOVA 焦点契约稳定失败，多维表格保存视图仍有 7 个失败，不能视为纯并行抖动。
+- 已确认正式 Electron 包中的 NOVA 流式问答、知识文件上传和文件夹 SSE 绕过运行时 `apiBaseUrl`，会在 `file://` 下构造错误请求地址。
+- 已确认 Electron 没有 PostgreSQL/角色/数据库/migration 首次启动引导，Windows 安装未覆盖 LibreOffice、`pg_dump`/`pg_restore` 探测，也没有 Windows runner 产包和 Electron launch smoke。
+- 已确认通知与知识 WebSocket 允许任意来源连接、NOVA 历史无分页、扫描进度条固定 35%、Semi 中文 locale/HTML 语言未配置、桌面更新与签名链路缺失。
+- 真实页面复核工作台、项目、员工、多维表格和数据安全主页面可加载真实数据；本次不修改业务数据，问题已按 P0/P1/P2 排序记录到 `findings.md`。
+
 ## 会话：2026-07-28（知识库按原格式阅读）
 
 - **状态：** complete
@@ -608,3 +686,24 @@
 - E2E 已时间无关化（运行时按当前日期计算周范围）；isolatedWeek 年界修正；Playwright expect timeout 5→10s；vitest testTimeout 15→30s + asyncUtilTimeout 15s；PartnersPage 设 per-file 60s。
 - 全量门禁：backend unit 632、integration 185（仅受本机 50k 容量限制的 1 条失败，pristine tree 同样）；frontend typecheck/contracts/build 通过、e2e 15/15 通过、test 467/468。`docs/superpowers/plans/2026-07-23-employee-work-progress.md` 全部勾选，状态 COMPLETE。
 - 提交范围 `28e5dd9`..`fc02bce`（含 doc commit 共 12 个），员工模块完整闭环。
+## 2026-07-29 稳定性、回收站与 Windows 本地语义模型
+
+- 已完成根因核对：后端只有一个工作台实例；数据库角色连接上限 10，应用连接池未设上限；提醒服务共享阻塞锁且无防重入。
+- 已确认回收站只实现软删除/恢复，缺少文档级永久删除、清空、批量操作以及对应只读界面。
+- 已确认本机为 Intel x64，但已安装 ONNX 包只有 macOS arm64 绑定；Windows 必须作为正式目标，采用原生 ONNX 加 WASM 降级。
+- 已新增设计规格 `docs/superpowers/specs/2026-07-29-stability-trash-windows-embeddings-design.md` 与实施计划 `docs/superpowers/plans/2026-07-29-stability-trash-windows-embeddings.md`。
+- 回收站前后端已完成：单项/批量恢复、单项/批量永久删除、清空、列表勾选、只读详情和操作布局；永久删除采用持久化暂存日志、原子重命名、启动恢复和 PostgreSQL 跨进程事务锁，数据库提交失败可恢复文件，提交成功后的清理失败不会伪造 500。
+- 数据库与提醒稳定性已完成：`DATABASE_URL` 统一限制 5 个连接，提醒共享锁改为非阻塞 try-lock，并由单一维护协调器按同步→扫描顺序调度；周计划写操作在锁竞争时返回 409，扫描器拥有显式等待/事务超时和防重入。
+- Windows 本地语义模型已完成生产实现：Windows 原生 ONNX 优先、WASM 降级，模型文件写入用户专属缓存目录并原子落盘；缓存失败只降级本次持久化，不泄漏本机路径；并发模型准备和全量重索引会复用同一任务，索引状态不返回原始错误内容。
+- 模型入口已从“本地文件夹”迁移到 NOVA 左栏“本地检索设置”，未启用时全文检索持续可用；页面不再直接展示 Node/ONNX 堆栈和本机路径。
+- 最终验证：后端 12 suites / 83 unit、回收站真实 PostgreSQL integration 7/7；前端 6 files / 44 focused tests、会话侧栏 12/12；backend build、frontend typecheck/build、前后端目标 ESLint、`git diff --check` 全部通过。
+- 真实浏览器确认回收站显示 14 项、清空和勾选入口存在、详情为只读；NOVA 设置入口可用且仅展示安全状态。Windows x64/arm64 的真实 native→WASM 推理、杀毒软件和目录权限行为仍需在 Windows 实机完成平台验收，本轮未下载大模型。
+
+## 2026-07-30 5 个 P0、9 个 P1 功能完成
+
+- 5 个 P0 已完成：多维视图串行保存；Electron 知识链路运行时 URL；PostgreSQL/迁移/端口/存储启动预检；文件夹扫描实时进度与失败重试；Windows native rebuild、smoke、NSIS CI 工作流。
+- 9 个 P1 已完成：项目任务四视图；计划基线/变更/关键路径；周报生成项目进展草稿；会议行动项与任务同步；项目/员工活动时间线；NOVA 游标分页；报表对比/钻取/保存视图/快照；PostgreSQL 工具就绪检查；知识索引健康与修复队列。
+- 最终验收期间额外修复两个真实功能问题：导入历史不再因 PostgreSQL `NULLS FIRST` 把最新完成版本挤出第一页；旧版周报来源恢复显示“版本 + 行号”，新版继续显示“工作表/区段/行号”。
+- 前端门禁：125 files / 702 Vitest、17/17 Chromium E2E、lint、typecheck、production build 全部通过。
+- 后端门禁：121 suites / 868 unit、47 suites / 208 PostgreSQL integration、Prisma validate/migrate status、lint、build 全部通过；导入排序新增 focused 17/17 回归。
+- Electron 门禁：20 files / 59 tests、typecheck、macOS x64 目录包构建通过；Windows 工作流已落库，真实 Windows 安装、杀软和 native→WASM 行为仍需 Windows runner/目标机完成平台验收。

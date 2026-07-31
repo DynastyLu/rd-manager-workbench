@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { DeepSeekHttpService } from './deepseek-http.service';
 import { ChunkCitation } from '../domain/knowledge.types';
 import { EmbeddingService } from './embedding.service';
@@ -56,6 +58,8 @@ export class RagService {
     private readonly prisma: PlatformPrismaService,
     private readonly deepseek: DeepSeekHttpService,
     private readonly embeddings: EmbeddingService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
   ) {}
 
   async ask(params: {
@@ -70,6 +74,20 @@ export class RagService {
     searchedDocumentCount: number;
     hasEvidence: boolean;
   }> {
+    const principal = this.requestContext.requirePrincipal();
+    const chunkScope = this.dataScope.knowledge(principal);
+    const authScopeSql = await this.buildAuthScopeSql(chunkScope);
+    if (authScopeSql === null) {
+      return {
+        stream: null,
+        citations: [],
+        totalFound: 0,
+        relevantCount: 0,
+        searchedDocumentCount: 0,
+        hasEvidence: false,
+      };
+    }
+
     const keywords = extractKeywords(params.question);
     const scope = normalizeKnowledgeScope(params.scope ?? { type: 'ALL' });
     const scopeSql = buildKnowledgeScopeSql(scope);
@@ -90,6 +108,7 @@ export class RagService {
          AND dc.content IS NOT NULL
          AND dc.content != ''
          ${scopeSql}
+         ${authScopeSql}
        ORDER BY public.similarity(dc.content, ${params.question}) DESC
        LIMIT ${TOP_K * 2}
     `);
@@ -125,6 +144,7 @@ export class RagService {
            AND dc.content IS NOT NULL
            AND dc.content != ''
            ${scopeSql}
+           ${authScopeSql}
          ORDER BY cd.updated_at DESC, dc.chunk_index ASC
          LIMIT ${TOP_K}
       `);
@@ -150,6 +170,7 @@ export class RagService {
            AND cd.index_status IN ('READY', 'PARTIAL')
            AND dc.embedding IS NOT NULL
            ${scopeSql}
+           ${authScopeSql}
          ORDER BY dc.embedding <=> ${vectorLiteral}::public.vector
          LIMIT ${TOP_K}
       `);
@@ -178,6 +199,7 @@ export class RagService {
              AND cd.index_status IN ('READY', 'PARTIAL')
              AND dc.content ILIKE '%' || ${kw} || '%'
              ${scopeSql}
+             ${authScopeSql}
            ORDER BY public.similarity(dc.content, ${kw}) DESC
            LIMIT 10
         `);
@@ -272,5 +294,32 @@ export class RagService {
       used += tokens;
     }
     return result;
+  }
+
+  private async buildAuthScopeSql(
+    chunkScope: Prisma.DocumentChunkWhereInput,
+  ): Promise<Prisma.Sql | null> {
+    if (Object.keys(chunkScope).length === 0) {
+      return Prisma.empty;
+    }
+    if ('id' in chunkScope) {
+      return Prisma.sql`AND 1=0`;
+    }
+    const documentWhere = (chunkScope as { document?: Prisma.ContentDocumentWhereInput }).document;
+    if (!documentWhere) {
+      return Prisma.sql`AND 1=0`;
+    }
+    const documents = await this.prisma.contentDocument.findMany({
+      where: {
+        status: 'ACTIVE',
+        trashedAt: null,
+        AND: documentWhere,
+      },
+      select: { id: true },
+    });
+    if (documents.length === 0) {
+      return Prisma.sql`AND 1=0`;
+    }
+    return Prisma.sql`AND cd.id IN (${Prisma.join(documents.map((d) => d.id))})`;
   }
 }

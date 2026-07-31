@@ -117,8 +117,12 @@ describe('employee work progress Prisma catalog contract', () => {
     expect(nextPlan).toMatch(
       /matchedWorkItemId\s+String\?\s+@unique\s+@map\("matched_work_item_id"\)/,
     );
-    expect(nextPlan).toContain('@@index([employeeId, periodStartAt, archivedAt])');
-    expect(nextPlan).toContain('@@index([projectId, periodStartAt, archivedAt])');
+    expect(nextPlan).toMatch(
+      /@@index\(\[employeeId, periodStartAt, archivedAt\](, map: "[^"]+")?\)/,
+    );
+    expect(nextPlan).toMatch(
+      /@@index\(\[projectId, periodStartAt, archivedAt\](, map: "[^"]+")?\)/,
+    );
   });
 
   it('adds the V2 weekly workbook catalog through an additive migration', () => {

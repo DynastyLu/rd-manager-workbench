@@ -4,6 +4,7 @@ import { KnowledgeChatPanel } from './KnowledgeChatPanel';
 import { KnowledgeCitationDrawer } from './KnowledgeCitationDrawer';
 import { KnowledgeSessionHistory } from './KnowledgeSessionHistory';
 import { KnowledgeSessionList } from './KnowledgeSessionList';
+import { apiUrl } from '@/lib/api-url';
 
 interface Props {
   sessionId: string | null;
@@ -35,7 +36,7 @@ export function KnowledgeAssistantWorkspace({
 
   const download = (source: ChunkCitation) => {
     window.open(
-      `/api/knowledge/documents/${encodeURIComponent(source.documentId)}/source?download=1`,
+      apiUrl(`/knowledge/documents/${encodeURIComponent(source.documentId)}/source?download=1`),
       '_blank',
       'noopener,noreferrer',
     );

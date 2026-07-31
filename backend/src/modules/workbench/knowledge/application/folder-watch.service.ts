@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { watch, FSWatcher } from 'chokidar';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, extname, join, relative } from 'node:path';
@@ -6,6 +6,9 @@ import { createHash } from 'node:crypto';
 import { BehaviorSubject } from 'rxjs';
 import { KnowledgeProcessingStatus, KnowledgeSourceKind } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
+import type { AuthenticatedPrincipal } from '../../../iam/domain/principal';
 import { DocumentImportService } from './document-import.service';
 import { IndexingService } from './indexing.service';
 
@@ -42,7 +45,30 @@ export interface SyncProgress {
   percent: number;
   result?: SyncResult;
   error?: string;
+  counts: SyncCounts;
+  failedFiles: SyncFailure[];
 }
+
+export interface SyncCounts {
+  discovered: number;
+  pending: number;
+  success: number;
+  updated: number;
+  skipped: number;
+  deleted: number;
+  failed: number;
+}
+
+export interface SyncFailure {
+  fileName: string;
+  category: 'READ_FAILED' | 'EXTRACTION_FAILED' | 'INDEX_FAILED' | 'DELETE_FAILED' | 'UNKNOWN';
+  reason: string;
+}
+
+type FailedTarget = {
+  filePath: string;
+  operation: 'import' | 'update' | 'delete';
+};
 
 export interface SyncResult {
   scanned: number;
@@ -61,12 +87,19 @@ export class FolderWatchService implements OnModuleInit {
   private readonly watchers = new Map<string, FSWatcher>();
   private readonly scanLocks = new Map<string, Promise<unknown>>();
   private readonly progress = new Map<string, BehaviorSubject<SyncProgress>>();
+  private readonly failedTargets = new Map<string, FailedTarget[]>();
 
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly importer: DocumentImportService,
     private readonly indexing: IndexingService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
   ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   /** Get an SSE stream of sync progress for a given watch */
   getProgressStream(watchId: string): BehaviorSubject<SyncProgress> {
@@ -103,7 +136,7 @@ export class FolderWatchService implements OnModuleInit {
     });
 
     this.ensureProgress(watch.id);
-    void this.fullScan(watch.id).catch((err) => {
+    await this.fullScan(watch.id).catch((err) => {
       this.logger.error({ watchId: watch.id, err }, 'Initial full scan failed');
       this.setError(watch.id, err instanceof Error ? err.message : 'Unknown error').catch(() => {});
     });
@@ -145,11 +178,94 @@ export class FolderWatchService implements OnModuleInit {
       percent: 0,
       error: undefined,
       result: undefined,
+      counts: this.emptyCounts(),
+      failedFiles: [],
     });
     void this.fullScan(id).catch((error) => {
       this.logger.error({ watchId: id, error }, 'Manual full scan failed');
     });
     return { started: true };
+  }
+
+  async retryFailed(id: string): Promise<{ started: true; count: number }> {
+    await this.prisma.folderWatch.findUniqueOrThrow({ where: { id } });
+    const targets = [...(this.failedTargets.get(id) ?? [])];
+    if (targets.length === 0) return { started: true, count: 0 };
+
+    this.failedTargets.set(id, []);
+    this.emitProgress(id, {
+      phase: 'importing',
+      total: targets.length,
+      current: 0,
+      currentFile: '',
+      percent: 0,
+      counts: {
+        ...this.emptyCounts(),
+        discovered: targets.length,
+        pending: targets.length,
+      },
+      failedFiles: [],
+      error: undefined,
+      result: undefined,
+    });
+    void this.runSerialized(id, async () => {
+      const result: SyncResult = {
+        scanned: targets.length,
+        imported: 0,
+        updated: 0,
+        deleted: 0,
+        errors: 0,
+      };
+      const counts = {
+        ...this.emptyCounts(),
+        discovered: targets.length,
+        pending: targets.length,
+      };
+      for (let index = 0; index < targets.length; index++) {
+        const target = targets[index];
+        try {
+          if (target.operation === 'import') {
+            await this.importFile(id, target.filePath);
+            result.imported += 1;
+            counts.success += 1;
+          } else if (target.operation === 'update') {
+            await this.updateFile(id, target.filePath);
+            result.updated += 1;
+            counts.updated += 1;
+          } else {
+            await this.onFileRemoved(id, target.filePath);
+            result.deleted += 1;
+            counts.deleted += 1;
+          }
+        } catch (error) {
+          result.errors += 1;
+          this.recordFailure(id, target, error);
+          counts.failed += 1;
+        }
+        counts.pending = targets.length - index - 1;
+        this.emitProgress(id, {
+          phase: 'importing',
+          total: targets.length,
+          current: index + 1,
+          currentFile: basename(target.filePath),
+          percent: Math.round(((index + 1) / targets.length) * 100),
+          counts: { ...counts },
+          failedFiles: this.publicFailures(id),
+        });
+      }
+      this.emitProgress(id, {
+        phase: 'done',
+        current: targets.length,
+        currentFile: '',
+        percent: 100,
+        counts: { ...counts },
+        failedFiles: this.publicFailures(id),
+        result,
+      });
+    }).catch((error) =>
+      this.logger.error({ watchId: id, error }, 'Failed-file retry queue failed'),
+    );
+    return { started: true, count: targets.length };
   }
 
   /** Get current progress snapshot (for polling fallback) */
@@ -158,7 +274,15 @@ export class FolderWatchService implements OnModuleInit {
   }
 
   async list() {
+    const principal = this.requestContext.requirePrincipal();
+    const documentScope = this.dataScope.documents(principal);
+    const where =
+      Object.keys(documentScope).length === 0
+        ? undefined
+        : { spaceId: { in: [...(await this.accessibleSpaceIds(principal))] } };
+
     return this.prisma.folderWatch.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         space: { select: { id: true, name: true } },
@@ -168,7 +292,8 @@ export class FolderWatchService implements OnModuleInit {
   }
 
   async get(id: string) {
-    return this.prisma.folderWatch.findUniqueOrThrow({
+    const principal = this.requestContext.requirePrincipal();
+    const watch = await this.prisma.folderWatch.findUniqueOrThrow({
       where: { id },
       include: {
         space: { select: { id: true, name: true } },
@@ -185,6 +310,8 @@ export class FolderWatchService implements OnModuleInit {
         },
       },
     });
+    await this.requireAccessibleSpace(principal, watch.spaceId);
+    return watch;
   }
 
   async resumeAll(): Promise<void> {
@@ -200,6 +327,32 @@ export class FolderWatchService implements OnModuleInit {
   }
 
   // ── private ──
+
+  private async accessibleSpaceIds(principal: AuthenticatedPrincipal): Promise<Set<string>> {
+    const spaces = await this.prisma.knowledgeSpace.findMany({
+      where: {
+        archivedAt: null,
+        OR: [
+          { ownerUserId: principal.userId },
+          { members: { some: { userId: principal.userId } } },
+          { visibility: 'ORGANIZATION' },
+        ],
+      },
+      select: { id: true },
+    });
+    return new Set(spaces.map((s) => s.id));
+  }
+
+  private async requireAccessibleSpace(principal: AuthenticatedPrincipal, spaceId: string): Promise<void> {
+    const documentScope = this.dataScope.documents(principal);
+    if (Object.keys(documentScope).length === 0) {
+      return;
+    }
+    const accessible = await this.accessibleSpaceIds(principal);
+    if (!accessible.has(spaceId)) {
+      throw new NotFoundException('文件夹同步不存在');
+    }
+  }
 
   private emitProgress(watchId: string, update: Partial<SyncProgress>) {
     const subject = this.ensureProgress(watchId);
@@ -217,6 +370,8 @@ export class FolderWatchService implements OnModuleInit {
       scanned: 0,
       currentFile: '',
       percent: 100,
+      counts: this.emptyCounts(),
+      failedFiles: [],
     });
     this.progress.set(watchId, subject);
     return subject;
@@ -327,6 +482,8 @@ export class FolderWatchService implements OnModuleInit {
       deleted: 0,
       errors: 0,
     };
+    const counts = this.emptyCounts();
+    this.failedTargets.set(watchId, []);
 
     try {
       // Phase 1: scan folder
@@ -339,18 +496,23 @@ export class FolderWatchService implements OnModuleInit {
         percent: 0,
         error: undefined,
         result: undefined,
+        counts: { ...counts },
+        failedFiles: [],
       });
       const currentFiles = await this.scanFolder(
         watch.folderPath,
         watch.recursive,
         (fileName, scanned) => {
           result.scanned = scanned;
+          counts.discovered = scanned;
+          counts.pending = scanned;
           this.emitProgress(watchId, {
             phase: 'scanning',
             current: scanned,
             scanned,
             currentFile: fileName,
             percent: 0,
+            counts: { ...counts },
           });
         },
       );
@@ -384,13 +546,22 @@ export class FolderWatchService implements OnModuleInit {
             }
           } catch (err) {
             result.errors++;
+            counts.failed++;
+            this.recordFailure(
+              watchId,
+              { filePath: deleted[i], operation: 'delete' },
+              err,
+            );
             this.logger.error({ filePath: deleted[i], err }, 'Delete handling failed');
           }
+          counts.deleted = result.deleted;
           this.emitProgress(watchId, {
             phase: 'deleting',
             current: i + 1,
             currentFile: basename(deleted[i]),
             percent: Math.round(((i + 1) / deleted.length) * 100),
+            counts: { ...counts },
+            failedFiles: this.publicFailures(watchId),
           });
         }
       }
@@ -421,38 +592,62 @@ export class FolderWatchService implements OnModuleInit {
           return true;
         return f.sha256 !== existing.fileHash; // changed
       });
+      counts.discovered = currentFiles.length;
+      counts.skipped = currentFiles.length - toProcess.length;
+      counts.pending = toProcess.length;
 
       if (toProcess.length > 0) {
         this.emitProgress(watchId, {
           phase: 'importing',
-          total: toProcess.length,
-          current: 0,
+          total: currentFiles.length,
+          current: counts.skipped,
           currentFile: '',
-          percent: 0,
+          percent:
+            currentFiles.length > 0
+              ? Math.round((counts.skipped / currentFiles.length) * 100)
+              : 100,
+          counts: { ...counts },
+          failedFiles: this.publicFailures(watchId),
         });
 
         for (let i = 0; i < toProcess.length; i++) {
           const file = toProcess[i];
           try {
             const existing = existingFiles.find((ef) => ef.filePath === file.filePath);
-            this.emitProgress(watchId, {
-              phase: 'importing',
-              current: i + 1,
-              currentFile: file.fileName,
-              percent: Math.round(((i + 1) / toProcess.length) * 100),
-            });
-
             if (!existing) {
               await this.importFile(watchId, file.filePath);
               result.imported++;
+              counts.success++;
             } else {
               await this.updateFile(watchId, file.filePath);
               result.updated++;
+              counts.updated++;
             }
           } catch (err) {
             result.errors++;
+            counts.failed++;
+            const existing = existingFiles.find((ef) => ef.filePath === file.filePath);
+            this.recordFailure(
+              watchId,
+              { filePath: file.filePath, operation: existing ? 'update' : 'import' },
+              err,
+            );
             this.logger.error({ filePath: file.filePath, err }, 'Import/update failed');
           }
+          counts.pending = toProcess.length - i - 1;
+          const completed = counts.skipped + i + 1;
+          this.emitProgress(watchId, {
+            phase: 'importing',
+            total: currentFiles.length,
+            current: completed,
+            currentFile: file.fileName,
+            percent:
+              currentFiles.length > 0
+                ? Math.round((completed / currentFiles.length) * 100)
+                : 100,
+            counts: { ...counts },
+            failedFiles: this.publicFailures(watchId),
+          });
         }
       }
     } catch (err) {
@@ -475,6 +670,8 @@ export class FolderWatchService implements OnModuleInit {
       currentFile: '',
       percent: 100,
       result,
+      counts: { ...counts },
+      failedFiles: this.publicFailures(watchId),
     });
     this.logger.log({ watchId, ...result }, 'Full scan complete');
     return result;
@@ -517,6 +714,7 @@ export class FolderWatchService implements OnModuleInit {
             processingError: null,
             status: 'ACTIVE',
             trashedAt: null,
+            updatedByUserId: this.principal().userId,
           },
         });
         await tx.folderFile.update({
@@ -541,6 +739,9 @@ export class FolderWatchService implements OnModuleInit {
           sourceModifiedAt: source.modifiedAt,
           previewStatus: KnowledgeProcessingStatus.PENDING,
           indexStatus: KnowledgeProcessingStatus.PROCESSING,
+          createdByUserId: this.principal().userId,
+          updatedByUserId: this.principal().userId,
+          ownerUserId: this.principal().userId,
         },
         select: { id: true },
       });
@@ -590,6 +791,7 @@ export class FolderWatchService implements OnModuleInit {
           processingError: null,
           status: 'ACTIVE',
           trashedAt: null,
+          updatedByUserId: this.principal().userId,
         },
       }),
       this.prisma.folderFile.update({
@@ -703,6 +905,50 @@ export class FolderWatchService implements OnModuleInit {
 
   private isSupported(filePath: string): boolean {
     return SUPPORTED_EXTS.has(extname(filePath).toLowerCase());
+  }
+
+  private emptyCounts(): SyncCounts {
+    return {
+      discovered: 0,
+      pending: 0,
+      success: 0,
+      updated: 0,
+      skipped: 0,
+      deleted: 0,
+      failed: 0,
+    };
+  }
+
+  private recordFailure(watchId: string, target: FailedTarget, error: unknown): void {
+    const targets = this.failedTargets.get(watchId) ?? [];
+    targets.push(target);
+    this.failedTargets.set(watchId, targets);
+    this.logger.warn(
+      {
+        watchId,
+        fileName: basename(target.filePath),
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Folder sync item failed',
+    );
+  }
+
+  private publicFailures(watchId: string): SyncFailure[] {
+    return (this.failedTargets.get(watchId) ?? []).map((target) => ({
+      fileName: basename(target.filePath),
+      category:
+        target.operation === 'delete'
+          ? 'DELETE_FAILED'
+          : target.operation === 'update'
+            ? 'INDEX_FAILED'
+            : 'EXTRACTION_FAILED',
+      reason:
+        target.operation === 'delete'
+          ? '无法同步删除状态'
+          : target.operation === 'update'
+            ? '文件更新或索引处理失败'
+            : '文件读取、提取或索引处理失败',
+    }));
   }
 
   private async setError(watchId: string, message: string): Promise<void> {

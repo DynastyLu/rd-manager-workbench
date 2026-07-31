@@ -1,8 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { FileAssetStatus, Prisma } from '@prisma/client';
+import type { AuthenticatedPrincipal } from '../../../iam/domain/principal';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { StoragePort } from '../../../../infrastructure/storage/storage.port';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { CreateFileDto, ListFilesQueryDto, UpdateFileDto } from '../interface/http/dto/files.dto';
@@ -23,11 +26,14 @@ export class FilesService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly storage: StoragePort,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
   ) {}
 
   async list(query: ListFilesQueryDto) {
     const page = query.page ?? DEFAULT_PAGE;
     const pageSize = Math.min(query.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+    const principal = this.requestContext.requirePrincipal();
     const where: Prisma.FileAssetWhereInput = {
       documentId: query.documentId,
       projectId: query.projectId,
@@ -37,15 +43,18 @@ export class FilesService {
       nonProjectRdOutcomeId: query.nonProjectRdOutcomeId,
       status: query.status ?? FileAssetStatus.ACTIVE,
     };
+    const scopedWhere: Prisma.FileAssetWhereInput = {
+      AND: [where, this.fileScope(principal)],
+    };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.fileAsset.findMany({
-        where,
+        where: scopedWhere,
         include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
         orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.fileAsset.count({ where }),
+      this.prisma.fileAsset.count({ where: scopedWhere }),
     ]);
     return { data, meta: { page, pageSize, total } };
   }
@@ -131,7 +140,21 @@ export class FilesService {
   }
 
   async download(id: string, versionId?: string) {
-    await this.requireActiveAsset(id);
+    const principal = this.requestContext.requirePrincipal();
+    const scope = this.fileScope(principal);
+    const authorized = await this.prisma.fileAsset.findFirst({
+      where: { AND: [{ id, status: FileAssetStatus.ACTIVE }, scope] },
+    });
+    if (!authorized) {
+      const exists = await this.prisma.fileAsset.count({ where: { id } });
+      if (!exists) throw this.fileNotFound();
+      throw new AppError({
+        code: ErrorCodes.PERMISSION_DENIED,
+        message: 'You do not have permission to download this file',
+        statusCode: HttpStatus.FORBIDDEN,
+      });
+    }
+
     const version = versionId
       ? await this.prisma.fileVersion.findFirst({ where: { id: versionId, fileAssetId: id } })
       : await this.prisma.fileVersion.findFirst({
@@ -211,6 +234,16 @@ export class FilesService {
     // Delete versions then the asset (versions cascade but explicit is safer)
     await this.prisma.fileVersion.deleteMany({ where: { fileAssetId: id } });
     await this.prisma.fileAsset.delete({ where: { id } });
+  }
+
+  private fileScope(principal: AuthenticatedPrincipal): Prisma.FileAssetWhereInput {
+    return {
+      OR: [
+        { document: this.dataScope.documents(principal) },
+        { project: this.dataScope.projects(principal) },
+        { meeting: this.dataScope.meetings(principal) },
+      ],
+    };
   }
 
   private getAsset(id: string) {

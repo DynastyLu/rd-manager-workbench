@@ -12,9 +12,14 @@ const {
   archiveProject,
   archiveTask,
   createMilestone,
+  createProjectPlanBaseline,
   createProgressReport,
   createTask,
+  applyProjectScheduleChange,
   getProject,
+  getProjectCriticalPath,
+  listProjectPlanBaselines,
+  listProjectPlanChanges,
   listMeetings,
   listNonProjectRd,
   listPartners,
@@ -23,16 +28,23 @@ const {
   updateMilestone,
   updateProgressReport,
   updateProject,
+  updateProjectWorkItemView,
   updateTask,
+  previewProjectScheduleImpact,
 } = vi.hoisted(() => ({
   archiveMilestone: vi.fn(),
   archiveProgressReport: vi.fn(),
   archiveProject: vi.fn(),
   archiveTask: vi.fn(),
   createMilestone: vi.fn(),
+  createProjectPlanBaseline: vi.fn(),
   createProgressReport: vi.fn(),
   createTask: vi.fn(),
+  applyProjectScheduleChange: vi.fn(),
   getProject: vi.fn(),
+  getProjectCriticalPath: vi.fn(),
+  listProjectPlanBaselines: vi.fn(),
+  listProjectPlanChanges: vi.fn(),
   listMeetings: vi.fn(),
   listNonProjectRd: vi.fn(),
   listPartners: vi.fn(),
@@ -41,14 +53,47 @@ const {
   updateMilestone: vi.fn(),
   updateProgressReport: vi.fn(),
   updateProject: vi.fn(),
+  updateProjectWorkItemView: vi.fn(),
   updateTask: vi.fn(),
+  previewProjectScheduleImpact: vi.fn(),
 }))
 
-vi.mock('@/modules/workbench/api/projects', () => ({ archiveMilestone, archiveProgressReport, archiveProject, createMilestone, createProgressReport, getProject, updateMilestone, updateProgressReport, updateProject }))
+vi.mock('@/modules/workbench/api/projects', () => ({ archiveMilestone, archiveProgressReport, archiveProject, applyProjectScheduleChange, createMilestone, createProjectPlanBaseline, createProgressReport, getProject, getProjectCriticalPath, listProjectPlanBaselines, listProjectPlanChanges, previewProjectScheduleImpact, updateMilestone, updateProgressReport, updateProject, updateProjectWorkItemView }))
 vi.mock('@/modules/workbench/api/tasks', () => ({ archiveTask, createTask, updateTask }))
 vi.mock('@/modules/workbench/api/management', () => ({ listMeetings, listPartners, listRisks }))
 vi.mock('@/modules/workbench/api/operations', () => ({ listNonProjectRd }))
 vi.mock('@/lib/http', () => ({ request }))
+vi.mock('@/modules/base/components/KanbanView', () => ({
+  KanbanView: ({ records }: { records: Array<{ id: string }> }) => (
+    <div aria-label="项目工作项看板">
+      {records.map((record) => <span key={record.id} data-testid={`board-task-${record.id}`} />)}
+    </div>
+  ),
+}))
+vi.mock('@/modules/base/components/CalendarView', () => ({
+  CalendarView: ({ records }: { records: Array<{ id: string }> }) => (
+    <div aria-label="项目工作项日历">
+      {records.map((record) => <span key={record.id} data-testid={`calendar-task-${record.id}`} />)}
+    </div>
+  ),
+}))
+vi.mock('@/modules/base/components/GanttView', () => ({
+  GanttView: ({ records }: { records: Array<{ id: string }> }) => (
+    <div aria-label="项目工作项甘特">
+      {records.map((record) => <span key={record.id} data-testid={`gantt-task-${record.id}`} />)}
+    </div>
+  ),
+}))
+vi.mock('@/modules/activity/components/ActivityTimeline', () => ({
+  ActivityTimeline: ({ projectId }: { projectId: string }) => (
+    <div aria-label={`项目动态 ${projectId}`} />
+  ),
+}))
+vi.mock('@/modules/employees/components/ProjectProgressDrafts', () => ({
+  ProjectProgressDrafts: ({ projectId }: { projectId: string }) => (
+    <div aria-label={`项目进展草稿 ${projectId}`} />
+  ),
+}))
 
 function CurrentPath() {
   return <output aria-label="当前项目路径">{useLocation().pathname}</output>
@@ -354,9 +399,14 @@ describe('ProjectWorkspacePage', () => {
     archiveProject.mockReset()
     archiveTask.mockReset()
     createMilestone.mockReset()
+    createProjectPlanBaseline.mockReset()
     createProgressReport.mockReset()
     createTask.mockReset()
+    applyProjectScheduleChange.mockReset()
     getProject.mockReset()
+    getProjectCriticalPath.mockReset()
+    listProjectPlanBaselines.mockReset()
+    listProjectPlanChanges.mockReset()
     listMeetings.mockReset()
     listNonProjectRd.mockReset()
     listPartners.mockReset()
@@ -365,7 +415,9 @@ describe('ProjectWorkspacePage', () => {
     updateMilestone.mockReset()
     updateProgressReport.mockReset()
     updateProject.mockReset()
+    updateProjectWorkItemView.mockReset()
     updateTask.mockReset()
+    previewProjectScheduleImpact.mockReset()
     getProject.mockResolvedValue(project)
     listMeetings.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
     listNonProjectRd.mockResolvedValue({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
@@ -381,10 +433,63 @@ describe('ProjectWorkspacePage', () => {
       return Promise.resolve({ data: [], meta: { page: 1, pageSize: 6, total: 0 } })
     })
     updateProject.mockResolvedValue(project)
+    updateProjectWorkItemView.mockResolvedValue({ type: 'LIST' })
     updateTask.mockResolvedValue(project.tasks[0])
+    createProjectPlanBaseline.mockResolvedValue({ id: 'baseline-2', version: 2 })
+    applyProjectScheduleChange.mockResolvedValue({ change: { id: 'change-2' } })
+    getProjectCriticalPath.mockResolvedValue({
+      criticalTaskIds: ['task-1'],
+      terminalTaskId: 'task-1',
+      totalSteps: 1,
+    })
+    listProjectPlanBaselines.mockResolvedValue([
+      {
+        id: 'baseline-1',
+        projectId: 'project-1',
+        version: 1,
+        name: '批准版',
+        projectPlannedStartAt: '2026-07-01T00:00:00.000Z',
+        projectPlannedEndAt: '2026-09-30T00:00:00.000Z',
+        createdAt: '2026-07-10T00:00:00.000Z',
+        taskSnapshots: [
+          {
+            id: 'snapshot-1',
+            taskId: 'task-1',
+            title: '整理实验样本',
+            dueAt: '2026-07-21T00:00:00.000Z',
+            dependencyIds: [],
+            isCritical: true,
+          },
+        ],
+        milestoneSnapshots: [],
+      },
+    ])
+    listProjectPlanChanges.mockResolvedValue([
+      {
+        id: 'change-1',
+        entityType: 'TASK',
+        entityId: 'task-1',
+        field: 'dueAt',
+        beforeValue: '2026-07-21T00:00:00.000Z',
+        afterValue: '2026-07-25T00:00:00.000Z',
+        reason: '实验窗口调整',
+        changedAt: '2026-07-18T00:00:00.000Z',
+      },
+    ])
+    previewProjectScheduleImpact.mockResolvedValue({
+      entityType: 'TASK',
+      entityId: 'task-1',
+      field: 'dueAt',
+      beforeValue: '2026-07-25T00:00:00.000Z',
+      afterValue: '2026-07-28T00:00:00.000Z',
+      delayDays: 3,
+      affectedTaskIds: ['task-1'],
+      affectedTasks: [{ id: 'task-1', title: '整理实验样本', isCritical: true }],
+      affectsCriticalPath: true,
+    })
   })
 
-  it('renders the fixed project context and six connected sections', async () => {
+  it('renders the fixed project context and seven connected sections', async () => {
     renderWorkspace()
 
     expect(await screen.findByRole('heading', { name: '耐盐材料筛选' })).toBeInTheDocument()
@@ -397,12 +502,27 @@ describe('ProjectWorkspacePage', () => {
       '风险与问题',
       '会议',
       '文档与资料',
+      '动态',
     ])
     expect(screen.getByText('完成初筛')).toBeInTheDocument()
     expect(screen.getByText('整理实验样本')).toBeInTheDocument()
     expect(screen.getByText('已完成样本准备')).toBeInTheDocument()
     expect(screen.getByText('2026/7/18')).toBeInTheDocument()
     expect(document.querySelector('.project-workspace__status')).toHaveClass('project-workspace__status--active')
+  })
+
+  it('opens the project activity workspace', async () => {
+    renderWorkspace('/spaces/projects/project-1/activity')
+
+    expect(await screen.findByLabelText('项目动态 project-1')).toBeInTheDocument()
+    expect(screen.queryByLabelText('项目进展草稿 project-1')).not.toBeInTheDocument()
+  })
+
+  it('renders grouped pending suggestions in the progress tab with pending count', async () => {
+    renderWorkspace('/spaces/projects/project-1/progress')
+
+    expect(await screen.findByLabelText('项目进展草稿 project-1')).toBeInTheDocument()
+    expect(screen.getByText('进展')).toBeInTheDocument()
   })
 
   it('shows calculated actual, elapsed time, variance, and milestone progress', async () => {
@@ -413,6 +533,38 @@ describe('ProjectWorkspacePage', () => {
     expect(screen.getByText('滞后 8%')).toBeInTheDocument()
     expect(screen.getByText('68% · 权重 100%')).toBeInTheDocument()
     expect(screen.queryByText('35%', { selector: 'strong' })).not.toBeInTheDocument()
+  })
+
+  it('creates plan baselines and previews critical-path schedule changes before applying', async () => {
+    const user = userEvent.setup()
+    renderWorkspace()
+
+    expect(await screen.findByText('批准版 · V1')).toBeInTheDocument()
+    expect(screen.getByText('关键路径 1 个工作项')).toBeInTheDocument()
+    expect(screen.getByText('实验窗口调整')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '生成当前计划基线' }))
+    await waitFor(() =>
+      expect(createProjectPlanBaseline).toHaveBeenCalledWith('project-1', {
+        name: expect.stringMatching(/^计划基线/),
+      })
+    )
+
+    await user.type(screen.getByLabelText('调整后日期'), '2026-07-28')
+    await user.type(screen.getByLabelText('计划变更原因'), '实验复测延期')
+    await user.click(screen.getByRole('button', { name: '预览计划影响' }))
+    expect(await screen.findByText('将影响 1 个工作项')).toBeInTheDocument()
+    expect(screen.getByText('影响关键路径')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '确认计划变更' }))
+    await waitFor(() =>
+      expect(applyProjectScheduleChange).toHaveBeenCalledWith(
+        'project-1',
+        expect.objectContaining({
+          entityType: 'TASK',
+          entityId: 'task-1',
+          reason: '实验复测延期',
+        }),
+      )
+    )
   })
 
   it('updates the URL when the user changes project sections', async () => {
@@ -534,6 +686,28 @@ describe('ProjectWorkspacePage', () => {
 
     expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({ title: '删除工作项？' }))
     await waitFor(() => expect(archiveTask).toHaveBeenCalledWith('task-1'))
+  })
+
+  it('shows list, board, calendar, and Gantt views over the same project task ids', async () => {
+    const user = userEvent.setup()
+    renderWorkspace('/spaces/projects/project-1/work-items')
+
+    expect(await screen.findByTestId('list-task-task-1')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: '看板' }))
+    expect(screen.getByTestId('board-task-task-1')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: '日历' }))
+    expect(screen.getByTestId('calendar-task-task-1')).toBeInTheDocument()
+    await user.click(screen.getByRole('tab', { name: '甘特' }))
+    expect(screen.getByTestId('gantt-task-task-1')).toBeInTheDocument()
+    expect(screen.getByText('关键路径：整理实验样本')).toBeInTheDocument()
+    expect(screen.getByText('基线偏差 +4 天')).toBeInTheDocument()
+
+    await waitFor(() =>
+      expect(updateProjectWorkItemView).toHaveBeenLastCalledWith(
+        'project-1',
+        expect.objectContaining({ type: 'GANTT' }),
+      )
+    )
   })
 
   it('uses distinct semantic colors for project risk levels', async () => {

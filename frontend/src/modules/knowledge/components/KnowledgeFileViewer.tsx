@@ -5,6 +5,7 @@ import { KnowledgeMarkdown } from './KnowledgeMarkdown'
 import { KnowledgeSpreadsheetViewer } from './KnowledgeSpreadsheetViewer'
 import { KnowledgeDocxViewer } from './KnowledgeDocxViewer'
 import { resolveKnowledgeViewerKind } from '../viewer-kind'
+import { apiUrl } from '@/lib/api-url'
 
 type ProcessingStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'PARTIAL' | 'FAILED' | 'MISSING'
 
@@ -17,10 +18,6 @@ export type KnowledgeFileDocument = {
   indexStatus: ProcessingStatus
   processingError: string | null
   plainText: string
-}
-
-function apiBaseUrl() {
-  return window.__APP_CONFIG__?.apiBaseUrl?.replace(/\/$/, '') || 'http://127.0.0.1:4311/api'
 }
 
 function processingLabel(status: ProcessingStatus) {
@@ -99,8 +96,8 @@ export function KnowledgeFileViewer({
     .split(';')[0]
     ?.toLowerCase() || 'application/octet-stream'
   const fileName = document.originalName || '未命名文件'
-  const sourceUrl = `${apiBaseUrl()}/knowledge/documents/${encodeURIComponent(document.id)}/source`
-  const previewUrl = `${apiBaseUrl()}/knowledge/documents/${encodeURIComponent(document.id)}/preview`
+  const sourceUrl = apiUrl(`/knowledge/documents/${encodeURIComponent(document.id)}/source`)
+  const previewUrl = apiUrl(`/knowledge/documents/${encodeURIComponent(document.id)}/preview`)
   const downloadUrl = `${sourceUrl}?download=1`
   const viewerKind = resolveKnowledgeViewerKind(fileName, mimeType)
   const isTextual = ['text', 'markdown', 'json', 'html'].includes(viewerKind)

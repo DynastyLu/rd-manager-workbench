@@ -11,6 +11,7 @@ import {
 } from '@douyinfe/semi-ui'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
 import { WorkspaceSelect } from '@/components/workspace/WorkspaceSelect'
+import { tableScrollWidth } from '@/lib/tableScrollWidth'
 import type {
   EmployeeRiskDecision,
   EmployeeWorkImportRow,
@@ -49,6 +50,8 @@ interface EmployeeImportAssociationModalProps {
   onCancel: () => void
   onSubmit: (input: ResolveEmployeeImportInput) => void
 }
+
+const TABLE_SELECTION_COLUMN_WIDTH = 60
 
 interface AssociationDraft {
   rowId: string
@@ -696,8 +699,9 @@ export function EmployeeImportAssociationModal({
             dataSource={visibleRows}
             loading={loading}
             pagination={false}
-            scroll={{ x: 1460 }}
+            scroll={{ x: tableScrollWidth(columns, TABLE_SELECTION_COLUMN_WIDTH) }}
             rowSelection={{
+              width: TABLE_SELECTION_COLUMN_WIDTH,
               selectedRowKeys: selectedRowIds,
               onChange: (keys) => setSelectedRowIds((keys ?? []).map(String)),
               getCheckboxProps: (row) => ({

@@ -1,5 +1,15 @@
 /** Centralised route path constants. Use these everywhere instead of raw strings. */
 export const ROUTES = {
+  LOGIN: '/login',
+  CHANGE_PASSWORD: '/change-password',
+  FORBIDDEN: '/forbidden',
+  PERSONAL_SECURITY: '/settings/security',
+  ADMIN: '/admin',
+  ADMIN_USERS: '/admin/users',
+  ADMIN_ROLES: '/admin/roles',
+  ADMIN_PERMISSIONS: '/admin/permissions',
+  ADMIN_AUDITS: '/admin/security-audits',
+  ADMIN_OWNERSHIP_MIGRATION: '/admin/ownership-migration',
   HOME: '/',
   MY_WORK: '/my-work',
   PROJECT_SPACES: '/spaces/projects',

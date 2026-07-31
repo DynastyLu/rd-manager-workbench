@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/http'
 import {
   archiveEmployee,
+  permanentlyDeleteEmployee,
+  restoreEmployee,
   archiveEmployeeWorkImport,
   cancelEmployeeWeekPlan,
   commitEmployeeWorkImport,
@@ -54,6 +56,7 @@ describe('employee workspace API', () => {
       q: ' 张 明 ',
       department: '研发 / 一部',
       employmentStatus: 'ACTIVE',
+      archiveState: 'ARCHIVED',
       page: 2,
       pageSize: 50,
     })
@@ -88,7 +91,7 @@ describe('employee workspace API', () => {
 
     expect(request.mock.calls).toEqual([
       [
-        '/employees?q=%E5%BC%A0+%E6%98%8E&department=%E7%A0%94%E5%8F%91+%2F+%E4%B8%80%E9%83%A8&employmentStatus=ACTIVE&page=2&pageSize=50',
+        '/employees?q=%E5%BC%A0+%E6%98%8E&department=%E7%A0%94%E5%8F%91+%2F+%E4%B8%80%E9%83%A8&employmentStatus=ACTIVE&archiveState=ARCHIVED&page=2&pageSize=50',
       ],
       [
         '/employee-progress?periodType=WEEK&periodStart=2026-07-20&department=%E7%A0%94%E5%8F%91+%2F+%E4%B8%80%E9%83%A8&status=AT_RISK',
@@ -107,6 +110,8 @@ describe('employee workspace API', () => {
     await getEmployee('employee / 1')
     await updateEmployee('employee / 1', { roleTitle: '高级工程师' })
     await archiveEmployee('employee / 1')
+    await restoreEmployee('employee / 1')
+    await permanentlyDeleteEmployee('employee / 1')
     await getEmployeeProgress('employee / 1', progress)
     await getEmployeeWorkItem('work / 1')
     await updateEmployeeWorkItem('work / 1', {
@@ -135,6 +140,8 @@ describe('employee workspace API', () => {
         { method: 'PATCH', body: JSON.stringify({ roleTitle: '高级工程师' }) },
       ],
       ['/employees/employee%20%2F%201', { method: 'DELETE' }],
+      ['/employees/employee%20%2F%201/restore', { method: 'POST' }],
+      ['/employees/employee%20%2F%201/permanent', { method: 'DELETE' }],
       ['/employees/employee%20%2F%201/progress?periodType=WEEK&periodStart=2026-07-20'],
       ['/employee-work-items/work%20%2F%201'],
       [

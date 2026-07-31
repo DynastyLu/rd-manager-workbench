@@ -4,6 +4,7 @@
   "testEnvironment": "node",
   "testMatch": ["<rootDir>/test/**/*.spec.ts"],
   "moduleFileExtensions": ["ts", "js", "json"],
+  "testTimeout": 30000,
   "clearMocks": true,
   "setupFiles": ["<rootDir>/test/setup-environment.cjs"],
   "passWithNoTests": true

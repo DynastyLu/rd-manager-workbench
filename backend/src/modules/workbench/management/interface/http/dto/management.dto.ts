@@ -2,6 +2,7 @@ import { Transform } from 'class-transformer';
 import {
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -231,6 +232,7 @@ export class UpdateMeetingActionDto {
   @Transform(trim) @IsOptional() @IsString() ownerName?: string | null;
   @IsOptional() @IsDateString() dueAt?: string | null;
   @IsOptional() @IsEnum(MeetingActionStatus) status?: MeetingActionStatus;
+  @IsOptional() @IsBoolean() syncTask?: boolean;
 }
 export class CreateMeetingAgendaItemDto {
   @Transform(trim) @IsString() @IsNotEmpty() title!: string;

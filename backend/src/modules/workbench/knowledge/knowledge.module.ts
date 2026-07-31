@@ -16,9 +16,11 @@ import { OfficePreviewService } from './application/office-preview.service';
 import { WorkbookPreviewService } from './application/workbook-preview.service';
 import { ContentModule } from '../content/content.module';
 import { StorageModule } from '../../../infrastructure/storage/storage.module';
+import { GovernanceModule } from '../governance/governance.module';
+import { IndexHealthService } from './application/index-health.service';
 
 @Module({
-  imports: [ContentModule, StorageModule],
+  imports: [ContentModule, StorageModule, GovernanceModule],
   controllers: [KnowledgeController],
   providers: [
     ChunkingService,
@@ -47,6 +49,7 @@ import { StorageModule } from '../../../infrastructure/storage/storage.module';
     KnowledgeFileService,
     OfficePreviewService,
     WorkbookPreviewService,
+    IndexHealthService,
   ],
   exports: [ChunkingService, EmbeddingService, RagService, SessionService, IndexingService, KnowledgeGateway, FolderWatchService],
 })

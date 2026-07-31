@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { ROUTES } from '@/constants/routes'
 import { WorkspaceDatePicker } from '@/components/workspace/WorkspaceDatePicker'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
+import { ActivityTimeline } from '@/modules/activity/components/ActivityTimeline'
 import {
   cancelEmployeeWeekPlan,
   convertEmployeeWeekPlanToTask,
@@ -694,6 +695,8 @@ export default function EmployeeDetailPage() {
           )}
         </section>
       </section>
+
+      <ActivityTimeline employeeId={employeeId} />
 
       <EmployeeWorkItemEditor
         key={editingWorkItem?.id ?? 'closed'}

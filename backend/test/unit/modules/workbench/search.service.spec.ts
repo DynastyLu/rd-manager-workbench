@@ -1,5 +1,25 @@
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { SearchService } from '../../../../src/modules/workbench/search/application/search.service';
 import { SearchAdapter } from '../../../../src/modules/workbench/search/domain/search.types';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['SUPER_ADMIN'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {} as unknown as DataScopeService;
+
+const createService = (adapters: SearchAdapter[]) =>
+  new SearchService(adapters, mockRequestContext, mockDataScope);
 
 describe('SearchService', () => {
   const candidate = (id: string, title: string, updatedAt = '2026-07-20T00:00:00.000Z') => ({
@@ -20,7 +40,7 @@ describe('SearchService', () => {
         candidate('1', '研发计划', '2026-07-19T00:00:00.000Z'),
       ]),
     };
-    const service = new SearchService([adapter]);
+    const service = createService([adapter]);
 
     const result = await service.search({ q: '  研发计划 ', types: ['TASK'], page: 1, pageSize: 1 });
 
@@ -48,7 +68,7 @@ describe('SearchService', () => {
       types: ['PROJECT', 'MEETING'],
       search: jest.fn().mockRejectedValue(new Error('postgres://secret@localhost/database')),
     };
-    const service = new SearchService([good, bad]);
+    const service = createService([good, bad]);
 
     const result = await service.search({ q: '研发计划' });
 
@@ -68,7 +88,7 @@ describe('SearchService', () => {
       types: ['TASK'],
       search: jest.fn().mockRejectedValue(new Error('connection failed')),
     };
-    const service = new SearchService([adapter]);
+    const service = createService([adapter]);
 
     await expect(service.search({ q: 'a' })).rejects.toMatchObject({ code: 'SEARCH_QUERY_INVALID' });
     await expect(service.search({ q: '研发' })).rejects.toMatchObject({
@@ -83,7 +103,7 @@ describe('SearchService', () => {
         { ...candidate('1', '研发计划'), path: '/javascript:alert(1)' },
       ]),
     };
-    const service = new SearchService([adapter]);
+    const service = createService([adapter]);
 
     await expect(service.search({ q: '研发计划' })).rejects.toMatchObject({
       code: 'SEARCH_PARTIAL_FAILURE',
@@ -101,7 +121,7 @@ describe('SearchService', () => {
         { ...candidate('bad', '研发计划'), type: 'PROJECT', path: '/javascript:alert(1)' },
       ]),
     };
-    const service = new SearchService([good, bad]);
+    const service = createService([good, bad]);
 
     const result = await service.search({ q: '研发' });
 
@@ -141,7 +161,7 @@ describe('SearchService', () => {
         },
       ]),
     });
-    const service = new SearchService(adapters);
+    const service = createService(adapters);
 
     const result = await service.search({ q: '研发', pageSize: 100 });
 
@@ -167,7 +187,7 @@ describe('SearchService', () => {
       }),
     }));
 
-    await new SearchService(adapters).search({ q: '研发' });
+    await createService(adapters).search({ q: '研发' });
 
     expect(peak).toBeLessThanOrEqual(2);
     expect(adapters.every((adapter) => (adapter.search as jest.Mock).mock.calls.length === 1)).toBe(

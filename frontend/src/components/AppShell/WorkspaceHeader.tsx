@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Button, Dropdown, Modal, Popover } from '@douyinfe/semi-ui'
+import { Avatar, Button, Dropdown, Modal, Popover } from '@douyinfe/semi-ui'
 import {
   IconChevronDown,
+  IconExit,
   IconHistory,
+  IconKey,
   IconPlus,
   IconSearch,
   IconSetting,
@@ -10,6 +12,9 @@ import {
 import { Link, useNavigate } from 'react-router-dom'
 import type { RouteDefinition } from '@/router/routes'
 import { ROUTES } from '@/constants/routes'
+import { logout } from '@/modules/auth/api'
+import { useAuthStore } from '@/modules/auth/store'
+import type { CurrentUser } from '@/modules/auth/types'
 import { ProjectForm } from '@/modules/workbench/components/ProjectForm'
 import { TaskForm } from '@/modules/workbench/components/TaskForm'
 import { NotificationCenter } from './NotificationCenter'
@@ -19,6 +24,42 @@ interface WorkspaceHeaderProps {
 }
 
 type CreateTarget = 'project' | 'task' | null
+
+const ADMIN_PERMISSION_CODES = new Set([
+  'user.read',
+  'user.create',
+  'user.update',
+  'user.disable',
+  'role.read',
+  'role.create',
+  'role.update',
+  'role.assign',
+  'audit.read',
+  'system.configure',
+])
+
+function canAccessAdmin(user: CurrentUser | undefined): boolean {
+  if (!user) return false
+  if (user.roleCodes.includes('SUPER_ADMIN')) return true
+  return user.permissions.some((grant) => ADMIN_PERMISSION_CODES.has(grant.code))
+}
+
+function initials(displayName: string): string {
+  return displayName
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((segment) => segment[0])
+    .join('')
+    .toUpperCase()
+}
+
+function roleSummary(user: CurrentUser): string {
+  if (user.roleCodes.includes('SUPER_ADMIN')) return '超级管理员'
+  if (user.roleTitle) return user.roleTitle
+  if (user.department) return user.department
+  return '工作空间成员'
+}
 
 function getRecentProjectIds(): string[] {
   try {
@@ -37,6 +78,74 @@ function HeaderPopoverContent({ title, children }: { title: string; children: Re
       <strong>{title}</strong>
       {children}
     </div>
+  )
+}
+
+function AccountMenu() {
+  const navigate = useNavigate()
+  const user = useAuthStore((state) => state.user)
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  if (!user) return null
+
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    try {
+      await logout()
+    } catch {
+      // Ignore network errors; clearing the local session still signs the user out.
+    } finally {
+      useAuthStore.getState().clearSession()
+      void navigate(ROUTES.LOGIN, { replace: true })
+      setLoggingOut(false)
+    }
+  }
+
+  return (
+    <Dropdown
+      trigger="click"
+      position="bottomRight"
+      render={
+        <Dropdown.Menu>
+          <Dropdown.Item icon={<IconKey />}>
+            <Link to={ROUTES.PERSONAL_SECURITY} className="workspace-header__dropdown-link">
+              个人安全
+            </Link>
+          </Dropdown.Item>
+          {canAccessAdmin(user) ? (
+            <Dropdown.Item icon={<IconSetting />}>
+              <Link to={ROUTES.ADMIN_USERS} className="workspace-header__dropdown-link">
+                系统管理
+              </Link>
+            </Dropdown.Item>
+          ) : null}
+          <Dropdown.Divider />
+          <Dropdown.Item icon={<IconExit />} type="danger" disabled={loggingOut}>
+            <button
+              type="button"
+              className="workspace-header__logout-button"
+              disabled={loggingOut}
+              onClick={() => void handleLogout()}
+            >
+              退出登录
+            </button>
+          </Dropdown.Item>
+        </Dropdown.Menu>
+      }
+    >
+      <Button
+        theme="borderless"
+        className="workspace-header__account"
+        aria-label={`账号菜单：${user.displayName}`}
+      >
+        <Avatar size="extra-small" alt={user.displayName}>
+          {initials(user.displayName)}
+        </Avatar>
+        <span className="workspace-header__account-name">{user.displayName}</span>
+        <span className="workspace-header__account-role">{roleSummary(user)}</span>
+        <IconChevronDown size="small" />
+      </Button>
+    </Dropdown>
   )
 }
 
@@ -176,6 +285,8 @@ export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
           <Link className="workspace-header__settings" to={ROUTES.SETTINGS} aria-label="设置">
             <IconSetting />
           </Link>
+
+          <AccountMenu />
         </div>
       </header>
 

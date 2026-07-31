@@ -10,8 +10,11 @@ describe('FolderWatchService', () => {
         findUniqueOrThrow: jest.fn(),
         update: jest.fn().mockResolvedValue(undefined),
       },
+      folderFile: {
+        findUnique: jest.fn(),
+      },
     };
-    const service = new FolderWatchService(prisma as never, {} as never, {} as never);
+    const service = new FolderWatchService(prisma as never, {} as never, {} as never, {} as never, {} as never);
     return { prisma, service };
   }
 
@@ -85,5 +88,37 @@ describe('FolderWatchService', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it('retries only the failed files retained in the reconnect snapshot', async () => {
+    const { service } = createService();
+    const importFile = jest.spyOn(
+      service as unknown as {
+        importFile: (watchId: string, filePath: string) => Promise<void>;
+      },
+      'importFile',
+    ).mockResolvedValue(undefined);
+    (
+      service as unknown as {
+        failedTargets: Map<
+          string,
+          Array<{ filePath: string; operation: 'import' | 'update' | 'delete' }>
+        >;
+      }
+    ).failedTargets.set('watch-1', [
+      { filePath: '/knowledge/failed.docx', operation: 'import' },
+    ]);
+
+    await expect(service.retryFailed('watch-1')).resolves.toEqual({ started: true, count: 1 });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(importFile).toHaveBeenCalledWith('watch-1', '/knowledge/failed.docx');
+    expect(service.getProgress('watch-1')).toEqual(
+      expect.objectContaining({
+        watchId: 'watch-1',
+        phase: 'done',
+        counts: expect.objectContaining({ failed: 0, pending: 0, success: 1 }),
+      }),
+    );
   });
 });

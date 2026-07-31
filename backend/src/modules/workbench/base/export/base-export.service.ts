@@ -3,6 +3,8 @@ import { DataFieldType } from '@prisma/client';
 import ExcelJS from 'exceljs';
 import { Writable } from 'node:stream';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { BaseService } from '../base.service';
 
 export interface BaseExportResult {
@@ -18,12 +20,23 @@ type ExportField = { id: string; key: string; name: string; type: DataFieldType;
 export class BaseExportService {
   constructor(
     private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
     private readonly base: BaseService,
   ) {}
 
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
+
   async create(tableId: string, input: ExportInput): Promise<BaseExportResult> {
     const table = await this.prisma.dataTable.findFirst({
-      where: { id: tableId, archivedAt: null },
+      where: {
+        AND: [
+          { id: tableId, archivedAt: null },
+          this.dataScope.baseTables(this.principal()),
+        ],
+      },
       include: { fields: { where: { archivedAt: null }, orderBy: [{ sequence: 'asc' }, { id: 'asc' }] } },
     });
     if (!table) throw new NotFoundException('Data table not found');

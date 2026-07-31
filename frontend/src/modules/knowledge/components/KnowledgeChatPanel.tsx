@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Select, Spin, Toast, Tooltip } from '@douyinfe/semi-ui';
 import {
   IconCopy,
@@ -63,11 +63,25 @@ export function KnowledgeChatPanel({
   const streamCitationsRef = useRef<ChunkCitation[]>([]);
   const qc = useQueryClient();
 
-  const { data: session, isLoading } = useQuery({
+  const sessionQuery = useInfiniteQuery({
     queryKey: knowledgeQueryKeys.session(sessionId ?? ''),
-    queryFn: () => getSession(sessionId!),
+    queryFn: ({ pageParam }) =>
+      getSession(sessionId!, pageParam ? { messageCursor: pageParam } : {}),
     enabled: !!sessionId,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.messageNextCursor ?? undefined,
   });
+  const isLoading = sessionQuery.isLoading;
+  const sessionPages = sessionQuery.data?.pages ?? [];
+  const newestSession = sessionPages[0];
+  const session = newestSession
+    ? {
+        ...newestSession,
+        messages: [...sessionPages]
+          .reverse()
+          .flatMap((page) => page.messages ?? []),
+      }
+    : undefined;
   const indexStatusQuery = useQuery({
     queryKey: knowledgeQueryKeys.indexStatus,
     queryFn: getIndexStatus,
@@ -391,8 +405,24 @@ export function KnowledgeChatPanel({
         <span className="knowledge-assistant__index-state">
           {indexStatusQuery.data?.complete ? '知识索引已就绪' : '知识索引处理中'}
         </span>
+        {(indexStatusQuery.data?.excludedDocuments ?? 0) > 0 ? (
+          <span className="knowledge-assistant__excluded-scope" role="status">
+            {indexStatusQuery.data?.excludedDocuments} 个文件尚未完成索引，当前回答不会引用这些文件
+          </span>
+        ) : null}
       </header>
       <div ref={messagesRef} className="kb-chat-main__messages">
+        {sessionQuery.hasNextPage ? (
+          <button
+            type="button"
+            className="knowledge-assistant__load-older"
+            aria-label="加载更早消息"
+            disabled={sessionQuery.isFetchingNextPage}
+            onClick={() => void sessionQuery.fetchNextPage()}
+          >
+            {sessionQuery.isFetchingNextPage ? '正在加载…' : '加载更早消息'}
+          </button>
+        ) : null}
         {messages.length === 0 && !streaming && (
           <div className="kb-chat-main__empty"><p>输入问题开始搜索本地知识库</p></div>
         )}

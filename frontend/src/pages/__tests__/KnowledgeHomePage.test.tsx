@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Modal } from '@douyinfe/semi-ui'
 import KnowledgeHomePage from '../KnowledgeHomePage'
 
 const {
@@ -20,6 +21,8 @@ const {
   mockRestoreDocument,
   mockRestoreDocumentVersion,
   mockTrashDocument,
+  mockPermanentlyDeleteDocument,
+  mockClearDocumentTrash,
   mockCreateKnowledgeSpace,
 } = vi.hoisted(() => ({
   mockSearchParams: new URLSearchParams(),
@@ -37,6 +40,8 @@ const {
   mockRestoreDocument: vi.fn(),
   mockRestoreDocumentVersion: vi.fn(),
   mockTrashDocument: vi.fn(),
+  mockPermanentlyDeleteDocument: vi.fn(),
+  mockClearDocumentTrash: vi.fn(),
   mockCreateKnowledgeSpace: vi.fn(),
 }))
 
@@ -61,6 +66,8 @@ vi.mock('@/modules/workbench/api/documents', () => ({
   restoreDocument: mockRestoreDocument,
   restoreDocumentVersion: mockRestoreDocumentVersion,
   trashDocument: mockTrashDocument,
+  permanentlyDeleteDocument: mockPermanentlyDeleteDocument,
+  clearDocumentTrash: mockClearDocumentTrash,
   createKnowledgeSpace: mockCreateKnowledgeSpace,
 }))
 
@@ -126,6 +133,7 @@ function renderKnowledgeHome() {
 
 describe('KnowledgeHomePage', () => {
   beforeEach(() => {
+    Modal.destroyAll()
     // Reset URLSearchParams to empty
     Array.from(mockSearchParams.keys()).forEach((k) => mockSearchParams.delete(k))
 
@@ -144,6 +152,8 @@ describe('KnowledgeHomePage', () => {
     mockRestoreDocument.mockReset()
     mockRestoreDocumentVersion.mockReset()
     mockTrashDocument.mockReset()
+    mockPermanentlyDeleteDocument.mockReset()
+    mockClearDocumentTrash.mockReset()
     mockCreateKnowledgeSpace.mockReset()
 
     // Default mock implementations: getEnum reads from mockSearchParams
@@ -157,6 +167,9 @@ describe('KnowledgeHomePage', () => {
     // Default API responses
     mockListDocuments.mockResolvedValue({ data: [] })
     mockListKnowledgeSpaces.mockResolvedValue([])
+    mockRestoreDocument.mockResolvedValue({})
+    mockPermanentlyDeleteDocument.mockResolvedValue(undefined)
+    mockClearDocumentTrash.mockResolvedValue({ deleted: 0 })
   })
 
   it('renders document browser tab by default', async () => {
@@ -211,6 +224,26 @@ describe('KnowledgeHomePage', () => {
     // Click AI 问答 tab
     fireEvent.click(screen.getByText('AI 问答'))
     expect(mockUpdate).toHaveBeenCalledWith({ tab: 'chat' }, { defaults: { tab: 'documents' } })
+  })
+
+  it('clears the selected document when switching directories', () => {
+    mockSearchParams.set('documentId', 'active-document')
+    mockGetDocument.mockResolvedValue({
+      id: 'active-document',
+      title: '当前文档',
+      type: 'DOCUMENT',
+      tags: [],
+      status: 'ACTIVE',
+    })
+
+    renderKnowledgeHome()
+
+    fireEvent.click(screen.getByRole('button', { name: /回收站/ }))
+
+    expect(mockUpdate).toHaveBeenCalledWith(
+      { directory: 'trash', spaceId: undefined, documentId: null },
+      { defaults: { directory: 'all' } },
+    )
   })
 
   it('shows empty documents state', async () => {
@@ -293,5 +326,180 @@ describe('KnowledgeHomePage', () => {
     // Form buttons should be present
     expect(screen.getByText('取消')).toBeInTheDocument()
     expect(screen.getByLabelText('保存知识空间')).toBeInTheDocument()
+  })
+
+  it('renders recycle-bin controls and hides upload actions', async () => {
+    mockSearchParams.set('directory', 'trash')
+    mockListDocuments.mockResolvedValue({
+      data: [
+        {
+          id: 'trash-1',
+          title: '已删除的项目资料',
+          type: 'DOCUMENT',
+          updatedAt: '2026-07-28T08:00:00.000Z',
+          isFavorite: false,
+          status: 'TRASHED',
+        },
+      ],
+    })
+
+    renderKnowledgeHome()
+
+    expect(await screen.findByText('已删除的项目资料')).toBeInTheDocument()
+    expect(screen.getByText('1 项')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '清空回收站' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '上传文件' })).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: '选择已删除的项目资料' })).toBeInTheDocument()
+  })
+
+  it('shows a read-only recycle-bin detail without attachment upload', async () => {
+    mockSearchParams.set('directory', 'trash')
+    mockSearchParams.set('documentId', 'trash-1')
+    const trashedDocument = {
+      id: 'trash-1',
+      title: '已删除的项目资料',
+      type: 'DOCUMENT' as const,
+      content: {},
+      plainText: '不应在回收站中继续编辑',
+      tags: ['项目资料'],
+      isFavorite: false,
+      status: 'TRASHED' as const,
+      spaceId: null,
+      parentId: null,
+      projectId: null,
+      meetingId: null,
+      sourceKind: 'UPLOAD' as const,
+      originalName: '项目资料.docx',
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      fileSize: 100,
+      sourceSha256: null,
+      previewStatus: 'READY' as const,
+      previewStorageKey: null,
+      previewMimeType: null,
+      indexStatus: 'READY' as const,
+      processingError: null,
+      indexedAt: null,
+      trashedAt: '2026-07-28T08:00:00.000Z',
+      createdAt: '2026-07-20T08:00:00.000Z',
+      updatedAt: '2026-07-28T08:00:00.000Z',
+    }
+    mockListDocuments.mockResolvedValue({ data: [trashedDocument] })
+    mockGetDocument.mockResolvedValue(trashedDocument)
+
+    renderKnowledgeHome()
+
+    expect(await screen.findByRole('heading', { name: '已删除的项目资料' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '恢复文档' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '永久删除文档' })).toBeInTheDocument()
+    expect(screen.queryByTestId('file-attachments')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('文档标题')).not.toBeInTheDocument()
+    expect(screen.getByText('恢复后可继续预览和编辑')).toBeInTheDocument()
+  })
+
+  it('permanently deletes a document after confirmation', async () => {
+    mockSearchParams.set('directory', 'trash')
+    mockSearchParams.set('documentId', 'trash-1')
+    const trashedDocument = {
+      id: 'trash-1',
+      title: '待永久删除',
+      type: 'DOCUMENT' as const,
+      content: {},
+      plainText: '',
+      tags: [],
+      isFavorite: false,
+      status: 'TRASHED' as const,
+      spaceId: null,
+      parentId: null,
+      projectId: null,
+      meetingId: null,
+      sourceKind: 'UPLOAD' as const,
+      originalName: '待删除.docx',
+      mimeType: null,
+      fileSize: null,
+      sourceSha256: null,
+      previewStatus: 'MISSING' as const,
+      previewStorageKey: null,
+      previewMimeType: null,
+      indexStatus: 'MISSING' as const,
+      processingError: null,
+      indexedAt: null,
+      trashedAt: '2026-07-28T08:00:00.000Z',
+      createdAt: '2026-07-20T08:00:00.000Z',
+      updatedAt: '2026-07-28T08:00:00.000Z',
+    }
+    mockListDocuments.mockResolvedValue({ data: [trashedDocument] })
+    mockGetDocument.mockResolvedValue(trashedDocument)
+    const confirmSpy = vi.spyOn(Modal, 'confirm').mockImplementation((options) => {
+      void options.onOk?.()
+      return { destroy: vi.fn(), update: vi.fn() }
+    })
+
+    renderKnowledgeHome()
+
+    fireEvent.click(await screen.findByRole('button', { name: '永久删除文档' }))
+
+    expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({
+      title: '永久删除文档？',
+      okText: '永久删除',
+    }))
+    await waitFor(() => expect(mockPermanentlyDeleteDocument).toHaveBeenCalledWith('trash-1'))
+    confirmSpy.mockRestore()
+  })
+
+  it('restores selected recycle-bin documents in batch', async () => {
+    mockSearchParams.set('directory', 'trash')
+    mockListDocuments.mockResolvedValue({
+      data: [
+        {
+          id: 'trash-1',
+          title: '待恢复文档',
+          type: 'DOCUMENT',
+          updatedAt: '2026-07-28T08:00:00.000Z',
+          isFavorite: false,
+          status: 'TRASHED',
+        },
+      ],
+    })
+
+    renderKnowledgeHome()
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: '选择待恢复文档' }))
+    fireEvent.click(screen.getByRole('button', { name: '批量恢复' }))
+
+    await waitFor(() => expect(mockRestoreDocument).toHaveBeenCalledWith('trash-1'))
+  })
+
+  it('clears the recycle bin after a destructive confirmation', async () => {
+    mockSearchParams.set('directory', 'trash')
+    mockListDocuments.mockResolvedValue({
+      data: [
+        {
+          id: 'trash-1',
+          title: '待清空文档',
+          type: 'DOCUMENT',
+          updatedAt: '2026-07-28T08:00:00.000Z',
+          isFavorite: false,
+          status: 'TRASHED',
+        },
+      ],
+    })
+    mockClearDocumentTrash.mockResolvedValue({ deleted: 1 })
+    const confirmSpy = vi.spyOn(Modal, 'confirm').mockImplementation((options) => {
+      void options.onOk?.()
+      return { destroy: vi.fn(), update: vi.fn() }
+    })
+
+    renderKnowledgeHome()
+
+    const clearButton = await screen.findByRole('button', { name: '清空回收站' })
+    await waitFor(() => expect(clearButton).toBeEnabled())
+    fireEvent.click(clearButton)
+
+    expect(confirmSpy).toHaveBeenCalledWith(expect.objectContaining({
+      title: '清空回收站？',
+      okText: '清空回收站',
+    }))
+    await waitFor(() => expect(mockClearDocumentTrash).toHaveBeenCalledTimes(1))
+    confirmSpy.mockRestore()
   })
 })

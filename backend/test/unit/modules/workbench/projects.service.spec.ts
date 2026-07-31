@@ -1,7 +1,40 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { ProjectsService } from '../../../../src/modules/workbench/projects/application/projects.service';
 import { ProjectProgressService } from '../../../../src/modules/workbench/projects/application/project-progress.service';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  projects: jest.fn().mockReturnValue({}),
+  tasks: jest.fn().mockReturnValue({}),
+  employees: jest.fn().mockReturnValue({}),
+  employeeWork: jest.fn().mockReturnValue({}),
+  meetings: jest.fn().mockReturnValue({}),
+  documents: jest.fn().mockReturnValue({}),
+  knowledge: jest.fn().mockReturnValue({}),
+  decisions: jest.fn().mockReturnValue({}),
+  issues: jest.fn().mockReturnValue({}),
+  risks: jest.fn().mockReturnValue({}),
+  partners: jest.fn().mockReturnValue({}),
+  communications: jest.fn().mockReturnValue({}),
+  baseTables: jest.fn().mockReturnValue({}),
+  baseRecords: jest.fn().mockReturnValue({}),
+  activities: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 describe('ProjectsService', () => {
   it('returns calculated project and milestone progress in project details', async () => {
@@ -36,7 +69,7 @@ describe('ProjectsService', () => {
         ],
       }),
     } as unknown as ProjectProgressService;
-    const service = new ProjectsService(prisma, progress);
+    const service = new ProjectsService(prisma, mockDataScope, mockRequestContext, progress);
 
     await expect(service.get('project-1')).resolves.toMatchObject({
       progressSummary: {
@@ -64,7 +97,7 @@ describe('ProjectsService', () => {
       project: { findMany, count },
       $transaction: jest.fn().mockResolvedValue([[], 0]),
     } as unknown as PlatformPrismaService;
-    const service = new ProjectsService(prisma);
+    const service = new ProjectsService(prisma, mockDataScope, mockRequestContext);
 
     await service.list({
       ids: ['project-150', 'project-5'],
@@ -94,7 +127,7 @@ describe('ProjectsService', () => {
       project: { findMany, count },
       $transaction: transaction,
     } as unknown as PlatformPrismaService;
-    const service = new ProjectsService(prisma);
+    const service = new ProjectsService(prisma, mockDataScope, mockRequestContext);
 
     await service.list({ search: 'alpha', page: 2, pageSize: 20 });
 
@@ -132,7 +165,7 @@ describe('ProjectsService', () => {
         2,
       ]),
     } as unknown as PlatformPrismaService;
-    const service = new ProjectsService(prisma);
+    const service = new ProjectsService(prisma, mockDataScope, mockRequestContext);
 
     await expect(service.list({})).resolves.toMatchObject({
       data: [
@@ -152,21 +185,21 @@ describe('ProjectsService', () => {
         findUniqueOrThrow: jest.fn(),
       },
     } as unknown as PlatformPrismaService;
-    const service = new ProjectsService(prisma);
+    const service = new ProjectsService(prisma, mockDataScope, mockRequestContext);
 
     await expect(service.update('project-1', { name: '不应更新' })).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(updateMany).toHaveBeenCalledWith({
       where: { id: 'project-1', archivedAt: null },
-      data: { name: '不应更新' },
+      data: { name: '不应更新', updatedByUserId: 'user-1' },
     });
   });
 
   it('does not enable custom milestone weights until the configured total is exactly 100', async () => {
     const updateMany = jest.fn();
     const prisma = {
-      project: { updateMany },
+      project: { updateMany, findFirst: jest.fn().mockResolvedValue({ id: 'project-1' }) },
       milestone: {
         findMany: jest.fn().mockResolvedValue([
           { weightPercent: { toNumber: () => 40 } },
@@ -174,7 +207,7 @@ describe('ProjectsService', () => {
         ]),
       },
     } as unknown as PlatformPrismaService;
-    const service = new ProjectsService(prisma);
+    const service = new ProjectsService(prisma, mockDataScope, mockRequestContext);
 
     await expect(
       service.update('project-1', { weightMode: 'CUSTOM' }),

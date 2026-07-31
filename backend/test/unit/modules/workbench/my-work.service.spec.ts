@@ -1,7 +1,40 @@
 import { TaskStatus } from '@prisma/client';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { ProjectHealthService } from '../../../../src/modules/workbench/projects/application/project-health.service';
 import { TasksService } from '../../../../src/modules/workbench/tasks/application/tasks.service';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  projects: jest.fn().mockReturnValue({}),
+  tasks: jest.fn().mockReturnValue({}),
+  employees: jest.fn().mockReturnValue({}),
+  employeeWork: jest.fn().mockReturnValue({}),
+  meetings: jest.fn().mockReturnValue({}),
+  documents: jest.fn().mockReturnValue({}),
+  knowledge: jest.fn().mockReturnValue({}),
+  decisions: jest.fn().mockReturnValue({}),
+  issues: jest.fn().mockReturnValue({}),
+  risks: jest.fn().mockReturnValue({}),
+  partners: jest.fn().mockReturnValue({}),
+  communications: jest.fn().mockReturnValue({}),
+  baseTables: jest.fn().mockReturnValue({}),
+  baseRecords: jest.fn().mockReturnValue({}),
+  activities: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 type MyWorkView = 'INBOX' | 'TODAY' | 'WEEK' | 'OVERDUE' | 'LATER' | 'COMPLETED';
 
@@ -44,7 +77,7 @@ describe('TasksService my-work views', () => {
     const prisma = {
       workTask: { findMany },
     } as unknown as PlatformPrismaService;
-    const service = new TasksService(prisma, new ProjectHealthService()) as unknown as MyWorkServiceContract;
+    const service = new TasksService(prisma, mockDataScope, mockRequestContext, new ProjectHealthService()) as unknown as MyWorkServiceContract;
     return { service, findMany };
   }
 
@@ -168,7 +201,7 @@ describe('TasksService later and reminder settings', () => {
       reminderRule: { upsert: reminderRuleUpsert, updateMany: reminderRuleUpdateMany },
       $transaction: jest.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PlatformPrismaService;
-    const service = new TasksService(prisma, new ProjectHealthService()) as unknown as MyWorkServiceContract;
+    const service = new TasksService(prisma, mockDataScope, mockRequestContext, new ProjectHealthService()) as unknown as MyWorkServiceContract;
     return {
       service,
       findFirst,

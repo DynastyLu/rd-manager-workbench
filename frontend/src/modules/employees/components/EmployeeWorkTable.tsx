@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Button, Empty, Table, Tag } from '@douyinfe/semi-ui'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
 import { ROUTES } from '@/constants/routes'
+import { tableScrollWidth } from '@/lib/tableScrollWidth'
 import { percentage } from '../format'
 import { EMPLOYEE_WORK_STATUS_COLORS, EMPLOYEE_WORK_STATUS_LABELS } from '../labels'
 import type { EmployeeWorkItem } from '../types'
@@ -154,15 +155,16 @@ export function EmployeeWorkTable({
       dataIndex: 'source',
       width: 220,
       render: (_value, item) =>
-        item.source?.label ||
-        `v${item.importVersion ?? '—'} · 第 ${item.sourceRowNumber} 行`,
+        item.source?.sheetName
+          ? item.source.label
+          : `v${item.importVersion ?? '—'} · 第 ${item.sourceRowNumber} 行`,
     },
     ...(onConvertRisk || onEdit
       ? [
           {
             title: '操作',
             dataIndex: 'id',
-            width: 130,
+            width: 190,
             fixed: 'right' as const,
             render: (_value: unknown, item: EmployeeWorkItem) => {
               return (
@@ -204,7 +206,7 @@ export function EmployeeWorkTable({
         columns={columns}
         dataSource={items}
         pagination={pagination}
-        scroll={{ x: 1580 }}
+        scroll={{ x: tableScrollWidth(columns) }}
         onRow={(record) => ({
           className:
             record && record.id === focusedWorkItemId ? 'employee-work-table__row--focused' : '',

@@ -19,6 +19,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
+import { AuthorizationService } from '../../../../iam/application/authorization.service';
+import { ConnectionTicketService } from '../../../../iam/application/connection-ticket.service';
+import { RequirePermissions } from '../../../../iam/interface/http/permissions.decorator';
+import { AppError } from '../../../../../shared/errors/app-error';
+import { ErrorCodes } from '../../../../../shared/errors/error-codes';
 import { SessionService } from '../../application/session.service';
 import { RagService } from '../../application/rag.service';
 import { IndexingService } from '../../application/indexing.service';
@@ -27,6 +32,10 @@ import { KnowledgeFileService } from '../../application/knowledge-file.service';
 import { EmbeddingService } from '../../application/embedding.service';
 import { FolderWatchService } from '../../application/folder-watch.service';
 import { WorkbookPreviewService } from '../../application/workbook-preview.service';
+import {
+  IndexHealthCategory,
+  IndexHealthService,
+} from '../../application/index-health.service';
 import { KnowledgeSpacesService } from '../../../content/application/knowledge-spaces.service';
 import type { UploadedContentFile } from '../../../content/application/files.service';
 import {
@@ -35,6 +44,7 @@ import {
   ListSessionsQueryDto,
   UpdateSessionDto,
 } from './dto/knowledge.dto';
+import { KnowledgeMessagePageDto } from './dto/knowledge-pagination.dto';
 
 @Controller('knowledge')
 export class KnowledgeController {
@@ -48,35 +58,44 @@ export class KnowledgeController {
     private readonly spaces: KnowledgeSpacesService,
     private readonly folderWatch: FolderWatchService,
     private readonly workbookPreview: WorkbookPreviewService,
+    private readonly indexHealth: IndexHealthService,
+    private readonly connectionTickets: ConnectionTicketService,
+    private readonly authorization: AuthorizationService,
   ) {}
 
   @Post('sessions')
+  @RequirePermissions('document.read')
   createSession(@Body() dto: CreateSessionDto) {
     return this.sessions.create(dto.question);
   }
 
   @Get('sessions')
+  @RequirePermissions('document.read')
   listSessions(@Query() query: ListSessionsQueryDto) {
     return this.sessions.list(query);
   }
 
   @Get('sessions/:id')
-  getSession(@Param('id') id: string) {
-    return this.sessions.get(id);
+  @RequirePermissions('document.read')
+  getSession(@Param('id') id: string, @Query() query: KnowledgeMessagePageDto) {
+    return this.sessions.get(id, query);
   }
 
   @Patch('sessions/:id')
+  @RequirePermissions('document.read')
   updateSession(@Param('id') id: string, @Body() dto: UpdateSessionDto) {
     return this.sessions.update(id, dto as Parameters<SessionService['update']>[1]);
   }
 
   @Delete('sessions/:id')
+  @RequirePermissions('document.read')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSession(@Param('id') id: string) {
     await this.sessions.archive(id);
   }
 
   @Post('chat/:sessionId/messages')
+  @RequirePermissions('document.read')
   async chat(
     @Param('sessionId') sessionId: string,
     @Body() dto: ChatMessageDto,
@@ -212,38 +231,80 @@ export class KnowledgeController {
   }
 
   @Get('reindex/status')
+  @RequirePermissions('knowledge.admin')
   getReindexStatus() {
     return this.indexing.getStatus();
   }
 
   @Post('reindex')
+  @RequirePermissions('knowledge.admin')
   triggerReindex() {
     return this.indexing.indexAll();
   }
 
+  @Get('index-health')
+  @RequirePermissions('knowledge.admin')
+  getIndexHealth(@Query('category') category?: IndexHealthCategory) {
+    return this.indexHealth.list(category);
+  }
+
+  @Post('index-health/retry-all')
+  @RequirePermissions('knowledge.admin')
+  retryAllIndexHealth(@Query('category') category?: IndexHealthCategory) {
+    return this.indexHealth.retryAll(category);
+  }
+
+  @Post('index-health/:id/retry')
+  @RequirePermissions('knowledge.admin')
+  retryIndexHealth(@Param('id') id: string) {
+    return this.indexHealth.retryOne(id);
+  }
+
+  @Post('index-health/:id/ignore')
+  @RequirePermissions('knowledge.admin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async ignoreIndexHealth(@Param('id') id: string) {
+    await this.indexHealth.ignore(id);
+  }
+
   @Get('usage')
+  @RequirePermissions('knowledge.admin')
   getUsage() {
     return this.sessions.getUsageStats();
   }
 
   @Get('embeddings/status')
-  getEmbeddingStatus() {
-    return this.embeddings.getStatus();
+  @RequirePermissions('knowledge.admin')
+  async getEmbeddingStatus() {
+    const status = this.embeddings.getStatus();
+    return {
+      ...status,
+      reindex: status.ready ? await this.indexing.getStatus() : null,
+    };
   }
 
   @Post('embeddings/prepare')
+  @RequirePermissions('knowledge.admin')
   async prepareEmbeddingModel() {
     await this.embeddings.prepare();
-    return this.embeddings.getStatus();
+    const status = this.embeddings.getStatus();
+    if (!status.ready) return status;
+    const reindex = await this.indexing.indexAll();
+    return {
+      ...status,
+      reindexJobId: reindex.jobId,
+    };
   }
 
   @Post('documents/upload')
+  @RequirePermissions('document.create')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } }))
   async uploadDocument(@UploadedFile() file: UploadedContentFile | undefined) {
     return this.ingestion.upload(file);
   }
 
   @Get('documents/:id/source')
+  @RequirePermissions('document.read')
   async getDocumentSource(
     @Param('id') id: string,
     @Query('download') download: string | undefined,
@@ -254,18 +315,21 @@ export class KnowledgeController {
   }
 
   @Get('documents/:id/preview')
+  @RequirePermissions('document.read')
   async getDocumentPreview(@Param('id') id: string, @Res() res: Response) {
     const file = await this.knowledgeFiles.getPreview(id);
     this.sendFile(res, file, 'inline');
   }
 
   @Get('documents/:id/workbook')
+  @RequirePermissions('document.read')
   async getDocumentWorkbook(@Param('id') id: string) {
     const file = await this.knowledgeFiles.getOriginal(id);
     return this.workbookPreview.parse(file);
   }
 
   @Get('documents/:id/local-open-path')
+  @RequirePermissions('document.read')
   getLocalOpenPath(@Param('id') id: string) {
     return this.knowledgeFiles.getLocalOpenPath(id);
   }
@@ -273,16 +337,19 @@ export class KnowledgeController {
   // ── Folder Watch ──
 
   @Get('folders')
+  @RequirePermissions('document.read')
   listFolders() {
     return this.folderWatch.list();
   }
 
   @Get('folders/:id')
+  @RequirePermissions('document.read')
   getFolder(@Param('id') id: string) {
     return this.folderWatch.get(id);
   }
 
   @Post('folders')
+  @RequirePermissions('document.read')
   async startWatchingFolder(
     @Body() body: { folderPath: string; label?: string; spaceId?: string; recursive?: boolean },
   ) {
@@ -307,22 +374,44 @@ export class KnowledgeController {
   }
 
   @Delete('folders/:id')
+  @RequirePermissions('document.read')
+  @HttpCode(HttpStatus.NO_CONTENT)
   async stopWatchingFolder(@Param('id') id: string) {
     await this.folderWatch.stopWatching(id);
   }
 
   @Post('folders/:id/rescan')
+  @RequirePermissions('document.read')
   @HttpCode(HttpStatus.ACCEPTED)
   async rescanFolder(@Param('id') id: string) {
     return this.folderWatch.rescan(id);
   }
 
+  @Post('folders/:id/retry-failed')
+  @RequirePermissions('document.read')
+  @HttpCode(HttpStatus.ACCEPTED)
+  retryFailedFolderFiles(@Param('id') id: string) {
+    return this.folderWatch.retryFailed(id);
+  }
+
   @Sse('folders/:id/progress')
-  folderProgress(@Param('id') id: string): Observable<MessageEvent> {
+  async folderProgress(
+    @Param('id') id: string,
+    @Query('ticket') ticket: string | undefined,
+  ): Promise<Observable<MessageEvent>> {
+    const principal = await this.connectionTickets.consume(ticket ?? '', 'knowledge-sse');
+    if (!this.authorization.hasPermission(principal, 'document.read')) {
+      throw new AppError({
+        code: ErrorCodes.PERMISSION_DENIED,
+        message: 'Permission denied',
+        statusCode: HttpStatus.FORBIDDEN,
+      });
+    }
     return this.folderWatch.getProgressStream(id).pipe(map((data) => ({ data })));
   }
 
   @Get('folders/:id/progress-snapshot')
+  @RequirePermissions('document.read')
   folderProgressSnapshot(@Param('id') id: string) {
     return (
       this.folderWatch.getProgress(id) ?? {

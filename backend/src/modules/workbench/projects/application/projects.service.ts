@@ -1,5 +1,7 @@
 import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { DataScopeService } from '../../../../modules/iam/application/data-scope.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
@@ -7,6 +9,7 @@ import { CreateProjectDto } from '../interface/http/dto/create-project.dto';
 import { ListProjectsQueryDto } from '../interface/http/dto/list-projects-query.dto';
 import { UpdateProjectDto } from '../interface/http/dto/update-project.dto';
 import { ProjectProgressService } from './project-progress.service';
+import { ProjectWorkItemViewDto } from '../interface/http/dto/project-plan.dto';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
@@ -37,13 +40,23 @@ type ProjectFields = Partial<
 export class ProjectsService {
   constructor(
     private readonly prisma: PlatformPrismaService,
+    private readonly dataScope: DataScopeService,
+    private readonly requestContext: RequestContextService,
     private readonly projectProgressService?: ProjectProgressService,
   ) {}
 
   async create(dto: CreateProjectDto) {
+    const principal = this.requestContext.requirePrincipal();
     try {
       return await this.prisma.project.create({
-        data: { code: dto.code, name: dto.name, ...this.toProjectFields(dto) },
+        data: {
+          code: dto.code,
+          name: dto.name,
+          createdByUserId: principal.userId,
+          updatedByUserId: principal.userId,
+          ownerUserId: principal.userId,
+          ...this.toProjectFields(dto),
+        },
       });
     } catch (error) {
       this.throwIfDuplicateCode(error);
@@ -52,20 +65,27 @@ export class ProjectsService {
   }
 
   async list(query: ListProjectsQueryDto) {
+    const principal = this.requestContext.requirePrincipal();
     const page = this.toPage(query.page);
     const pageSize = this.toPageSize(query.pageSize);
+    const scopeWhere = this.dataScope.projects(principal);
+    const searchWhere = query.search
+      ? {
+          OR: [
+            { code: { contains: query.search, mode: 'insensitive' as const } },
+            { name: { contains: query.search, mode: 'insensitive' as const } },
+          ],
+        }
+      : undefined;
     const where: Prisma.ProjectWhereInput = {
       archivedAt: null,
+      ...(Object.keys(scopeWhere).length > 0 && searchWhere
+        ? { AND: [scopeWhere, searchWhere] }
+        : Object.keys(scopeWhere).length > 0
+          ? scopeWhere
+          : searchWhere ?? {}),
       ...(query.ids ? { id: { in: query.ids } } : {}),
       ...(query.status ? { status: query.status } : {}),
-      ...(query.search
-        ? {
-            OR: [
-              { code: { contains: query.search, mode: 'insensitive' } },
-              { name: { contains: query.search, mode: 'insensitive' } },
-            ],
-          }
-        : {}),
     };
 
     const [data, total] = await this.prisma.$transaction([
@@ -94,8 +114,9 @@ export class ProjectsService {
   }
 
   async get(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     const project = await this.prisma.project.findFirst({
-      where: { id, archivedAt: null },
+      where: { id, archivedAt: null, ...this.dataScope.projects(principal) },
       include: {
         milestones: {
           orderBy: [
@@ -119,7 +140,8 @@ export class ProjectsService {
     });
 
     if (!project) {
-      throw new NotFoundException('Project not found');
+      await this.assertProjectExistsOrThrow(id);
+      return null as never;
     }
 
     const progressSummary = this.projectProgressService
@@ -153,6 +175,8 @@ export class ProjectsService {
   }
 
   async update(id: string, dto: UpdateProjectDto) {
+    const principal = this.requestContext.requirePrincipal();
+    await this.assertAccessible(id);
     try {
       if (dto.weightMode === 'CUSTOM') {
         const milestones = await this.prisma.milestone.findMany({
@@ -174,7 +198,7 @@ export class ProjectsService {
       }
       const result = await this.prisma.project.updateMany({
         where: { id, archivedAt: null },
-        data: this.toProjectUpdateData(dto),
+        data: { ...this.toProjectUpdateData(dto), updatedByUserId: principal.userId },
       });
 
       if (result.count === 0) {
@@ -194,14 +218,53 @@ export class ProjectsService {
   }
 
   async archive(id: string) {
+    const principal = this.requestContext.requirePrincipal();
+    await this.assertAccessible(id);
     const result = await this.prisma.project.updateMany({
       where: { id, archivedAt: null },
-      data: { archivedAt: new Date() },
+      data: { archivedAt: new Date(), updatedByUserId: principal.userId },
     });
 
     if (result.count === 0) {
       throw new NotFoundException('Project not found');
     }
+  }
+
+  async updateWorkItemView(id: string, config: ProjectWorkItemViewDto) {
+    const principal = this.requestContext.requirePrincipal();
+    await this.assertAccessible(id);
+    const result = await this.prisma.project.updateMany({
+      where: { id, archivedAt: null },
+      data: { workItemViewConfig: config as unknown as Prisma.InputJsonValue, updatedByUserId: principal.userId },
+    });
+    if (result.count === 0) throw new NotFoundException('Project not found');
+    return config;
+  }
+
+  private async assertAccessible(id: string) {
+    const principal = this.requestContext.requirePrincipal();
+    const accessible = await this.prisma.project.findFirst({
+      where: { id, archivedAt: null, ...this.dataScope.projects(principal) },
+      select: { id: true },
+    });
+    if (!accessible) {
+      await this.assertProjectExistsOrThrow(id);
+    }
+  }
+
+  private async assertProjectExistsOrThrow(id: string): Promise<never> {
+    const exists = await this.prisma.project.findFirst({
+      where: { id, archivedAt: null },
+      select: { id: true },
+    });
+    if (exists) {
+      throw new AppError({
+        code: ErrorCodes.PERMISSION_DENIED,
+        message: 'Access to this project is not allowed',
+        statusCode: HttpStatus.FORBIDDEN,
+      });
+    }
+    throw new NotFoundException('Project not found');
   }
 
   private toProjectUpdateData(dto: UpdateProjectDto): Prisma.ProjectUpdateManyMutationInput {

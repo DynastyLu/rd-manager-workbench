@@ -1,4 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import { RequirePermissions } from '../../../../iam/interface/http/permissions.decorator';
 import { AuditLogService } from '../../application/audit-log.service';
 import { ListAuditLogsQueryDto } from './dto/governance.dto';
 
@@ -7,6 +8,7 @@ export class AuditLogsController {
   constructor(private readonly audit: AuditLogService) {}
 
   @Get()
+  @RequirePermissions('audit.read')
   list(@Query() query: ListAuditLogsQueryDto) {
     return this.audit.list({
       ...query,

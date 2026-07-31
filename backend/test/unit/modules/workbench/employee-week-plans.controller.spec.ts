@@ -10,6 +10,7 @@ describe('EmployeeProgressController week-plan routes', () => {
   const progress = {
     weekPlans: jest.fn(),
     weekPlan: jest.fn(),
+    workItem: jest.fn(),
   };
   const plans = {
     updateSystemFields: jest.fn(),

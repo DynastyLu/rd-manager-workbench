@@ -1,7 +1,41 @@
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { ReportsService } from '../../../../src/modules/workbench/reporting/application/reports.service';
 import { AuditLogService } from '../../../../src/modules/workbench/governance/application/audit-log.service';
 import ExcelJS from 'exceljs';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  projects: jest.fn().mockReturnValue({}),
+  tasks: jest.fn().mockReturnValue({}),
+  employees: jest.fn().mockReturnValue({}),
+  employeeWork: jest.fn().mockReturnValue({}),
+  meetings: jest.fn().mockReturnValue({}),
+  documents: jest.fn().mockReturnValue({}),
+  knowledge: jest.fn().mockReturnValue({}),
+  decisions: jest.fn().mockReturnValue({}),
+  issues: jest.fn().mockReturnValue({}),
+  risks: jest.fn().mockReturnValue({}),
+  intelligenceItems: jest.fn().mockReturnValue({}),
+  partners: jest.fn().mockReturnValue({}),
+  communications: jest.fn().mockReturnValue({}),
+  baseTables: jest.fn().mockReturnValue({}),
+  baseRecords: jest.fn().mockReturnValue({}),
+  activities: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 describe('ReportsService', () => {
   const prisma = {
@@ -44,7 +78,7 @@ describe('ReportsService', () => {
   });
 
   it('builds project portfolio health, phase, milestone, overdue-task and high-risk metrics', async () => {
-    const result = await new ReportsService(prisma, audit).portfolio({ from: '2026-07-06', to: '2026-07-12', bucket: 'WEEK' });
+    const result = await new ReportsService(prisma, mockDataScope, mockRequestContext, audit).portfolio({ from: '2026-07-06', to: '2026-07-12', bucket: 'WEEK' });
     expect(result).toEqual(expect.objectContaining({
       total: 1,
       byStatus: { ACTIVE: 1 },
@@ -58,7 +92,7 @@ describe('ReportsService', () => {
   });
 
   it('reports task creation/completion and risk creation/closure in UTC buckets', async () => {
-    const service = new ReportsService(prisma, audit);
+    const service = new ReportsService(prisma, mockDataScope, mockRequestContext, audit);
     const tasks = await service.taskCompletionTrend({ from: '2026-07-01', to: '2026-07-31', bucket: 'WEEK' });
     const risks = await service.riskTrend({ from: '2026-07-01', to: '2026-07-31', bucket: 'WEEK' });
     expect(tasks.buckets).toEqual(expect.arrayContaining([
@@ -72,7 +106,7 @@ describe('ReportsService', () => {
   });
 
   it('reports resource weeks and intelligence topic/source/priority/conversion breakdowns', async () => {
-    const service = new ReportsService(prisma, audit);
+    const service = new ReportsService(prisma, mockDataScope, mockRequestContext, audit);
     const resources = await service.resourceLoad({ from: '2026-07-06', to: '2026-07-12', bucket: 'WEEK' });
     const intelligence = await service.intelligence({ from: '2026-07-01', to: '2026-07-31', bucket: 'WEEK' });
     expect(resources).toEqual(expect.objectContaining({ plannedHours: 50, capacityHours: 40, utilizationPercent: 125, overloadedResources: 1 }));
@@ -83,7 +117,7 @@ describe('ReportsService', () => {
   });
 
   it('normalizes ordinary report dates to inclusive UTC Monday boundaries for resource load', async () => {
-    const result = await new ReportsService(prisma, audit).resourceLoad({
+    const result = await new ReportsService(prisma, mockDataScope, mockRequestContext, audit).resourceLoad({
       from: '2026-07-08',
       to: '2026-07-21',
       bucket: 'MONTH',
@@ -112,19 +146,19 @@ describe('ReportsService', () => {
         { plannedHours: 25, weekStartAt: new Date('2026-07-06') },
       ],
     }]);
-    const result = await new ReportsService(prisma, audit).resourceLoad({ fromWeek: '2026-07-06', toWeek: '2026-07-06' });
+    const result = await new ReportsService(prisma, mockDataScope, mockRequestContext, audit).resourceLoad({ fromWeek: '2026-07-06', toWeek: '2026-07-06' });
     expect(result.overloadedResources).toBe(1);
     expect(result.rows[0].overloaded).toBe(true);
   });
 
   it('rejects a range longer than 366 days before querying', async () => {
-    await expect(new ReportsService(prisma, audit).portfolio({ from: '2025-01-01', to: '2026-07-31', bucket: 'MONTH' }))
+    await expect(new ReportsService(prisma, mockDataScope, mockRequestContext, audit).portfolio({ from: '2025-01-01', to: '2026-07-31', bucket: 'MONTH' }))
       .rejects.toMatchObject({ code: 'REPORT_RANGE_INVALID', statusCode: 422 });
     expect(prisma.project.findMany).not.toHaveBeenCalled();
   });
 
   it('exports the same report rows to safe CSV and XLSX and writes immutable audit', async () => {
-    const service = new ReportsService(prisma, audit);
+    const service = new ReportsService(prisma, mockDataScope, mockRequestContext, audit);
     const csv = await service.exportReport({ kind: 'TASKS', format: 'CSV', from: '2026-07-01', to: '2026-07-31', bucket: 'WEEK' });
     const xlsx = await service.exportReport({ kind: 'TASKS', format: 'XLSX', from: '2026-07-01', to: '2026-07-31', bucket: 'WEEK' });
     expect(csv.content.toString()).toContain('\uFEFF周期,新建任务,完成任务');

@@ -1,15 +1,16 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import { Test } from '@nestjs/testing';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Application cases API', () => {
   const prefix = `TEST-APPLICATION-${Date.now()}`;
   const prisma = new PrismaClient();
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
   let projectId: string;
   let templateId: string;
   let caseId: string;
@@ -29,6 +30,7 @@ describe('Application cases API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+    authenticated = await authenticatedRequest(app, prisma, 'SUPER_ADMIN');
     projectId = (
       await prisma.project.create({ data: { code: `${prefix}-PROJECT`, name: '申报关联项目' } })
     ).id;
@@ -38,12 +40,20 @@ describe('Application cases API', () => {
     await prisma.applicationCase.deleteMany({ where: { code: { startsWith: prefix } } });
     await prisma.workflowTemplate.deleteMany({ where: { name: { startsWith: prefix } } });
     await prisma.project.deleteMany({ where: { code: { startsWith: prefix } } });
+    if (authenticated) {
+      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.user.delete({ where: { id: authenticated.user.id } });
+      await prisma.role.delete({ where: { id: authenticated.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    }
     await prisma.$disconnect();
     await app?.close();
   });
 
   it('creates a configurable template and snapshots its nodes into a linked case', async () => {
-    const template = await request(app.getHttpServer())
+    const template = await authenticated.agent
       .post('/api/workflow-templates')
       .send({
         name: `${prefix} 认定流程`,
@@ -65,7 +75,7 @@ describe('Application cases API', () => {
       expect.arrayContaining([expect.objectContaining({ code: 'PREPARE' })]),
     );
 
-    const applicationCase = await request(app.getHttpServer())
+    const applicationCase = await authenticated.agent
       .post('/api/application-cases')
       .send({
         code: `${prefix}-CASE`,
@@ -87,7 +97,7 @@ describe('Application cases API', () => {
       ]),
     );
 
-    const listed = await request(app.getHttpServer())
+    const listed = await authenticated.agent
       .get(`/api/application-cases?projectId=${projectId}`)
       .expect(200);
     expect(listed.body.data.data).toEqual(
@@ -96,7 +106,7 @@ describe('Application cases API', () => {
   });
 
   it('rejects completion until prerequisite requirements and materials are complete, then records immutable submission versions', async () => {
-    const requirement = await request(app.getHttpServer())
+    const requirement = await authenticated.agent
       .post(`/api/application-cases/${caseId}/requirements`)
       .send({
         code: 'QUALIFIED',
@@ -105,13 +115,13 @@ describe('Application cases API', () => {
         applicationNodeId: prepareNodeId,
       })
       .expect(201);
-    const material = await request(app.getHttpServer())
+    const material = await authenticated.agent
       .post(`/api/application-cases/${caseId}/materials`)
       .send({ code: 'FORM', title: '申报表', applicationNodeId: prepareNodeId })
       .expect(201);
     materialId = material.body.data.id;
 
-    const blocked = await request(app.getHttpServer())
+    const blocked = await authenticated.agent
       .patch(`/api/application-cases/${caseId}/nodes/${prepareNodeId}`)
       .send({ status: 'COMPLETED' })
       .expect(422);
@@ -123,22 +133,22 @@ describe('Application cases API', () => {
       },
     });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/application-cases/${caseId}/requirements/${requirement.body.data.id}`)
       .send({ status: 'SATISFIED' })
       .expect(200);
-    const version = await request(app.getHttpServer())
+    const version = await authenticated.agent
       .post(`/api/application-cases/${caseId}/materials/${materialId}/versions`)
       .send({ fileName: '申报表-v1.pdf', isFinal: true })
       .expect(201);
     versionId = version.body.data.id;
     expect(version.body.data.versionNumber).toBe(1);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/application-cases/${caseId}/nodes/${prepareNodeId}`)
       .send({ status: 'COMPLETED' })
       .expect(200);
-    const submission = await request(app.getHttpServer())
+    const submission = await authenticated.agent
       .post(`/api/application-cases/${caseId}/submissions`)
       .send({
         submittedAt: '2026-07-18T00:00:00.000Z',
@@ -150,7 +160,7 @@ describe('Application cases API', () => {
       expect.objectContaining({ materialVersionId: versionId }),
     ]);
 
-    const detail = await request(app.getHttpServer())
+    const detail = await authenticated.agent
       .get(`/api/application-cases/${caseId}`)
       .expect(200);
     expect(detail.body.data).toMatchObject({ status: 'SUBMITTED' });
@@ -165,13 +175,13 @@ describe('Application cases API', () => {
   });
 
   it('links evidence and corrections only to records that belong to the same case', async () => {
-    const detail = await request(app.getHttpServer())
+    const detail = await authenticated.agent
       .get(`/api/application-cases/${caseId}`)
       .expect(200);
     const requirementId = detail.body.data.requirements[0].id;
     const submissionId = detail.body.data.submissions[0].id;
 
-    const evidence = await request(app.getHttpServer())
+    const evidence = await authenticated.agent
       .post(`/api/application-cases/${caseId}/evidence-records`)
       .send({ title: '资质证明', requirementIds: [requirementId], materialIds: [materialId] })
       .expect(201);
@@ -182,7 +192,7 @@ describe('Application cases API', () => {
       ]),
     );
 
-    const correction = await request(app.getHttpServer())
+    const correction = await authenticated.agent
       .post(`/api/application-cases/${caseId}/corrections`)
       .send({
         title: '补充盖章页',
@@ -196,7 +206,7 @@ describe('Application cases API', () => {
   });
 
   it('rejects data writes after a case is archived and validates required project linkage', async () => {
-    const missingProject = await request(app.getHttpServer())
+    const missingProject = await authenticated.agent
       .post('/api/application-cases')
       .send({
         code: `${prefix}-MISSING`,
@@ -207,8 +217,8 @@ describe('Application cases API', () => {
       .expect(404);
     expect(missingProject.body).toMatchObject({ error: { code: 'APPLICATION_PROJECT_NOT_FOUND' } });
 
-    await request(app.getHttpServer()).delete(`/api/application-cases/${caseId}`).expect(204);
-    const archivedWrite = await request(app.getHttpServer())
+    await authenticated.agent.delete(`/api/application-cases/${caseId}`).expect(204);
+    const archivedWrite = await authenticated.agent
       .post(`/api/application-cases/${caseId}/materials/${materialId}/versions`)
       .send({ fileName: '不应写入.pdf' })
       .expect(409);

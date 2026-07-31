@@ -425,7 +425,7 @@ test.describe('employee work progress acceptance', () => {
     await page.getByRole('option', { name: new RegExp(PROJECT_CODE) }).click()
     await wizard.getByRole('button', { name: '保存关联' }).click()
 
-    await expect(wizard.getByRole('heading', { name: '预检通过' })).toBeVisible()
+    await expect(wizard.getByRole('heading', { name: '预检完成' })).toBeVisible()
     await expect(wizard.getByRole('button', { name: '确认导入' })).toBeEnabled()
 
     // Discard the corrected invalid upload; the valid workbook is committed next.
@@ -453,7 +453,7 @@ test.describe('employee work progress acceptance', () => {
       .filter({ hasNotText: '放弃本次导入' })
     await wizard.getByLabel('选择员工计划与总结 Excel').setInputFiles(stamped.target)
 
-    await expect(wizard.getByRole('heading', { name: '预检通过' })).toBeVisible({
+    await expect(wizard.getByRole('heading', { name: '预检完成' })).toBeVisible({
       timeout: 30_000,
     })
     await expect(wizard.getByText('共 4 行')).toBeVisible()
@@ -478,10 +478,10 @@ test.describe('employee work progress acceptance', () => {
     )
     await reloadUntil(async () => {
       await expect(
-        page.getByRole('link', { name: EMPLOYEE_A, exact: true })
+        page.getByRole('link', { name: EMPLOYEE_A, exact: true }).first()
       ).toBeVisible({ timeout: 5_000 })
       await expect(
-        page.getByRole('link', { name: EMPLOYEE_B, exact: true })
+        page.getByRole('link', { name: EMPLOYEE_B, exact: true }).first()
       ).toBeVisible({ timeout: 5_000 })
       await expect(
         page.getByRole('link', { name: new RegExp(`${PROJECT_CODE} ${PROJECT_NAME}`) })
@@ -496,7 +496,8 @@ test.describe('employee work progress acceptance', () => {
     await expect(page.getByText(/依赖方接口未冻结/).first()).toBeVisible()
     await expect(page.getByText('整理团队周报').first()).toBeVisible()
 
-    // 9. Open the linked project and verify team progress for the current week.
+    // 9. Open the linked project and verify team progress and pending draft suggestions
+    // are now surfaced inside the project progress tab (not the employee directory).
     await page.goto(
       `/#/employees?tab=overview&periodType=WEEK&periodStart=${PERIOD_START}`
     )
@@ -505,19 +506,30 @@ test.describe('employee work progress acceptance', () => {
       .first()
       .click()
     await expect(page).toHaveURL(new RegExp(`/spaces/projects/${projectId}`))
-    await page.getByRole('tab', { name: '进展' }).click()
+    const projectProgressUrl = `/#/spaces/projects/${projectId}/progress`
+    await page.getByRole('tab', { name: '进展', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/spaces/projects/${projectId}/progress`))
     await reloadUntil(async () => {
+      if (!page.url().includes(`/spaces/projects/${projectId}/progress`)) {
+        await page.goto(projectProgressUrl)
+      }
       await expect(
         page.getByRole('heading', { name: '团队进展' })
       ).toBeVisible({ timeout: 5_000 })
       await expect(
-        page.getByRole('link', { name: EMPLOYEE_A, exact: true })
+        page.getByRole('link', { name: EMPLOYEE_A, exact: true }).first()
       ).toBeVisible({ timeout: 5_000 })
       await expect(
-        page.getByRole('link', { name: EMPLOYEE_B, exact: true })
+        page.getByRole('link', { name: EMPLOYEE_B, exact: true }).first()
       ).toBeVisible({ timeout: 5_000 })
       await expect(page.getByText(/参与 2 人/)).toBeVisible({ timeout: 5_000 })
+      await expect(
+        page.getByLabel('项目进展草稿')
+      ).toBeVisible({ timeout: 5_000 })
     }, page)
+
+    // The progress tab badge shows the pending draft count.
+    await expect(page.locator('.project-workspace__tab-badge')).toHaveText('1')
   })
 
   test('replaces the period with a second version, warns on month view, and converts a risk', async ({
@@ -544,7 +556,7 @@ test.describe('employee work progress acceptance', () => {
       .getByRole('dialog', { name: '导入员工计划与总结' })
       .filter({ hasNotText: '放弃本次导入' })
     await wizard.getByLabel('选择员工计划与总结 Excel').setInputFiles(second.target)
-    await expect(wizard.getByRole('heading', { name: '预检通过' })).toBeVisible({
+    await expect(wizard.getByRole('heading', { name: '预检完成' })).toBeVisible({
       timeout: 30_000,
     })
     await wizard.getByRole('button', { name: '确认导入' }).click()
@@ -556,10 +568,17 @@ test.describe('employee work progress acceptance', () => {
     await wizard.getByRole('button', { name: '完成' }).click()
 
     // 11. The old version remains in history as 已被替换; dashboards use the new one.
-    const oldRow = page.locator('tr', {
-      has: page.getByText(`v${firstVersion}`, { exact: true }),
-    })
-    await expect(oldRow.getByText('已被替换')).toBeVisible()
+    await expect
+      .poll(async () => {
+        const imports = await apiData<{
+          data: Array<{ version: number | null; status: string }>
+        }>(
+          request,
+          `/employee-work-imports?periodType=WEEK&periodStart=${PERIOD_START}&pageSize=100`
+        )
+        return imports.data.find((item) => item.version === firstVersion)?.status
+      })
+      .toBe('SUPERSEDED')
     const newRow = page.locator('tr', {
       has: page.getByText(`v${secondVersion}`, { exact: true }),
     })

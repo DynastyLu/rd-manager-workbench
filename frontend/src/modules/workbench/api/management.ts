@@ -245,7 +245,7 @@ export const createMeetingAction = (
 export const updateMeetingAction = (
   meetingId: string,
   id: string,
-  input: Partial<MeetingAction>,
+  input: Partial<MeetingAction> & { syncTask?: boolean },
 ) =>
   request<MeetingAction>(`${child('/meetings', meetingId)}/actions/${encodeURIComponent(id)}`, {
     method: 'PATCH',

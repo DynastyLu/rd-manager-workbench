@@ -14,13 +14,14 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import ExcelJS from 'exceljs';
-import request from 'supertest';
+import type { Response } from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
 import { EmployeeProgressSnapshotService } from '../../../../src/modules/workbench/employees/application/employee-progress-snapshot.service';
 import { EmployeeWorkbookService } from '../../../../src/modules/workbench/employees/application/employee-workbook.service';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Employee work imports API', () => {
   jest.setTimeout(240_000);
@@ -32,6 +33,7 @@ describe('Employee work imports API', () => {
   const projectCode = `${prefix}-PROJECT`;
   const taskCode = `${prefix}-TASK`;
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
   let employeeId: string;
   let projectId: string;
   let taskId: string;
@@ -50,6 +52,8 @@ describe('Employee work imports API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+
+    authenticated = await authenticatedRequest(app, prisma, `${prefix}-ROLE`);
 
     const employee = await prisma.resourceProfile.create({
       data: { displayName: employeeName },
@@ -86,12 +90,24 @@ describe('Employee work imports API', () => {
       await prisma.employeeProgressSnapshot.deleteMany({
         where: { sourceBatchIds: { hasSome: batchIds } },
       });
+      await prisma.projectProgressDraft.deleteMany({
+        where: { sourceBatchId: { in: batchIds } },
+      });
       await prisma.employeeWorkItem.deleteMany({ where: { importBatchId: { in: batchIds } } });
       await prisma.employeeWorkImportRow.deleteMany({ where: { batchId: { in: batchIds } } });
       await prisma.employeeWorkImportBatch.deleteMany({ where: { id: { in: batchIds } } });
       if (taskId) await prisma.workTask.deleteMany({ where: { id: taskId } });
       if (projectId) await prisma.project.deleteMany({ where: { id: projectId } });
       if (employeeId) await prisma.resourceProfile.deleteMany({ where: { id: employeeId } });
+
+      if (authenticated) {
+        await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+        await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+        await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+        await prisma.user.delete({ where: { id: authenticated.user.id } });
+        await prisma.role.delete({ where: { id: authenticated.role.id } });
+        await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+      }
     } finally {
       try {
         await prisma.$disconnect();
@@ -150,7 +166,7 @@ describe('Employee work imports API', () => {
   }
 
   async function uploadPreviewAndResolve(source: Buffer, filename: string): Promise<string> {
-    const uploaded = await request(app.getHttpServer())
+    const uploaded = await authenticated.agent
       .post('/api/employee-work-imports')
       .attach('file', source, {
         filename,
@@ -159,11 +175,11 @@ describe('Employee work imports API', () => {
       .expect(201);
     const batchId = uploaded.body.data.id as string;
     batchIds.push(batchId);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/preview`)
       .send({})
       .expect(200);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/resolutions`)
       .send({
         rows: [
@@ -214,7 +230,7 @@ describe('Employee work imports API', () => {
   }
 
   function binaryParser(
-    response: request.Response,
+    response: Response,
     callback: (error: Error | null, body?: Buffer) => void,
   ): void {
     const chunks: Buffer[] = [];
@@ -227,17 +243,17 @@ describe('Employee work imports API', () => {
 
   it('uploads, deduplicates, previews, downloads errors, resolves, and cleans a draft without formal writes', async () => {
     const source = await workbookBuffer();
-    await request(app.getHttpServer()).post('/api/employee-work-imports').expect(422);
+    await authenticated.agent.post('/api/employee-work-imports').expect(422);
 
     const [uploaded, concurrentUpload] = await Promise.all([
-      request(app.getHttpServer())
+      authenticated.agent
         .post('/api/employee-work-imports')
         .attach('file', source, {
           filename: 'weekly.xlsx',
           contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         })
         .expect(201),
-      request(app.getHttpServer())
+      authenticated.agent
         .post('/api/employee-work-imports')
         .attach('file', source, {
           filename: 'concurrent.xlsx',
@@ -295,7 +311,7 @@ describe('Employee work imports API', () => {
       },
     ]);
 
-    const duplicate = await request(app.getHttpServer())
+    const duplicate = await authenticated.agent
       .post('/api/employee-work-imports')
       .attach('file', source, {
         filename: 'duplicate.xlsx',
@@ -305,7 +321,7 @@ describe('Employee work imports API', () => {
     expect(duplicate.body.data.id).toBe(batchId);
     expect(duplicate.body.data.originalName).toBe(winnerName);
 
-    const previewed = await request(app.getHttpServer())
+    const previewed = await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/preview`)
       .send({})
       .expect(200);
@@ -321,12 +337,12 @@ describe('Employee work imports API', () => {
     await expect(
       prisma.employeeWorkItem.count({ where: { importBatchId: batchId } }),
     ).resolves.toBe(0);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/resolutions`)
       .send({ rows: [] })
       .expect(400);
 
-    const errorDownload = await request(app.getHttpServer())
+    const errorDownload = await authenticated.agent
       .get(`/api/employee-work-imports/${batchId}/errors`)
       .buffer(true)
       .parse(binaryParser)
@@ -339,7 +355,7 @@ describe('Employee work imports API', () => {
     );
     expect(errorsWorkbook.getWorksheet('错误行')?.rowCount).toBe(2);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/resolutions`)
       .send({
         rows: [
@@ -366,11 +382,11 @@ describe('Employee work imports API', () => {
     await expect(
       prisma.employeeWorkItem.count({ where: { importBatchId: batchId } }),
     ).resolves.toBe(0);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get(`/api/employee-work-imports/${batchId}/errors`)
       .expect(404);
 
-    await request(app.getHttpServer()).delete(`/api/employee-work-imports/${batchId}`).expect(204);
+    await authenticated.agent.delete(`/api/employee-work-imports/${batchId}`).expect(204);
     await expect(
       prisma.employeeWorkImportBatch.findUniqueOrThrow({
         where: { id: batchId },
@@ -389,7 +405,7 @@ describe('Employee work imports API', () => {
   });
 
   it('rejects a non-v4 UUID route parameter before service lookup', async () => {
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch('/api/employee-work-imports/not-a-uuid/preview')
       .send({})
       .expect(400);
@@ -404,7 +420,7 @@ describe('Employee work imports API', () => {
       where: { id: expiredId },
       data: { expiresAt: new Date('2026-07-23T00:00:00.000Z') },
     });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/employee-work-imports/${expiredId}/commit`)
       .send({})
       .expect(410);
@@ -419,7 +435,7 @@ describe('Employee work imports API', () => {
     ).resolves.toBe(0);
 
     const v1Id = await uploadPreviewAndResolve(await workbookBuffer('commit-v1'), 'commit-v1.xlsx');
-    const firstCommit = await request(app.getHttpServer())
+    const firstCommit = await authenticated.agent
       .post(`/api/employee-work-imports/${v1Id}/commit`)
       .send({})
       .expect(201);
@@ -477,7 +493,7 @@ describe('Employee work imports API', () => {
       }),
     ).resolves.toBe(1);
 
-    const idempotent = await request(app.getHttpServer())
+    const idempotent = await authenticated.agent
       .post(`/api/employee-work-imports/${v1Id}/commit`)
       .send({})
       .expect(201);
@@ -491,7 +507,7 @@ describe('Employee work imports API', () => {
     );
 
     const v2Id = await uploadPreviewAndResolve(await workbookBuffer('commit-v2'), 'commit-v2.xlsx');
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/employee-work-imports/${v2Id}/commit`)
       .send({})
       .expect(201)
@@ -527,7 +543,7 @@ describe('Employee work imports API', () => {
       },
       select: { id: true, version: true },
     });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/employee-work-imports/${v2Id}/rebuild-snapshots`)
       .send({})
       .expect(201)
@@ -587,7 +603,7 @@ describe('Employee work imports API', () => {
       });
     const concurrentRebuilds = await Promise.all(
       Array.from({ length: 2 }, () =>
-        request(app.getHttpServer())
+        authenticated.agent
           .post(`/api/employee-work-imports/${v2Id}/rebuild-snapshots`)
           .send({})
           .expect(201),
@@ -689,7 +705,7 @@ describe('Employee work imports API', () => {
       await releaseTaskUpdateBarrier;
     });
     await taskUpdateIsLocked;
-    const driftCommit = request(app.getHttpServer())
+    const driftCommit = authenticated.agent
       .post(`/api/employee-work-imports/${driftId}/commit`)
       .send({})
       .then((response) => response);
@@ -726,11 +742,11 @@ describe('Employee work imports API', () => {
       where: { id: taskId },
       data: { archivedAt: null },
     });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/employee-work-imports/${driftId}/preview`)
       .send({})
       .expect(200);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/employee-work-imports/${driftId}/resolutions`)
       .send({
         rows: [
@@ -743,7 +759,7 @@ describe('Employee work imports API', () => {
         ],
       })
       .expect(200);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/employee-work-imports/${driftId}/commit`)
       .send({})
       .expect(201)
@@ -771,7 +787,7 @@ describe('Employee work imports API', () => {
 
     const responses = await Promise.all(
       [firstId, secondId].map((id) =>
-        request(app.getHttpServer())
+        authenticated.agent
           .post(`/api/employee-work-imports/${id}/commit`)
           .send({})
           .expect(201),
@@ -1047,9 +1063,9 @@ describe('Employee work imports API', () => {
       .spyOn(snapshots, 'generateWeek')
       .mockRejectedValueOnce(new Error('private snapshot failure details'));
 
-    let failedCommit!: request.Response;
+    let failedCommit!: Response;
     try {
-      failedCommit = await request(app.getHttpServer())
+      failedCommit = await authenticated.agent
         .post(`/api/employee-work-imports/${batchId}/commit`)
         .send({})
         .expect(201);
@@ -1091,7 +1107,7 @@ describe('Employee work imports API', () => {
       }),
     ).resolves.toBe(1);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/employee-work-imports/${batchId}/rebuild-snapshots`)
       .send({})
       .expect(201)
@@ -1188,7 +1204,7 @@ describe('Employee work imports API', () => {
     }
 
     const startedAt = performance.now();
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/resolutions`)
       .send({
         rows: Array.from({ length: rowCount }, (_, index) => ({
@@ -1214,7 +1230,7 @@ describe('Employee work imports API', () => {
       }),
     ).resolves.toBe(rowCount);
     const commitStartedAt = performance.now();
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/employee-work-imports/${batchId}/commit`)
       .send({})
       .expect(201)

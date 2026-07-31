@@ -1,9 +1,19 @@
 import { MeetingStatus } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { MeetingsService } from '../../../../src/modules/workbench/management/application/meetings.service';
 import { TasksService } from '../../../../src/modules/workbench/tasks/application/tasks.service';
 import { UpdateMeetingActionDto } from '../../../../src/modules/workbench/management/interface/http/dto/management.dto';
 import { validate } from 'class-validator';
+
+const mockPrincipal = { userId: 'user-1' };
+const requestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const dataScope = {
+  meetings: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 describe('MeetingsService', () => {
   it('accepts partial action updates without requiring the title', async () => {
@@ -13,18 +23,112 @@ describe('MeetingsService', () => {
   });
 
   it('clears an action due date when the update explicitly sends null', async () => {
-    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
-    const findUnique = jest.fn().mockResolvedValue({ id: 'action-1', dueAt: null });
+    const update = jest.fn().mockResolvedValue({ id: 'action-1', dueAt: null });
+    const transaction = {
+      meetingAction: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'action-1',
+          meetingId: 'meeting-1',
+          taskId: null,
+          meeting: { projectId: null },
+        }),
+        update,
+      },
+    };
     const prisma = {
-      meetingAction: { updateMany, findUnique },
+      $transaction: jest.fn(async (work: (tx: typeof transaction) => unknown) =>
+        work(transaction),
+      ),
     } as unknown as PlatformPrismaService;
-    const service = new MeetingsService(prisma, {} as TasksService);
+    const service = new MeetingsService(prisma, {} as TasksService, requestContext, dataScope);
 
     await service.updateAction('meeting-1', 'action-1', { dueAt: null });
 
-    expect(updateMany).toHaveBeenCalledWith({
-      where: { id: 'action-1', meetingId: 'meeting-1', archivedAt: null },
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'action-1' },
       data: { dueAt: null },
+    });
+  });
+
+  it('requires an explicit direction before syncing action owner and due date to a linked task', async () => {
+    const current = {
+      id: 'action-1',
+      meetingId: 'meeting-1',
+      taskId: 'task-1',
+      ownerName: '旧负责人',
+      dueAt: new Date('2026-07-30T00:00:00.000Z'),
+    };
+    const transaction = {
+      meetingAction: {
+        findFirst: jest.fn().mockResolvedValue(current),
+        update: jest.fn().mockResolvedValue({
+          ...current,
+          ownerName: '新负责人',
+          dueAt: new Date('2026-08-02T00:00:00.000Z'),
+        }),
+      },
+      workTask: { update: jest.fn() },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (work: (tx: typeof transaction) => unknown) =>
+        work(transaction),
+      ),
+    } as unknown as PlatformPrismaService;
+    const service = new MeetingsService(prisma, {} as TasksService, requestContext, dataScope);
+
+    await service.updateAction('meeting-1', 'action-1', {
+      ownerName: '新负责人',
+      dueAt: '2026-08-02T00:00:00.000Z',
+    });
+    expect(transaction.workTask.update).not.toHaveBeenCalled();
+
+    await service.updateAction('meeting-1', 'action-1', {
+      ownerName: '新负责人',
+      dueAt: '2026-08-02T00:00:00.000Z',
+      syncTask: true,
+    });
+    expect(transaction.workTask.update).toHaveBeenCalledWith({
+      where: { id: 'task-1' },
+      data: {
+        assigneeName: '新负责人',
+        dueAt: new Date('2026-08-02T00:00:00.000Z'),
+      },
+    });
+  });
+
+  it('shows the latest linked task state and overdue status on a meeting action', async () => {
+    const findFirst = jest.fn().mockResolvedValue({
+      id: 'meeting-1',
+      actions: [
+        {
+          id: 'action-1',
+          status: 'OPEN',
+          dueAt: new Date('2026-07-20T00:00:00.000Z'),
+          tasks: {
+            id: 'task-1',
+            status: 'IN_PROGRESS',
+            dueAt: new Date('2026-07-21T00:00:00.000Z'),
+            updatedAt: new Date('2026-07-22T00:00:00.000Z'),
+          },
+        },
+      ],
+      agendaItems: [],
+      decisions: [],
+      minutesDocument: null,
+      fileAssets: [],
+    });
+    const prisma = { meeting: { findFirst } } as unknown as PlatformPrismaService;
+    const service = new MeetingsService(prisma, {} as TasksService, requestContext, dataScope);
+
+    await expect(service.get('meeting-1', new Date('2026-07-29T00:00:00.000Z'))).resolves.toMatchObject({
+      actions: [
+        {
+          id: 'action-1',
+          taskStatus: 'IN_PROGRESS',
+          effectiveDueAt: new Date('2026-07-21T00:00:00.000Z'),
+          isOverdue: true,
+        },
+      ],
     });
   });
 
@@ -35,7 +139,7 @@ describe('MeetingsService', () => {
       meeting: { findMany, count },
       $transaction: jest.fn().mockResolvedValue([[], 0]),
     } as unknown as PlatformPrismaService;
-    const service = new MeetingsService(prisma, {} as TasksService);
+    const service = new MeetingsService(prisma, {} as TasksService, requestContext, dataScope);
 
     await service.list({
       projectId: 'project-1',
@@ -47,13 +151,18 @@ describe('MeetingsService', () => {
     });
 
     const where = {
-      archivedAt: null,
-      projectId: 'project-1',
-      status: MeetingStatus.PLANNED,
-      scheduledAt: {
-        gte: new Date('2026-07-01T00:00:00.000Z'),
-        lte: new Date('2026-07-31T23:59:59.999Z'),
-      },
+      AND: [
+        {
+          archivedAt: null,
+          projectId: 'project-1',
+          status: MeetingStatus.PLANNED,
+          scheduledAt: {
+            gte: new Date('2026-07-01T00:00:00.000Z'),
+            lte: new Date('2026-07-31T23:59:59.999Z'),
+          },
+        },
+        {},
+      ],
     };
     expect(findMany).toHaveBeenCalledWith({
       where,
@@ -80,7 +189,7 @@ describe('MeetingsService', () => {
       ],
     });
     const prisma = { meeting: { findFirst } } as unknown as PlatformPrismaService;
-    const service = new MeetingsService(prisma, {} as TasksService);
+    const service = new MeetingsService(prisma, {} as TasksService, requestContext, dataScope);
 
     await expect(service.get('meeting-1')).resolves.toMatchObject({
       id: 'meeting-1',
@@ -97,9 +206,17 @@ describe('MeetingsService', () => {
       ],
     });
     expect(findFirst).toHaveBeenCalledWith({
-      where: { id: 'meeting-1', archivedAt: null },
+      where: { AND: [{ id: 'meeting-1', archivedAt: null }, {}] },
       include: {
-        actions: { where: { archivedAt: null }, orderBy: { dueAt: 'asc' } },
+        actions: {
+          where: { archivedAt: null },
+          orderBy: { dueAt: 'asc' },
+          include: {
+            tasks: {
+              select: { id: true, status: true, dueAt: true, updatedAt: true },
+            },
+          },
+        },
         agendaItems: { where: { archivedAt: null }, orderBy: { sequence: 'asc' } },
         decisions: { where: { archivedAt: null }, orderBy: { updatedAt: 'desc' } },
         minutesDocument: true,
@@ -137,7 +254,7 @@ describe('MeetingsService', () => {
         work(transaction),
       ),
     } as unknown as PlatformPrismaService;
-    const service = new MeetingsService(prisma, {} as TasksService);
+    const service = new MeetingsService(prisma, {} as TasksService, requestContext, dataScope);
 
     await expect(service.createMinutesDocument(meeting.id)).resolves.toEqual(document);
     expect(transaction.contentDocument.create).toHaveBeenCalledWith({
@@ -199,7 +316,7 @@ describe('MeetingsService', () => {
         work(transaction),
       ),
     } as unknown as PlatformPrismaService;
-    const service = new MeetingsService(prisma, {} as TasksService);
+    const service = new MeetingsService(prisma, {} as TasksService, requestContext, dataScope);
 
     await expect(service.createMinutesDocument('meeting-1')).resolves.toEqual(document);
     expect(transaction.contentDocument.findUnique).toHaveBeenCalledWith({
@@ -229,7 +346,7 @@ describe('MeetingsService', () => {
     const tasks = {
       createTaskInTransaction: jest.fn().mockResolvedValue(task),
     } as unknown as TasksService;
-    const service = new MeetingsService(prisma, tasks);
+    const service = new MeetingsService(prisma, tasks, requestContext, dataScope);
 
     await expect(service.createTaskForAction('action-1', { title: 'Follow up' })).resolves.toEqual({
       task,
@@ -287,7 +404,7 @@ describe('MeetingsService', () => {
     const tasks = {
       createTaskInTransaction: jest.fn(),
     } as unknown as TasksService;
-    const service = new MeetingsService(prisma, tasks);
+    const service = new MeetingsService(prisma, tasks, requestContext, dataScope);
 
     await expect(service.createTaskForAction('action-1', { title: 'Ignored' })).resolves.toEqual({
       task: existingTask,

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, TaskStatus } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import {
   SearchAdapter,
   SearchCandidate,
@@ -14,19 +16,32 @@ const CANDIDATE_LIMIT = 100;
 export class TasksSearchAdapter implements SearchAdapter {
   readonly types = ['TASK'] as const;
 
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
+  ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   async search(query: string, types: readonly SearchType[]): Promise<SearchCandidate[]> {
     if (!types.includes('TASK')) return [];
 
     const where: Prisma.WorkTaskWhereInput = {
-      archivedAt: null,
-      AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
-      OR: [
-        { title: { contains: query, mode: 'insensitive' } },
-        { description: { contains: query, mode: 'insensitive' } },
-        { assigneeName: { contains: query, mode: 'insensitive' } },
-        { collaboratorNames: { has: query } },
+      AND: [
+        {
+          archivedAt: null,
+          AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
+          OR: [
+            { title: { contains: query, mode: 'insensitive' } },
+            { description: { contains: query, mode: 'insensitive' } },
+            { assigneeName: { contains: query, mode: 'insensitive' } },
+            { collaboratorNames: { has: query } },
+          ],
+        },
+        this.dataScope.tasks(this.principal()),
       ],
     };
     const tasks = await this.prisma.workTask.findMany({

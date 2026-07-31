@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import {
   deserializeKnowledgeScope,
   KnowledgeScope,
@@ -11,6 +12,14 @@ type UpdateSessionInput = {
   title?: string;
   isPinned?: boolean;
   scope?: KnowledgeScope;
+};
+
+type CursorKind = 'session' | 'message';
+
+type PageCursor = {
+  kind: CursorKind;
+  timestamp: string;
+  id: string;
 };
 
 const sessionSelect = {
@@ -39,24 +48,59 @@ const listSessionSelect = {
 
 @Injectable()
 export class SessionService {
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+  ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   async create(firstQuestion: string) {
     const title = firstQuestion.replace(/\s+/g, '').slice(0, 30);
-    return this.prisma.knowledgeSession.create({ data: { title } });
+    return this.prisma.knowledgeSession.create({
+      data: { title, ownerUserId: this.principal().userId },
+    });
   }
 
-  async list(query: { search?: string } = {}) {
+  async list(query: { search?: string; cursor?: string; limit?: number } = {}) {
+    const principal = this.principal();
     const search = query.search?.trim();
-    const sessions = await this.prisma.knowledgeSession.findMany({
-      where: {
-        archivedAt: null,
-        ...(search ? { title: { contains: search, mode: 'insensitive' as const } } : {}),
-      },
-      orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }],
-      select: listSessionSelect,
-    });
-    return sessions.map(({ messages, ...session }) => {
+    const limit = Math.min(Math.max(query.limit ?? 30, 1), 100);
+    const cursor = query.cursor ? this.decodeCursor(query.cursor, 'session') : null;
+    const baseWhere: Prisma.KnowledgeSessionWhereInput = {
+      archivedAt: null,
+      ownerUserId: principal.userId,
+      ...(search ? { title: { contains: search, mode: 'insensitive' as const } } : {}),
+    };
+    const [pinnedRows, regularRows] = await Promise.all([
+      this.prisma.knowledgeSession.findMany({
+        where: { ...baseWhere, isPinned: true },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        select: listSessionSelect,
+      }),
+      this.prisma.knowledgeSession.findMany({
+        where: {
+          ...baseWhere,
+          isPinned: false,
+          ...(cursor
+            ? {
+                OR: [
+                  { updatedAt: { lt: cursor.timestamp } },
+                  { updatedAt: cursor.timestamp, id: { lt: cursor.id } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+        select: listSessionSelect,
+      }),
+    ]);
+    const hasMore = regularRows.length > limit;
+    const pageRows = hasMore ? regularRows.slice(0, limit) : regularRows;
+    const present = (sessions: typeof pageRows) => sessions.map(({ messages, ...session }) => {
       const latestMessage = messages?.[0];
       return {
         ...this.presentSession(session),
@@ -64,14 +108,42 @@ export class SessionService {
         lastMessageAt: latestMessage?.createdAt ?? session.updatedAt,
       };
     });
+    const last = pageRows.at(-1);
+    return {
+      pinned: present(pinnedRows),
+      items: present(pageRows),
+      nextCursor:
+        hasMore && last
+          ? this.encodeCursor('session', last.updatedAt, last.id)
+          : null,
+    };
   }
 
-  async get(id: string) {
-    const session = await this.prisma.knowledgeSession.findUnique({
-      where: { id },
+  async get(
+    id: string,
+    query: { messageCursor?: string; messageLimit?: number } = {},
+  ) {
+    const principal = this.principal();
+    const limit = Math.min(Math.max(query.messageLimit ?? 40, 1), 100);
+    const cursor = query.messageCursor
+      ? this.decodeCursor(query.messageCursor, 'message')
+      : null;
+    const session = await this.prisma.knowledgeSession.findFirst({
+      where: { id, ownerUserId: principal.userId, archivedAt: null },
       include: {
         messages: {
-          orderBy: { createdAt: 'asc' },
+          ...(cursor
+            ? {
+                where: {
+                  OR: [
+                    { createdAt: { lt: cursor.timestamp } },
+                    { createdAt: cursor.timestamp, id: { lt: cursor.id } },
+                  ],
+                },
+              }
+            : {}),
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: limit + 1,
           select: {
             id: true,
             role: true,
@@ -84,14 +156,51 @@ export class SessionService {
         },
       },
     });
-    if (!session || session.archivedAt) {
+    if (!session) {
       throw new NotFoundException('知识问答会话不存在');
     }
-    return this.presentSession(session);
+    const { messages, ...sessionData } = session;
+    const hasMore = messages.length > limit;
+    const page = hasMore ? messages.slice(0, limit) : messages;
+    const oldest = page.at(-1);
+    return {
+      ...this.presentSession(sessionData),
+      messages: [...page].reverse(),
+      messageNextCursor:
+        hasMore && oldest
+          ? this.encodeCursor('message', oldest.createdAt, oldest.id)
+          : null,
+    };
+  }
+
+  private encodeCursor(kind: CursorKind, timestamp: Date, id: string): string {
+    return Buffer.from(
+      JSON.stringify({ kind, timestamp: timestamp.toISOString(), id } satisfies PageCursor),
+      'utf8',
+    ).toString('base64url');
+  }
+
+  private decodeCursor(cursor: string, expectedKind: CursorKind): PageCursor {
+    try {
+      const parsed = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as PageCursor;
+      if (
+        parsed.kind !== expectedKind ||
+        typeof parsed.id !== 'string' ||
+        !parsed.id ||
+        typeof parsed.timestamp !== 'string' ||
+        Number.isNaN(Date.parse(parsed.timestamp))
+      ) {
+        throw new Error('invalid cursor');
+      }
+      return parsed;
+    } catch {
+      throw new BadRequestException('分页游标无效');
+    }
   }
 
   async update(id: string, input: UpdateSessionInput) {
-    await this.requireActive(id);
+    const principal = this.principal();
+    await this.requireActive(id, principal.userId);
     const data: Prisma.KnowledgeSessionUpdateInput = {};
 
     if (input.title !== undefined) {
@@ -146,8 +255,9 @@ export class SessionService {
   }
 
   async archive(id: string) {
-    const session = await this.prisma.knowledgeSession.findUnique({
-      where: { id },
+    const principal = this.principal();
+    const session = await this.prisma.knowledgeSession.findFirst({
+      where: { id, ownerUserId: principal.userId },
       select: sessionSelect,
     });
     if (!session) throw new NotFoundException('知识问答会话不存在');
@@ -161,12 +271,12 @@ export class SessionService {
     return this.presentSession(archived);
   }
 
-  private async requireActive(id: string) {
-    const session = await this.prisma.knowledgeSession.findUnique({
-      where: { id },
-      select: { id: true, archivedAt: true },
+  private async requireActive(id: string, ownerUserId: string) {
+    const session = await this.prisma.knowledgeSession.findFirst({
+      where: { id, ownerUserId, archivedAt: null },
+      select: { id: true },
     });
-    if (!session || session.archivedAt) {
+    if (!session) {
       throw new NotFoundException('知识问答会话不存在');
     }
     return session;

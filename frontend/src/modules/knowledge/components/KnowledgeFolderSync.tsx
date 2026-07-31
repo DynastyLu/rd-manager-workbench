@@ -8,16 +8,16 @@ import {
   stopFolderWatch,
   rescanFolder,
   getFolderProgressSnapshot,
+  retryFailedFolderFiles,
   type FolderSyncProgress,
   type FolderWatchItem,
 } from '../api'
 import { parseFolderProgressEvent } from '../folder-progress'
-import { KnowledgeEmbeddingStatus } from './KnowledgeEmbeddingStatus'
-
-const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:4311/api' : ''
+import { apiUrl } from '@/lib/api-url'
 
 function useFolderProgress() {
   const [progress, setProgress] = useState<FolderSyncProgress | null>(null)
+  const [transport, setTransport] = useState<'realtime' | 'polling'>('realtime')
   const esRef = useRef<EventSource | null>(null)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -27,9 +27,10 @@ function useFolderProgress() {
   }, [])
 
   const connect = useCallback(
-    (id: string) => {
+    async (id: string) => {
       esRef.current?.close()
       clearPolling()
+      setTransport('realtime')
 
       const applyProgress = (data: FolderSyncProgress) => {
         setProgress(data)
@@ -56,9 +57,13 @@ function useFolderProgress() {
         .then(applyProgress)
         .catch(() => undefined)
 
-      const es = new EventSource(
-        `${API_BASE}/knowledge/folders/${encodeURIComponent(String(id))}/progress`
-      )
+      const api = await import('../api')
+      const url =
+        (await (api.getFolderProgressEventSourceUrl
+          ? api.getFolderProgressEventSourceUrl(id).catch(() => undefined)
+          : undefined)) ??
+        apiUrl(`/knowledge/folders/${encodeURIComponent(String(id))}/progress`)
+      const es = new EventSource(url)
       esRef.current = es
 
       es.onmessage = (event) => {
@@ -72,6 +77,7 @@ function useFolderProgress() {
       es.onerror = () => {
         es.close()
         esRef.current = null
+        setTransport('polling')
         poll()
       }
     },
@@ -93,7 +99,7 @@ function useFolderProgress() {
     [clearPolling]
   )
 
-  return { progress, connect, disconnect }
+  return { progress, transport, connect, disconnect }
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -111,7 +117,7 @@ export function KnowledgeFolderSync() {
   const [folderLabel, setFolderLabel] = useState('')
   const [recursive, setRecursive] = useState(true)
   const [activeWatchId, setActiveWatchId] = useState<string | null>(null)
-  const { progress, connect, disconnect } = useFolderProgress()
+  const { progress, transport, connect, disconnect } = useFolderProgress()
 
   const { data: folders, isPending } = useQuery({
     queryKey: ['knowledge-folders'],
@@ -143,7 +149,7 @@ export function KnowledgeFolderSync() {
       Toast.success('已开始同步')
       const watchId = (result as unknown as { watchId: string }).watchId
       setActiveWatchId(watchId)
-      connect(watchId)
+      void connect(watchId)
       setModalOpen(false)
       setFolderPath('')
       setFolderLabel('')
@@ -166,15 +172,31 @@ export function KnowledgeFolderSync() {
     mutationFn: (id: string) => rescanFolder(id),
     onSuccess: (_result, id) => {
       setActiveWatchId(id)
-      connect(id)
+      void connect(id)
       refreshAll()
     },
     onError: (err: Error) => Toast.error(err.message),
   })
 
+  const retryFailedMutation = useMutation({
+    mutationFn: (id: string) => retryFailedFolderFiles(id),
+    onSuccess: (_result, id) => {
+      setActiveWatchId(id)
+      void connect(id)
+    },
+    onError: (err: Error) => Toast.error(`重试失败：${err.message}`),
+  })
+
+  useEffect(() => {
+    if (activeWatchId || !folders) return
+    const active = folders.find((folder) => folder.status === 'ACTIVE')
+    if (!active) return
+    setActiveWatchId(active.id)
+    void connect(active.id)
+  }, [activeWatchId, connect, folders])
+
   return (
     <div className="kb-folder-sync">
-      <KnowledgeEmbeddingStatus />
       <div className="kb-folder-sync__header">
         <h3>
           <IconFolder /> 本地文件夹同步
@@ -215,11 +237,27 @@ export function KnowledgeFolderSync() {
               </span>
             ) : null}
           </div>
-          <Progress
-            className={progress.phase === 'scanning' ? 'kb-folder-sync__scanning-progress' : ''}
-            percent={progress.phase === 'scanning' ? 35 : progress.percent}
-            strokeWidth={8}
-          />
+          {progress.phase === 'scanning' && progress.total === 0 ? (
+            <div
+              className="kb-folder-sync__scanning-progress"
+              role="progressbar"
+              aria-label="正在发现文件，总数未知"
+              aria-busy="true"
+            >
+              <span />
+            </div>
+          ) : (
+            <Progress
+              aria-label={`文件处理进度 ${progress.percent}%`}
+              percent={progress.percent}
+              strokeWidth={8}
+            />
+          )}
+          {transport === 'polling' && progress.phase !== 'done' && progress.phase !== 'error' ? (
+            <div className="kb-folder-sync__transport-warning">
+              实时连接已中断，正在使用轮询补偿
+            </div>
+          ) : null}
           {progress.currentFile && (
             <div
               style={{
@@ -241,6 +279,34 @@ export function KnowledgeFolderSync() {
               {progress.result.errors ? ` · 失败 ${progress.result.errors}` : ''}
             </div>
           )}
+          {progress.counts ? (
+            <div className="kb-folder-sync__counts">
+              发现 {progress.counts.discovered} · 待处理 {progress.counts.pending} · 成功{' '}
+              {progress.counts.success} · 更新 {progress.counts.updated} · 跳过{' '}
+              {progress.counts.skipped} · 删除 {progress.counts.deleted} · 失败{' '}
+              {progress.counts.failed}
+            </div>
+          ) : null}
+          {(progress.failedFiles?.length ?? 0) > 0 ? (
+            <details className="kb-folder-sync__failures">
+              <summary>失败文件（{progress.failedFiles?.length ?? 0}）</summary>
+              <ul>
+                {progress.failedFiles?.map((failure) => (
+                  <li key={`${failure.fileName}:${failure.category}`}>
+                    <strong>{failure.fileName}</strong>
+                    <span>{failure.reason}</span>
+                  </li>
+                ))}
+              </ul>
+              <Button
+                size="small"
+                loading={retryFailedMutation.isPending}
+                onClick={() => progress.watchId && retryFailedMutation.mutate(progress.watchId)}
+              >
+                只重试失败项
+              </Button>
+            </details>
+          ) : null}
           {progress.error && (
             <div style={{ fontSize: 12, color: '#e74c3c', marginTop: 4 }}>{progress.error}</div>
           )}
@@ -288,7 +354,9 @@ export function KnowledgeFolderSync() {
                       progress?.phase !== 'done' &&
                       progress?.phase !== 'error')
                   }
-                  onClick={() => rescanMutation.mutate(f.id)}
+                  onClick={() => {
+                  rescanMutation.mutate(f.id)
+                }}
                 >
                   {f.status === 'ACTIVE' ? '重新扫描' : '恢复并扫描'}
                 </Button>

@@ -3,13 +3,16 @@ import { SessionService } from '../../../../src/modules/workbench/knowledge/appl
 describe('SessionService', () => {
   let service: SessionService;
   let mockPrisma: any;
+  const requestContext = {
+    requirePrincipal: jest.fn().mockReturnValue({ userId: 'user-1', roleCodes: [] }),
+  };
 
   beforeEach(() => {
     mockPrisma = {
-      knowledgeSession: { create: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+      knowledgeSession: { create: jest.fn(), findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
       knowledgeMessage: { create: jest.fn(), findMany: jest.fn() },
     };
-    service = new SessionService(mockPrisma);
+    service = new SessionService(mockPrisma, requestContext as never);
   });
 
   it('creates session with title from first 30 chars', async () => {
@@ -23,7 +26,7 @@ describe('SessionService', () => {
   it('lists active sessions ordered by updatedAt desc', async () => {
     mockPrisma.knowledgeSession.findMany.mockResolvedValue([{ id: 's1' }, { id: 's2' }]);
     const sessions = await service.list();
-    expect(sessions).toHaveLength(2);
+    expect(sessions.items).toHaveLength(2);
   });
 
   it('adds message and touches session', async () => {
@@ -33,7 +36,7 @@ describe('SessionService', () => {
   });
 
   it('archives a session', async () => {
-    mockPrisma.knowledgeSession.findUnique.mockResolvedValue({ id: 's1', archivedAt: null });
+    mockPrisma.knowledgeSession.findFirst.mockResolvedValue({ id: 's1', archivedAt: null });
     mockPrisma.knowledgeSession.update.mockResolvedValue({ id: 's1', status: 'ARCHIVED' });
     const result = await service.archive('s1');
     expect(result.status).toBe('ARCHIVED');

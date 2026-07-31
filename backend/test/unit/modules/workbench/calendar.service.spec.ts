@@ -1,5 +1,26 @@
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { CalendarService } from '../../../../src/modules/workbench/calendar/application/calendar.service';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  projects: jest.fn().mockReturnValue({}),
+  tasks: jest.fn().mockReturnValue({}),
+  meetings: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 describe('CalendarService', () => {
   it('aggregates events, meetings and task due dates with traceable sources', async () => {
@@ -56,7 +77,7 @@ describe('CalendarService', () => {
       },
       $transaction: jest.fn(async (queries: Array<Promise<unknown>>) => Promise.all(queries)),
     } as unknown as PlatformPrismaService;
-    const service = new CalendarService(prisma);
+    const service = new CalendarService(prisma, mockDataScope, mockRequestContext);
 
     const entries = await service.listEntries({
       from: '2026-08-01T00:00:00.000Z',
@@ -124,7 +145,7 @@ describe('CalendarService', () => {
       nonProjectRdItem: { findMany: jest.fn() },
       $transaction: transaction,
     } as unknown as PlatformPrismaService;
-    const service = new CalendarService(prisma);
+    const service = new CalendarService(prisma, mockDataScope, mockRequestContext);
 
     await expect(service.listEntries({ from, to })).rejects.toMatchObject({
       code: 'CALENDAR_RANGE_INVALID',

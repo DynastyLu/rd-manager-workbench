@@ -7,10 +7,10 @@ describe('employee query keys', () => {
     const workItems = { ...progress, employeeId: 'employee-1', page: 2 }
 
     expect(employeeQueryKeys.all).toEqual(['employees'])
-    expect(employeeQueryKeys.list({ department: '研发部' })).toEqual([
+    expect(employeeQueryKeys.list({ department: '研发部', archiveState: 'ARCHIVED' })).toEqual([
       'employees',
       'list',
-      { department: '研发部' },
+      { department: '研发部', archiveState: 'ARCHIVED' },
     ])
     expect(employeeQueryKeys.detail('employee-1')).toEqual(['employees', 'detail', 'employee-1'])
     expect(employeeQueryKeys.teamProgress(progress)).toEqual([

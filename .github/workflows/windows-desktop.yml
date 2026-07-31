@@ -1,0 +1,47 @@
+name: Windows desktop acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "desktop/**"
+      - ".github/workflows/windows-desktop.yml"
+
+jobs:
+  build-and-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            backend/pnpm-lock.yaml
+            frontend/pnpm-lock.yaml
+            desktop/pnpm-lock.yaml
+      - name: Install backend
+        run: pnpm --dir backend install --frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --dir backend prisma:generate
+      - name: Install frontend
+        run: pnpm --dir frontend install --frozen-lockfile
+      - name: Install desktop
+        run: pnpm --dir desktop install --frozen-lockfile
+      - name: Windows startup smoke
+        run: pnpm --dir desktop smoke:windows
+      - name: Build Windows installer with native dependencies
+        run: pnpm --dir desktop dist:windows
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: rd-manager-workbench-windows
+          path: desktop/release/*.exe
+          if-no-files-found: error

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { SearchAdapter, SearchCandidate, SearchType } from '../domain/search.types';
 import { buildSearchSnippet } from '../domain/search-ranking';
 
@@ -12,7 +14,15 @@ interface RecordIdRow {
 export class BaseSearchAdapter implements SearchAdapter {
   readonly types = ['BASE_RECORD'] as const satisfies readonly SearchType[];
 
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
+  ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   async search(query: string, types: readonly SearchType[]): Promise<SearchCandidate[]> {
     if (!types.includes('BASE_RECORD')) return [];
@@ -30,8 +40,13 @@ export class BaseSearchAdapter implements SearchAdapter {
 
     const records = await this.prisma.dataRecord.findMany({
       where: {
-        id: { in: matchingIds.map(({ id }) => id) },
-        table: { source: 'CUSTOM', archivedAt: null },
+        AND: [
+          {
+            id: { in: matchingIds.map(({ id }) => id) },
+            table: { source: 'CUSTOM', archivedAt: null },
+          },
+          this.dataScope.baseRecords(this.principal()),
+        ],
       },
       include: {
         table: {

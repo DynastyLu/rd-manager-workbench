@@ -8,6 +8,40 @@ import {
   EmployeeWorkStatus,
 } from '@prisma/client';
 import { EmployeeProgressQueryService } from '../../../../src/modules/workbench/employees/application/employee-progress-query.service';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  projects: () => ({}),
+  tasks: () => ({}),
+  employees: () => ({}),
+  employeeWork: () => ({}),
+  employeeWeekPlanItems: () => ({}),
+  meetings: () => ({}),
+  documents: () => ({}),
+  knowledge: () => ({}),
+  decisions: () => ({}),
+  issues: () => ({}),
+  risks: () => ({}),
+  partners: () => ({}),
+  communications: () => ({}),
+  baseTables: () => ({}),
+  baseRecords: () => ({}),
+  activities: () => ({}),
+} as unknown as DataScopeService;
 
 function sqlText(query: { strings?: readonly string[] }): string {
   return query.strings?.join(' ') ?? '';
@@ -254,7 +288,9 @@ describe('EmployeeProgressQueryService', () => {
     new (EmployeeProgressQueryService as unknown as new (
       prisma: unknown,
       storage: unknown,
-    ) => EmployeeProgressQueryService)(prisma, storage);
+      dataScope: unknown,
+      requestContext: unknown,
+    ) => EmployeeProgressQueryService)(prisma, storage, mockDataScope, mockRequestContext);
 
   it('returns filtered team metrics, employee rows, project contribution, completeness, and drill-through links', async () => {
     const service = createService();
@@ -991,6 +1027,16 @@ describe('EmployeeProgressQueryService', () => {
 
     const result = await service.listImports({ page: 1, pageSize: 20 });
 
+    expect(prisma.employeeWorkImportBatch.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [
+          { periodStartAt: 'desc' },
+          { createdAt: 'desc' },
+          { version: 'desc' },
+          { id: 'desc' },
+        ],
+      }),
+    );
     for (const [index, batch] of result.data.entries()) {
       expect(batch).toMatchObject({
         periodStart: '2026-07-20',

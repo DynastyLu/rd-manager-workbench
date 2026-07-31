@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const mockRequest = vi.fn();
+const mockApiUrl = vi.fn((path: string) => `http://runtime.test/api${path}`);
 vi.mock('@/lib/http', () => ({ request: mockRequest }));
+vi.mock('@/lib/api-url', () => ({ apiUrl: mockApiUrl }));
 
 describe('knowledge API', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -39,6 +41,19 @@ describe('knowledge API', () => {
       method: 'POST',
       body: expect.stringContaining('hello'),
     }));
+  });
+
+  it('uses the shared runtime resolver for streaming chat', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null));
+    const { chatStream } = await import('../api');
+
+    await chatStream('session/1', 'hello');
+
+    expect(mockApiUrl).toHaveBeenCalledWith('/knowledge/chat/session%2F1/messages');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://runtime.test/api/knowledge/chat/session%2F1/messages',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('getIndexStatus calls the reindex endpoint', async () => {

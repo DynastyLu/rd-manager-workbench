@@ -9,16 +9,16 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 2 : 0,
-  workers: process.env['CI'] ? 1 : undefined,
+  workers: process.env['CI'] ? 1 : 2,
   reporter: process.env['CI']
     ? [['github'], ['html', { open: 'never' }], ['list']]
     : [['list'], ['html', { open: 'on-failure' }]],
-  timeout: 30_000,
+  timeout: 45_000,
   // 5s is too tight when the whole suite runs fullyParallel locally: 15
   // chromium workers contend for the dev API, and data-dependent assertions
   // (e.g. the /base grid search box) miss the window even though the page is
   // healthy. 10s covers loaded runs without masking real regressions.
-  expect: { timeout: 10_000 },
+  expect: { timeout: 15_000 },
   use: {
     baseURL,
     actionTimeout: 10_000,

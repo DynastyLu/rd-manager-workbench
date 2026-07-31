@@ -459,7 +459,10 @@ describe('employee task-code migration behavior', () => {
       mkdirSync(temporaryMigrationsDir, { recursive: true });
       cpSync(resolve(sourcePrismaDir, 'schema.prisma'), schemaPath);
       for (const migrationName of readdirSync(resolve(sourcePrismaDir, 'migrations'))) {
-        if (!TASK_ONE_MIGRATIONS.includes(migrationName)) {
+        if (
+          migrationName === 'migration_lock.toml' ||
+          migrationName.localeCompare(TASK_ONE_MIGRATIONS[0]) < 0
+        ) {
           cpSync(
             resolve(sourcePrismaDir, 'migrations', migrationName),
             resolve(temporaryMigrationsDir, migrationName),
@@ -480,12 +483,17 @@ describe('employee task-code migration behavior', () => {
           ('legacy-b', 'legacy task b', CURRENT_TIMESTAMP)
       `);
 
-      for (const migrationName of TASK_ONE_MIGRATIONS) {
-        cpSync(
-          resolve(sourcePrismaDir, 'migrations', migrationName),
-          resolve(temporaryMigrationsDir, migrationName),
-          { recursive: true },
-        );
+      for (const migrationName of readdirSync(resolve(sourcePrismaDir, 'migrations'))) {
+        if (
+          migrationName !== 'migration_lock.toml' &&
+          migrationName.localeCompare(TASK_ONE_MIGRATIONS[0]) >= 0
+        ) {
+          cpSync(
+            resolve(sourcePrismaDir, 'migrations', migrationName),
+            resolve(temporaryMigrationsDir, migrationName),
+            { recursive: true },
+          );
+        }
       }
       deploy(schemaPath, url);
       expectNoDrift(schemaPath, url);

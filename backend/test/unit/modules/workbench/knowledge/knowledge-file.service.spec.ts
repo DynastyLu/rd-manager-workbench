@@ -5,6 +5,13 @@ import { KnowledgeFileService } from '../../../../../src/modules/workbench/knowl
 import { OfficePreviewService } from '../../../../../src/modules/workbench/knowledge/application/office-preview.service';
 
 describe('KnowledgeFileService', () => {
+  const requestContext = {
+    requirePrincipal: jest.fn().mockReturnValue({ userId: 'user-1', roleCodes: [] }),
+  };
+  const dataScope = {
+    documents: jest.fn().mockReturnValue({}),
+  };
+
   it('reads and verifies an uploaded original file', async () => {
     const content = Buffer.from('original bytes');
     const sha256 = createHash('sha256').update(content).digest('hex');
@@ -32,7 +39,7 @@ describe('KnowledgeFileService', () => {
       read: jest.fn().mockResolvedValue({ content, mimeType: 'application/pdf' }),
     } as unknown as StoragePort;
     const officePreview = {} as OfficePreviewService;
-    const service = new KnowledgeFileService(prisma, storage, officePreview);
+    const service = new KnowledgeFileService(prisma, storage, officePreview, requestContext as never, dataScope as never);
 
     await expect(service.getOriginal('document-1')).resolves.toMatchObject({
       content,
@@ -69,7 +76,7 @@ describe('KnowledgeFileService', () => {
     const officePreview = {
       convertToPdf: jest.fn(),
     } as unknown as OfficePreviewService;
-    const service = new KnowledgeFileService(prisma, storage, officePreview);
+    const service = new KnowledgeFileService(prisma, storage, officePreview, requestContext as never, dataScope as never);
 
     const preview = await service.getPreview('document-1');
 

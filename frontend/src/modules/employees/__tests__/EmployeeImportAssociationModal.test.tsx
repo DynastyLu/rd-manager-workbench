@@ -106,6 +106,9 @@ describe('EmployeeImportAssociationModal', () => {
       />
     )
 
+    expect(document.body.querySelector<HTMLElement>('.semi-table-body table')).toHaveStyle({
+      width: '1560px',
+    })
     expect(screen.getByText('完成权限平台联调')).toBeInTheDocument()
     expect(screen.getByText('启动材料平台压测')).toBeInTheDocument()
 

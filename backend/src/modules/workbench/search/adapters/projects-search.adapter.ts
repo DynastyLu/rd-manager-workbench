@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import {
   SearchAdapter,
   SearchCandidate,
@@ -14,20 +16,33 @@ const CANDIDATE_LIMIT = 100;
 export class ProjectsSearchAdapter implements SearchAdapter {
   readonly types = ['PROJECT'] as const;
 
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
+  ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   async search(query: string, types: readonly SearchType[]): Promise<SearchCandidate[]> {
     if (!types.includes('PROJECT')) return [];
 
     const where: Prisma.ProjectWhereInput = {
-      archivedAt: null,
-      OR: [
-        { code: { contains: query, mode: 'insensitive' } },
-        { name: { contains: query, mode: 'insensitive' } },
-        { researchDirection: { contains: query, mode: 'insensitive' } },
-        { objective: { contains: query, mode: 'insensitive' } },
-        { expectedOutcome: { contains: query, mode: 'insensitive' } },
-        { leadName: { contains: query, mode: 'insensitive' } },
+      AND: [
+        {
+          archivedAt: null,
+          OR: [
+            { code: { contains: query, mode: 'insensitive' } },
+            { name: { contains: query, mode: 'insensitive' } },
+            { researchDirection: { contains: query, mode: 'insensitive' } },
+            { objective: { contains: query, mode: 'insensitive' } },
+            { expectedOutcome: { contains: query, mode: 'insensitive' } },
+            { leadName: { contains: query, mode: 'insensitive' } },
+          ],
+        },
+        this.dataScope.projects(this.principal()),
       ],
     };
     const projects = await this.prisma.project.findMany({

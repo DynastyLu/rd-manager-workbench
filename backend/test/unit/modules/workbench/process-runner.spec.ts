@@ -71,7 +71,10 @@ describe('ProcessRunner', () => {
     const completed = runner.run({ executable: 'pg_restore', args: [] });
     child.stdout.end();
     child.stderr.end(
-      'failed postgresql://app:secret@127.0.0.1/db?token=abc password=hunter2 ' + 'x'.repeat(200),
+      'failed postgresql://app:secret@127.0.0.1/db?token=abc password=hunter2 '
+      + 'C:\\Users\\tester\\AppData\\Local\\PostgreSQL\\database.dump '
+      + '/Users/tester/Library/Application Support/RD Workbench/database.dump '
+      + 'x'.repeat(200),
     );
     child.emit('close', 1, null);
 
@@ -86,6 +89,7 @@ describe('ProcessRunner', () => {
     expect(error.code).toBe('PROCESS_FAILED');
     expect(error.message).not.toMatch(/secret|hunter2|token=abc/);
     expect(error.stderr).not.toMatch(/secret|hunter2|token=abc/);
+    expect(error.stderr).not.toMatch(/Users[/\\]tester|AppData/);
     expect(Buffer.byteLength(error.stderr)).toBeLessThanOrEqual(96);
   });
 });

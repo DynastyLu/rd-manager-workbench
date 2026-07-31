@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { DataFieldType, DataTableSource, DataViewType, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../iam/application/data-scope.service';
 import { SystemRecordsAdapter } from './adapters/system-records.adapter';
 import { ComputedFieldResolver } from './computed-field-resolver.service';
 import { DATA_TABLE_PRESETS } from './domain/base-presets';
@@ -32,12 +34,18 @@ const DEFAULT_WORKSPACE_ID = 'rd-workbench-default-data-workspace';
 export class BaseService {
   constructor(
     private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
     private readonly systemRecords: SystemRecordsAdapter,
     private readonly computedFields: ComputedFieldResolver,
     private readonly fieldConfig: FieldConfigService,
     private readonly relationSync: RelationSyncService,
     private readonly viewQuery: ViewQueryService,
   ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   async ensureDefaultWorkspace() {
     return this.prisma.$transaction(async (tx) => {
@@ -159,7 +167,12 @@ export class BaseService {
   async listTables(workspaceId: string) {
     await this.assertWorkspace(workspaceId);
     return this.prisma.dataTable.findMany({
-      where: { workspaceId, archivedAt: null },
+      where: {
+        AND: [
+          { workspaceId, archivedAt: null },
+          this.dataScope.baseTables(this.principal()),
+        ],
+      },
       include: this.tableInclude(),
       orderBy: [{ sequence: 'asc' }, { name: 'asc' }],
     });
@@ -167,7 +180,12 @@ export class BaseService {
 
   async getTable(id: string) {
     const table = await this.prisma.dataTable.findFirst({
-      where: { id, archivedAt: null },
+      where: {
+        AND: [
+          { id, archivedAt: null },
+          this.dataScope.baseTables(this.principal()),
+        ],
+      },
       include: this.tableInclude(),
     });
     if (!table) throw new NotFoundException('Data table not found');
@@ -176,11 +194,15 @@ export class BaseService {
 
   async createTable(workspaceId: string, dto: CreateTableDto) {
     await this.assertWorkspace(workspaceId);
+    const principal = this.principal();
     return this.prisma.dataTable.create({
       data: {
         workspaceId,
         ...dto,
         source: DataTableSource.CUSTOM,
+        ownerUserId: principal.userId,
+        createdByUserId: principal.userId,
+        updatedByUserId: principal.userId,
         fields: {
           create: {
             key: 'title',
@@ -522,7 +544,7 @@ export class BaseService {
       return this.systemRecords.list(table.source, normalizedQuery);
     const [records, generatedFields] = await Promise.all([
       this.prisma.dataRecord.findMany({
-        where: { tableId },
+        where: { AND: [{ tableId }, this.dataScope.baseRecords(this.principal())] },
         orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       }),
       this.generatedFields(tableId),
@@ -536,7 +558,14 @@ export class BaseService {
 
   private async listCustomRecordsByIds(tableId: string, ids: string[]) {
     const [records, generatedFields] = await Promise.all([
-      this.prisma.dataRecord.findMany({ where: { tableId, id: { in: ids } } }),
+      this.prisma.dataRecord.findMany({
+        where: {
+          AND: [
+            { tableId, id: { in: ids } },
+            this.dataScope.baseRecords(this.principal()),
+          ],
+        },
+      }),
       this.generatedFields(tableId),
     ]);
     const raw = records.map((record) => this.toCustomRecord(record, generatedFields));
@@ -902,7 +931,14 @@ export class BaseService {
     return workspace;
   }
   private async assertTable(id: string) {
-    const table = await this.prisma.dataTable.findFirst({ where: { id, archivedAt: null } });
+    const table = await this.prisma.dataTable.findFirst({
+      where: {
+        AND: [
+          { id, archivedAt: null },
+          this.dataScope.baseTables(this.principal()),
+        ],
+      },
+    });
     if (!table) throw new NotFoundException('Data table not found');
     return table;
   }
@@ -935,7 +971,7 @@ export class BaseService {
   private workspaceInclude() {
     return {
       tables: {
-        where: { archivedAt: null },
+        where: { AND: [{ archivedAt: null }, this.dataScope.baseTables(this.principal())] },
         include: this.tableInclude(),
         orderBy: [{ sequence: 'asc' as const }, { name: 'asc' as const }],
       },

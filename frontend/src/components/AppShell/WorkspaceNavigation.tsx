@@ -6,13 +6,36 @@ import {
   IconGridStroked,
   IconHomeStroked,
   IconSearchStroked,
+  IconSetting,
   IconUserGroup,
 } from '@douyinfe/semi-icons'
 import { NavLink, useLocation } from 'react-router-dom'
+import { ROUTES } from '@/constants/routes'
+import { useAuthStore } from '@/modules/auth/store'
+import type { CurrentUser } from '@/modules/auth/types'
 import type { NavigationIcon, NavigationItem } from '@/router/routes'
 
 interface WorkspaceNavigationProps {
   items: NavigationItem[]
+}
+
+const ADMIN_PERMISSION_CODES = new Set([
+  'user.read',
+  'user.create',
+  'user.update',
+  'user.disable',
+  'role.read',
+  'role.create',
+  'role.update',
+  'role.assign',
+  'audit.read',
+  'system.configure',
+])
+
+function canAccessAdmin(user: CurrentUser | undefined): boolean {
+  if (!user) return false
+  if (user.roleCodes.includes('SUPER_ADMIN')) return true
+  return user.permissions.some((grant) => ADMIN_PERMISSION_CODES.has(grant.code))
 }
 
 const navigationIcons: Record<NavigationIcon, typeof IconHomeStroked> = {
@@ -24,14 +47,22 @@ const navigationIcons: Record<NavigationIcon, typeof IconHomeStroked> = {
   base: IconGridStroked,
   calendar: IconCalendarStroked,
   search: IconSearchStroked,
+  settings: IconSetting,
 }
 
 function isActivePath(item: NavigationItem, pathname: string) {
-  return pathname === item.path || (item.path !== '/' && pathname.startsWith(`${item.path}/`))
+  if (pathname === item.path) return true
+  if (item.path !== '/' && pathname.startsWith(`${item.path}/`)) return true
+  if (item.key === 'admin' && pathname.startsWith(`${ROUTES.ADMIN}/`)) return true
+  return false
 }
 
 export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
   const { pathname } = useLocation()
+  const user = useAuthStore((state) => state.user)
+  const visibleItems = canAccessAdmin(user)
+    ? [...items, { key: 'admin', title: '系统管理', icon: 'settings' as const, path: ROUTES.ADMIN_USERS }]
+    : items
 
   function renderItem(item: NavigationItem) {
     const active = isActivePath(item, pathname)
@@ -60,7 +91,7 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
         </span>
         <span className="workspace-navigation__brand-name">研发工作空间</span>
       </div>
-      <div className="workspace-navigation__links">{items.map(renderItem)}</div>
+      <div className="workspace-navigation__links">{visibleItems.map(renderItem)}</div>
     </nav>
   )
 }

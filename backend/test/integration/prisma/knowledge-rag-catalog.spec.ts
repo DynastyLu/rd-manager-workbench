@@ -18,11 +18,11 @@ describe('knowledge RAG Prisma catalog', () => {
 
   it('declares DocumentChunk, KnowledgeSession, KnowledgeMessage, and AiUsageLog contracts', () => {
     expect(schema).toMatch(/model DocumentChunk/);
-    expect(schema).toMatch(/embedding\s+Unsupported/);
+    expect(schema).toMatch(/embedding\s+Unsupported\("vector"\)/);
     expect(schema).toMatch(/model KnowledgeSession/);
-    expect(schema).toMatch(/enum KnowledgeSessionStatus/);
+    expect(schema).toMatch(/status\s+String\s+@default\("ACTIVE"\)/);
     expect(schema).toMatch(/model KnowledgeMessage/);
-    expect(schema).toMatch(/enum MessageRole/);
+    expect(schema).toMatch(/role\s+String/);
     expect(schema).toMatch(/model AiUsageLog/);
   });
 
@@ -34,7 +34,7 @@ describe('knowledge RAG Prisma catalog', () => {
     expect(schema).toMatch(/sourceKind\s+KnowledgeSourceKind/);
     expect(schema).toMatch(/previewStatus\s+KnowledgeProcessingStatus/);
     expect(schema).toMatch(/indexStatus\s+KnowledgeProcessingStatus/);
-    expect(schema).toMatch(/embedding\s+Unsupported\("public\.vector\(384\)"\)/);
+    expect(schema).toMatch(/embedding\s+Unsupported\("vector"\)/);
     expect(schema).toMatch(/pageNumber\s+Int\?/);
     expect(schema).toMatch(/sheetName\s+String\?/);
     expect(schema).toMatch(/locationLabel\s+String\?/);

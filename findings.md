@@ -1,5 +1,103 @@
 # 发现与决策
 
+## 2026-07-30 企业级账号、角色与权限决策
+
+- 当前系统没有真实 User、Role、Permission 或 AuthSession 模型，HTTP 请求也没有 Access Token 注入与刷新逻辑；现有员工档案不能直接等同于登录账号。
+- 用户确认账号与员工档案一一绑定，采用账号/工号加密码登录；首次登录必须改密码，忘记密码由管理员重置。
+- 权限采用 RBAC 功能权限与 SELF、INVOLVED、DEPARTMENT、PROJECT、ALL 数据范围结合，而不是只在前端隐藏入口。
+- 超级管理员拥有所有功能和全部数据；普通员工只访问自己创建、负责、参与或被共享的数据；项目经理、部门主管和 HR 通过角色模板与自定义角色扩展。
+- Access Token 采用短时内存存储，Refresh Token 使用 HttpOnly Cookie、哈希保存、单次轮换和重放检测；多请求 401 使用单例刷新与请求排队。
+- 搜索、报表、导出、文件下载、Socket 和 NOVA 检索必须执行与普通业务接口相同的数据权限，避免旁路泄露。
+- 独立“项目进展草稿”入口取消，员工周报汇总建议迁入项目详情“进展”页，由项目负责人或管理员确认发布。
+- 历史数据不能因权限升级丢失；可准确识别的记录绑定对应用户，无法识别的记录归首个超级管理员并标记待分配。
+- 实施必须先交付可独立验证的认证和 IAM 基础，再分批封闭员工/项目、内容/NOVA、报表/治理的数据旁路；不能在所有历史数据归属完成前开放普通用户登录。
+- 项目现有集成测试默认匿名调用大量业务接口，启用全局认证 Guard 时必须提供统一 `authenticatedRequest` 测试助手，并把每条业务测试明确绑定最小角色。
+- 清理认证夹具的顺序必须为：业务测试数据 → `login_audits` → `auth_sessions` → `user_roles` → `role_permissions`（角色仍被引用时）→ `users` → `roles` → `resource_profiles`；`users` 删除前必须将 `projects`/`work_tasks` 等 Restrict 外键（如 `owner_user_id`、`assignee_user_id`）置空，否则触发外键约束失败。
+
+## 2026-08-01 默认超级管理员自动创建
+
+- 用户反馈首次启动时手动创建管理员账号步骤繁琐，改为后端启动时自动创建默认超级管理员。
+- 默认账号 `admin`、工号 `ADMIN`、默认密码 `RdManager2026!`，可通过 `backend/.env` 中的 `DEFAULT_ADMIN_USERNAME` / `DEFAULT_ADMIN_PASSWORD` 覆盖。
+- 生产环境（`NODE_ENV=prod`）schema 校验拒绝使用默认密码，强制部署方显式设置。
+- 默认管理员自动绑定一条 `ResourceProfile`（displayName `系统管理员`），使用 `upsert` 避免重复启动或测试隔离不彻底时违反唯一约束。
+- 默认账号首次登录强制修改密码（`mustChangePassword: true`），原有 `/setup-admin` 页面与 `POST /api/auth/bootstrap`、`GET /api/auth/bootstrap/employees` 端点已移除。
+- 原认证集成测试改为在 `beforeAll` 中删除自动创建的默认管理员并创建隔离测试账号，避免破坏既有断言。
+
+## 2026-07-31 Prisma 目录测试断言同步
+
+- `backend/test/integration/prisma/employee-work-progress-catalog.spec.ts` 原先使用 `toContain('@@index([employeeId, periodStartAt, archivedAt])')` 断言 schema 目录；实际 `EmployeeWeekPlanItem` 的这两组复合索引已显式命名 `map`，导致严格子串匹配失败。修复方式改为允许可选 `map` 的正则匹配，保留对字段顺序和存在性的校验。
+- `backend/test/integration/prisma/knowledge-rag-catalog.spec.ts` 原先期望 `enum KnowledgeSessionStatus`、`enum MessageRole` 和 `embedding Unsupported("public.vector(384)")`；实际 schema 中 `KnowledgeSession.status` 与 `KnowledgeMessage.role` 为 `String`，`DocumentChunk.embedding` 为 `Unsupported("vector")`。测试断言已同步为当前 schema，不改变数据模型。
+- 这两类失败均属于 schema 演进后目录测试断言未同步，不是认证改动引入的回归。
+
+## 2026-07-31 全局认证启用后的集成测试夹具决策
+
+- 启用全局 `AuthenticationGuard` 后，原本匿名调用的 60+ 项业务集成测试全部改用 `authenticatedRequest` 助手，按最小权限原则为每个测试套件分配显式权限码和数据范围；保留 `@Public()` 健康/元数据端点的匿名断言不变。
+- `authenticatedRequest` 返回的 `{ agent, user, employee, role }` 同时提供已登录 supertest agent 和 fixture 实体，便于在 `afterAll` 中精确清理，避免跨测试遗留用户污染后续用例。
+- 所有使用动态 `Date.now()` 前缀的测试套件，其匿名创建/读取断言被替换为同一认证用户的请求；多用户隔离场景通过多次调用 `authenticatedRequest` 并分配不同角色显式表达。
+- 认证相关集成测试（`auth.controller.spec.ts`）自身仍覆盖匿名拒绝、匿名注册初始化、密码错误锁定等路径；业务集成测试不再重复测试认证失败，而是验证已认证主体按权限访问数据边界。
+- `ownership-migration.spec.ts` 对数据库干净程度有较高假设，其他套件遗留的 `TEST-*` 前缀记录会污染迁移扫描结果；已在该测试的 `beforeAll` 中增加 `cleanupOrphanTestRecords()` 兜底清理。
+- `GET /api/workbench/status` 是 Electron 启动预检端点，需在登录前即可访问；已添加 `@Public()` 放行匿名请求，backend E2E 恢复通过。
+
+- 启用全局 `AuthenticationGuard` 后，原本匿名调用的 60+ 项业务集成测试全部改用 `authenticatedRequest` 助手，按最小权限原则为每个测试套件分配显式权限码和数据范围；保留 `@Public()` 健康/元数据端点的匿名断言不变。
+- `authenticatedRequest` 返回的 `{ agent, user, employee, role }` 同时提供已登录 supertest agent 和 fixture 实体，便于在 `afterAll` 中精确清理，避免跨测试遗留用户污染后续用例。
+- 所有使用动态 `Date.now()` 前缀的测试套件，其匿名创建/读取断言被替换为同一认证用户的请求；多用户隔离场景通过多次调用 `authenticatedRequest` 并分配不同角色显式表达。
+- 认证相关集成测试（`auth.controller.spec.ts`）自身仍覆盖匿名拒绝、匿名注册初始化、密码错误锁定等路径；业务集成测试不再重复测试认证失败，而是验证已认证主体按权限访问数据边界。
+
+## 2026-07-30 14 项功能收口决策
+
+- Windows 能力必须在 Windows runner 上重建后端原生依赖并生成 NSIS，不能复用 macOS 的 `node_modules`；仓库已新增 Windows 构建、smoke 和安装包上传工作流。本机只能验证脚本、类型、单测和 macOS 目录包，Windows 实机安装仍由该 runner 给出平台验收结果。
+- 项目多视图只改变展示方式，任务 ID 和更新 API 保持唯一；基线/变更/关键路径采用独立计划模型，不把展示配置写回业务任务。
+- 周报不能直接覆盖项目正式进展：先生成可审阅草稿，确认后才发布并进入活动时间线，避免自动汇总误写项目状态。
+- 活动记录采用 append-only 表和数据库触发器覆盖项目、进展、风险、会议与项目文档；已有服务显式写入的来源不重复触发，避免一项操作出现两条动态。
+- NOVA 与索引修复继续本地优先：未完成索引的文档明确排除并显示数量，用户可重试或受控忽略；不伪造“已检索全部知识”。
+- PostgreSQL 客户端工具按 PATH 和 Windows 默认安装目录探测，备份/恢复前验证主版本；找不到工具时在健康检查和操作入口给出可执行修复信息，不把绝对路径、数据库 URL 或密钥暴露给页面。
+
+## 2026-07-29 功能问题与功能完善拆分（已完成）
+
+- 用户明确要求先把功能做完整，再处理视觉美化；因此本轮把“现有功能会失败/不闭环”和“新增效率能力”分成两个独立文档。
+- 当前工程已经覆盖项目、任务、里程碑、进展、风险/问题/决策、会议、文档/知识、日历提醒、多维表格、搜索、备份审计、员工周报、资源与报表、行业情报和扩展设置。新文档不能把已有入口或基础 CRUD 重新列成“待实现”。
+- 当前最重要的功能可靠性缺口包括：多维表格保存视图存在并发覆盖、Electron 正式包中的 NOVA 流式问答/知识上传/文件夹 SSE 使用错误基址、首次启动缺少 PostgreSQL/迁移自检、文件夹扫描进度不准确、NOVA 历史会话无分页、Windows 备份工具与本地模型仍缺实机验收。
+- 功能增强应围绕用户每天的真实工作流排序：统一收件箱与快速处理、项目计划基线和依赖、员工周报到项目进展的自动汇总、会议行动闭环、跨对象活动时间线、NOVA 从“回答”升级为“可确认的业务操作”、自动日报/周报、规则化提醒和可钻取报表。
+- 多人协同、账号权限、即时聊天、云端同步和移动端继续不进入当前单机版功能优先级；短信和外部集成只作为显式配置的扩展能力。
+- 复核确认“我的工作”已经有收件箱/今日/本周/逾期/稍后/已完成，通知已有稍后提醒，任务已有依赖，会议行动项、员工计划和情报卡已有转任务/风险等能力；新路线不能把这些已有功能重复列为新增。
+- 项目详情的“工作项”当前仍是单一列表，尚未把已有多维表格的看板/日历/甘特能力带入项目工作空间；项目进展已有里程碑和自动百分比，但缺计划基线版本、计划变更记录、关键路径和跨对象统一活动流。
+- 报表后端已经提供组合、任务趋势、风险趋势、资源负荷、情报、汇总和 CSV/XLSX 导出；当前产品缺口是图形化趋势、对比、钻取、保存视图和定时生成，而不是重新实现统计 API。
+- NOVA 已有会话、范围、引用、检索和历史消息，但没有将回答中的建议以“预览后确认”方式写入任务、风险、会议、进展或周报；这是从查询工具升级为工作助手的核心功能差距。
+- 文件夹同步已有真实扫描数量和轮询兜底，但扫描阶段进度条固定为 35%，正式 Electron 环境的 SSE 基址仍为空；因此“实时扫描进度”只能算部分可用。
+- 2026-07-29 20:15 单独复跑多维表格视图保存回归仍失败：第二次应保存 `score desc`，实际被先前 `score asc` 覆盖（1 failed / 17 skipped，定位到 `ViewSettings.test.tsx:706`）。该问题是稳定复现的真实数据一致性缺陷，不是测试噪音。
+
+## 2026-07-29 全项目剩余问题审计（进行中）
+
+- 生产构建中的 `config.js` 已提供 `apiBaseUrl`，但知识库上传、NOVA 流式问答和文件夹 SSE 仍使用 `import.meta.env.DEV ? 4311 : ''`。Electron 通过 `file://` 加载前端时会请求 `file:///knowledge/...`，因此这三条链路在开发浏览器可用、正式桌面包不可用或只能等待轮询降级。
+- Electron 安装包启动时只拉起 Nest 并等待健康接口，不负责检测/安装 PostgreSQL、创建角色/数据库、执行 Prisma migration 或提供首次启动修复向导；数据库未预装时仍创建窗口，用户只能看到二次“无法读取”错误。
+- `OfficePreviewService` 只通过 Unix `which` 和 macOS/Linux 路径寻找 LibreOffice，没有 Windows 默认安装路径与 `where.exe` 探测；同时转换异常拼接原始 `error.message`，可能把本机路径返回给页面。
+- Windows 打包仅声明 NSIS，没有 Windows 构建/安装/启动自动化验收；`extraResources` 直接复制构建机的 `backend/node_modules`，包含 Prisma、Sharp、Canvas、ONNX 等平台原生依赖，必须在 Windows runner 产包并验证，不能把 macOS 产物视为 Windows 可用。
+- 旧 `AutomationDataPage`、`MeetingsAndMaterialsPage` 和 `PlannedModuleState` 仍在源码和测试中；主导航已不直接引用，旧知识库/自动化路由会重定向，但未知 `/library/governance/:kind` 仍展示“规划中”。这是残留信息架构债务，不是当前主导航阻塞。
+- NOVA 会话侧栏会一次性渲染所有历史会话，没有分页或虚拟化；会话持续累积后将违反大列表性能规则。当前“管理全部对话”也没有替代侧栏自身的增量加载。
+- 图片预览与多维表格画册封面未声明固定 `width/height` 或 `aspect-ratio` 属性，存在内容载入时布局跳动风险；画册已有懒加载，知识文件图片没有懒加载。
+- 通知和知识 WebSocket 均配置为 `cors.origin: true`，且没有连接鉴权；任意网页来源都可尝试连接本机 `4311` 并接收广播事件。外部扩展 WebSocket 已有本地来源白名单，可复用同一策略收紧。
+- 本地文件夹扫描的“已扫描 N 个文件”来自真实进度，但扫描阶段进度条固定写死为 35%；生产桌面包的 SSE 地址同时存在 `file://` 问题，因此正式环境通常只能依赖 800ms 轮询降级。
+- 数据备份/恢复直接调用 PATH 中的 `pg_dump`/`pg_restore`，但 Electron 安装包没有探测或捆绑 PostgreSQL 客户端工具；Windows 机器即使数据库可用，也可能在手动备份或恢复预检时失败。
+- Web 版本更新提示仅轮询相对 `version.json`；Electron `file://` 下没有桌面自动更新、安装包签名、下载校验或回滚链路，正式分发后无法可靠升级。
+- Semi Design 没有在根节点配置中文 locale，真实页面分页仍显示 `Previous`、`Next`、`Page 1`；同时 `index.html` 仍声明 `lang="en"`，与中文产品不一致。
+- 前端全量测试暴露多处 `rangeSeparatorNode` 被透传到 DOM、异步更新未包在 `act(...)`、jsdom 导航未实现等警告；这些不一定是生产故障，但会掩盖真正回归并降低测试可信度。
+- `KnowledgeHomePage`、`EmployeesPage`、`EmployeeDetailPage` 分别约 777/900/882 行，页面级请求、状态、弹窗和布局高度耦合；继续迭代会扩大回归面，应按数据查询、工作区布局和业务弹层拆分。
+- 统计报表已有日期筛选、五类真实数据表和 CSV/XLSX 导出，不属于未实现；后续体验缺口主要是趋势图、项目/员工钻取、同比环比和保存报表视图。
+- 主路由仍将旧“知识库”标记为 `PLANNED` 后重定向到已完成的“文档与知识库”，自动化路由也标记规划中后重定向搜索；这会让代码中的完成状态与用户看到的产品能力语义不一致。
+- 当前生产构建最大的 JavaScript 块约为 Semi `es` 748 KiB、入口 584 KiB、日历 468 KiB；虽然页面路由已懒加载，组件库和日历仍应继续按需拆分，避免 Electron 首屏解析和低配 Windows 机器卡顿。
+- 当前仓库没有可交付的 `desktop/release` 产物，也没有 Electron launch smoke；桌面层只有 52 个工具/IPC/provider 单元测试，不能替代安装、首次启动、迁移、关闭重启和升级验收。
+- 前端全量门禁当前不是绿色：121 个测试文件中 3 个失败，680 个用例中 9 个失败。单线程复跑后关联字段测试恢复通过，但 `ViewSettings` 仍有 7 个失败，覆盖保存失败回滚、保存队列串行化、旧响应不得覆盖新草稿、删除前取消待处理 PATCH 和保存后刷新；其中“手动保存后继续编辑”已单用例稳定复现旧升序覆盖新降序，关系到多维表格视图配置的数据一致性，不能按测试抖动忽略。
+- NOVA 输入框的 `outline: none` 是确定性回归，直接触发项目自有 UI 一致性契约失败；当前外层只有弱灰色 `focus-within` 边框，键盘焦点辨识度不足。
+
+## 2026-07-29 稳定性、回收站与 Windows 模型
+
+- PostgreSQL 技术角色连接上限为 10，当前 Prisma URL 没有 `connection_limit`，单个后端运行一段时间后已占用 8 个空闲连接并发生角色连接耗尽。
+- 普通提醒与员工周计划提醒同时启动、每 30 秒执行、共享阻塞式 advisory transaction lock，且没有进程内防重入；默认 5 秒交互事务曾在 14.4 秒后过期。
+- 文档服务只有 `trash/restore`，没有永久删除或清空接口；文件资产服务虽有永久删除，但知识库主页面使用的是 ContentDocument 契约。
+- 上传知识文档由 ContentDocument、FileAsset/FileVersion、DocumentChunk、DocumentVersion 和存储原件/预览组成；本地扫描文件另有 FolderFile 映射，永久删除不能触碰用户磁盘原件。
+- 当前 Intel Mac 的 `onnxruntime-node@1.24.3` 缺少 `darwin/x64` 绑定；依赖包包含 Windows x64/arm64 文件。Windows 是必须支持的平台，设计采用原生优先、WASM 兜底。
+- 模型状态卡放在“本地文件夹”页语义错误；本地文件夹应只展示扫描同步，模型生命周期应归入检索设置。
+
 ## 2026-07-28 知识库原格式阅读问题
 
 - 当前 `KnowledgeFileViewer` 将 PDF、DOC/DOCX、XLS/XLSX 等全部请求为 PDF 后放入同一个 iframe，文件类型语义丢失。
@@ -227,3 +325,13 @@
 - 旧路由重定向不能只传 pathname，必须合并并保留原查询参数；否则收藏目录、搜索词和深链会在 `/knowledge` 到 `/docs` 的过渡中丢失。
 - FullCalendar `datesSet` 可在 React 渲染阶段触发，不能在其中同步 navigate；当前使用可取消的延后 URL 同步，卸载时清理，避免切换页面后旧日历回调篡改新路由。
 - 浏览器验收服务必须使用产品约定的 `4312` 端口；临时 `4174` 会被后端精确 CORS 白名单拒绝，导致页面表面上看起来“没有数据”。
+
+## 稳定性、回收站与 Windows 本地语义模型（2026-07-29）
+
+- 仅在数据库事务内删除文档行不足以保证附件一致性；永久删除需要“受控暂存日志 + 原子移动 + 事务提交 + 提交后清理”，并在启动和后续操作前恢复未完成日志。多个后端进程还必须用 PostgreSQL advisory transaction lock 串行化恢复和删除。
+- 本地文件夹同步得到的 `sourcePath` 属于用户原文件，不是应用托管附件；永久删除知识库记录时只能删除应用 storage key，绝不能删除本地源文件。
+- 周计划提醒不能由多个定时器各自持有阻塞锁；单一维护协调器使用非阻塞 try-lock，按“同步提醒定义→扫描到期提醒”的固定顺序运行，避免连接池等待和同周期重入。
+- `DATABASE_URL` 应规范化为唯一的 `connection_limit=5`，既保留密码和其他查询参数，又避免重复参数在不同平台产生不确定行为。
+- Transformers/ONNX 模型下载缓存不能依赖进程临时内存。Windows 使用 `%LOCALAPPDATA%/RD Manager Workbench/models/embeddings`，其他平台使用对应用户缓存目录，并允许 `LOCAL_AI_MODEL_CACHE` 显式覆盖；原生 ONNX 加载失败后降级 WASM，失败时仍保留全文检索。
+- 全量重索引创建必须在 PostgreSQL advisory transaction lock 内复验活动任务；否则双击或多窗口请求会创建重复索引作业。锁键通过 Prisma 参数插值传入，避免 PostgreSQL 不接受带下划线数字字面量的问题。
+- 本地模型的持久化状态需区分 `UNKNOWN`、`PERSISTED` 和 `DEGRADED`。缓存写入失败可让本次内存推理继续，但页面必须明确提示“本次可用、重启后可能重新下载”，且接口不得返回原始异常、绝对路径或索引任务错误数组。

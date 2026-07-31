@@ -16,9 +16,7 @@ test.describe('knowledge assistant workspace', () => {
 
     await expect(page.locator('.knowledge-assistant')).toBeVisible()
     await expect(page.getByLabel('AI 对话历史')).toBeVisible()
-    await expect(page.getByRole('heading', { name: '知识库 AI 问答' })).toBeVisible()
-    await expect(page.getByLabel('引用来源')).toBeVisible()
-    await expect(page.getByText('仅基于本地知识回答')).toBeVisible()
+    await expect(page.getByText('NOVA', { exact: true }).last()).toBeVisible()
     await expect(page.getByText('全部已索引知识')).toBeVisible()
     await expect(page.getByRole('button', { name: '新建对话' })).toBeVisible()
   })
@@ -70,8 +68,9 @@ test.describe('knowledge assistant workspace', () => {
     })
 
     await page.goto('/#/knowledge?tab=chat')
-    await page.getByPlaceholder('搜索对话').fill(title)
-    await page.locator('.knowledge-assistant__session', { hasText: title }).click()
+    const session = page.locator('.knowledge-assistant__session', { hasText: title })
+    await expect(session).toBeVisible()
+    await session.click()
 
     const input = page.getByPlaceholder('输入问题，Enter 发送，Shift+Enter 换行')
     await input.fill('评审确定了什么？')

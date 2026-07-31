@@ -102,7 +102,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:unit -- --runInBand test/unit/infrastructure/config/env.schema.spec.ts
+pnpm test:unit --runInBand test/unit/infrastructure/config/env.schema.spec.ts
 ```
 
 Expected: FAIL because the authentication environment keys do not exist.
@@ -137,7 +137,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:unit -- --runInBand test/unit/infrastructure/config/env.schema.spec.ts
+pnpm test:unit --runInBand test/unit/infrastructure/config/env.schema.spec.ts
 pnpm build
 ```
 
@@ -192,7 +192,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand test/integration/prisma/enterprise-iam-catalog.spec.ts
+pnpm test:integration --runInBand test/integration/prisma/enterprise-iam-catalog.spec.ts
 ```
 
 Expected: FAIL because the IAM tables do not exist.
@@ -237,7 +237,7 @@ Run:
 cd backend
 pnpm prisma:generate
 pnpm prisma:migrate:deploy
-pnpm test:integration -- --runInBand test/integration/prisma/enterprise-iam-catalog.spec.ts
+pnpm test:integration --runInBand test/integration/prisma/enterprise-iam-catalog.spec.ts
 ```
 
 Expected: Prisma generation succeeds, migration deploys once, and the catalog test PASSes.
@@ -285,7 +285,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:unit -- --runInBand \
+pnpm test:unit --runInBand \
   test/unit/modules/iam/password.service.spec.ts \
   test/unit/modules/iam/token.service.spec.ts
 ```
@@ -379,7 +379,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand test/integration/modules/iam/auth.controller.spec.ts
+pnpm test:integration --runInBand test/integration/modules/iam/auth.controller.spec.ts
 ```
 
 Expected: FAIL with missing `/api/auth/*` routes.
@@ -422,7 +422,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand test/integration/modules/iam/auth.controller.spec.ts
+pnpm test:integration --runInBand test/integration/modules/iam/auth.controller.spec.ts
 pnpm build
 ```
 
@@ -463,7 +463,7 @@ it('stores a verified principal in request context', async () => {
 });
 ```
 
-Also assert missing, expired and revoked credentials produce stable `AUTH_REQUIRED` or `AUTH_SESSION_REVOKED` codes.
+Also assert missing, expired and revoked credentials produce stable `AUTH_REQUIRED` or `AUTH_SESSION_REVOKED` codes. Assert that `/api/auth/csrf` is public, and that a principal whose `mustChangePassword` claim is true cannot enter protected business routes.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -471,7 +471,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:unit -- --runInBand test/unit/modules/iam/authentication.guard.spec.ts
+pnpm test:unit --runInBand test/unit/modules/iam/authentication.guard.spec.ts
 ```
 
 Expected: FAIL because the global guard and principal do not exist.
@@ -499,7 +499,7 @@ requirePrincipal(): AuthenticatedPrincipal {
 }
 ```
 
-Register `AuthenticationGuard` with `APP_GUARD`. Mark only auth bootstrap/login/refresh/logout and health endpoints with `@Public()`.
+Register `AuthenticationGuard` with `APP_GUARD`. Mark only auth bootstrap/login/refresh/logout/csrf and health endpoints with `@Public()`. Treat `mustChangePassword` as a hard authorization gate: such a principal may access only `/api/auth/me`, `/api/auth/change-password`, and public logout until the password has been changed. Task 4 only carries this verified claim; Task 5 owns enforcement.
 
 - [ ] **Step 4: Add authenticated integration request helper**
 
@@ -521,8 +521,8 @@ Run:
 
 ```bash
 cd backend
-pnpm test:unit -- --runInBand test/unit/modules/iam/authentication.guard.spec.ts
-pnpm test:integration -- --runInBand test/integration/modules/workbench/projects.controller.spec.ts
+pnpm test:unit --runInBand test/unit/modules/iam/authentication.guard.spec.ts
+pnpm test:integration --runInBand test/integration/modules/workbench/projects.controller.spec.ts
 ```
 
 Expected: both suites PASS.
@@ -572,8 +572,8 @@ Run:
 
 ```bash
 cd backend
-pnpm test:unit -- --runInBand test/unit/modules/iam/authorization.service.spec.ts
-pnpm test:integration -- --runInBand test/integration/modules/iam/roles.controller.spec.ts
+pnpm test:unit --runInBand test/unit/modules/iam/authorization.service.spec.ts
+pnpm test:integration --runInBand test/integration/modules/iam/roles.controller.spec.ts
 ```
 
 Expected: FAIL because role APIs and guards do not exist.
@@ -651,6 +651,10 @@ git commit -m "feat: add role and permission authorization"
 
 Cover create-and-bind, duplicate employee binding, role assignment, reset password, disable, enable, force logout, pagination and audit:
 
+Creation and updates must also reject cross-column identifier ambiguity: a
+normalized username cannot equal another user's employee number, and a
+normalized employee number cannot equal another user's username.
+
 ```ts
 await admin.post('/api/admin/users').send({
   resourceProfileId: employee.id,
@@ -670,7 +674,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand \
+pnpm test:integration --runInBand \
   test/integration/modules/iam/users.controller.spec.ts \
   test/integration/modules/iam/security-audits.controller.spec.ts
 ```
@@ -696,6 +700,10 @@ GET    /api/admin/security-audits
 ```
 
 Permanent account deletion is allowed only after disabling the account, revoking sessions and confirming no unresolved ownership references. Employee history remains intact.
+
+Every user status, password, identifier or role mutation must acquire the same
+per-user PostgreSQL advisory transaction lock used by `AuthService` login and
+password change, then re-read the user inside that transaction before writing.
 
 - [ ] **Step 4: Run tests**
 
@@ -1017,8 +1025,8 @@ Run:
 
 ```bash
 cd backend
-pnpm test:unit -- --runInBand test/unit/modules/iam/data-scope.service.spec.ts
-pnpm test:integration -- --runInBand test/integration/prisma/business-ownership-catalog.spec.ts
+pnpm test:unit --runInBand test/unit/modules/iam/data-scope.service.spec.ts
+pnpm test:integration --runInBand test/integration/prisma/business-ownership-catalog.spec.ts
 ```
 
 Expected: FAIL because ownership schema and builders do not exist.
@@ -1059,8 +1067,8 @@ Run:
 cd backend
 pnpm prisma:generate
 pnpm prisma:migrate:deploy
-pnpm test:unit -- --runInBand test/unit/modules/iam/data-scope.service.spec.ts
-pnpm test:integration -- --runInBand test/integration/prisma/business-ownership-catalog.spec.ts
+pnpm test:unit --runInBand test/unit/modules/iam/data-scope.service.spec.ts
+pnpm test:integration --runInBand test/integration/prisma/business-ownership-catalog.spec.ts
 ```
 
 Expected: migration deploys and both suites PASS.
@@ -1113,7 +1121,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand \
+pnpm test:integration --runInBand \
   test/integration/modules/workbench/authorization-core.spec.ts
 ```
 
@@ -1136,7 +1144,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand \
+pnpm test:integration --runInBand \
   test/integration/modules/workbench/authorization-core.spec.ts \
   test/integration/modules/workbench/employees.controller.spec.ts \
   test/integration/modules/workbench/employee-progress.controller.spec.ts \
@@ -1190,7 +1198,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand \
+pnpm test:integration --runInBand \
   test/integration/modules/workbench/authorization-content.spec.ts \
   test/integration/modules/workbench/knowledge-authorization.spec.ts
 ```
@@ -1212,7 +1220,7 @@ Run the Step 2 command, then:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand \
+pnpm test:integration --runInBand \
   test/integration/modules/workbench/content.controller.spec.ts \
   test/integration/modules/workbench/knowledge.controller.spec.ts \
   test/integration/modules/workbench/base.controller.spec.ts \
@@ -1260,7 +1268,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand \
+pnpm test:integration --runInBand \
   test/integration/modules/workbench/authorization-administration.spec.ts
 ```
 
@@ -1320,7 +1328,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:unit -- --runInBand test/unit/modules/iam/connection-ticket.service.spec.ts
+pnpm test:unit --runInBand test/unit/modules/iam/connection-ticket.service.spec.ts
 cd ../frontend
 pnpm test --run src/modules/auth/__tests__/permission-sync.test.tsx
 ```
@@ -1380,7 +1388,7 @@ Run:
 
 ```bash
 cd backend
-pnpm test:integration -- --runInBand test/integration/modules/iam/ownership-migration.spec.ts
+pnpm test:integration --runInBand test/integration/modules/iam/ownership-migration.spec.ts
 cd ../frontend
 pnpm test --run src/modules/admin/__tests__/OwnershipMigrationPage.test.tsx
 ```
@@ -1455,7 +1463,7 @@ pnpm test --run \
   src/pages/__tests__/EmployeesPage.test.tsx \
   src/pages/__tests__/ProjectWorkspacePage.test.tsx
 cd ../backend
-pnpm test:integration -- --runInBand \
+pnpm test:integration --runInBand \
   test/integration/modules/workbench/project-progress-authorization.spec.ts
 ```
 
@@ -1526,9 +1534,9 @@ Run:
 cd backend
 pnpm lint
 pnpm build
-pnpm test:unit -- --runInBand
-pnpm test:integration -- --runInBand
-pnpm test:e2e -- --runInBand
+pnpm test:unit --runInBand
+pnpm test:integration --runInBand
+pnpm test:e2e --runInBand
 pnpm verify:migrations:clean
 
 cd ../frontend

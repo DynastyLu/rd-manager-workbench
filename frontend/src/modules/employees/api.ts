@@ -1,5 +1,6 @@
 import { download, request } from '@/lib/http'
 import type {
+  AdoptProjectProgressDraftInput,
   CreateEmployeeInput,
   Employee,
   EmployeeFilters,
@@ -20,6 +21,8 @@ import type {
   ListEmployeeWorkItemsResult,
   PageResult,
   ProgressFilters,
+  ProjectProgressDraft,
+  ProjectProgressDraftStatus,
   ProjectTeamProgress,
   ResolveEmployeeImportInput,
   TeamProgress,
@@ -83,6 +86,14 @@ export function updateEmployee(employeeId: string, input: UpdateEmployeeInput): 
 
 export function archiveEmployee(employeeId: string): Promise<void> {
   return request(employeePath(employeeId), { method: 'DELETE' })
+}
+
+export function restoreEmployee(employeeId: string): Promise<Employee> {
+  return request(`${employeePath(employeeId)}/restore`, { method: 'POST' })
+}
+
+export function permanentlyDeleteEmployee(employeeId: string): Promise<void> {
+  return request(`${employeePath(employeeId)}/permanent`, { method: 'DELETE' })
 }
 
 export function getTeamProgress(filters: ProgressFilters): Promise<TeamProgress> {
@@ -254,4 +265,41 @@ export function exportEmployeeWorkItems(
   format: EmployeeWorkExportFormat = 'xlsx'
 ) {
   return download(`/employee-work-items/export${queryString({ ...filters, format })}`)
+}
+
+export function listProjectProgressDrafts(filters: {
+  projectId?: string
+  sourceBatchId?: string
+  status?: ProjectProgressDraftStatus
+} = {}): Promise<ProjectProgressDraft[]> {
+  return request(`/project-progress-drafts${queryString(filters)}`)
+}
+
+export function generateProjectProgressDrafts(
+  sourceBatchId: string
+): Promise<Array<{ draft: ProjectProgressDraft; alreadyExists: boolean }>> {
+  return request(`${importPath(sourceBatchId)}/project-progress-drafts/preview`, {
+    method: 'POST',
+  })
+}
+
+export function adoptProjectProgressDraft(
+  draftId: string,
+  input: AdoptProjectProgressDraftInput
+): Promise<{
+  draft: ProjectProgressDraft
+  report: { id: string }
+  alreadyAdopted: boolean
+}> {
+  return request(`${resource('/project-progress-drafts', draftId)}/adopt`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function ignoreProjectProgressDraft(draftId: string): Promise<ProjectProgressDraft> {
+  return request(`${resource('/project-progress-drafts', draftId)}/ignore`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
 }

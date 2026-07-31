@@ -10,12 +10,15 @@ import {
   EmployeeWorkStatus,
   Prisma,
 } from '@prisma/client';
+import { DataScopeService } from '../../../../modules/iam/application/data-scope.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { StoragePort } from '../../../../infrastructure/storage/storage.port';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { isEmployeeImportBatchExpired } from './employee-import-lifecycle';
 import type { EmployeeProgressMetrics } from './employee-progress-snapshot.service';
+import type { AuthenticatedPrincipal } from '../../../../modules/iam/domain/principal';
 
 const DAY_MS = 86_400_000;
 const DEFAULT_PAGE_SIZE = 20;
@@ -227,7 +230,7 @@ interface PeriodBounds {
   end: string;
 }
 
-interface ProgressMetrics {
+export interface ProgressMetrics {
   workItemCount: number;
   completedCount: number;
   completionRate: number | null;
@@ -285,12 +288,19 @@ export class EmployeeProgressQueryService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly storage: StoragePort,
+    private readonly dataScope: DataScopeService,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   async team(query: EmployeeProgressQuery) {
+    const principal = this.requestContext.requirePrincipal();
     return this.prisma.$transaction(async (tx) => {
       const period = this.periodBounds(query.periodType, query.periodStart);
-      const sqlWhere = this.dashboardSqlWhere(query, period);
+      const [allowedEmployeeIds, allowedProjectIds] = await Promise.all([
+        this.allowedEmployeeIds(tx, principal),
+        this.allowedProjectIds(tx, principal),
+      ]);
+      const sqlWhere = this.dashboardSqlWhere(query, period, allowedEmployeeIds, allowedProjectIds);
       const [facts, employeeRows, projectRows] = await Promise.all([
         this.dashboardFactsFrom(
           tx,
@@ -363,20 +373,25 @@ export class EmployeeProgressQueryService {
   }
 
   async workItems(query: EmployeeWorkItemsQuery) {
+    const principal = this.requestContext.requirePrincipal();
     const period = this.periodBounds(query.periodType, query.periodStart);
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(Math.max(1, query.pageSize ?? DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
     const where = this.workItemWhere(query, period);
+    const scopedWhere: Prisma.EmployeeWorkItemWhereInput = {
+      ...where,
+      ...this.dataScope.employeeWork(principal),
+    };
     const result = await this.prisma.$transaction(async (tx) => {
       const [data, total, batches] = await Promise.all([
         tx.employeeWorkItem.findMany({
-          where,
+          where: scopedWhere,
           select: WORK_ITEM_SELECT,
           orderBy: [{ periodStartAt: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
           skip: (page - 1) * pageSize,
           take: pageSize,
         }),
-        tx.employeeWorkItem.count({ where }),
+        tx.employeeWorkItem.count({ where: scopedWhere }),
         this.currentBatches(tx, period),
       ]);
       return { data, total, batches };
@@ -393,10 +408,12 @@ export class EmployeeProgressQueryService {
   }
 
   async workItem(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     const item = await this.prisma.employeeWorkItem.findFirst({
       where: {
         id,
         archivedAt: null,
+        ...this.dataScope.employeeWork(principal),
         employee: { archivedAt: null },
         importBatch: {
           status: EmployeeWorkImportStatus.COMPLETED,
@@ -420,6 +437,7 @@ export class EmployeeProgressQueryService {
   }
 
   async weekPlans(query: EmployeeWeekPlansQuery) {
+    const principal = this.requestContext.requirePrincipal();
     const period = this.periodBounds(query.periodType, query.periodStart);
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.min(Math.max(1, query.pageSize ?? DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
@@ -430,8 +448,9 @@ export class EmployeeProgressQueryService {
       ...(query.employeeId ? { employeeId: query.employeeId } : {}),
       ...(query.projectId ? { projectId: query.projectId } : {}),
       ...(query.priority ? { priority: query.priority } : {}),
-      ...this.dueDateWhere(query.dueDateFrom, query.dueDateTo),
+      ...this.dueDateWhere(query.dueDateFrom, query.dueDateTo) as Prisma.EmployeeWeekPlanItemWhereInput,
       ...(query.carryStatus ? { carryStatus: query.carryStatus } : {}),
+      ...this.dataScope.employeeWork(principal) as Prisma.EmployeeWeekPlanItemWhereInput,
       employee: {
         archivedAt: null,
         ...(query.department ? { department: query.department } : {}),
@@ -469,10 +488,12 @@ export class EmployeeProgressQueryService {
   }
 
   async weekPlan(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     const plan = await this.prisma.employeeWeekPlanItem.findFirst({
       where: {
         id,
         archivedAt: null,
+        ...this.dataScope.employeeWork(principal) as Prisma.EmployeeWeekPlanItemWhereInput,
         employee: { archivedAt: null },
         importBatch: {
           status: EmployeeWorkImportStatus.COMPLETED,
@@ -496,10 +517,16 @@ export class EmployeeProgressQueryService {
   }
 
   async employee(id: string, query: EmployeeProgressQuery) {
+    const principal = this.requestContext.requirePrincipal();
     return this.prisma.$transaction(async (tx) => {
       const period = this.periodBounds(query.periodType, query.periodStart);
+      await this.assertEmployeeAccessible(tx, id, principal);
       const scopedQuery = { ...query, employeeId: id };
-      const sqlWhere = this.dashboardSqlWhere(scopedQuery, period);
+      const [allowedEmployeeIds, allowedProjectIds] = await Promise.all([
+        this.allowedEmployeeIds(tx, principal),
+        this.allowedProjectIds(tx, principal),
+      ]);
+      const sqlWhere = this.dashboardSqlWhere(scopedQuery, period, allowedEmployeeIds, allowedProjectIds);
       const [employee, facts, projectRows] = await Promise.all([
         tx.resourceProfile.findFirst({
           where: { id, archivedAt: null },
@@ -575,10 +602,16 @@ export class EmployeeProgressQueryService {
   }
 
   async project(id: string, query: EmployeeProgressQuery) {
+    const principal = this.requestContext.requirePrincipal();
     return this.prisma.$transaction(async (tx) => {
       const period = this.periodBounds(query.periodType, query.periodStart);
+      await this.assertProjectAccessible(tx, id, principal);
       const scopedQuery = { ...query, projectId: id };
-      const sqlWhere = this.dashboardSqlWhere(scopedQuery, period);
+      const [allowedEmployeeIds, allowedProjectIds] = await Promise.all([
+        this.allowedEmployeeIds(tx, principal),
+        this.allowedProjectIds(tx, principal),
+      ]);
+      const sqlWhere = this.dashboardSqlWhere(scopedQuery, period, allowedEmployeeIds, allowedProjectIds);
       const [project, facts, employeeRows] = await Promise.all([
         tx.project.findFirst({
           where: { id, archivedAt: null },
@@ -663,8 +696,8 @@ export class EmployeeProgressQueryService {
           where,
           orderBy: [
             { periodStartAt: 'desc' },
-            { version: 'desc' },
             { createdAt: 'desc' },
+            { version: 'desc' },
             { id: 'desc' },
           ],
           skip: (page - 1) * pageSize,
@@ -966,7 +999,12 @@ export class EmployeeProgressQueryService {
     ]);
   }
 
-  private dashboardSqlWhere(query: EmployeeWorkItemsQuery, period: PeriodBounds): Prisma.Sql {
+  private dashboardSqlWhere(
+    query: EmployeeWorkItemsQuery,
+    period: PeriodBounds,
+    allowedEmployeeIds?: string[],
+    allowedProjectIds?: string[],
+  ): Prisma.Sql {
     const batchWindowStart = this.batchWindowStart(period);
     const conditions: Prisma.Sql[] = [
       Prisma.sql`batch.period_type = ${EmployeeProgressPeriod.WEEK}::app."EmployeeProgressPeriod"`,
@@ -991,6 +1029,26 @@ export class EmployeeProgressQueryService {
     if (period.type === EmployeeProgressPeriod.WEEK) {
       conditions.push(Prisma.sql`wi.period_start_at = ${period.startAt}::date`);
     }
+    if (allowedEmployeeIds && allowedProjectIds) {
+      const scopeConditions: Prisma.Sql[] = [];
+      if (allowedEmployeeIds.length > 0) {
+        scopeConditions.push(
+          Prisma.sql`wi.employee_id IN (${Prisma.join(allowedEmployeeIds)} )`,
+        );
+      }
+      if (allowedProjectIds.length > 0) {
+        scopeConditions.push(
+          Prisma.sql`wi.project_id IN (${Prisma.join(allowedProjectIds)} )`,
+        );
+      }
+      if (scopeConditions.length === 0) {
+        conditions.push(Prisma.sql`FALSE`);
+      } else {
+        conditions.push(
+          Prisma.sql`(${Prisma.join(scopeConditions, ' OR ')})`,
+        );
+      }
+    }
     if (query.employeeId) {
       conditions.push(Prisma.sql`wi.employee_id = ${query.employeeId}`);
     }
@@ -1004,6 +1062,94 @@ export class EmployeeProgressQueryService {
       conditions.push(Prisma.sql`wi.status::text = ${query.status}`);
     }
     return Prisma.join(conditions, ' AND ');
+  }
+
+  private async allowedEmployeeIds(
+    tx: Prisma.TransactionClient,
+    principal: AuthenticatedPrincipal,
+  ): Promise<string[] | undefined> {
+    const scope = this.dataScope.employees(principal);
+    if (Object.keys(scope).length === 0) return undefined;
+    const records = await tx.resourceProfile.findMany({
+      where: scope,
+      select: { id: true },
+    });
+    return records.map(({ id }) => id);
+  }
+
+  private async allowedProjectIds(
+    tx: Prisma.TransactionClient,
+    principal: AuthenticatedPrincipal,
+  ): Promise<string[] | undefined> {
+    const scope = this.dataScope.projects(principal);
+    if (Object.keys(scope).length === 0) return undefined;
+    const records = await tx.project.findMany({
+      where: scope,
+      select: { id: true },
+    });
+    return records.map(({ id }) => id);
+  }
+
+  private async assertEmployeeAccessible(
+    tx: Prisma.TransactionClient,
+    id: string,
+    principal: AuthenticatedPrincipal,
+  ) {
+    const scope = this.dataScope.employees(principal);
+    if (Object.keys(scope).length === 0) return;
+    const accessible = await tx.resourceProfile.findFirst({
+      where: { id, ...scope },
+      select: { id: true },
+    });
+    if (!accessible) {
+      const exists = await tx.resourceProfile.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (exists) {
+        throw new AppError({
+          code: ErrorCodes.PERMISSION_DENIED,
+          message: 'Access to this employee is not allowed',
+          statusCode: HttpStatus.FORBIDDEN,
+        });
+      }
+      throw new AppError({
+        code: ErrorCodes.RESOURCE_NOT_FOUND,
+        message: 'Employee not found',
+        statusCode: HttpStatus.NOT_FOUND,
+      });
+    }
+  }
+
+  private async assertProjectAccessible(
+    tx: Prisma.TransactionClient,
+    id: string,
+    principal: AuthenticatedPrincipal,
+  ) {
+    const scope = this.dataScope.projects(principal);
+    if (Object.keys(scope).length === 0) return;
+    const accessible = await tx.project.findFirst({
+      where: { id, archivedAt: null, ...scope },
+      select: { id: true },
+    });
+    if (!accessible) {
+      const exists = await tx.project.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (exists) {
+        throw new AppError({
+          code: ErrorCodes.PERMISSION_DENIED,
+          message: 'Access to this project is not allowed',
+          statusCode: HttpStatus.FORBIDDEN,
+        });
+      }
+      throw new AppError({
+        code: ErrorCodes.PROJECT_NOT_FOUND,
+        message: 'Project not found',
+        statusCode: HttpStatus.NOT_FOUND,
+      });
+    }
   }
 
   private dashboardFrom(): Prisma.Sql {

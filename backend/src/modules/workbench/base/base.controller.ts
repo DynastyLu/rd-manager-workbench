@@ -22,6 +22,10 @@ import { BaseExportService } from './export/base-export.service';
 import { BaseTemplateService } from './templates/base-template.service';
 import { ImportColumnMapping } from './import/import.types';
 import {
+  PERMISSIONS,
+  RequirePermissions,
+} from '../../iam/interface/http/permissions.decorator';
+import {
   CreateFieldDto,
   CreateTableDto,
   CreateViewDto,
@@ -50,13 +54,18 @@ export class BaseController {
     private readonly templates: BaseTemplateService,
   ) {}
 
-  @Get('templates') listTemplates() {
+  @Get('templates')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  listTemplates() {
     return this.templates.list();
   }
-  @Get('templates/:key') getTemplate(@Param('key') key: string) {
+  @Get('templates/:key')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  getTemplate(@Param('key') key: string) {
     return this.templates.detail(key);
   }
   @Post('workspaces/:workspaceId/templates/:key/instantiate')
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
   instantiateTemplate(
     @Param('workspaceId') workspaceId: string,
     @Param('key') key: string,
@@ -65,55 +74,78 @@ export class BaseController {
     return this.templates.instantiate(workspaceId, key, dto);
   }
 
-  @Get('workspaces') listWorkspaces() {
+  @Get('workspaces')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  listWorkspaces() {
     return this.service.listWorkspaces();
   }
-  @Post('workspaces') createWorkspace(@Body() dto: CreateWorkspaceDto) {
+  @Post('workspaces')
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
+  createWorkspace(@Body() dto: CreateWorkspaceDto) {
     return this.service.createWorkspace(dto);
   }
-  @Get('workspaces/:id') getWorkspace(@Param('id') id: string) {
+  @Get('workspaces/:id')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  getWorkspace(@Param('id') id: string) {
     return this.service.getWorkspace(id);
   }
-  @Patch('workspaces/:id') updateWorkspace(
+  @Patch('workspaces/:id')
+  @RequirePermissions(PERMISSIONS.BASE_UPDATE)
+  updateWorkspace(
     @Param('id') id: string,
     @Body() dto: UpdateWorkspaceDto,
   ) {
     return this.service.updateWorkspace(id, dto);
   }
-  @Delete('workspaces/:id') @HttpCode(HttpStatus.NO_CONTENT) deleteWorkspace(
-    @Param('id') id: string,
-  ) {
+  @Delete('workspaces/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions(PERMISSIONS.BASE_DELETE)
+  deleteWorkspace(@Param('id') id: string) {
     return this.service.deleteWorkspace(id);
   }
 
-  @Get('workspaces/:workspaceId/tables') listTables(@Param('workspaceId') id: string) {
+  @Get('workspaces/:workspaceId/tables')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  listTables(@Param('workspaceId') id: string) {
     return this.service.listTables(id);
   }
-  @Post('workspaces/:workspaceId/tables') createTable(
+  @Post('workspaces/:workspaceId/tables')
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
+  createTable(
     @Param('workspaceId') id: string,
     @Body() dto: CreateTableDto,
   ) {
     return this.service.createTable(id, dto);
   }
-  @Get('tables/:id') getTable(@Param('id') id: string) {
+  @Get('tables/:id')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  getTable(@Param('id') id: string) {
     return this.service.getTable(id);
   }
-  @Patch('tables/:id') updateTable(@Param('id') id: string, @Body() dto: UpdateTableDto) {
+  @Patch('tables/:id')
+  @RequirePermissions(PERMISSIONS.BASE_UPDATE)
+  updateTable(@Param('id') id: string, @Body() dto: UpdateTableDto) {
     return this.service.updateTable(id, dto);
   }
-  @Delete('tables/:id') @HttpCode(HttpStatus.NO_CONTENT) deleteTable(@Param('id') id: string) {
+  @Delete('tables/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions(PERMISSIONS.BASE_DELETE)
+  deleteTable(@Param('id') id: string) {
     return this.service.deleteTable(id);
   }
 
   @Post('tables/:tableId/imports')
   @UseInterceptors(FileInterceptor('file', importUploadOptions))
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
   uploadImport(
     @Param('tableId') tableId: string,
     @UploadedFile() file: UploadedContentFile | undefined,
   ) {
     return this.imports.upload(tableId, file);
   }
-  @Patch('imports/:id/preview') previewImport(
+  @Patch('imports/:id/preview')
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
+  previewImport(
     @Param('id') id: string,
     @Body() dto: PreviewImportDto,
   ) {
@@ -122,19 +154,28 @@ export class BaseController {
       mapping: dto.mapping as unknown as ImportColumnMapping[],
     });
   }
-  @Patch('imports/:id/inspect') inspectImport(
+  @Patch('imports/:id/inspect')
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
+  inspectImport(
     @Param('id') id: string,
     @Body() dto: InspectImportDto,
   ) {
     return this.imports.inspect(id, dto.selectedSheet);
   }
-  @Post('imports/:id/commit') @HttpCode(HttpStatus.OK) commitImport(@Param('id') id: string) {
+  @Post('imports/:id/commit')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
+  commitImport(@Param('id') id: string) {
     return this.imports.commit(id);
   }
-  @Get('imports/:id') getImport(@Param('id') id: string) {
+  @Get('imports/:id')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  getImport(@Param('id') id: string) {
     return this.imports.get(id);
   }
-  @Get('imports/:id/errors') async downloadImportErrors(
+  @Get('imports/:id/errors')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  async downloadImportErrors(
     @Param('id') id: string,
     @Res() response: Response,
   ) {
@@ -142,11 +183,16 @@ export class BaseController {
     this.setDownloadHeaders(response, file.fileName, file.mimeType);
     response.status(HttpStatus.OK).send(file.content);
   }
-  @Delete('imports/:id') @HttpCode(HttpStatus.NO_CONTENT) removeImport(@Param('id') id: string) {
+  @Delete('imports/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions(PERMISSIONS.BASE_DELETE)
+  removeImport(@Param('id') id: string) {
     return this.imports.remove(id);
   }
 
-  @Get('tables/:tableId/export') async exportTable(
+  @Get('tables/:tableId/export')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  async exportTable(
     @Param('tableId') tableId: string,
     @Query() query: BaseExportQueryDto,
     @Res() response: Response,
@@ -157,67 +203,97 @@ export class BaseController {
     await result.writeTo(response);
   }
 
-  @Get('tables/:tableId/fields') listFields(@Param('tableId') id: string) {
+  @Get('tables/:tableId/fields')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  listFields(@Param('tableId') id: string) {
     return this.service.listFields(id);
   }
-  @Post('tables/:tableId/fields') createField(
+  @Post('tables/:tableId/fields')
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
+  createField(
     @Param('tableId') id: string,
     @Body() dto: CreateFieldDto,
   ) {
     return this.service.createField(id, dto);
   }
-  @Patch('fields/:id') updateField(@Param('id') id: string, @Body() dto: UpdateFieldDto) {
+  @Patch('fields/:id')
+  @RequirePermissions(PERMISSIONS.BASE_UPDATE)
+  updateField(@Param('id') id: string, @Body() dto: UpdateFieldDto) {
     return this.service.updateField(id, dto);
   }
-  @Delete('fields/:id') @HttpCode(HttpStatus.NO_CONTENT) deleteField(@Param('id') id: string) {
+  @Delete('fields/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions(PERMISSIONS.BASE_DELETE)
+  deleteField(@Param('id') id: string) {
     return this.service.deleteField(id);
   }
-  @Post('tables/:tableId/formula-preview') @HttpCode(HttpStatus.OK) previewFormula(
+  @Post('tables/:tableId/formula-preview')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  previewFormula(
     @Param('tableId') id: string,
     @Body() dto: FormulaPreviewDto,
   ) {
     return this.service.previewFormula(id, dto);
   }
 
-  @Get('tables/:tableId/records') listRecords(
+  @Get('tables/:tableId/records')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  listRecords(
     @Param('tableId') id: string,
     @Query() query: ListRecordsQueryDto,
   ) {
     return this.service.listRecords(id, query);
   }
-  @Post('tables/:tableId/records') createRecord(
+  @Post('tables/:tableId/records')
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
+  createRecord(
     @Param('tableId') id: string,
     @Body() dto: RecordValuesDto,
   ) {
     return this.service.createRecord(id, dto);
   }
-  @Patch('tables/:tableId/records/:recordId') updateRecord(
+  @Patch('tables/:tableId/records/:recordId')
+  @RequirePermissions(PERMISSIONS.BASE_UPDATE)
+  updateRecord(
     @Param('tableId') tableId: string,
     @Param('recordId') id: string,
     @Body() dto: RecordValuesDto,
   ) {
     return this.service.updateRecord(tableId, id, dto);
   }
-  @Delete('tables/:tableId/records/:recordId') @HttpCode(HttpStatus.NO_CONTENT) deleteRecord(
+  @Delete('tables/:tableId/records/:recordId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions(PERMISSIONS.BASE_DELETE)
+  deleteRecord(
     @Param('tableId') tableId: string,
     @Param('recordId') id: string,
   ) {
     return this.service.deleteRecord(tableId, id);
   }
 
-  @Get('tables/:tableId/views') listViews(@Param('tableId') id: string) {
+  @Get('tables/:tableId/views')
+  @RequirePermissions(PERMISSIONS.BASE_READ)
+  listViews(@Param('tableId') id: string) {
     return this.service.listViews(id);
   }
-  @Post('tables/:tableId/views') createView(
+  @Post('tables/:tableId/views')
+  @RequirePermissions(PERMISSIONS.BASE_CREATE)
+  createView(
     @Param('tableId') id: string,
     @Body() dto: CreateViewDto,
   ) {
     return this.service.createView(id, dto);
   }
-  @Patch('views/:id') updateView(@Param('id') id: string, @Body() dto: UpdateViewDto) {
+  @Patch('views/:id')
+  @RequirePermissions(PERMISSIONS.BASE_UPDATE)
+  updateView(@Param('id') id: string, @Body() dto: UpdateViewDto) {
     return this.service.updateView(id, dto);
   }
-  @Delete('views/:id') @HttpCode(HttpStatus.NO_CONTENT) deleteView(@Param('id') id: string) {
+  @Delete('views/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions(PERMISSIONS.BASE_DELETE)
+  deleteView(@Param('id') id: string) {
     return this.service.deleteView(id);
   }
 

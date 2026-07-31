@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { KnowledgeProcessingStatus, KnowledgeSourceKind } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { StoragePort } from '../../../../infrastructure/storage/storage.port';
 import type { UploadedContentFile } from '../../content/application/files.service';
 import { DocumentImportService } from './document-import.service';
@@ -18,11 +19,13 @@ export class KnowledgeIngestionService {
     private readonly storage: StoragePort,
     private readonly importer: DocumentImportService,
     private readonly indexing: IndexingService,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   async upload(file: UploadedContentFile | undefined, spaceId?: string) {
     if (!file?.buffer?.length) throw new BadRequestException('File is required');
 
+    const principal = this.requestContext.requirePrincipal();
     const documentId = randomUUID();
     const assetId = randomUUID();
     const versionId = randomUUID();
@@ -49,6 +52,9 @@ export class KnowledgeIngestionService {
             previewStatus: KnowledgeProcessingStatus.PENDING,
             indexStatus: KnowledgeProcessingStatus.PENDING,
             spaceId: spaceId || null,
+            createdByUserId: principal.userId,
+            updatedByUserId: principal.userId,
+            ownerUserId: principal.userId,
             fileAssets: {
               create: {
                 id: assetId,

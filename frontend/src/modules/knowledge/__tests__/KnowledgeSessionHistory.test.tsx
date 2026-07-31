@@ -114,7 +114,7 @@ describe('KnowledgeSessionHistory', () => {
     await user.type(screen.getByPlaceholderText('搜索历史会话'), '设备采购');
 
     await waitFor(() => {
-      expect(listSessions).toHaveBeenLastCalledWith('设备采购');
+      expect(listSessions).toHaveBeenLastCalledWith('设备采购', undefined, 100);
     });
     await user.click(await screen.findByRole('button', { name: '打开会话：设备采购复盘' }));
 

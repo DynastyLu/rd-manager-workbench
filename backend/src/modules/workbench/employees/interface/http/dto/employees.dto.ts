@@ -7,6 +7,7 @@ import {
   EmployeeWorkKind,
   EmployeeWorkStatus,
   EmploymentStatus,
+  ProjectProgressDraftStatus,
 } from '@prisma/client';
 import { PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
@@ -39,6 +40,10 @@ const isDefined = (_object: object, value: unknown) => value !== undefined;
 
 export const MAX_EMPLOYEE_PAGE = 1_000_000;
 export const MAX_EMPLOYEE_PAGE_SIZE = 100;
+export enum EmployeeArchiveState {
+  ACTIVE = 'ACTIVE',
+  ARCHIVED = 'ARCHIVED',
+}
 
 export class ListEmployeesQueryDto {
   @Transform(trimString)
@@ -59,6 +64,10 @@ export class ListEmployeesQueryDto {
   @ValidateIf(isDefined)
   @IsEnum(EmploymentStatus)
   employmentStatus?: EmploymentStatus;
+
+  @ValidateIf(isDefined)
+  @IsEnum(EmployeeArchiveState)
+  archiveState?: EmployeeArchiveState;
 
   @Transform(toNumber)
   @ValidateIf(isDefined)
@@ -396,3 +405,35 @@ export class EmployeeImportDetailQueryDto {
   @IsBoolean()
   issuesOnly?: boolean;
 }
+
+export class ListProjectProgressDraftsQueryDto {
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  @IsNotEmpty()
+  projectId?: string;
+
+  @Transform(trimString)
+  @ValidateIf(isDefined)
+  @IsString()
+  @IsNotEmpty()
+  sourceBatchId?: string;
+
+  @ValidateIf(isDefined)
+  @IsEnum(ProjectProgressDraftStatus)
+  status?: ProjectProgressDraftStatus;
+}
+
+export class AdoptProjectProgressDraftDto {
+  @Transform(toBoolean)
+  @ValidateIf(isDefined)
+  @IsBoolean()
+  createRisks?: boolean;
+
+  @Transform(toBoolean)
+  @ValidateIf(isDefined)
+  @IsBoolean()
+  createTasks?: boolean;
+}
+
+export class IgnoreProjectProgressDraftDto {}

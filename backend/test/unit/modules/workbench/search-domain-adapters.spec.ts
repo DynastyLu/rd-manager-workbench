@@ -1,5 +1,30 @@
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { BaseSearchAdapter } from '../../../../src/modules/workbench/search/adapters/base-search.adapter';
 import { ManagementSearchAdapter } from '../../../../src/modules/workbench/search/adapters/management-search.adapter';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  meetings: jest.fn().mockReturnValue({}),
+  risks: jest.fn().mockReturnValue({}),
+  issues: jest.fn().mockReturnValue({}),
+  decisions: jest.fn().mockReturnValue({}),
+  partners: jest.fn().mockReturnValue({}),
+  communications: jest.fn().mockReturnValue({}),
+  baseRecords: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 describe('domain search adapters', () => {
   it('searches active management objects and never exposes partner contact details', async () => {
@@ -33,24 +58,37 @@ describe('domain search adapters', () => {
       },
       communicationRecord: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const adapter = new ManagementSearchAdapter(prisma as never);
+    const adapter = new ManagementSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const candidates = await adapter.search('研究', ['RISK', 'PARTNER']);
 
     expect(prisma.risk.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          archivedAt: null,
           AND: expect.arrayContaining([
-            { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
-            { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
+            expect.objectContaining({
+              archivedAt: null,
+              AND: expect.arrayContaining([
+                { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
+                { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
+              ]),
+            }),
+            {},
           ]),
         }),
         take: 100,
       }),
     );
     expect(prisma.partner.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ archivedAt: null }), take: 100 }),
+      expect.objectContaining({
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({ archivedAt: null }),
+            {},
+          ]),
+        }),
+        take: 100,
+      }),
     );
     expect(candidates).toEqual(
       expect.arrayContaining([
@@ -96,7 +134,7 @@ describe('domain search adapters', () => {
       },
       communicationRecord: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const adapter = new ManagementSearchAdapter(prisma as never);
+    const adapter = new ManagementSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const candidates = await adapter.search('研发', ['RISK', 'PARTNER']);
 
@@ -113,14 +151,19 @@ describe('domain search adapters', () => {
       partner: { findMany: jest.fn().mockResolvedValue([]) },
       communicationRecord: { findMany: jest.fn().mockResolvedValue([]) },
     };
-    const adapter = new ManagementSearchAdapter(prisma as never);
+    const adapter = new ManagementSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     await adapter.search('研发', ['MEETING', 'ISSUE', 'DECISION', 'COMMUNICATION']);
 
     expect(prisma.meeting.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
+            }),
+            {},
+          ]),
         }),
       }),
     );
@@ -128,8 +171,13 @@ describe('domain search adapters', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           AND: expect.arrayContaining([
-            { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
-            { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
+            expect.objectContaining({
+              AND: expect.arrayContaining([
+                { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
+                { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
+              ]),
+            }),
+            {},
           ]),
         }),
       }),
@@ -138,9 +186,14 @@ describe('domain search adapters', () => {
       expect.objectContaining({
         where: expect.objectContaining({
           AND: expect.arrayContaining([
-            { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
-            { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
-            { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
+            expect.objectContaining({
+              AND: expect.arrayContaining([
+                { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
+                { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
+                { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
+              ]),
+            }),
+            {},
           ]),
         }),
       }),
@@ -148,8 +201,13 @@ describe('domain search adapters', () => {
     expect(prisma.communicationRecord.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          partner: { archivedAt: null },
-          AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              partner: { archivedAt: null },
+              AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
+            }),
+            {},
+          ]),
         }),
       }),
     );
@@ -176,17 +234,22 @@ describe('domain search adapters', () => {
         ]),
       },
     };
-    const adapter = new BaseSearchAdapter(prisma as never);
+    const adapter = new BaseSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const candidates = await adapter.search('面试', ['BASE_RECORD']);
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
     expect(prisma.dataRecord.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
-          id: { in: ['record-1'] },
-          table: { source: 'CUSTOM', archivedAt: null },
-        },
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            {
+              id: { in: ['record-1'] },
+              table: { source: 'CUSTOM', archivedAt: null },
+            },
+            {},
+          ]),
+        }),
         take: 100,
       }),
     );

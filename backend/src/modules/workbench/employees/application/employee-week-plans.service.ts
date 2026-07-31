@@ -8,6 +8,8 @@ import {
   Prisma,
   TaskPriority,
 } from '@prisma/client';
+import { DataScopeService } from '../../../../modules/iam/application/data-scope.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
@@ -78,6 +80,8 @@ export class EmployeeWeekPlansService {
     private readonly tasks: TasksService,
     private readonly audit: AuditLogService,
     private readonly snapshots: EmployeeProgressSnapshotService,
+    private readonly dataScope: DataScopeService,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   async get(planId: string) {
@@ -91,11 +95,14 @@ export class EmployeeWeekPlansService {
 
   async updateSystemFields(planId: string, input: UpdateEmployeeWeekPlanSystemFieldsInput) {
     const mutation = await this.prisma.$transaction(async (tx) => {
-      await acquireReminderSchedulingLock(tx);
+      await this.acquireSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       const workKind = input.workKind ?? plan.workKind;
-      const data = this.systemFieldsData(input, workKind);
+      const data: Prisma.EmployeeWeekPlanItemUncheckedUpdateInput = {
+        ...this.systemFieldsData(input, workKind),
+        updatedByUserId: this.requestContext.requirePrincipal().userId,
+      };
 
       if (workKind === EmployeeWorkKind.PROJECT) {
         await this.assertProjectReferences(
@@ -105,7 +112,7 @@ export class EmployeeWeekPlansService {
         );
       }
 
-      const changedFields = this.changedFields(plan, data);
+      const changedFields = this.changedFields(plan, this.systemFieldsData(input, workKind));
       const updated = await tx.employeeWeekPlanItem.update({
         where: { id: planId },
         data,
@@ -136,7 +143,7 @@ export class EmployeeWeekPlansService {
     }
 
     const mutation = await this.prisma.$transaction(async (tx) => {
-      await acquireReminderSchedulingLock(tx);
+      await this.acquireSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       if (plan.carryStatus === EmployeePlanCarryStatus.CANCELLED) {
@@ -160,6 +167,7 @@ export class EmployeeWeekPlansService {
           carryStatus: EmployeePlanCarryStatus.CANCELLED,
           matchedWorkItemId: null,
           cancelReason: normalizedReason,
+          updatedByUserId: this.requestContext.requirePrincipal().userId,
         },
         include: ACTIVE_PLAN_INCLUDE,
       });
@@ -181,7 +189,7 @@ export class EmployeeWeekPlansService {
 
   async match(planId: string, workItemId: string) {
     const mutation = await this.prisma.$transaction(async (tx) => {
-      await acquireReminderSchedulingLock(tx);
+      await this.acquireSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       if (
@@ -245,6 +253,7 @@ export class EmployeeWeekPlansService {
           carryStatus: EmployeePlanCarryStatus.MATCHED,
           matchedWorkItemId: workItemId,
           cancelReason: null,
+          updatedByUserId: this.requestContext.requirePrincipal().userId,
         },
         include: ACTIVE_PLAN_INCLUDE,
       });
@@ -266,7 +275,7 @@ export class EmployeeWeekPlansService {
 
   async unmatch(planId: string) {
     const mutation = await this.prisma.$transaction(async (tx) => {
-      await acquireReminderSchedulingLock(tx);
+      await this.acquireSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       if (plan.carryStatus === EmployeePlanCarryStatus.PLANNED) {
@@ -296,6 +305,7 @@ export class EmployeeWeekPlansService {
           carryStatus: EmployeePlanCarryStatus.PLANNED,
           matchedWorkItemId: null,
           cancelReason: null,
+          updatedByUserId: this.requestContext.requirePrincipal().userId,
         },
         include: ACTIVE_PLAN_INCLUDE,
       });
@@ -317,7 +327,7 @@ export class EmployeeWeekPlansService {
 
   async convertToTask(planId: string) {
     const mutation = await this.prisma.$transaction(async (tx) => {
-      await acquireReminderSchedulingLock(tx);
+      await this.acquireSchedulingLock(tx);
       await this.lockPlan(tx, planId);
       const plan = await this.findActivePlan(tx, planId);
       if (plan.taskId) {
@@ -363,7 +373,7 @@ export class EmployeeWeekPlansService {
       });
       const updated = await tx.employeeWeekPlanItem.update({
         where: { id: planId },
-        data: { taskId: task.id },
+        data: { taskId: task.id, updatedByUserId: this.requestContext.requirePrincipal().userId },
         include: ACTIVE_PLAN_INCLUDE,
       });
       await this.recordAction(
@@ -383,8 +393,9 @@ export class EmployeeWeekPlansService {
   }
 
   private async findActivePlan(tx: Prisma.TransactionClient, planId: string) {
+    const principal = this.requestContext.requirePrincipal();
     const plan = await tx.employeeWeekPlanItem.findFirst({
-      where: { id: planId, ...ACTIVE_PLAN_WHERE },
+      where: { id: planId, ...ACTIVE_PLAN_WHERE, ...this.dataScope.employeeWeekPlanItems(principal) },
       include: ACTIVE_PLAN_INCLUDE,
     });
     if (!plan) throw this.planNotFound();
@@ -496,6 +507,15 @@ export class EmployeeWeekPlansService {
     return tx.$executeRaw(
       Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`rd-manager-workbench:employee-week-plan:${planId}`}))`,
     );
+  }
+
+  private async acquireSchedulingLock(tx: Prisma.TransactionClient) {
+    if (await acquireReminderSchedulingLock(tx)) return;
+    throw new AppError({
+      code: ErrorCodes.DATABASE_ERROR,
+      message: 'Reminder scheduling is busy; retry the employee week plan change',
+      statusCode: HttpStatus.CONFLICT,
+    });
   }
 
   private lockMatchTarget(tx: Prisma.TransactionClient, workItemId: string) {

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { RiskStatus } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { buildSearchSnippet, limitSearchCandidates } from '../domain/search-ranking';
 import { SearchAdapter, SearchCandidate, SearchType } from '../domain/search.types';
 
@@ -17,7 +19,15 @@ export class ManagementSearchAdapter implements SearchAdapter {
     'COMMUNICATION',
   ] as const satisfies readonly SearchType[];
 
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
+  ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   async search(query: string, types: readonly SearchType[]): Promise<SearchCandidate[]> {
     const requested = new Set(types);
@@ -25,9 +35,14 @@ export class ManagementSearchAdapter implements SearchAdapter {
     const meetings = requested.has('MEETING')
       ? await this.prisma.meeting.findMany({
           where: {
-            archivedAt: null,
-            AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
-            OR: [{ title: contains }, { agenda: contains }, { minutes: contains }],
+            AND: [
+              {
+                archivedAt: null,
+                AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
+                OR: [{ title: contains }, { agenda: contains }, { minutes: contains }],
+              },
+              this.dataScope.meetings(this.principal()),
+            ],
           },
           orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
           take: LIMIT,
@@ -36,15 +51,20 @@ export class ManagementSearchAdapter implements SearchAdapter {
     const risks = requested.has('RISK')
       ? await this.prisma.risk.findMany({
           where: {
-            archivedAt: null,
             AND: [
-              { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
-              { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
-            ],
-            OR: [
-              { title: contains },
-              { description: contains },
-              { mitigation: contains },
+              {
+                archivedAt: null,
+                AND: [
+                  { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
+                  { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
+                ],
+                OR: [
+                  { title: contains },
+                  { description: contains },
+                  { mitigation: contains },
+                ],
+              },
+              this.dataScope.risks(this.principal()),
             ],
           },
           orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
@@ -54,16 +74,21 @@ export class ManagementSearchAdapter implements SearchAdapter {
     const issues = requested.has('ISSUE')
       ? await this.prisma.issue.findMany({
           where: {
-            archivedAt: null,
             AND: [
-              { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
-              { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
-            ],
-            OR: [
-              { title: contains },
-              { description: contains },
-              { impactObject: contains },
-              { proposedResolution: contains },
+              {
+                archivedAt: null,
+                AND: [
+                  { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
+                  { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
+                ],
+                OR: [
+                  { title: contains },
+                  { description: contains },
+                  { impactObject: contains },
+                  { proposedResolution: contains },
+                ],
+              },
+              this.dataScope.issues(this.principal()),
             ],
           },
           orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
@@ -73,17 +98,22 @@ export class ManagementSearchAdapter implements SearchAdapter {
     const decisions = requested.has('DECISION')
       ? await this.prisma.decision.findMany({
           where: {
-            archivedAt: null,
             AND: [
-              { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
-              { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
-              { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
-            ],
-            OR: [
-              { title: contains },
-              { background: contains },
-              { basis: contains },
-              { conclusion: contains },
+              {
+                archivedAt: null,
+                AND: [
+                  { OR: [{ projectId: null }, { project: { archivedAt: null } }] },
+                  { OR: [{ taskId: null }, { task: { archivedAt: null } }] },
+                  { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
+                ],
+                OR: [
+                  { title: contains },
+                  { background: contains },
+                  { basis: contains },
+                  { conclusion: contains },
+                ],
+              },
+              this.dataScope.decisions(this.principal()),
             ],
           },
           orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
@@ -93,12 +123,17 @@ export class ManagementSearchAdapter implements SearchAdapter {
     const partners = requested.has('PARTNER')
       ? await this.prisma.partner.findMany({
           where: {
-            archivedAt: null,
-            OR: [
-              { name: contains },
-              { shortName: contains },
-              { category: contains },
-              { notes: contains },
+            AND: [
+              {
+                archivedAt: null,
+                OR: [
+                  { name: contains },
+                  { shortName: contains },
+                  { category: contains },
+                  { notes: contains },
+                ],
+              },
+              this.dataScope.partners(this.principal()),
             ],
           },
           orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
@@ -108,10 +143,15 @@ export class ManagementSearchAdapter implements SearchAdapter {
     const communications = requested.has('COMMUNICATION')
       ? await this.prisma.communicationRecord.findMany({
           where: {
-            archivedAt: null,
-            partner: { archivedAt: null },
-            AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
-            OR: [{ subject: contains }, { summary: contains }, { promises: contains }],
+            AND: [
+              {
+                archivedAt: null,
+                partner: { archivedAt: null },
+                AND: [{ OR: [{ projectId: null }, { project: { archivedAt: null } }] }],
+                OR: [{ subject: contains }, { summary: contains }, { promises: contains }],
+              },
+              this.dataScope.communications(this.principal()),
+            ],
           },
           orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
           take: LIMIT,

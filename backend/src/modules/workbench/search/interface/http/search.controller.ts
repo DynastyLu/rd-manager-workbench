@@ -1,4 +1,8 @@
 import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  PERMISSIONS,
+  RequirePermissions,
+} from '../../../../iam/interface/http/permissions.decorator';
 import { SearchActionsService } from '../../application/search-actions.service';
 import { SearchService } from '../../application/search.service';
 import {
@@ -15,6 +19,7 @@ export class SearchController {
   ) {}
 
   @Get()
+  @RequirePermissions(PERMISSIONS.SEARCH_READ)
   search(@Query() query: GlobalSearchQueryDto) {
     return this.searchService.search(query);
   }

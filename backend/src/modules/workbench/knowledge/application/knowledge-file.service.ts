@@ -2,12 +2,15 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { KnowledgeProcessingStatus } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { StoragePort } from '../../../../infrastructure/storage/storage.port';
 import { OfficePreviewService } from './office-preview.service';
 
@@ -49,11 +52,22 @@ export class KnowledgeFileService {
     private readonly prisma: PlatformPrismaService,
     private readonly storage: StoragePort,
     private readonly officePreview: OfficePreviewService,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
   ) {}
+
+  private principal() {
+    return this.requestContext.requirePrincipal();
+  }
 
   async getOriginal(documentId: string): Promise<KnowledgeFileContent> {
     const document = await this.prisma.contentDocument.findFirst({
-      where: { id: documentId, status: 'ACTIVE', trashedAt: null },
+      where: {
+        id: documentId,
+        status: 'ACTIVE',
+        trashedAt: null,
+        AND: this.dataScope.documents(this.principal()),
+      },
       select: {
         id: true,
         sourceKind: true,
@@ -79,7 +93,11 @@ export class KnowledgeFileService {
         },
       },
     });
-    if (!document) throw new NotFoundException('Knowledge document not found');
+    if (!document) {
+      const exists = await this.prisma.contentDocument.count({ where: { id: documentId } });
+      if (!exists) throw new NotFoundException('Knowledge document not found');
+      throw new ForbiddenException('You do not have permission to access this knowledge document');
+    }
 
     const version = document.fileAssets[0]?.versions[0];
     if (version) {
@@ -164,6 +182,20 @@ export class KnowledgeFileService {
   }
 
   async getLocalOpenPath(documentId: string): Promise<{ filePath: string }> {
+    // Authorize document access before exposing local filesystem path.
+    const authorized = await this.prisma.contentDocument.findFirst({
+      where: {
+        id: documentId,
+        status: 'ACTIVE',
+        trashedAt: null,
+        AND: this.dataScope.documents(this.principal()),
+      },
+      select: { id: true },
+    });
+    if (!authorized) {
+      throw new NotFoundException('该知识文件不是可在本机打开的活动目录文件');
+    }
+
     const folderFile = await this.prisma.folderFile.findFirst({
       where: {
         documentId,

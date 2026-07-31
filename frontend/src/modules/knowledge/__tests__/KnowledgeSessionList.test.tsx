@@ -13,6 +13,10 @@ const { listSessions, archiveSession, updateSession } = vi.hoisted(() => ({
 
 vi.mock('../api', () => ({ listSessions, archiveSession, updateSession }))
 
+vi.mock('../components/KnowledgeEmbeddingStatus', () => ({
+  KnowledgeEmbeddingStatus: () => <div data-testid="embedding-settings">本地语义检索设置</div>,
+}))
+
 vi.mock('@douyinfe/semi-ui', () => ({
   Button: ({ children, onClick, icon: _icon, ...props }: Record<string, unknown>) => (
     <button onClick={onClick as () => void} {...props}>
@@ -125,6 +129,45 @@ describe('KnowledgeSessionList', () => {
     expect(screen.getByText('Regular Session')).toBeInTheDocument()
   })
 
+  it('renders every regular conversation in the scrollable sidebar', async () => {
+    listSessions.mockResolvedValue(
+      Array.from({ length: 14 }, (_, index) =>
+        makeSession({
+          id: `session-${index + 1}`,
+          title: `历史会话 ${index + 1}`,
+        })
+      )
+    )
+
+    renderComponent()
+
+    expect(await screen.findByText('历史会话 1')).toBeInTheDocument()
+    expect(screen.getByText('历史会话 14')).toBeInTheDocument()
+  })
+
+  it('loads the next cursor page without repeating pinned conversations', async () => {
+    listSessions
+      .mockResolvedValueOnce({
+        pinned: [makeSession({ id: 'pinned', title: 'Pinned Once', isPinned: true })],
+        items: [makeSession({ id: 'first', title: 'First Page' })],
+        nextCursor: 'opaque-next',
+      })
+      .mockResolvedValueOnce({
+        pinned: [makeSession({ id: 'pinned', title: 'Pinned Once', isPinned: true })],
+        items: [makeSession({ id: 'second', title: 'Second Page' })],
+        nextCursor: null,
+      })
+
+    renderComponent()
+    const user = userEvent.setup()
+
+    await user.click(await screen.findByRole('button', { name: '加载更多对话' }))
+
+    expect(await screen.findByText('Second Page')).toBeInTheDocument()
+    expect(screen.getAllByText('Pinned Once')).toHaveLength(1)
+    expect(listSessions).toHaveBeenNthCalledWith(2, undefined, 'opaque-next')
+  })
+
   it('highlights the active session with the active class', async () => {
     const sessions = [
       makeSession({ id: '1', title: 'Active Session' }),
@@ -168,14 +211,14 @@ describe('KnowledgeSessionList', () => {
     expect(onNew).toHaveBeenCalledTimes(1)
   })
 
-  it('opens the full history page instead of expanding the sidebar list', async () => {
+  it('opens the full history management page from the optional management action', async () => {
     listSessions.mockResolvedValue([makeSession({ id: 'history-1', title: '历史会话一' })])
     const onOpenHistory = vi.fn()
 
     renderComponent({ onOpenHistory })
 
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: '查看全部' }))
+    await user.click(await screen.findByRole('button', { name: '管理全部对话' }))
 
     expect(onOpenHistory).toHaveBeenCalledTimes(1)
   })
@@ -186,6 +229,21 @@ describe('KnowledgeSessionList', () => {
     renderComponent()
 
     expect(document.querySelector('.knowledge-assistant__new-session-icon')).toBeInTheDocument()
+  })
+
+  it('opens local retrieval settings from the NOVA sidebar', async () => {
+    listSessions.mockResolvedValue([])
+    renderComponent()
+
+    const user = userEvent.setup()
+    expect(screen.queryByTestId('embedding-settings')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '本地检索设置' }))
+
+    expect(screen.getByTestId('embedding-settings')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'NOVA 本地检索设置' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByTestId('embedding-settings')).not.toBeInTheDocument()
   })
 
   it('deleting a session calls archiveSession with the session id', async () => {

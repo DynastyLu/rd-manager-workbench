@@ -155,9 +155,12 @@ describe('EmployeeImportHistory', () => {
       meta: { page: 1, pageSize: 10, total: 4 },
       sourceBatchIds: ['batch-3', 'batch-2', 'batch-4', 'batch-6'],
     })
-    renderHistory()
+    const { container } = renderHistory()
 
     expect(await screen.findByText('第七周计划与总结.xlsx')).toBeInTheDocument()
+    expect(container.querySelector<HTMLElement>('.semi-table-body table')).toHaveStyle({
+      width: '1400px',
+    })
     expect(employeesApi.listEmployeeWorkImports).toHaveBeenCalledWith({ page: 1, pageSize: 10 })
 
     const completedRow = within(rowOf('第七周计划与总结.xlsx'))

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
+  DataScope,
   EmployeeImportRowStatus,
   EmployeeProgressPeriod,
   EmployeeSnapshotStatus,
@@ -10,13 +11,14 @@ import {
   Prisma,
   PrismaClient,
 } from '@prisma/client';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
 import { employeeImportFingerprint } from '../../../../src/modules/workbench/employees/application/employee-import-fingerprint';
 import { NormalizedEmployeeWorkRow } from '../../../../src/modules/workbench/employees/domain/employee-work.types';
+import { PERMISSIONS } from '../../../../src/modules/iam/domain/permission-catalog';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Employee progress and import history API', () => {
   jest.setTimeout(60_000);
@@ -51,6 +53,7 @@ describe('Employee progress and import history API', () => {
   let employeeId: string;
   let projectId: string;
   let taskId: string;
+  let auth: Awaited<ReturnType<typeof authenticatedRequest>>;
 
   function normalizedRow(
     rowNumber: number,
@@ -129,6 +132,9 @@ describe('Employee progress and import history API', () => {
     const projectIds = projects.map(({ id }) => id);
     const employeeIds = employees.map(({ id }) => id);
     if (staleBatchIds.length > 0) {
+      await prisma.projectProgressDraft.deleteMany({
+        where: { sourceBatchId: { in: staleBatchIds } },
+      });
       await prisma.resourceLoadEntry.deleteMany({
         where: { employeeWorkImportBatchId: { in: staleBatchIds } },
       });
@@ -200,6 +206,13 @@ describe('Employee progress and import history API', () => {
       data: { code: `${prefix}-TASK`, title: `${prefix}-任务`, projectId },
     });
     taskId = task.id;
+
+    auth = await authenticatedRequest(app, prisma, `${prefix}-ROLE`, [
+      { code: PERMISSIONS.EMPLOYEE_READ, dataScope: DataScope.ALL },
+      { code: PERMISSIONS.EMPLOYEE_UPDATE, dataScope: DataScope.ALL },
+      { code: PERMISSIONS.PROJECT_READ, dataScope: DataScope.ALL },
+      { code: PERMISSIONS.REPORT_EXPORT, dataScope: DataScope.ALL },
+    ]);
 
     await storage.write({
       key: sourceStorageKey,
@@ -353,6 +366,15 @@ describe('Employee progress and import history API', () => {
       await cleanupFixtures();
     } finally {
       try {
+        if (auth) {
+          await prisma.loginAudit.deleteMany({ where: { userId: auth.user.id } });
+          await prisma.authSession.deleteMany({ where: { userId: auth.user.id } });
+          await prisma.userRole.deleteMany({ where: { userId: auth.user.id } });
+          await prisma.rolePermission.deleteMany({ where: { roleId: auth.role.id } });
+          await prisma.user.delete({ where: { id: auth.user.id } });
+          await prisma.role.delete({ where: { id: auth.role.id } });
+          await prisma.resourceProfile.delete({ where: { id: auth.employee.id } });
+        }
         await prisma.$disconnect();
       } finally {
         await app?.close();
@@ -365,7 +387,7 @@ describe('Employee progress and import history API', () => {
       periodType: EmployeeProgressPeriod.WEEK,
       periodStart: periodStartText,
     };
-    const team = await request(app.getHttpServer())
+    const team = await auth.agent
       .get('/api/employee-progress')
       .query({ ...query, department: `${prefix}-研发部` })
       .expect(200);
@@ -398,7 +420,7 @@ describe('Employee progress and import history API', () => {
     });
     expect(JSON.stringify(team.body)).not.toContain(`${prefix}-旧版本工作`);
 
-    const employee = await request(app.getHttpServer())
+    const employee = await auth.agent
       .get(`/api/employees/${employeeId}/progress`)
       .query(query)
       .expect(200);
@@ -407,7 +429,7 @@ describe('Employee progress and import history API', () => {
       metrics: { workItemCount: 1 },
       sourceBatchIds: [currentBatchId],
     });
-    const project = await request(app.getHttpServer())
+    const project = await auth.agent
       .get(`/api/projects/${projectId}/team-progress`)
       .query(query)
       .expect(200);
@@ -417,7 +439,7 @@ describe('Employee progress and import history API', () => {
       sourceBatchIds: [currentBatchId],
     });
 
-    const items = await request(app.getHttpServer())
+    const items = await auth.agent
       .get('/api/employee-work-items')
       .query({ ...query, employeeId, projectId, pageSize: 1 })
       .expect(200);
@@ -441,21 +463,21 @@ describe('Employee progress and import history API', () => {
       sourceBatchUrl: `/employee-work-imports/${currentBatchId}`,
     });
     const itemId = items.body.data.data[0].id as string;
-    await request(app.getHttpServer())
+    await auth.agent
       .get(`/api/employee-work-items/${itemId}`)
       .expect(200)
       .expect(({ body }) => {
         expect(body.data).toMatchObject({ id: itemId, sourceBatchIds: [currentBatchId] });
       });
 
-    await request(app.getHttpServer())
+    await auth.agent
       .get('/api/employee-progress')
       .query({ periodType: EmployeeProgressPeriod.WEEK, periodStart: invalidWeekStartText })
       .expect(400);
   });
 
   it('lists import history, returns batch detail and downloads the original source', async () => {
-    const history = await request(app.getHttpServer())
+    const history = await auth.agent
       .get('/api/employee-work-imports')
       .query({ periodType: EmployeeProgressPeriod.WEEK, periodStart: periodStartText })
       .expect(200);
@@ -481,7 +503,7 @@ describe('Employee progress and import history API', () => {
       meta: { page: 1, pageSize: 20, total: 2 },
     });
 
-    await request(app.getHttpServer())
+    await auth.agent
       .get(`/api/employee-work-imports/${sourceBatchId}`)
       .expect(200)
       .expect(({ body }) => {
@@ -502,7 +524,7 @@ describe('Employee progress and import history API', () => {
         expect(body.data).not.toHaveProperty('previewFingerprint');
       });
 
-    await request(app.getHttpServer())
+    await auth.agent
       .get(`/api/employee-work-imports/${currentBatchId}`)
       .query({
         rowStatus: EmployeeImportRowStatus.ERROR,
@@ -522,23 +544,23 @@ describe('Employee progress and import history API', () => {
           rowMeta: { page: 1, pageSize: 1, total: 1 },
         });
       });
-    await request(app.getHttpServer())
+    await auth.agent
       .get(`/api/employee-work-imports/${currentBatchId}`)
       .query({ issuesOnly: false })
       .expect(200)
       .expect(({ body }) => {
         expect(body.data.rowMeta).toMatchObject({ total: 2 });
       });
-    await request(app.getHttpServer())
+    await auth.agent
       .get(`/api/employee-work-imports/${currentBatchId}`)
       .query({ rowStatus: 'INVALID' })
       .expect(400);
-    await request(app.getHttpServer())
+    await auth.agent
       .get(`/api/employee-work-imports/${currentBatchId}`)
       .query({ issuesOnly: '1' })
       .expect(400);
 
-    const downloaded = await request(app.getHttpServer())
+    const downloaded = await auth.agent
       .get(`/api/employee-work-imports/${sourceBatchId}/source`)
       .buffer(true)
       .parse((response, callback) => {
@@ -564,7 +586,7 @@ describe('Employee progress and import history API', () => {
       },
     });
 
-    const csv = await request(app.getHttpServer())
+    const csv = await auth.agent
       .get('/api/employee-work-items/export')
       .query({
         periodType: EmployeeProgressPeriod.WEEK,
@@ -581,11 +603,11 @@ describe('Employee progress and import history API', () => {
     expect(csv.text).not.toContain(`${prefix}-旧版本工作`);
 
     const [first, second] = await Promise.all([
-      request(app.getHttpServer())
+      auth.agent
         .post(`/api/employee-work-items/${currentWorkItemId}/convert-risk`)
         .send({})
         .expect(201),
-      request(app.getHttpServer())
+      auth.agent
         .post(`/api/employee-work-items/${currentWorkItemId}/convert-risk`)
         .send({})
         .expect(201),
@@ -610,7 +632,7 @@ describe('Employee progress and import history API', () => {
       projectId,
       taskId,
     });
-    await request(app.getHttpServer())
+    await auth.agent
       .post(`/api/employee-work-items/${sourceWorkItemId}/convert-risk`)
       .send({})
       .expect(404);
@@ -629,11 +651,11 @@ describe('Employee progress and import history API', () => {
 
   it('restores a superseded batch once under concurrent retries and preserves every version and source', async () => {
     const [left, right] = await Promise.all([
-      request(app.getHttpServer())
+      auth.agent
         .post(`/api/employee-work-imports/${sourceBatchId}/restore`)
         .send({})
         .expect(201),
-      request(app.getHttpServer())
+      auth.agent
         .post(`/api/employee-work-imports/${sourceBatchId}/restore`)
         .send({})
         .expect(201),

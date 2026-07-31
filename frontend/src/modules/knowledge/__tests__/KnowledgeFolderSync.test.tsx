@@ -11,6 +11,8 @@ const apiMocks = vi.hoisted(() => ({
   getFolderProgressSnapshot: vi.fn(),
   startFolderWatch: vi.fn(),
   stopFolderWatch: vi.fn(),
+  retryFailedFolderFiles: vi.fn(),
+  getFolderProgressEventSourceUrl: vi.fn().mockRejectedValue(new Error('no ticket in test')),
 }))
 
 vi.mock('../api', () => ({
@@ -19,6 +21,8 @@ vi.mock('../api', () => ({
   getFolderProgressSnapshot: apiMocks.getFolderProgressSnapshot,
   startFolderWatch: apiMocks.startFolderWatch,
   stopFolderWatch: apiMocks.stopFolderWatch,
+  retryFailedFolderFiles: apiMocks.retryFailedFolderFiles,
+  getFolderProgressEventSourceUrl: apiMocks.getFolderProgressEventSourceUrl,
 }))
 
 vi.mock('../components/KnowledgeEmbeddingStatus', () => ({
@@ -68,6 +72,7 @@ describe('KnowledgeFolderSync', () => {
       currentFile: '正在扫描文件夹...',
       percent: 0,
     })
+    apiMocks.retryFailedFolderFiles.mockResolvedValue({ started: true, count: 1 })
     vi.stubGlobal('EventSource', FakeEventSource)
   })
 
@@ -121,5 +126,68 @@ describe('KnowledgeFolderSync', () => {
 
     expect(screen.getByText('已扫描 3 个文件')).toBeInTheDocument()
     expect(screen.getByText('第三个文件.docx')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar', { name: '正在发现文件，总数未知' })).toHaveAttribute(
+      'aria-busy',
+      'true'
+    )
+  })
+
+  it('switches to real counts after discovery and exposes failed-file retry', async () => {
+    const user = userEvent.setup()
+    renderSync()
+
+    await user.click(await screen.findByRole('button', { name: /扫描/ }))
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThan(0))
+    const eventSource = FakeEventSource.instances.at(-1)!
+
+    act(() => {
+      eventSource.onmessage?.({
+        data: JSON.stringify({
+          watchId: 'watch-1',
+          phase: 'importing',
+          total: 10,
+          current: 7,
+          scanned: 10,
+          currentFile: '失败资料.docx',
+          percent: 70,
+          counts: {
+            discovered: 10,
+            pending: 3,
+            success: 4,
+            updated: 1,
+            skipped: 2,
+            deleted: 0,
+            failed: 1,
+          },
+          failedFiles: [
+            {
+              fileName: '失败资料.docx',
+              category: 'INDEX_FAILED',
+              reason: '索引处理失败',
+            },
+          ],
+        }),
+      })
+    })
+
+    expect(screen.getByRole('progressbar', { name: '文件处理进度 70%' })).toHaveAttribute(
+      'aria-valuenow',
+      '70'
+    )
+    expect(screen.getByText(/发现 10/)).toBeInTheDocument()
+    expect(screen.getByText(/失败 1/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '只重试失败项' }))
+    expect(apiMocks.retryFailedFolderFiles).toHaveBeenCalledWith('watch-1')
+  })
+
+  it('discloses polling compensation after the progress stream disconnects', async () => {
+    const user = userEvent.setup()
+    renderSync()
+
+    await user.click(await screen.findByRole('button', { name: /扫描/ }))
+    await waitFor(() => expect(FakeEventSource.instances.length).toBeGreaterThan(0))
+    act(() => FakeEventSource.instances.at(-1)?.onerror?.())
+
+    expect(await screen.findByText('实时连接已中断，正在使用轮询补偿')).toBeInTheDocument()
   })
 })

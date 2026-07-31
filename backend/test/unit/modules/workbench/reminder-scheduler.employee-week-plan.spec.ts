@@ -7,6 +7,70 @@ import {
 import { ReminderSchedulerService } from '../../../../src/modules/workbench/notifications/application/reminder-scheduler.service';
 
 describe('ReminderSchedulerService employee week plan reminders', () => {
+  it('skips the scan without reading due rules when the shared lock is unavailable', async () => {
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ acquired: false }]),
+      reminderRule: { findMany: jest.fn() },
+      notification: { findMany: jest.fn() },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (work: (transaction: typeof tx) => Promise<unknown>) => work(tx)),
+    };
+    const service = new ReminderSchedulerService(
+      prisma as never,
+      { publish: jest.fn() } as never,
+      { queueForNotification: jest.fn() } as never,
+    );
+
+    await expect(service.scanDue()).resolves.toEqual({
+      skipped: true,
+      created: 0,
+      resurfaced: 0,
+      notifications: [],
+    });
+
+    expect(tx.reminderRule.findMany).not.toHaveBeenCalled();
+    expect(tx.notification.findMany).not.toHaveBeenCalled();
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      maxWait: 2_000,
+      timeout: 20_000,
+    });
+  });
+
+  it('skips an overlapping in-process scan instead of opening another transaction', async () => {
+    let finishFirstScan!: (value: { created: never[]; resurfaced: never[] }) => void;
+    const firstScan = new Promise<{ created: never[]; resurfaced: never[] }>((resolve) => {
+      finishFirstScan = resolve;
+    });
+    const prisma = {
+      $transaction: jest
+        .fn()
+        .mockReturnValueOnce(firstScan)
+        .mockResolvedValueOnce({ created: [], resurfaced: [] }),
+    };
+    const service = new ReminderSchedulerService(
+      prisma as never,
+      { publish: jest.fn() } as never,
+      { queueForNotification: jest.fn() } as never,
+    );
+
+    const pending = service.scanDue();
+    await expect(service.scanDue()).resolves.toEqual({
+      skipped: true,
+      created: 0,
+      resurfaced: 0,
+      notifications: [],
+    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+
+    finishFirstScan({ created: [], resurfaced: [] });
+    await expect(pending).resolves.toEqual({
+      created: 0,
+      resurfaced: 0,
+      notifications: [],
+    });
+  });
+
   it('creates a page notification with a direct employee plan path', async () => {
     const now = new Date('2026-08-07T00:00:00.000Z');
     const plan = {

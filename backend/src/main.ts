@@ -2,8 +2,12 @@ import 'reflect-metadata';
 
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { AppEnv } from './infrastructure/config/env.schema';
 import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { ResponseInterceptor } from './shared/interceptors/response.interceptor';
 import { AppLoggerService } from './infrastructure/logger/app-logger.service';
@@ -16,8 +20,18 @@ async function bootstrap() {
     bodyParser: false,
   });
 
+  const environment = app.get(ConfigService<AppEnv, true>);
   configureBodyParser(app);
-  configureLocalCors(app);
+  app.use(cookieParser());
+  app.use(helmet());
+  configureLocalCors(
+    app,
+    environment
+      .get('AUTH_ALLOWED_ORIGINS')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  );
   app.useLogger(app.get(AppLoggerService));
   app.setGlobalPrefix('api');
   app.useGlobalPipes(

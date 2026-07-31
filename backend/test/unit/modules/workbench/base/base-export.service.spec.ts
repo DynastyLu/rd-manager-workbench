@@ -1,5 +1,27 @@
 import { PassThrough } from 'node:stream';
+import { RequestContextService } from '../../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../../src/modules/iam/application/data-scope.service';
 import { BaseExportService } from '../../../../../src/modules/workbench/base/export/base-export.service';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  baseTables: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
+
+const createService = (prisma: unknown, base: unknown) =>
+  new BaseExportService(prisma as never, mockRequestContext, mockDataScope, base as never);
 
 describe('BaseExportService', () => {
   it('exports every page with BOM, safe cells and view-visible fields', async () => {
@@ -21,7 +43,7 @@ describe('BaseExportService', () => {
         expect(Buffer.concat(chunks).toString('utf8')).toContain("'=cmd");
         return { data: [{ id: '2', values: { title: '第二条', hidden: 'y' } }], meta: { page: 2, pageSize: 500, total: 2 } };
       }) };
-    const service = new BaseExportService(prisma as never, base as never);
+    const service = createService(prisma, base);
     const result = await service.create('table', { format: 'csv', scope: 'view', viewId: 'view' });
     await result.writeTo(output);
     const csv = Buffer.concat(chunks).toString('utf8');
@@ -42,7 +64,7 @@ describe('BaseExportService', () => {
     const base = { listRecords: jest.fn().mockResolvedValue({
       data: [{ id: '1', values: { title: '演示' } }], meta: { page: 1, pageSize: 500, total: 1 },
     }) };
-    const service = new BaseExportService(prisma as never, base as never);
+    const service = createService(prisma, base);
     const result = await service.create('table', { format: 'xlsx', scope: 'all' });
     const output = new PassThrough();
     const chunks: Buffer[] = [];

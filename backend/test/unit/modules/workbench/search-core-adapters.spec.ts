@@ -1,7 +1,31 @@
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { ApplicationsSearchAdapter } from '../../../../src/modules/workbench/search/adapters/applications-search.adapter';
 import { ContentSearchAdapter } from '../../../../src/modules/workbench/search/adapters/content-search.adapter';
 import { ProjectsSearchAdapter } from '../../../../src/modules/workbench/search/adapters/projects-search.adapter';
 import { TasksSearchAdapter } from '../../../../src/modules/workbench/search/adapters/tasks-search.adapter';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  projects: jest.fn().mockReturnValue({}),
+  tasks: jest.fn().mockReturnValue({}),
+  applicationCases: jest.fn().mockReturnValue({}),
+  documents: jest.fn().mockReturnValue({}),
+  files: jest.fn().mockReturnValue({}),
+  meetings: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 describe('core search adapters', () => {
   it('searches active projects with a bounded structured query and safe candidate shape', async () => {
@@ -20,19 +44,24 @@ describe('core search adapters', () => {
         ]),
       },
     };
-    const adapter = new ProjectsSearchAdapter(prisma as never);
+    const adapter = new ProjectsSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const candidates = await adapter.search('量子', ['PROJECT']);
 
     expect(prisma.project.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
-          archivedAt: null,
-          OR: expect.arrayContaining([
-            { code: { contains: '量子', mode: 'insensitive' } },
-            { name: { contains: '量子', mode: 'insensitive' } },
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              archivedAt: null,
+              OR: expect.arrayContaining([
+                { code: { contains: '量子', mode: 'insensitive' } },
+                { name: { contains: '量子', mode: 'insensitive' } },
+              ]),
+            }),
+            {},
           ]),
-        },
+        }),
         take: 100,
       }),
     );
@@ -95,17 +124,22 @@ describe('core search adapters', () => {
         ]),
       },
     };
-    const adapter = new TasksSearchAdapter(prisma as never);
+    const adapter = new TasksSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const candidates = await adapter.search('量子', ['TASK']);
 
     expect(prisma.workTask.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          archivedAt: null,
-          OR: expect.arrayContaining([
-            { title: { contains: '量子', mode: 'insensitive' } },
-            { description: { contains: '量子', mode: 'insensitive' } },
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              archivedAt: null,
+              OR: expect.arrayContaining([
+                { title: { contains: '量子', mode: 'insensitive' } },
+                { description: { contains: '量子', mode: 'insensitive' } },
+              ]),
+            }),
+            {},
           ]),
         }),
         take: 100,
@@ -149,18 +183,23 @@ describe('core search adapters', () => {
         ]),
       },
     };
-    const adapter = new ApplicationsSearchAdapter(prisma as never);
+    const adapter = new ApplicationsSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const candidates = await adapter.search('量子', ['APPLICATION_CASE']);
 
     expect(prisma.applicationCase.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          archivedAt: null,
-          project: { archivedAt: null },
-          OR: expect.arrayContaining([
-            { code: { contains: '量子', mode: 'insensitive' } },
-            { title: { contains: '量子', mode: 'insensitive' } },
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              archivedAt: null,
+              project: { archivedAt: null },
+              OR: expect.arrayContaining([
+                { code: { contains: '量子', mode: 'insensitive' } },
+                { title: { contains: '量子', mode: 'insensitive' } },
+              ]),
+            }),
+            { project: {} },
           ]),
         }),
         take: 100,
@@ -210,13 +249,21 @@ describe('core search adapters', () => {
         ]),
       },
     };
-    const adapter = new ContentSearchAdapter(prisma as never);
+    const adapter = new ContentSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const candidates = await adapter.search('量子', ['DOCUMENT', 'FILE']);
 
     expect(prisma.contentDocument.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: 'ACTIVE', trashedAt: null }),
+        where: expect.objectContaining({
+          AND: expect.arrayContaining([
+            expect.objectContaining({
+              status: 'ACTIVE',
+              trashedAt: null,
+            }),
+            {},
+          ]),
+        }),
         take: 100,
       }),
     );
@@ -238,8 +285,6 @@ describe('core search adapters', () => {
                 { documentId: null },
                 {
                   document: expect.objectContaining({
-                    status: 'ACTIVE',
-                    trashedAt: null,
                     AND: expect.any(Array),
                   }),
                 },
@@ -285,7 +330,7 @@ describe('core search adapters', () => {
         ]),
       },
     };
-    const adapter = new ContentSearchAdapter(prisma as never);
+    const adapter = new ContentSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const candidates = await adapter.search('量子', ['FILE']);
 
@@ -347,7 +392,7 @@ describe('core search adapters', () => {
         ]),
       },
     };
-    const adapter = new ContentSearchAdapter(prisma as never);
+    const adapter = new ContentSearchAdapter(prisma as never, mockRequestContext, mockDataScope);
 
     const candidates = await adapter.search('附件', ['FILE']);
 

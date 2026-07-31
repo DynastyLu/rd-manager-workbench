@@ -34,3 +34,61 @@ Endpoints are loopback-only by default:
 - `GET /api/health`
 - `GET /api/health/ready`
 - `GET /api/workbench/status`
+
+## Authentication and authorization
+
+The backend now enforces enterprise authentication and RBAC on all non-public routes:
+
+- Passwords are hashed with Argon2id (19456 KiB, time cost 2, parallelism 1) and must be at least 10 characters with a letter and a digit.
+- Access Tokens are short-lived JWTs signed with `JWT_SECRET`. Refresh Tokens are 256-bit random values, stored as SHA-256 hashes, and rotated on every use.
+- Refresh tokens are delivered as `HttpOnly`, `Secure`, `SameSite=Strict` cookies. A matching `X-CSRF-Token` header is required for refresh and state-changing requests.
+- Global `AuthenticationGuard` rejects anonymous requests; `PermissionGuard` enforces permission codes and data scopes (`SELF`, `INVOLVED`, `DEPARTMENT`, `PROJECT`, `ALL`).
+- Public endpoints are limited to health checks, bootstrap status, login, CSRF, refresh, and logout.
+
+## Operations
+
+### One-time bootstrap
+
+When the `users` table is empty, the backend automatically creates a default super administrator on startup:
+
+- Default username: `admin`
+- Default employee number: `ADMIN`
+- Default password: `RdManager2026!`
+- The account is bound to an auto-created `ResourceProfile` named `系统管理员`.
+- First login requires a password change (`mustChangePassword: true`).
+
+Override the defaults in `.env` with `DEFAULT_ADMIN_USERNAME` and `DEFAULT_ADMIN_PASSWORD`. In `NODE_ENV=prod`, using the default password is rejected; you must set a strong value before the application will start.
+
+### Reset a password
+
+An administrator can call `POST /api/admin/users/:id/reset-password` to generate a temporary password. The target user must change it on the next login.
+
+### Rotate JWT secrets
+
+1. Update `JWT_SECRET` and `JWT_REFRESH_SECRET` in `.env`.
+2. Restart the backend process.
+3. Existing access tokens expire naturally; call `POST /api/admin/users/:id/revoke-sessions` to force all active sessions for a user to re-authenticate.
+
+### Recover when the last administrator is locked
+
+If the only super administrator is locked out, use a database administrator connection to update the user's record:
+
+```sql
+UPDATE "app"."users"
+SET "failed_login_count" = 0,
+    "locked_until" = NULL,
+    "status" = 'ACTIVE'
+WHERE "username" = 'admin';
+```
+
+Then have the user log in again. If the password is forgotten, there is no back-door reset; you must either know the password or set a new Argon2id hash directly in the database and force a password change on next login.
+
+### Clean migration verification
+
+Use the following command to verify that a fresh temporary database can run all migrations from baseline:
+
+```bash
+pnpm verify:migrations:clean
+```
+
+This creates and drops a database prefixed with `rdmw_verify_`. If the application role cannot create databases, set `DATABASE_ADMIN_URL` to a PostgreSQL superuser connection.

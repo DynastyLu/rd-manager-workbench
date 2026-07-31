@@ -140,6 +140,7 @@ export default function LibraryHomePage() {
   const [selectedRecord, setSelectedRecordState] = useState<BaseRecord | null>(null)
   const openedDeepLinkRef = useRef('')
   const serverViewConfigs = useRef(new Map<string, DataViewConfig>())
+  const acknowledgedViewRevisions = useRef(new Map<string, number>())
   const latestDraftConfigs = useRef(new Map<string, DataViewConfig>())
   const createTableMutation = useCreateBaseTable()
   const createFieldMutation = useCreateBaseField()
@@ -199,18 +200,22 @@ export default function LibraryHomePage() {
   const recordsQuery = isGanttView ? allRecordsQuery : pagedRecordsQuery
   const activeViewIdRef = useRef<string | null>(resolvedView?.id ?? null)
   activeViewIdRef.current = resolvedView?.id ?? null
-  const viewConfigSave = useDebouncedViewConfigSave(async (id, config) => {
+  const viewConfigSave = useDebouncedViewConfigSave(async (id, config, saveContext) => {
     setConfigSaveCount((count) => count + 1)
     try {
       const updated = await updateBaseView(id, { config })
-      serverViewConfigs.current.set(id, updated.config)
-      if (latestDraftConfigs.current.get(id) === config) {
+      const acknowledgedRevision = acknowledgedViewRevisions.current.get(id) ?? 0
+      if (saveContext.revision > acknowledgedRevision) {
+        acknowledgedViewRevisions.current.set(id, saveContext.revision)
+        serverViewConfigs.current.set(id, updated.config)
+      }
+      if (saveContext.isLatest()) {
         latestDraftConfigs.current.set(id, updated.config)
         setViewOverrides((current) => ({ ...current, [id]: updated.config }))
       }
       if (activeViewIdRef.current === id) await recordsQuery.refetch()
     } catch {
-      if (latestDraftConfigs.current.get(id) === config) {
+      if (saveContext.isLatest()) {
         const serverConfig = serverViewConfigs.current.get(id)
         setViewOverrides((current) => {
           if (!serverConfig) {
@@ -253,6 +258,7 @@ export default function LibraryHomePage() {
   )
 
   function selectTable(table: DataTable) {
+    if (activeViewIdRef.current) viewConfigSave.flush(activeViewIdRef.current)
     urlState.update({
       tableId: table.id,
       viewId: table.views?.find((view) => view.isDefault)?.id ?? table.views?.[0]?.id,
@@ -386,6 +392,7 @@ export default function LibraryHomePage() {
               activeViewId={resolvedView?.id}
               isSaving={isViewSaving || configSaveCount > 0}
               onSelect={(id) => {
+                if (activeViewIdRef.current) viewConfigSave.flush(activeViewIdRef.current)
                 urlState.update(
                   { viewId: id, query: undefined, page: 1 },
                   { defaults: { page: 1 } },
@@ -414,7 +421,7 @@ export default function LibraryHomePage() {
                 }, '重命名视图失败。')
               }
               onConfigChange={saveViewConfig}
-              onSave={(id) => viewConfigSave.flush(id, resolvedView?.config ?? {})}
+              onSave={(id) => viewConfigSave.flush(id)}
               onDelete={(id) => {
                 viewConfigSave.cancel(id)
                 latestDraftConfigs.current.delete(id)

@@ -29,6 +29,8 @@ describe('FolderWatchService source contract', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
     );
     const received: unknown[] = [];
 

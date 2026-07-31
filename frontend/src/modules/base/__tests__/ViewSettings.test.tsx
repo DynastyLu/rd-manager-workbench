@@ -721,6 +721,46 @@ describe('LibraryHomePage saved views', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '保存名称' })).toBeEnabled())
   })
 
+  it('persists the latest rapid edit after a manual save, view switch, and unmount', async () => {
+    const manualSave = deferred<DataView>()
+    api.updateBaseView
+      .mockImplementationOnce(() => manualSave.promise)
+      .mockImplementation(async (_id: string, input: { config: DataView['config'] }) => ({
+        ...views[0],
+        config: input.config,
+      }))
+    const { unmount } = renderPage()
+
+    await screen.findByRole('heading', { name: '研发工作台' })
+    fireEvent.click(screen.getByRole('button', { name: '视图设置' }))
+    fireEvent.click(screen.getByRole('button', { name: '添加排序条件' }))
+    await selectSemiOption(screen.getByLabelText('排序字段 2'), 'score')
+    fireEvent.click(screen.getByRole('button', { name: '保存当前配置' }))
+    await waitFor(() => expect(api.updateBaseView).toHaveBeenCalledTimes(1))
+
+    await selectSemiOption(screen.getByLabelText('排序方向 2'), 'desc')
+    fireEvent.click(screen.getByRole('tab', { name: /高分视图/ }))
+    unmount()
+
+    await act(async () => {
+      manualSave.resolve({
+        ...views[0],
+        config: {
+          ...views[0].config,
+          sorts: [...(views[0].config.sorts ?? []), { fieldKey: 'score', direction: 'asc' }],
+        },
+      })
+      await manualSave.promise
+    })
+
+    await waitFor(() => expect(api.updateBaseView.mock.calls.length).toBeGreaterThanOrEqual(2))
+    expect(
+      api.updateBaseView.mock.calls
+        .slice(1)
+        .map((call) => call[1].config.sorts?.at(-1))
+    ).toEqual([{ fieldKey: 'score', direction: 'desc' }])
+  })
+
   it('cancels a pending debounced PATCH before deleting the view', async () => {
     api.deleteBaseView.mockResolvedValue(undefined)
     renderPage()

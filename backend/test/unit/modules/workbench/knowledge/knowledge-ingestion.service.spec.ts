@@ -1,9 +1,23 @@
 import { createHash } from 'node:crypto';
 import { PlatformPrismaService } from '../../../../../src/infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../../src/infrastructure/context/request-context.service';
 import { StoragePort } from '../../../../../src/infrastructure/storage/storage.port';
 import { DocumentImportService } from '../../../../../src/modules/workbench/knowledge/application/document-import.service';
 import { IndexingService } from '../../../../../src/modules/workbench/knowledge/application/indexing.service';
 import { KnowledgeIngestionService } from '../../../../../src/modules/workbench/knowledge/application/knowledge-ingestion.service';
+
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue({
+    userId: 'user-1',
+    employeeId: 'employee-1',
+    username: 'tester',
+    sessionId: 'session-1',
+    roleCodes: ['EMPLOYEE'],
+    permissions: [],
+    permissionVersion: 1,
+    mustChangePassword: false,
+  }),
+} as unknown as RequestContextService;
 
 describe('KnowledgeIngestionService', () => {
   it('persists the original upload and returns metadata without exposing extracted full text', async () => {
@@ -47,7 +61,7 @@ describe('KnowledgeIngestionService', () => {
     const indexing = {
       indexDocument: jest.fn().mockResolvedValue(undefined),
     } as unknown as IndexingService;
-    const service = new KnowledgeIngestionService(prisma, storage, importer, indexing);
+    const service = new KnowledgeIngestionService(prisma, storage, importer, indexing, mockRequestContext);
 
     const response = await service.upload({
       originalname: '研发计划.docx',

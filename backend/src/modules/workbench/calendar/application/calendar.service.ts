@@ -1,4 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { DataScopeService } from '../../../../modules/iam/application/data-scope.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
@@ -13,9 +15,14 @@ const MAX_CALENDAR_RANGE_MS = 366 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class CalendarService {
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly dataScope: DataScopeService,
+    private readonly requestContext: RequestContextService,
+  ) {}
 
   async listEvents(query: ListCalendarEventsQueryDto) {
+    const principal = this.requestContext.requirePrincipal();
     const from = new Date(query.from);
     const to = new Date(query.to);
     this.assertRange(from, to);
@@ -24,6 +31,7 @@ export class CalendarService {
         archivedAt: null,
         startAt: { lt: to },
         endAt: { gt: from },
+        ...this.calendarEventScope(principal),
       },
       orderBy: [{ startAt: 'asc' }, { id: 'asc' }],
     });
@@ -90,15 +98,18 @@ export class CalendarService {
   }
 
   async listEntries(query: ListCalendarEntriesQueryDto) {
+    const principal = this.requestContext.requirePrincipal();
     const from = new Date(query.from);
     const to = new Date(query.to);
     this.assertRange(from, to);
+    const allowedProjectIds = await this.allowedProjectIds(principal);
     const [events, meetings, tasks, nonProjectItems] = await this.prisma.$transaction([
       this.prisma.calendarEvent.findMany({
         where: {
           archivedAt: null,
           startAt: { lt: to },
           endAt: { gt: from },
+          ...this.calendarEventScope(principal, allowedProjectIds),
         },
         orderBy: [{ startAt: 'asc' }, { id: 'asc' }],
       }),
@@ -106,6 +117,7 @@ export class CalendarService {
         where: {
           archivedAt: null,
           scheduledAt: { gte: from, lt: to },
+          ...this.dataScope.meetings(principal),
         },
         orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
       }),
@@ -113,12 +125,14 @@ export class CalendarService {
         where: {
           archivedAt: null,
           dueAt: { gte: from, lt: to },
+          ...this.dataScope.tasks(principal),
         },
         orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
       }),
       this.prisma.nonProjectRdItem.findMany({
         where: {
           archivedAt: null,
+          ...this.nonProjectRdScope(principal, allowedProjectIds),
           OR: [
             { plannedStartAt: { gte: from, lt: to } },
             { plannedEndAt: { gte: from, lt: to } },
@@ -209,6 +223,43 @@ export class CalendarService {
       (left, right) =>
         left.startAt.getTime() - right.startAt.getTime() || left.id.localeCompare(right.id),
     );
+  }
+
+  private async allowedProjectIds(principal: import('../../../../modules/iam/domain/principal').AuthenticatedPrincipal): Promise<string[] | undefined> {
+    const scope = this.dataScope.projects(principal);
+    if (Object.keys(scope).length === 0) return undefined;
+    const records = await this.prisma.project.findMany({
+      where: scope,
+      select: { id: true },
+    });
+    return records.map(({ id }) => id);
+  }
+
+  private calendarEventScope(
+    principal: import('../../../../modules/iam/domain/principal').AuthenticatedPrincipal,
+    allowedProjectIds?: string[] | undefined,
+  ): import('@prisma/client').Prisma.CalendarEventWhereInput {
+    if (allowedProjectIds === undefined) {
+      const scope = this.dataScope.projects(principal);
+      if (Object.keys(scope).length === 0) return {};
+      return { project: scope };
+    }
+    if (allowedProjectIds.length === 0) return { id: { in: [] } };
+    return { OR: [{ projectId: null }, { projectId: { in: allowedProjectIds } }] };
+  }
+
+  private nonProjectRdScope(
+    principal: import('../../../../modules/iam/domain/principal').AuthenticatedPrincipal,
+    allowedProjectIds: string[] | undefined,
+  ): import('@prisma/client').Prisma.NonProjectRdItemWhereInput {
+    if (allowedProjectIds === undefined) return {};
+    const predicates: import('@prisma/client').Prisma.NonProjectRdItemWhereInput[] = [
+      { ownerUserId: principal.userId },
+    ];
+    if (allowedProjectIds.length > 0) {
+      predicates.push({ projectId: { in: allowedProjectIds } });
+    }
+    return { OR: predicates };
   }
 
   private assertRange(from: Date, to: Date) {

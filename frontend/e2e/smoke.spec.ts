@@ -91,21 +91,34 @@ test.describe('workbench smoke', () => {
     await expect(page.locator('.fc-toolbar-title')).toContainText('年')
   })
 
-  test('uses the Semi date picker in task scheduling dialogs', async ({ page }) => {
-    await page.goto('/#/my-work')
+  test('uses the Semi date picker in task scheduling dialogs', async ({ page, request }) => {
+    const title = `E2E 稍后处理 ${Date.now()}`
+    const created = await request.post('http://127.0.0.1:4311/api/tasks', {
+      data: { title },
+    })
+    expect(created.ok()).toBeTruthy()
+    const taskId = ((await created.json()) as { data: { id: string } }).data.id
 
-    const deferButton = page.locator('button[aria-label^="稍后处理："]').first()
-    await expect(deferButton).toBeVisible()
-    await deferButton.click()
+    try {
+      await page.goto('/#/my-work')
 
-    const dialog = page.getByRole('dialog', { name: '稍后处理' })
-    await expect(dialog).toBeVisible()
-    await expect(
-      dialog.locator('input[type="date"], input[type="datetime-local"], input[type="time"]'),
-    ).toHaveCount(0)
-    await expect(dialog.locator('.semi-datepicker')).toHaveCount(1)
-    await dialog.getByLabel('恢复日期').click()
-    await expect(page.locator('.semi-datepicker-container')).toBeVisible()
+      const deferButton = page.getByRole('button', { name: `稍后处理：${title}` })
+      await expect(deferButton).toBeVisible()
+      await deferButton.click()
+
+      const dialog = page.getByRole('dialog', { name: '稍后处理' })
+      await expect(dialog).toBeVisible()
+      await expect(
+        dialog.locator('input[type="date"], input[type="datetime-local"], input[type="time"]'),
+      ).toHaveCount(0)
+      await expect(dialog.locator('.semi-datepicker')).toHaveCount(1)
+      await dialog.getByLabel('恢复日期').click()
+      await expect(page.locator('.semi-datepicker-container')).toBeVisible()
+    } finally {
+      await request
+        .delete(`http://127.0.0.1:4311/api/tasks/${taskId}`)
+        .catch(() => undefined)
+    }
   })
 
   test('keeps actions away from the bottom edge in footerless modals', async ({ page }) => {
@@ -121,12 +134,16 @@ test.describe('workbench smoke', () => {
     await expect(dialog).toBeVisible()
     await expect(primary).toBeVisible()
 
-    const dialogBox = await dialog.boundingBox()
-    const primaryBox = await primary.boundingBox()
-    expect(dialogBox).not.toBeNull()
-    expect(primaryBox).not.toBeNull()
-    expect(dialogBox!.y + dialogBox!.height - (primaryBox!.y + primaryBox!.height)).toBeGreaterThanOrEqual(24)
-    expect(dialogBox!.x + dialogBox!.width - (primaryBox!.x + primaryBox!.width)).toBeGreaterThanOrEqual(24)
+    await expect
+      .poll(async () => {
+        const dialogBox = await dialog.boundingBox()
+        const primaryBox = await primary.boundingBox()
+        if (!dialogBox || !primaryBox) return 0
+        const bottom = dialogBox.y + dialogBox.height - (primaryBox.y + primaryBox.height)
+        const right = dialogBox.x + dialogBox.width - (primaryBox.x + primaryBox.width)
+        return Math.min(bottom, right)
+      })
+      .toBeGreaterThanOrEqual(24)
   })
 
   test('keeps actions inset in legacy workspace dialogs', async ({ page }) => {
@@ -138,12 +155,16 @@ test.describe('workbench smoke', () => {
     await expect(dialog).toBeVisible()
     await expect(primary).toBeVisible()
 
-    const dialogBox = await dialog.boundingBox()
-    const primaryBox = await primary.boundingBox()
-    expect(dialogBox).not.toBeNull()
-    expect(primaryBox).not.toBeNull()
-    expect(dialogBox!.y + dialogBox!.height - (primaryBox!.y + primaryBox!.height)).toBeGreaterThanOrEqual(16)
-    expect(dialogBox!.x + dialogBox!.width - (primaryBox!.x + primaryBox!.width)).toBeGreaterThanOrEqual(16)
+    await expect
+      .poll(async () => {
+        const dialogBox = await dialog.boundingBox()
+        const primaryBox = await primary.boundingBox()
+        if (!dialogBox || !primaryBox) return 0
+        const bottom = dialogBox.y + dialogBox.height - (primaryBox.y + primaryBox.height)
+        const right = dialogBox.x + dialogBox.width - (primaryBox.x + primaryBox.width)
+        return Math.min(bottom, right)
+      })
+      .toBeGreaterThanOrEqual(16)
   })
 
   test('aligns project attachments with the project card content grid', async ({ page }) => {

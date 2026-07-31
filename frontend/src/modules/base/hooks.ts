@@ -344,25 +344,50 @@ export function useUpdateBaseView() {
 }
 
 export function useDebouncedViewConfigSave(
-  save: (viewId: string, config: DataViewConfig) => unknown,
+  save: (
+    viewId: string,
+    config: DataViewConfig,
+    context: { revision: number; isLatest: () => boolean }
+  ) => unknown,
   delayMs = 350
 ) {
   const timers = useRef(new Map<string, number>())
-  const pending = useRef(new Map<string, DataViewConfig>())
+  const pending = useRef(new Map<string, { config: DataViewConfig; revision: number }>())
   const queues = useRef(new Map<string, Promise<void>>())
+  const latestRevisions = useRef(new Map<string, number>())
   const saveRef = useRef(save)
 
   useEffect(() => {
     saveRef.current = save
   }, [save])
 
-  const enqueue = useCallback((viewId: string, config: DataViewConfig) => {
-    const previous = queues.current.get(viewId) ?? Promise.resolve()
-    const operation = previous
-      .catch(() => undefined)
-      .then(() => saveRef.current(viewId, config))
-      .then(() => undefined)
+  const enqueue = useCallback((
+    viewId: string,
+    entry: { config: DataViewConfig; revision: number }
+  ) => {
+    const invoke = () =>
+      saveRef.current(viewId, entry.config, {
+          revision: entry.revision,
+          isLatest: () => latestRevisions.current.get(viewId) === entry.revision,
+      })
+    const previous = queues.current.get(viewId)
+    let operation: Promise<unknown>
+    if (previous) {
+      operation = previous.catch(() => undefined).then(invoke)
+    } else {
+      // Start the first request synchronously. In addition to making a manual
+      // flush observable immediately, this prevents an unmount flush from
+      // leaking its first API call into the next mounted screen.
+      try {
+        operation = Promise.resolve(invoke())
+      } catch (error) {
+        operation = Promise.reject(
+          error instanceof Error ? error : new Error('视图配置保存失败。'),
+        )
+      }
+    }
     const tracked = operation
+      .then(() => undefined)
       .catch(() => undefined)
       .finally(() => {
         if (queues.current.get(viewId) === tracked) queues.current.delete(viewId)
@@ -378,10 +403,10 @@ export function useDebouncedViewConfigSave(
   }, [])
 
   const flush = useCallback(
-    (viewId: string, config?: DataViewConfig) => {
+    (viewId: string) => {
       const timer = timers.current.get(viewId)
       if (timer !== undefined) window.clearTimeout(timer)
-      const latest = pending.current.get(viewId) ?? config
+      const latest = pending.current.get(viewId)
       timers.current.delete(viewId)
       pending.current.delete(viewId)
       if (latest) enqueue(viewId, latest)
@@ -392,7 +417,7 @@ export function useDebouncedViewConfigSave(
   useEffect(
     () => () => {
       for (const timer of timers.current.values()) window.clearTimeout(timer)
-      for (const [viewId, config] of pending.current) enqueue(viewId, config)
+      for (const [viewId, entry] of pending.current) enqueue(viewId, entry)
       timers.current.clear()
       pending.current.clear()
     },
@@ -401,7 +426,9 @@ export function useDebouncedViewConfigSave(
 
   const schedule = useCallback(
     (viewId: string, config: DataViewConfig) => {
-      pending.current.set(viewId, config)
+      const revision = (latestRevisions.current.get(viewId) ?? 0) + 1
+      latestRevisions.current.set(viewId, revision)
+      pending.current.set(viewId, { config, revision })
       const previousTimer = timers.current.get(viewId)
       if (previousTimer !== undefined) window.clearTimeout(previousTimer)
       const timer = window.setTimeout(() => {
@@ -411,6 +438,7 @@ export function useDebouncedViewConfigSave(
         if (latest) enqueue(viewId, latest)
       }, delayMs)
       timers.current.set(viewId, timer)
+      return revision
     },
     [delayMs, enqueue]
   )

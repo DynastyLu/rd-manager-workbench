@@ -1,6 +1,16 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  ConflictException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ContentDocumentType, ContentStatus, Prisma } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
+import { StoragePort } from '../../../../infrastructure/storage/storage.port';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import {
@@ -13,9 +23,38 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
+interface StagedStorageKey {
+  sourceKey: string;
+  stagedKey: string;
+}
+
+interface StorageDeletionJournal {
+  version: 1;
+  documentId: string;
+  entries: StagedStorageKey[];
+}
+
+const DELETION_JOURNAL_PREFIX = 'trash/journals';
+const DELETION_STAGING_PREFIX = 'trash/documents';
+const DELETION_LOCK_NAME = 'rd-manager-workbench:document-trash';
+
 @Injectable()
-export class DocumentsService {
-  constructor(private readonly prisma: PlatformPrismaService) {}
+export class DocumentsService implements OnModuleInit {
+  private readonly logger = new Logger(DocumentsService.name);
+  private deletionQueue: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly storage: StoragePort,
+    private readonly requestContext: RequestContextService,
+    private readonly dataScope: DataScopeService,
+  ) {}
+
+  onModuleInit(): Promise<void> {
+    return this.runDeletionExclusive(() =>
+      this.withDeletionLock((tx) => this.recoverPendingDeletions(tx)),
+    );
+  }
 
   async list(query: ListDocumentsQueryDto) {
     const page = query.page ?? DEFAULT_PAGE;
@@ -37,20 +76,24 @@ export class DocumentsService {
           }
         : {}),
     };
+    const principal = this.requestContext.requirePrincipal();
+    const scope = this.dataScope.documents(principal);
+    const scopedWhere: Prisma.ContentDocumentWhereInput = { AND: [where, scope] };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.contentDocument.findMany({
-        where,
+        where: scopedWhere,
         orderBy: [{ isFavorite: 'desc' }, { updatedAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
-      this.prisma.contentDocument.count({ where }),
+      this.prisma.contentDocument.count({ where: scopedWhere }),
     ]);
     return { data, meta: { page, pageSize, total } };
   }
 
   async get(id: string) {
-    const document = await this.prisma.contentDocument.findUnique({
+    await this.assertReadable(id);
+    const document = await this.prisma.contentDocument.findFirst({
       where: { id },
       include: {
         space: true,
@@ -71,7 +114,7 @@ export class DocumentsService {
    * Returns null if the document has no PDF source file.
    */
   async getPreviewHtml(id: string): Promise<string | null | 'not-pdf'> {
-    // 1. Find PDF source
+    await this.assertReadable(id);
     const folderFile = await this.prisma.folderFile.findFirst({
       where: { documentId: id, status: 'ACTIVE' },
       select: { filePath: true },
@@ -126,6 +169,7 @@ export class DocumentsService {
   }
 
   async create(dto: CreateDocumentDto) {
+    const principal = this.requestContext.requirePrincipal();
     const references = await this.validateReferences(dto);
     return this.prisma.contentDocument.create({
       data: {
@@ -139,11 +183,15 @@ export class DocumentsService {
         parentId: references.parentId,
         projectId: dto.projectId,
         meetingId: dto.meetingId,
+        createdByUserId: principal.userId,
+        updatedByUserId: principal.userId,
+        ownerUserId: principal.userId,
       },
     });
   }
 
   async createKnowledgePageInTransaction(tx: Prisma.TransactionClient, dto: CreateDocumentDto) {
+    const principal = this.requestContext.requirePrincipal();
     const space = dto.spaceId ? await tx.knowledgeSpace.findFirst({ where: { id: dto.spaceId, archivedAt: null }, select: { id: true } }) : null;
     if (dto.spaceId && !space) throw this.referenceInvalid('Knowledge space not found');
     const project = dto.projectId ? await tx.project.findFirst({ where: { id: dto.projectId, archivedAt: null }, select: { id: true } }) : null;
@@ -153,10 +201,15 @@ export class DocumentsService {
       content: (dto.content ?? {}) as Prisma.InputJsonValue, plainText: dto.plainText ?? '',
       tags: this.normalizeTags(dto.tags), isFavorite: dto.isFavorite ?? false,
       spaceId: dto.spaceId, projectId: dto.projectId,
+      createdByUserId: principal.userId,
+      updatedByUserId: principal.userId,
+      ownerUserId: principal.userId,
     } });
   }
 
   async update(id: string, dto: UpdateDocumentDto) {
+    const principal = this.requestContext.requirePrincipal();
+    await this.assertAccessible(id);
     const current = await this.prisma.contentDocument.findFirst({
       where: { id, status: ContentStatus.ACTIVE },
     });
@@ -183,11 +236,16 @@ export class DocumentsService {
         parentId: references.parentId,
         projectId: dto.projectId,
         meetingId: dto.meetingId,
+        updatedByUserId: principal.userId,
       },
     });
   }
 
   async trash(id: string) {
+    await this.assertAccessible(id, [
+      ContentStatus.ACTIVE,
+      ContentStatus.TRASHED,
+    ]);
     const result = await this.prisma.contentDocument.updateMany({
       where: { id, status: ContentStatus.ACTIVE },
       data: { status: ContentStatus.TRASHED, trashedAt: new Date() },
@@ -196,12 +254,237 @@ export class DocumentsService {
   }
 
   async restore(id: string) {
+    await this.assertAccessible(id, [
+      ContentStatus.ACTIVE,
+      ContentStatus.TRASHED,
+    ]);
     const result = await this.prisma.contentDocument.updateMany({
       where: { id, status: ContentStatus.TRASHED },
       data: { status: ContentStatus.ACTIVE, trashedAt: null },
     });
     if (!result.count) throw this.documentNotFound();
     return this.get(id);
+  }
+
+  permanentDelete(id: string): Promise<void> {
+    return this.runDeletionExclusive(() => this.permanentDeleteWithLock(id));
+  }
+
+  private async permanentDeleteWithLock(id: string): Promise<void> {
+    await this.assertAccessible(id, [
+      ContentStatus.ACTIVE,
+      ContentStatus.TRASHED,
+    ]);
+    try {
+      await this.withDeletionLock(async (tx) => {
+        await this.recoverPendingDeletions(tx);
+        await this.permanentDeleteExclusive(tx, id);
+      });
+    } catch (error) {
+      try {
+        await this.withDeletionLock((tx) => this.recoverPendingDeletions(tx));
+      } catch (recoveryError) {
+        throw new AggregateError(
+          [error, recoveryError],
+          'Document deletion failed and persistent storage recovery was incomplete',
+        );
+      }
+      throw error;
+    }
+
+    try {
+      await this.withDeletionLock((tx) => this.recoverPendingDeletions(tx));
+    } catch {
+      this.logger.warn(
+        `Final storage cleanup deferred for document ${id}; persistent recovery will retry`,
+      );
+    }
+  }
+
+  private async assertReadable(id: string, statuses: ContentStatus[] = [ContentStatus.ACTIVE]) {
+    const principal = this.requestContext.requirePrincipal();
+    const scope = this.dataScope.documents(principal);
+    const accessible = await this.prisma.contentDocument.findFirst({
+      where: {
+        id,
+        status: statuses.length > 0 ? { in: statuses } : undefined,
+        AND: [scope],
+      },
+      select: { id: true },
+    });
+    if (accessible) return;
+    const exists = await this.prisma.contentDocument.count({ where: { id } });
+    if (!exists) throw this.documentNotFound();
+    throw new AppError({
+      code: ErrorCodes.PERMISSION_DENIED,
+      message: 'You do not have permission to access this document',
+      statusCode: HttpStatus.FORBIDDEN,
+    });
+  }
+
+  private async assertAccessible(
+    id: string,
+    statuses: ContentStatus[] = [ContentStatus.ACTIVE],
+  ) {
+    const principal = this.requestContext.requirePrincipal();
+    if (principal.roleCodes.includes('SUPER_ADMIN')) return;
+    const accessible = await this.prisma.contentDocument.findFirst({
+      where: {
+        id,
+        status: statuses.length > 0 ? { in: statuses } : undefined,
+        ownerUserId: principal.userId,
+      },
+      select: { id: true },
+    });
+    if (accessible) return;
+    const exists = await this.prisma.contentDocument.count({ where: { id } });
+    if (!exists) throw this.documentNotFound();
+    throw new AppError({
+      code: ErrorCodes.PERMISSION_DENIED,
+      message: 'You do not have permission to modify this document',
+      statusCode: HttpStatus.FORBIDDEN,
+    });
+  }
+
+  private async permanentDeleteExclusive(
+    tx: Prisma.TransactionClient,
+    id: string,
+  ): Promise<void> {
+    const document = await tx.contentDocument.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        previewStorageKey: true,
+        fileAssets: {
+          select: {
+            id: true,
+            versions: { select: { storageKey: true } },
+          },
+        },
+      },
+    });
+    if (!document) throw this.documentNotFound();
+    if (document.status !== ContentStatus.TRASHED) {
+      throw this.permanentDeleteConflict();
+    }
+
+    const storageKeys = new Set<string>();
+    for (const asset of document.fileAssets) {
+      for (const version of asset.versions) storageKeys.add(version.storageKey);
+    }
+    if (document.previewStorageKey) storageKeys.add(document.previewStorageKey);
+
+    const journal = this.createDeletionJournal(id, storageKeys);
+    const journalKey = this.deletionJournalKey(id);
+    await this.persistDeletionJournal(journal, journalKey);
+    try {
+      await this.stageStorageKeys(journal.entries);
+      const fileAssetIds = document.fileAssets.map(({ id: fileAssetId }) => fileAssetId);
+      const locked = await tx.$queryRaw<Array<{ id: string; status: ContentStatus }>>`
+        SELECT id, status
+        FROM "app"."content_documents"
+        WHERE id = ${id}
+        FOR UPDATE
+      `;
+      if (!locked.length) throw this.documentNotFound();
+      if (locked[0].status !== ContentStatus.TRASHED) {
+        throw this.permanentDeleteConflict();
+      }
+
+      for (const fileAssetId of fileAssetIds) {
+        const lockedAssets = await tx.$queryRaw<
+          Array<{ id: string; documentId: string | null }>
+        >`
+          SELECT id, document_id AS "documentId"
+          FROM "app"."file_assets"
+          WHERE id = ${fileAssetId}
+          FOR UPDATE
+        `;
+        if (lockedAssets.length !== 1 || lockedAssets[0].documentId !== id) {
+          throw this.permanentDeleteConflict(
+            'A document file changed while permanent deletion was being prepared',
+          );
+        }
+      }
+
+      const current = await tx.contentDocument.findUniqueOrThrow({
+        where: { id },
+        select: {
+          previewStorageKey: true,
+          fileAssets: {
+            select: {
+              id: true,
+              versions: { select: { storageKey: true } },
+            },
+          },
+        },
+      });
+      const currentStorageKeys = new Set<string>();
+      for (const asset of current.fileAssets) {
+        for (const version of asset.versions) {
+          currentStorageKeys.add(version.storageKey);
+        }
+      }
+      if (current.previewStorageKey) currentStorageKeys.add(current.previewStorageKey);
+      const currentFileAssetIds = current.fileAssets.map(({ id: assetId }) => assetId);
+      if (
+        !this.haveSameValues(storageKeys, currentStorageKeys) ||
+        !this.haveSameValues(fileAssetIds, currentFileAssetIds)
+      ) {
+        throw this.permanentDeleteConflict(
+          'Document storage changed while permanent deletion was being prepared',
+        );
+      }
+
+      await tx.folderFile.deleteMany({ where: { documentId: id } });
+      await tx.documentChunk.deleteMany({ where: { documentId: id } });
+      await tx.documentVersion.deleteMany({ where: { documentId: id } });
+      if (fileAssetIds.length) {
+        await tx.fileVersion.deleteMany({
+          where: { fileAssetId: { in: fileAssetIds } },
+        });
+        const deletedFileAssets = await tx.fileAsset.deleteMany({
+          where: { id: { in: fileAssetIds }, documentId: id },
+        });
+        if (deletedFileAssets.count !== fileAssetIds.length) {
+          throw this.permanentDeleteConflict(
+            'A document file changed while permanent deletion was being committed',
+          );
+        }
+      }
+      const deleted = await tx.contentDocument.deleteMany({
+        where: { id, status: ContentStatus.TRASHED },
+      });
+      if (!deleted.count) throw this.permanentDeleteConflict();
+    } catch (error) {
+      try {
+        await this.recoverDeletionJournal(tx, journal, journalKey);
+      } catch (recoveryError) {
+        throw new AggregateError(
+          [error, recoveryError],
+          'Document deletion failed and in-lock storage recovery was incomplete',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async clearTrash(): Promise<{ deleted: number }> {
+    await this.runDeletionExclusive(() =>
+      this.withDeletionLock((tx) => this.recoverPendingDeletions(tx)),
+    );
+    const documents = await this.prisma.contentDocument.findMany({
+      where: { status: ContentStatus.TRASHED },
+      select: { id: true },
+      orderBy: [{ trashedAt: 'asc' }, { id: 'asc' }],
+    });
+    let deleted = 0;
+    for (const document of documents) {
+      await this.permanentDelete(document.id);
+      deleted += 1;
+    }
+    return { deleted };
   }
 
   async listVersions(id: string) {
@@ -405,6 +688,259 @@ export class DocumentsService {
       message: 'Document version not found',
       statusCode: HttpStatus.NOT_FOUND,
     });
+  }
+
+  private runDeletionExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.deletionQueue.then(operation, operation);
+    this.deletionQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private withDeletionLock<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${DELETION_LOCK_NAME}))`,
+        );
+        return operation(tx);
+      },
+      { maxWait: 10_000, timeout: 120_000 },
+    );
+  }
+
+  private createDeletionJournal(
+    documentId: string,
+    storageKeys: Iterable<string>,
+  ): StorageDeletionJournal {
+    return {
+      version: 1,
+      documentId,
+      entries: [...storageKeys]
+        .sort()
+        .map((sourceKey) => ({
+          sourceKey,
+          stagedKey: this.deletionStagingKey(documentId, sourceKey),
+        })),
+    };
+  }
+
+  private async persistDeletionJournal(
+    journal: StorageDeletionJournal,
+    journalKey: string,
+  ): Promise<void> {
+    const temporaryKey = `${DELETION_JOURNAL_PREFIX}/.tmp-${randomUUID()}`;
+    const content = Buffer.from(JSON.stringify(journal));
+    await this.storage.write({
+      key: temporaryKey,
+      content,
+      mimeType: 'application/json',
+    });
+    try {
+      await this.storage.rename(temporaryKey, journalKey);
+    } catch (error) {
+      try {
+        await this.storage.delete(temporaryKey);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          'Document deletion journal publication failed and temporary cleanup was incomplete',
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async stageStorageKeys(entries: StagedStorageKey[]): Promise<void> {
+    for (const { sourceKey, stagedKey } of entries) {
+      await this.storage.rename(sourceKey, stagedKey);
+    }
+  }
+
+  private async recoverPendingDeletions(tx: Prisma.TransactionClient): Promise<void> {
+    let storedEntries;
+    try {
+      storedEntries = await this.storage.walk(DELETION_JOURNAL_PREFIX);
+    } catch (error) {
+      if (this.isStorageNotFound(error)) return;
+      throw error;
+    }
+
+    for (const storedEntry of storedEntries) {
+      if (storedEntry.kind !== 'FILE') continue;
+      if (storedEntry.key.startsWith(`${DELETION_JOURNAL_PREFIX}/.tmp-`)) {
+        await this.storage.delete(storedEntry.key);
+        continue;
+      }
+      if (!storedEntry.key.endsWith('.json')) continue;
+      const journal = await this.readDeletionJournal(storedEntry.key);
+      await this.recoverDeletionJournal(tx, journal, storedEntry.key);
+    }
+  }
+
+  private async recoverDeletionJournal(
+    tx: Prisma.TransactionClient,
+    journal: StorageDeletionJournal,
+    journalKey: string,
+  ): Promise<void> {
+    const document = await tx.contentDocument.findUnique({
+      where: { id: journal.documentId },
+      select: {
+        id: true,
+        previewStorageKey: true,
+        fileAssets: {
+          select: {
+            versions: { select: { storageKey: true } },
+          },
+        },
+      },
+    });
+
+    if (!document) {
+      await this.finalizeDeletionJournal(journal, journalKey);
+      return;
+    }
+
+    const authoritativeKeys = new Set<string>();
+    for (const asset of document.fileAssets) {
+      for (const version of asset.versions) {
+        authoritativeKeys.add(version.storageKey);
+      }
+    }
+    if (document.previewStorageKey) authoritativeKeys.add(document.previewStorageKey);
+    if (!this.haveSameValues(authoritativeKeys, journal.entries.map(({ sourceKey }) => sourceKey))) {
+      throw new Error('Deletion journal no longer matches authoritative document storage');
+    }
+
+    for (const { sourceKey, stagedKey } of [...journal.entries].reverse()) {
+      const [sourceExists, stagedExists] = await Promise.all([
+        this.storageEntryExists(sourceKey),
+        this.storageEntryExists(stagedKey),
+      ]);
+      if (sourceExists && stagedExists) {
+        throw new Error('Deletion journal recovery found both source and staged storage objects');
+      }
+      if (!sourceExists && !stagedExists) {
+        throw new Error('Deletion journal recovery could not find source or staged storage object');
+      }
+      if (stagedExists) {
+        await this.storage.rename(stagedKey, sourceKey);
+      }
+    }
+    await this.storage.delete(journalKey);
+  }
+
+  private async finalizeDeletionJournal(
+    journal: StorageDeletionJournal,
+    journalKey: string,
+  ): Promise<void> {
+    const cleanup = await Promise.allSettled(
+      journal.entries.map(async ({ stagedKey }) => {
+        if (await this.storageEntryExists(stagedKey)) {
+          await this.storage.delete(stagedKey);
+        }
+      }),
+    );
+    const cleanupErrors = cleanup.flatMap((result) =>
+      result.status === 'rejected' ? [result.reason] : [],
+    );
+    if (cleanupErrors.length) {
+      throw new AggregateError(cleanupErrors, 'Document staged storage cleanup failed');
+    }
+    await this.storage.delete(journalKey);
+  }
+
+  private async readDeletionJournal(journalKey: string): Promise<StorageDeletionJournal> {
+    const stored = await this.storage.read(journalKey);
+    let value: unknown;
+    try {
+      value = JSON.parse(stored.content.toString('utf8'));
+    } catch (error) {
+      throw new Error('Document deletion journal is not valid JSON', { cause: error });
+    }
+    if (!this.isDeletionJournal(value)) {
+      throw new Error('Document deletion journal has an invalid shape');
+    }
+    if (this.deletionJournalKey(value.documentId) !== journalKey) {
+      throw new Error('Document deletion journal key does not match its document');
+    }
+    return value;
+  }
+
+  private isDeletionJournal(value: unknown): value is StorageDeletionJournal {
+    if (!value || typeof value !== 'object') return false;
+    const candidate = value as Partial<StorageDeletionJournal>;
+    if (
+      candidate.version !== 1 ||
+      typeof candidate.documentId !== 'string' ||
+      !Array.isArray(candidate.entries)
+    ) {
+      return false;
+    }
+    const sourceKeys = new Set<string>();
+    return candidate.entries.every((entry) => {
+      if (
+        !entry ||
+        typeof entry.sourceKey !== 'string' ||
+        typeof entry.stagedKey !== 'string' ||
+        entry.stagedKey !== this.deletionStagingKey(candidate.documentId!, entry.sourceKey) ||
+        sourceKeys.has(entry.sourceKey)
+      ) {
+        return false;
+      }
+      sourceKeys.add(entry.sourceKey);
+      return true;
+    });
+  }
+
+  private async storageEntryExists(storageKey: string): Promise<boolean> {
+    try {
+      await this.storage.stat(storageKey);
+      return true;
+    } catch (error) {
+      if (this.isStorageNotFound(error)) return false;
+      throw error;
+    }
+  }
+
+  private isStorageNotFound(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'ENOENT'
+    );
+  }
+
+  private deletionJournalKey(documentId: string): string {
+    return `${DELETION_JOURNAL_PREFIX}/${this.sha256(documentId)}.json`;
+  }
+
+  private deletionStagingKey(documentId: string, sourceKey: string): string {
+    return `${DELETION_STAGING_PREFIX}/${this.sha256(`${documentId}\0${sourceKey}`)}`;
+  }
+
+  private sha256(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
+  }
+
+  private haveSameValues(left: Iterable<string>, right: Iterable<string>): boolean {
+    const leftValues = [...left].sort();
+    const rightValues = [...right].sort();
+    return (
+      leftValues.length === rightValues.length &&
+      leftValues.every((value, index) => value === rightValues[index])
+    );
+  }
+
+  private permanentDeleteConflict(
+    message = 'Only trashed documents can be permanently deleted',
+  ) {
+    return new ConflictException(message);
   }
 
   private referenceInvalid(message: string) {

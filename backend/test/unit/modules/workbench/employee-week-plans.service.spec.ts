@@ -6,9 +6,43 @@ import {
   EmployeeWorkKind,
   TaskPriority,
 } from '@prisma/client';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { AppError } from '../../../../src/shared/errors/app-error';
 import { ErrorCodes } from '../../../../src/shared/errors/error-codes';
 import { EmployeeWeekPlansService } from '../../../../src/modules/workbench/employees/application/employee-week-plans.service';
+
+const mockPrincipal = {
+  userId: 'user-1',
+  employeeId: 'employee-1',
+  username: 'tester',
+  sessionId: 'session-1',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [],
+  permissionVersion: 1,
+  mustChangePassword: false,
+};
+const mockRequestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const mockDataScope = {
+  projects: jest.fn().mockReturnValue({}),
+  tasks: jest.fn().mockReturnValue({}),
+  employees: jest.fn().mockReturnValue({}),
+  employeeWork: jest.fn().mockReturnValue({}),
+  employeeWeekPlanItems: jest.fn().mockReturnValue({}),
+  meetings: jest.fn().mockReturnValue({}),
+  documents: jest.fn().mockReturnValue({}),
+  knowledge: jest.fn().mockReturnValue({}),
+  decisions: jest.fn().mockReturnValue({}),
+  issues: jest.fn().mockReturnValue({}),
+  risks: jest.fn().mockReturnValue({}),
+  partners: jest.fn().mockReturnValue({}),
+  communications: jest.fn().mockReturnValue({}),
+  baseTables: jest.fn().mockReturnValue({}),
+  baseRecords: jest.fn().mockReturnValue({}),
+  activities: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 describe('EmployeeWeekPlansService', () => {
   const plan = {
@@ -79,6 +113,8 @@ describe('EmployeeWeekPlansService', () => {
       tasks as never,
       audit as never,
       snapshots as never,
+      mockDataScope,
+      mockRequestContext,
     );
     return { service, prisma, tx, tasks, audit, snapshots };
   }
@@ -113,6 +149,26 @@ describe('EmployeeWeekPlansService', () => {
     });
   });
 
+  it('fails safely without reading or updating a plan when the scheduling lock is unavailable', async () => {
+    const { service, tx, snapshots } = fixture();
+    tx.$queryRaw.mockResolvedValue([{ acquired: false }]);
+
+    await expect(
+      service.updateSystemFields('plan-1', {
+        priority: EmployeePlanPriority.URGENT,
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCodes.DATABASE_ERROR,
+      statusCode: 409,
+      message: 'Reminder scheduling is busy; retry the employee week plan change',
+    });
+
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(tx.employeeWeekPlanItem.findFirst).not.toHaveBeenCalled();
+    expect(tx.employeeWeekPlanItem.update).not.toHaveBeenCalled();
+    expect(snapshots.rebuildBatch).not.toHaveBeenCalled();
+  });
+
   it('updates only system-owned fields in a locked transaction and audits changed fields', async () => {
     const { service, prisma, tx, audit, snapshots } = fixture();
     const completion = new Date('2026-08-08T00:00:00.000Z');
@@ -140,6 +196,7 @@ describe('EmployeeWeekPlansService', () => {
         plannedCompletionAt: completion,
         priority: EmployeePlanPriority.URGENT,
         collaborationText: '需要测试资源',
+        updatedByUserId: 'user-1',
       },
       include: expect.any(Object),
     });
@@ -198,6 +255,7 @@ describe('EmployeeWeekPlansService', () => {
           workKind: EmployeeWorkKind.NON_PROJECT,
           projectId: null,
           taskId: null,
+          updatedByUserId: 'user-1',
         },
       }),
     );
@@ -231,6 +289,7 @@ describe('EmployeeWeekPlansService', () => {
         carryStatus: EmployeePlanCarryStatus.CANCELLED,
         matchedWorkItemId: null,
         cancelReason: '优先级调整',
+        updatedByUserId: 'user-1',
       },
       include: expect.any(Object),
     });
@@ -281,6 +340,7 @@ describe('EmployeeWeekPlansService', () => {
         carryStatus: EmployeePlanCarryStatus.MATCHED,
         matchedWorkItemId: 'work-1',
         cancelReason: null,
+        updatedByUserId: 'user-1',
       },
       include: expect.any(Object),
     });
@@ -357,6 +417,7 @@ describe('EmployeeWeekPlansService', () => {
         carryStatus: EmployeePlanCarryStatus.PLANNED,
         matchedWorkItemId: null,
         cancelReason: null,
+        updatedByUserId: 'user-1',
       },
       include: expect.any(Object),
     });
@@ -398,7 +459,7 @@ describe('EmployeeWeekPlansService', () => {
     });
     expect(tx.employeeWeekPlanItem.update).toHaveBeenCalledWith({
       where: { id: 'plan-1' },
-      data: { taskId: task.id },
+      data: { taskId: task.id, updatedByUserId: 'user-1' },
       include: expect.any(Object),
     });
     expect(audit.record).toHaveBeenCalledWith(

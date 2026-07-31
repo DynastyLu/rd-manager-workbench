@@ -1,7 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
 import { PlatformPrismaService } from '../../../../../infrastructure/prisma/platform-prisma.service';
 import { StoragePort } from '../../../../../infrastructure/storage/storage.port';
+import { Public } from '../../../../iam/interface/http/public.decorator';
 
+@Public()
 @Controller('health')
 export class HealthController {
   constructor(

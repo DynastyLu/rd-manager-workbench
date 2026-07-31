@@ -1,15 +1,16 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { NonProjectRdKind, PrismaClient } from '@prisma/client';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Non-project R&D API', () => {
   const prisma = new PrismaClient();
   const prefix = `TEST-NPRD-${Date.now()}`;
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
 
   beforeAll(async () => {
     const { AppModule } = await import('../../../../src/app.module');
@@ -23,6 +24,7 @@ describe('Non-project R&D API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+    authenticated = await authenticatedRequest(app, prisma, 'SUPER_ADMIN');
   });
 
   afterAll(async () => {
@@ -33,12 +35,20 @@ describe('Non-project R&D API', () => {
       where: { item: { code: { startsWith: prefix } } },
     });
     await prisma.nonProjectRdItem.deleteMany({ where: { code: { startsWith: prefix } } });
+    if (authenticated) {
+      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.user.delete({ where: { id: authenticated.user.id } });
+      await prisma.role.delete({ where: { id: authenticated.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    }
     await prisma.$disconnect();
     await app.close();
   });
 
   it('runs the item, outcome, completion, project suggestion, and idempotent task lifecycle', async () => {
-    const created = await request(app.getHttpServer())
+    const created = await authenticated.agent
       .post('/api/non-project-rd')
       .send({
         code: `${prefix}-01`,
@@ -50,21 +60,21 @@ describe('Non-project R&D API', () => {
       .expect(201);
     const itemId = created.body.data.id as string;
 
-    const outcome = await request(app.getHttpServer())
+    const outcome = await authenticated.agent
       .post(`/api/non-project-rd/${itemId}/outcomes`)
       .send({ title: `${prefix} benchmark`, status: 'VERIFIED' })
       .expect(201);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/non-project-rd/${itemId}/outcomes/${outcome.body.data.id}`)
       .send({ evidenceNote: 'Measured locally' })
       .expect(200);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/non-project-rd/${itemId}`)
       .send({ status: 'COMPLETED', objective: null })
       .expect(200);
 
-    const filtered = await request(app.getHttpServer())
+    const filtered = await authenticated.agent
       .get('/api/non-project-rd')
       .query({
         q: prefix,
@@ -75,7 +85,7 @@ describe('Non-project R&D API', () => {
       .expect(200);
     expect(filtered.body.data.data.map(({ id }: { id: string }) => id)).toContain(itemId);
 
-    const suggestion = await request(app.getHttpServer())
+    const suggestion = await authenticated.agent
       .post(`/api/non-project-rd/${itemId}/project-suggestion`)
       .expect(201);
     expect(suggestion.body.data).toMatchObject({
@@ -83,11 +93,11 @@ describe('Non-project R&D API', () => {
       name: `${prefix} PostgreSQL lab`,
     });
 
-    const firstTask = await request(app.getHttpServer())
+    const firstTask = await authenticated.agent
       .post(`/api/non-project-rd/${itemId}/task`)
       .send({ title: `${prefix} task` })
       .expect(201);
-    const secondTask = await request(app.getHttpServer())
+    const secondTask = await authenticated.agent
       .post(`/api/non-project-rd/${itemId}/task`)
       .send({ title: `${prefix} duplicate` })
       .expect(201);
@@ -108,7 +118,7 @@ describe('Non-project R&D API', () => {
   });
 
   it('serializes concurrent joins to My Work into one source task', async () => {
-    const created = await request(app.getHttpServer())
+    const created = await authenticated.agent
       .post('/api/non-project-rd')
       .send({
         code: `${prefix}-CONCURRENT`,
@@ -119,10 +129,10 @@ describe('Non-project R&D API', () => {
     const itemId = created.body.data.id as string;
 
     const [left, right] = await Promise.all([
-      request(app.getHttpServer())
+      authenticated.agent
         .post(`/api/non-project-rd/${itemId}/task`)
         .send({ title: `${prefix} concurrent task A` }),
-      request(app.getHttpServer())
+      authenticated.agent
         .post(`/api/non-project-rd/${itemId}/task`)
         .send({ title: `${prefix} concurrent task B` }),
     ]);

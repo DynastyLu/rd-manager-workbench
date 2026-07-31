@@ -29,6 +29,7 @@ export type ContentDocument = {
   indexStatus: KnowledgeProcessingStatus
   processingError: string | null
   indexedAt: string | null
+  trashedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -135,6 +136,12 @@ export const trashDocument = (id: string) =>
 
 export const restoreDocument = (id: string) =>
   request<ContentDocument>(`/documents/${encodeURIComponent(id)}/restore`, { method: 'POST' })
+
+export const permanentlyDeleteDocument = (id: string) =>
+  request<void>(`/documents/${encodeURIComponent(id)}/permanent`, { method: 'DELETE' })
+
+export const clearDocumentTrash = () =>
+  request<{ deleted: number }>('/documents/trash', { method: 'DELETE' })
 
 export const listDocumentVersions = (id: string) =>
   request<DocumentVersion[]>(`/documents/${encodeURIComponent(id)}/versions`)

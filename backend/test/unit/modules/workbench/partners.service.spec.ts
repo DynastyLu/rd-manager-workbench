@@ -1,6 +1,8 @@
 import { CommunicationType, ProjectStatus } from '@prisma/client';
 import { validate } from 'class-validator';
 import { PlatformPrismaService } from '../../../../src/infrastructure/prisma/platform-prisma.service';
+import { RequestContextService } from '../../../../src/infrastructure/context/request-context.service';
+import { DataScopeService } from '../../../../src/modules/iam/application/data-scope.service';
 import { PartnersService } from '../../../../src/modules/workbench/management/application/partners.service';
 import {
   UpdateCommunicationDto,
@@ -9,6 +11,15 @@ import {
   UpdatePartnerDto,
 } from '../../../../src/modules/workbench/management/interface/http/dto/management.dto';
 import { TasksService } from '../../../../src/modules/workbench/tasks/application/tasks.service';
+
+const mockPrincipal = { userId: 'user-1' };
+const requestContext = {
+  requirePrincipal: jest.fn().mockReturnValue(mockPrincipal),
+} as unknown as RequestContextService;
+const dataScope = {
+  partners: jest.fn().mockReturnValue({}),
+  communications: jest.fn().mockReturnValue({}),
+} as unknown as DataScopeService;
 
 describe('PartnersService', () => {
   it('accepts partial partner-child updates and explicit nullable clears', async () => {
@@ -68,7 +79,7 @@ describe('PartnersService', () => {
       },
       $transaction: jest.fn().mockResolvedValue([await findMany(), await count()]),
     } as unknown as PlatformPrismaService;
-    const service = new PartnersService(prisma, {} as TasksService);
+    const service = new PartnersService(prisma, {} as TasksService, requestContext, dataScope);
 
     const result = await service.list({
       q: 'Acme',
@@ -82,22 +93,27 @@ describe('PartnersService', () => {
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          archivedAt: null,
-          OR: [
-            { name: { contains: 'Acme', mode: 'insensitive' } },
-            { shortName: { contains: 'Acme', mode: 'insensitive' } },
-            { category: { contains: 'Acme', mode: 'insensitive' } },
-          ],
-          projects: { some: { projectId: 'project-1' } },
-          communications: {
-            some: {
+          AND: [
+            {
               archivedAt: null,
-              nextFollowUpAt: {
-                gte: new Date('2026-07-20T00:00:00.000Z'),
-                lte: new Date('2026-07-31T23:59:59.999Z'),
+              OR: [
+                { name: { contains: 'Acme', mode: 'insensitive' } },
+                { shortName: { contains: 'Acme', mode: 'insensitive' } },
+                { category: { contains: 'Acme', mode: 'insensitive' } },
+              ],
+              projects: { some: { projectId: 'project-1' } },
+              communications: {
+                some: {
+                  archivedAt: null,
+                  nextFollowUpAt: {
+                    gte: new Date('2026-07-20T00:00:00.000Z'),
+                    lte: new Date('2026-07-31T23:59:59.999Z'),
+                  },
+                },
               },
             },
-          },
+            {},
+          ],
         },
         skip: 10,
         take: 10,
@@ -147,7 +163,7 @@ describe('PartnersService', () => {
         work(transaction),
       ),
     } as unknown as PlatformPrismaService;
-    const service = new PartnersService(prisma, {} as TasksService);
+    const service = new PartnersService(prisma, {} as TasksService, requestContext, dataScope);
 
     await service.updateCommunication('partner-1', 'communication-1', {
       contactId: 'contact-1',
@@ -197,7 +213,7 @@ describe('PartnersService', () => {
       ),
     } as unknown as PlatformPrismaService;
     const tasks = { createTaskInTransaction: jest.fn() } as unknown as TasksService;
-    const service = new PartnersService(prisma, tasks);
+    const service = new PartnersService(prisma, tasks, requestContext, dataScope);
 
     await expect(
       service.createTaskForCommunication('communication-1', { title: 'Duplicate' }),
@@ -238,7 +254,7 @@ describe('PartnersService', () => {
         work(transaction),
       ),
     } as unknown as PlatformPrismaService;
-    const service = new PartnersService(prisma, {} as TasksService);
+    const service = new PartnersService(prisma, {} as TasksService, requestContext, dataScope);
 
     await expect(service.unlinkProject('partner-1', 'project-1')).rejects.toMatchObject({
       code: 'PARTNER_HAS_ACTIVE_RECORDS',
@@ -273,7 +289,7 @@ describe('PartnersService', () => {
         work(transaction),
       ),
     } as unknown as PlatformPrismaService;
-    const service = new PartnersService(prisma, {} as TasksService);
+    const service = new PartnersService(prisma, {} as TasksService, requestContext, dataScope);
     jest.spyOn(service, 'get').mockResolvedValue({ id: 'partner-1' } as never);
 
     await service.update('partner-1', { projectIds: ['project-1', 'project-2'] });
@@ -311,7 +327,7 @@ describe('PartnersService', () => {
         work(transaction),
       ),
     } as unknown as PlatformPrismaService;
-    const service = new PartnersService(prisma, {} as TasksService);
+    const service = new PartnersService(prisma, {} as TasksService, requestContext, dataScope);
     jest.spyOn(service, 'get').mockResolvedValue({ id: 'partner-1' } as never);
 
     await expect(service.update('partner-1', { projectIds: [] })).rejects.toMatchObject({
@@ -331,7 +347,7 @@ describe('PartnersService', () => {
     const childPrisma = {
       $transaction: jest.fn(async (work: (tx: typeof childTx) => Promise<unknown>) => work(childTx)),
     } as unknown as PlatformPrismaService;
-    const childService = new PartnersService(childPrisma, {} as TasksService);
+    const childService = new PartnersService(childPrisma, {} as TasksService, requestContext, dataScope);
     await childService.createContact('partner-1', { name: 'Alice' });
 
     const archiveTx = {
@@ -351,7 +367,7 @@ describe('PartnersService', () => {
         work(archiveTx),
       ),
     } as unknown as PlatformPrismaService;
-    const archiveService = new PartnersService(archivePrisma, {} as TasksService);
+    const archiveService = new PartnersService(archivePrisma, {} as TasksService, requestContext, dataScope);
     await archiveService.archive('partner-1');
 
     expect(childTx.$executeRaw).toHaveBeenCalledTimes(1);
@@ -378,7 +394,7 @@ describe('PartnersService', () => {
         work(transaction),
       ),
     } as unknown as PlatformPrismaService;
-    const service = new PartnersService(prisma, {} as TasksService);
+    const service = new PartnersService(prisma, {} as TasksService, requestContext, dataScope);
 
     await expect(service.archive('partner-1')).rejects.toMatchObject({
       code: 'PARTNER_HAS_ACTIVE_RECORDS',

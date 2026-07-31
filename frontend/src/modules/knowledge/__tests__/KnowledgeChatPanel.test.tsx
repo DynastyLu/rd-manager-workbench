@@ -256,6 +256,51 @@ describe('KnowledgeChatPanel', () => {
       expect(screen.getByText('RAG 是检索增强生成...')).toBeInTheDocument()
     })
 
+    it('loads older messages above the current message window', async () => {
+      getSession
+        .mockResolvedValueOnce({
+          id: 's1',
+          title: 'Long Session',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messages: [
+            {
+              id: 'm2',
+              role: 'ASSISTANT',
+              content: '最近消息',
+              createdAt: '2026-07-29T02:00:00.000Z',
+            },
+          ],
+          messageNextCursor: 'older-opaque',
+        })
+        .mockResolvedValueOnce({
+          id: 's1',
+          title: 'Long Session',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messages: [
+            {
+              id: 'm1',
+              role: 'USER',
+              content: '更早消息',
+              createdAt: '2026-07-29T01:00:00.000Z',
+            },
+          ],
+          messageNextCursor: null,
+        })
+      renderPanel('s1')
+      const user = userEvent.setup()
+
+      await user.click(await screen.findByRole('button', { name: '加载更早消息' }))
+
+      expect(await screen.findByText('更早消息')).toBeInTheDocument()
+      expect(getSession).toHaveBeenNthCalledWith(2, 's1', {
+        messageCursor: 'older-opaque',
+      })
+    })
+
     it('shows empty prompt when session has no messages and not streaming', async () => {
       getSession.mockResolvedValue({
         id: 's2',
@@ -271,6 +316,22 @@ describe('KnowledgeChatPanel', () => {
       await waitFor(() => {
         expect(screen.getByText('输入问题开始搜索本地知识库')).toBeInTheDocument()
       })
+    })
+
+    it('discloses documents excluded from the NOVA answer scope', async () => {
+      getIndexStatus.mockResolvedValue({
+        indexedDocuments: 3,
+        totalDocuments: 5,
+        totalChunks: 12,
+        complete: false,
+        excludedDocuments: 2,
+      })
+
+      renderPanel('s1')
+
+      expect(
+        await screen.findByText('2 个文件尚未完成索引，当前回答不会引用这些文件')
+      ).toBeInTheDocument()
     })
 
     it('renders citations attached to an assistant message', async () => {

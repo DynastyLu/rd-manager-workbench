@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationBootstrap, OnApplicationShutdown } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   Notification,
   NotificationStatus,
@@ -14,12 +14,15 @@ import { NotificationsGateway } from '../notifications.gateway';
 import { SmsDeliveryService } from '../../extensions/application/sms-delivery.service';
 import { acquireReminderSchedulingLock } from './reminder-scheduling-lock';
 
-const SCAN_INTERVAL_MS = 30_000;
+const SCHEDULER_TRANSACTION_OPTIONS = {
+  maxWait: 2_000,
+  timeout: 20_000,
+} as const;
 
 @Injectable()
-export class ReminderSchedulerService implements OnApplicationBootstrap, OnApplicationShutdown {
+export class ReminderSchedulerService {
   private readonly logger = new Logger(ReminderSchedulerService.name);
-  private scanTimer?: ReturnType<typeof setInterval>;
+  private scanRunning = false;
 
   constructor(
     private readonly prisma: PlatformPrismaService,
@@ -27,48 +30,45 @@ export class ReminderSchedulerService implements OnApplicationBootstrap, OnAppli
     private readonly smsDelivery: SmsDeliveryService,
   ) {}
 
-  onApplicationBootstrap() {
-    if (process.env.NODE_ENV === 'test' || process.env.RD_MAINTENANCE_MODE === '1') return;
-    void this.scanDue().catch((error: unknown) =>
-      this.logger.error(
-        'Initial reminder scan failed',
-        error instanceof Error ? error.stack : error,
-      ),
-    );
-    this.scanTimer = setInterval(() => {
-      void this.scanDue().catch((error: unknown) =>
-        this.logger.error('Reminder scan failed', error instanceof Error ? error.stack : error),
-      );
-    }, SCAN_INTERVAL_MS);
-    this.scanTimer.unref();
-  }
-
-  onApplicationShutdown() {
-    if (this.scanTimer) clearInterval(this.scanTimer);
-  }
-
   async scanDue(now = new Date()) {
-    const result = await this.prisma.$transaction(async (tx) => {
-      await acquireReminderSchedulingLock(tx);
-      const created = await this.createDueNotifications(tx, now);
-      const resurfaced = await this.resurfaceSnoozedNotifications(tx, now);
-      return { created, resurfaced };
-    });
-    const notifications = [...result.created, ...result.resurfaced];
-    for (const notification of notifications) {
-      this.gateway.publish(notification);
-      void this.smsDelivery
-        .queueForNotification(notification.id)
-        .catch((error: unknown) =>
-          this.logger.warn(
-            `SMS delivery queue failed for notification ${notification.id}: ${error instanceof Error ? error.message : String(error)}`,
-          ),
-        );
+    if (this.scanRunning) return this.skippedResult();
+    this.scanRunning = true;
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        if (!(await acquireReminderSchedulingLock(tx))) return null;
+        const created = await this.createDueNotifications(tx, now);
+        const resurfaced = await this.resurfaceSnoozedNotifications(tx, now);
+        return { created, resurfaced };
+      }, SCHEDULER_TRANSACTION_OPTIONS);
+      if (!result) return this.skippedResult();
+
+      const notifications = [...result.created, ...result.resurfaced];
+      for (const notification of notifications) {
+        this.gateway.publish(notification);
+        void this.smsDelivery
+          .queueForNotification(notification.id)
+          .catch((error: unknown) =>
+            this.logger.warn(
+              `SMS delivery queue failed for notification ${notification.id}: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
+      }
+      return {
+        created: result.created.length,
+        resurfaced: result.resurfaced.length,
+        notifications,
+      };
+    } finally {
+      this.scanRunning = false;
     }
+  }
+
+  private skippedResult() {
     return {
-      created: result.created.length,
-      resurfaced: result.resurfaced.length,
-      notifications,
+      skipped: true as const,
+      created: 0,
+      resurfaced: 0,
+      notifications: [] as Notification[],
     };
   }
 

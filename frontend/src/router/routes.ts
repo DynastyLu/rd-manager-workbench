@@ -16,6 +16,7 @@ export type NavigationIcon =
   | 'base'
   | 'calendar'
   | 'search'
+  | 'settings'
 
 export interface NavigationItem {
   key: string
@@ -65,6 +66,15 @@ const IntelligencePage = lazy(() => import('@/pages/IntelligencePage'))
 const IntelligenceBriefsPage = lazy(() => import('@/pages/IntelligenceBriefsPage'))
 const EmployeesPage = lazy(() => import('@/pages/EmployeesPage'))
 const EmployeeDetailPage = lazy(() => import('@/pages/EmployeeDetailPage'))
+const LoginPage = lazy(() => import('@/modules/auth/pages/LoginPage'))
+const FirstPasswordChangePage = lazy(
+  () => import('@/modules/auth/pages/FirstPasswordChangePage')
+)
+const ForbiddenPage = lazy(() => import('@/modules/auth/pages/ForbiddenPage'))
+const PersonalSecurityPage = lazy(
+  () => import('@/modules/auth/pages/PersonalSecurityPage')
+)
+const AdminLayout = lazy(() => import('@/modules/admin/AdminLayout'))
 
 function PlannedGovernancePage() {
   return createElement(PlannedModuleState, {
@@ -308,6 +318,13 @@ const canonicalRoutes: RouteDefinition[] = [
     redirectTo: ROUTES.SEARCH,
   },
   {
+    path: ROUTES.PERSONAL_SECURITY,
+    title: '账号安全',
+    icon: '⚙',
+    component: PersonalSecurityPage,
+    availability: 'AVAILABLE',
+  },
+  {
     path: ROUTES.SETTINGS,
     title: '设置',
     icon: '⚙',
@@ -326,6 +343,13 @@ const canonicalRoutes: RouteDefinition[] = [
     title: '外部能力',
     icon: '⚙',
     component: ExtensionsSettingsPage,
+    availability: 'AVAILABLE',
+  },
+  {
+    path: '/admin/*',
+    title: '系统管理',
+    icon: 'settings',
+    component: AdminLayout,
     availability: 'AVAILABLE',
   },
 ]
@@ -405,7 +429,37 @@ const fallbackRoute: RouteDefinition = {
   availability: 'AVAILABLE',
 }
 
-const routes: RouteDefinition[] = [...canonicalRoutes, ...legacyRoutes, fallbackRoute]
+export const publicRoutes: RouteDefinition[] = [
+  {
+    path: ROUTES.LOGIN,
+    title: '登录',
+    icon: 'login',
+    component: LoginPage,
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.CHANGE_PASSWORD,
+    title: '更新密码',
+    icon: 'password',
+    component: FirstPasswordChangePage,
+    availability: 'AVAILABLE',
+  },
+  {
+    path: ROUTES.FORBIDDEN,
+    title: '无权访问',
+    icon: 'forbidden',
+    component: ForbiddenPage,
+    availability: 'AVAILABLE',
+  },
+]
+
+export const protectedRoutes: RouteDefinition[] = [
+  ...canonicalRoutes,
+  ...legacyRoutes,
+  fallbackRoute,
+]
+
+const routes: RouteDefinition[] = protectedRoutes
 
 export function findRoute(path: string): RouteDefinition | undefined {
   return routes.find((route) => route.path === path)

@@ -1,10 +1,13 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
-import { Prisma, ReminderSourceType, TaskStatus } from '@prisma/client';
+import { HttpStatus, Injectable, Optional } from '@nestjs/common';
+import { MeetingActionStatus, Prisma, ReminderSourceType, TaskStatus } from '@prisma/client';
+import { DataScopeService } from '../../../../modules/iam/application/data-scope.service';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
 import { ProjectHealthService } from '../../projects/application/project-health.service';
 import { ProjectHealthSnapshotService } from '../../projects/application/project-health-snapshot.service';
+import { ActivityService } from '../../activity/application/activity.service';
 import {
   ProjectProgressService,
   type ProgressRecalculationTrigger,
@@ -51,9 +54,12 @@ interface TaskReferenceInput {
 export class TasksService {
   constructor(
     private readonly prisma: PlatformPrismaService,
+    private readonly dataScope: DataScopeService,
+    private readonly requestContext: RequestContextService,
     private readonly projectHealthService: ProjectHealthService,
     private readonly healthSnapshotService?: ProjectHealthSnapshotService,
     private readonly projectProgressService?: ProjectProgressService,
+    @Optional() private readonly activities?: ActivityService,
   ) {}
 
   async createTask(dto: CreateTaskDto) {
@@ -68,10 +74,14 @@ export class TasksService {
     await this.assertTaskReferences(tx, dto);
     await this.assertCompletionAllowed(tx, dto.status, dto.dependencyIds ?? []);
     await this.acquireProjectHealthLocks(tx, [dto.projectId]);
+    const principal = this.requestContext.requirePrincipal();
     const task = await tx.workTask.create({
         data: {
           title: dto.title,
           ...this.toTaskFields(dto),
+          createdByUserId: principal.userId,
+          ownerUserId: principal.userId,
+          updatedByUserId: principal.userId,
           completionPercent: dto.status === TaskStatus.DONE ? 100 : (dto.completionPercent ?? 0),
           ...(dto.status === TaskStatus.DONE ? { completedAt: new Date() } : {}),
           ...(dto.dependencyIds?.length
@@ -93,10 +103,23 @@ export class TasksService {
         summary: `创建工作项：${task.title}`,
       });
     }
+    await this.activities?.append(
+      {
+        actorKind: 'HUMAN',
+        objectType: 'WORK_TASK',
+        objectId: task.id,
+        projectId: task.projectId,
+        action: 'CREATED',
+        summary: `创建工作项：${task.title}`,
+        sourcePath: `/my-work?taskId=${encodeURIComponent(task.id)}`,
+      },
+      tx,
+    );
     return this.toTaskResponse(task);
   }
 
   async listTasks(query: ListTasksQueryDto) {
+    const principal = this.requestContext.requirePrincipal();
     const page = query.page ?? DEFAULT_PAGE;
     const pageSize = Math.min(query.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
     const now = new Date();
@@ -107,6 +130,7 @@ export class TasksService {
     ];
     const where: Prisma.WorkTaskWhereInput = {
       archivedAt: null,
+      ...this.dataScope.tasks(principal),
       ...(query.projectId ? { projectId: query.projectId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.assigneeName ? { assigneeName: query.assigneeName } : {}),
@@ -127,18 +151,23 @@ export class TasksService {
   }
 
   async getTask(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     const task = await this.prisma.workTask.findFirst({
-      where: { id, archivedAt: null },
+      where: { id, archivedAt: null, ...this.dataScope.tasks(principal) },
       include: TASK_RESPONSE_INCLUDE,
     });
-    if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
-    return this.toTaskResponse(task);
+    if (!task) {
+      await this.assertTaskAccessible(this.prisma, id);
+    }
+    return this.toTaskResponse(task!);
   }
 
   async listMyWork(query: ListMyWorkQueryDto, now = new Date()) {
+    const principal = this.requestContext.requirePrincipal();
     const data = await this.prisma.workTask.findMany({
       where: {
         ...this.buildMyWorkWhere(query.view, now),
+        ...this.dataScope.tasks(principal),
         ...(query.projectId ? { projectId: query.projectId } : {}),
       },
       orderBy: [{ dueAt: 'asc' }, { updatedAt: 'desc' }, { id: 'desc' }],
@@ -213,13 +242,17 @@ export class TasksService {
   }
 
   async updateTask(id: string, dto: UpdateTaskDto) {
+    const principal = this.requestContext.requirePrincipal();
     return this.prisma.$transaction(async (tx) => {
       await this.acquireTaskGraphLock(tx);
       const existing = await tx.workTask.findFirst({
-        where: { id, archivedAt: null },
+        where: { id, archivedAt: null, ...this.dataScope.tasks(principal) },
         include: { dependencies: { select: { dependsOnTaskId: true } } },
       });
-      if (!existing) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
+      if (!existing) {
+        await this.assertTaskAccessible(tx, id);
+        throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
+      }
       const merged = {
         projectId: dto.projectId !== undefined ? dto.projectId : existing.projectId,
         milestoneId: dto.milestoneId !== undefined ? dto.milestoneId : existing.milestoneId,
@@ -249,6 +282,7 @@ export class TasksService {
         where: { id },
         data: {
           ...this.toTaskFields(dto),
+          updatedByUserId: principal.userId,
           ...(dto.status === TaskStatus.DONE
             ? { completionPercent: 100 }
             : dto.completionPercent !== undefined
@@ -270,6 +304,13 @@ export class TasksService {
         },
         include: TASK_RESPONSE_INCLUDE,
       });
+      if (
+        dto.syncMeetingAction ||
+        dto.status === TaskStatus.DONE ||
+        dto.status === TaskStatus.CANCELLED
+      ) {
+        await this.syncMeetingActionFromTask(tx, task);
+      }
       const healthProjectIds = [existing.projectId, task.projectId].filter(
         (projectId): projectId is string => Boolean(projectId),
       );
@@ -283,20 +324,45 @@ export class TasksService {
           summary: `更新工作项：${task.title}`,
         });
       }
+      await this.activities?.append(
+        {
+          actorKind: 'HUMAN',
+          objectType: 'WORK_TASK',
+          objectId: task.id,
+          projectId: task.projectId,
+          action: 'UPDATED',
+          summary: `更新工作项：${task.title}`,
+          sourcePath: `/my-work?taskId=${encodeURIComponent(task.id)}`,
+          metadata: {
+            status: task.status,
+            syncMeetingAction: Boolean(dto.syncMeetingAction),
+          },
+        },
+        tx,
+      );
       return this.toTaskResponse(task);
     });
   }
 
   async archiveTask(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     return this.prisma.$transaction(async (tx) => {
       await this.acquireTaskGraphLock(tx);
-      const task = await tx.workTask.findFirst({ where: { id, archivedAt: null } });
-      if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
+      const task = await tx.workTask.findFirst({
+        where: { id, archivedAt: null, ...this.dataScope.tasks(principal) },
+      });
+      if (!task) {
+        await this.assertTaskAccessible(tx, id);
+        throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
+      }
       await this.acquireProjectHealthLocks(tx, [task.projectId]);
       await tx.taskReminder.deleteMany({ where: { taskId: id } });
       await tx.taskLater.deleteMany({ where: { taskId: id } });
       await this.archiveTaskReminderRules(tx, id, new Date());
-      await tx.workTask.update({ where: { id }, data: { archivedAt: new Date() } });
+      await tx.workTask.update({
+        where: { id },
+        data: { archivedAt: new Date(), updatedByUserId: principal.userId },
+      });
       if (task.projectId) {
         await this.recalculateHealth(tx, task.projectId);
         await this.recalculateProgress(tx, task.projectId, {
@@ -312,6 +378,7 @@ export class TasksService {
   async createMilestone(projectId: string, dto: CreateMilestoneDto) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
+      await this.assertProjectAccessible(tx, projectId);
       await this.assertActiveProject(tx, projectId);
       this.assertMilestoneRange(dto.plannedStartAt, dto.plannedEndAt);
       const milestone = await tx.milestone.create({
@@ -348,6 +415,7 @@ export class TasksService {
   async updateMilestone(projectId: string, milestoneId: string, dto: UpdateMilestoneDto) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
+      await this.assertProjectAccessible(tx, projectId);
       await this.assertActiveProject(tx, projectId);
       const milestone = await tx.milestone.findFirst({ where: { id: milestoneId, projectId } });
       if (!milestone) throw this.notFound(ErrorCodes.MILESTONE_NOT_FOUND, 'Milestone not found');
@@ -389,6 +457,7 @@ export class TasksService {
   async deleteMilestone(projectId: string, milestoneId: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
+      await this.assertProjectAccessible(tx, projectId);
       await this.assertActiveProject(tx, projectId);
       const milestone = await tx.milestone.findFirst({ where: { id: milestoneId, projectId } });
       if (!milestone) throw this.notFound(ErrorCodes.MILESTONE_NOT_FOUND, 'Milestone not found');
@@ -403,8 +472,10 @@ export class TasksService {
   }
 
   async createProgressReport(projectId: string, dto: CreateProgressReportDto) {
+    const principal = this.requestContext.requirePrincipal();
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
+      await this.assertProjectAccessible(tx, projectId);
       await this.assertActiveProject(tx, projectId);
       const progressSummary = await this.projectProgressService?.getSummary(tx, projectId);
       const report = await tx.progressReport.create({
@@ -414,6 +485,7 @@ export class TasksService {
           completionPercent: progressSummary?.actualPercent ?? 0,
           sourceType: 'MANUAL',
           reportedAt: new Date(dto.reportedAt),
+          createdByUserId: principal.userId,
           ...(dto.milestoneId !== undefined ? { milestoneId: dto.milestoneId } : {}),
           ...(dto.blockers !== undefined ? { blockers: dto.blockers } : {}),
           ...(dto.completedResults !== undefined
@@ -423,7 +495,10 @@ export class TasksService {
         },
       });
       await this.recalculateHealth(tx, projectId);
-      return report;
+      return {
+        ...report,
+        completionPercent: Number(report.completionPercent ?? 0),
+      };
     });
   }
 
@@ -434,6 +509,7 @@ export class TasksService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
+      await this.assertProjectAccessible(tx, projectId);
       await this.assertActiveProject(tx, projectId);
       const report = await tx.progressReport.findFirst({ where: { id: reportId, projectId } });
       if (!report) {
@@ -460,13 +536,17 @@ export class TasksService {
         },
       });
       await this.recalculateHealth(tx, projectId);
-      return updated;
+      return {
+        ...updated,
+        completionPercent: Number(updated.completionPercent ?? 0),
+      };
     });
   }
 
   async deleteProgressReport(projectId: string, reportId: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
+      await this.assertProjectAccessible(tx, projectId);
       await this.assertActiveProject(tx, projectId);
       const report = await tx.progressReport.findFirst({ where: { id: reportId, projectId } });
       if (!report) {
@@ -502,6 +582,31 @@ export class TasksService {
       ...(dto.sourceType !== undefined ? { sourceType: dto.sourceType } : {}),
       ...(dto.sourceId !== undefined ? { sourceId: dto.sourceId } : {}),
     };
+  }
+
+  private async syncMeetingActionFromTask(
+    tx: DatabaseClient,
+    task: {
+      id: string;
+      sourceType: string | null;
+      sourceId: string | null;
+      status: TaskStatus;
+      dueAt: Date | null;
+    },
+  ): Promise<void> {
+    if (task.sourceType !== 'MEETING_ACTION' || !task.sourceId) return;
+    const status =
+      task.status === TaskStatus.DONE
+        ? MeetingActionStatus.DONE
+        : task.status === TaskStatus.CANCELLED
+          ? MeetingActionStatus.CANCELLED
+          : task.status === TaskStatus.IN_PROGRESS || task.status === TaskStatus.BLOCKED
+            ? MeetingActionStatus.IN_PROGRESS
+            : MeetingActionStatus.OPEN;
+    await tx.meetingAction.updateMany({
+      where: { id: task.sourceId, taskId: task.id, archivedAt: null },
+      data: { status, dueAt: task.dueAt },
+    });
   }
 
   private async recalculateProgress(
@@ -789,6 +894,54 @@ export class TasksService {
         ErrorCodes.TASK_INVALID_REFERENCE,
         'A task with children cannot move to another project',
       );
+    }
+  }
+
+  private async assertTaskAccessible(tx: DatabaseClient, taskId: string) {
+    const principal = this.requestContext.requirePrincipal();
+    const scope = this.dataScope.tasks(principal);
+    if (Object.keys(scope).length === 0) return;
+    const accessible = await tx.workTask.findFirst({
+      where: { id: taskId, archivedAt: null, ...scope },
+      select: { id: true },
+    });
+    if (!accessible) {
+      const exists = await tx.workTask.findUnique({
+        where: { id: taskId },
+        select: { id: true },
+      });
+      if (exists) {
+        throw new AppError({
+          code: ErrorCodes.PERMISSION_DENIED,
+          message: 'Access to this task is not allowed',
+          statusCode: HttpStatus.FORBIDDEN,
+        });
+      }
+      throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
+    }
+  }
+
+  private async assertProjectAccessible(tx: DatabaseClient, projectId: string) {
+    const principal = this.requestContext.requirePrincipal();
+    const scope = this.dataScope.projects(principal);
+    if (Object.keys(scope).length === 0) return;
+    const accessible = await tx.project.findFirst({
+      where: { id: projectId, archivedAt: null, ...scope },
+      select: { id: true },
+    });
+    if (!accessible) {
+      const exists = await tx.project.findFirst({
+        where: { id: projectId, archivedAt: null },
+        select: { id: true },
+      });
+      if (exists) {
+        throw new AppError({
+          code: ErrorCodes.PERMISSION_DENIED,
+          message: 'Access to this project is not allowed',
+          statusCode: HttpStatus.FORBIDDEN,
+        });
+      }
+      throw this.notFound(ErrorCodes.PROJECT_NOT_FOUND, 'Project not found');
     }
   }
 

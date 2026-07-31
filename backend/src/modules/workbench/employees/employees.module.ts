@@ -14,15 +14,22 @@ import { EmployeeWorkItemsService } from './application/employee-work-items.serv
 import { EmployeeWorkRiskService } from './application/employee-work-risk.service';
 import { EmployeeWorkbookService } from './application/employee-workbook.service';
 import { EmployeesService } from './application/employees.service';
+import { ProjectProgressDraftService } from './application/project-progress-draft.service';
 import { EmployeeImportsController } from './interface/http/employee-imports.controller';
 import {
   EmployeeProgressController,
   EmployeesController,
+  ProjectProgressDraftsController,
 } from './interface/http/employees.controller';
 
 @Module({
   imports: [StorageModule, GovernanceModule, ManagementModule, TasksModule],
-  controllers: [EmployeesController, EmployeeProgressController, EmployeeImportsController],
+  controllers: [
+    EmployeesController,
+    EmployeeProgressController,
+    EmployeeImportsController,
+    ProjectProgressDraftsController,
+  ],
   providers: [
     EmployeesService,
     EmployeeProgressQueryService,
@@ -35,6 +42,7 @@ import {
     EmployeeWorkItemsService,
     EmployeeWorkRiskService,
     EmployeeImportsService,
+    ProjectProgressDraftService,
   ],
   exports: [
     EmployeesService,
@@ -48,6 +56,7 @@ import {
     EmployeeWorkItemsService,
     EmployeeWorkRiskService,
     EmployeeImportsService,
+    ProjectProgressDraftService,
   ],
 })
 export class EmployeesModule {}

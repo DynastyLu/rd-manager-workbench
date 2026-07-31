@@ -1,4 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { access, mkdir } from 'node:fs/promises'
+import { constants as fsConstants } from 'node:fs'
+import { createServer } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, Tray } from 'electron'
@@ -13,6 +16,12 @@ import { registerBuiltinProviders } from './extensions/providers/index.js'
 import { RestoreOrchestrator } from './restore-orchestrator.js'
 import { normalizeSourcePath, resolveBackendEntry, resolveRendererTarget } from './runtime.js'
 import { openKnowledgeOriginal } from './knowledge-open.js'
+import {
+  bootstrapLocalDatabase,
+  deployLocalMigrations,
+  type ProcessInvocation,
+} from './database-bootstrap.js'
+import { postgresToolCandidates } from './startup-preflight.js'
 
 interface RealtimeNotification {
   id: string
@@ -58,6 +67,136 @@ function backendEnvironment(): NodeJS.ProcessEnv {
       'postgresql://rd_manager_workbench_app@127.0.0.1:5432/rd_manager_workbench?schema=app',
     LOCAL_STORAGE_ROOT: process.env['LOCAL_STORAGE_ROOT'] ?? path.join(app.getPath('userData'), 'storage'),
   }
+}
+
+function backendResourceRoot() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'backend')
+    : path.join(projectRoot, 'backend')
+}
+
+async function runMigrationProcess(invocation: ProcessInvocation) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(invocation.executable, invocation.args, {
+      cwd: backendResourceRoot(),
+      env: invocation.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const stdout: Buffer[] = []
+    const stderr: Buffer[] = []
+    child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk))
+    child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
+    child.once('error', () => reject(new Error('无法启动数据库迁移工具。')))
+    child.once('close', (code) => {
+      if (code === 0) {
+        resolve({
+          stdout: Buffer.concat(stdout).toString('utf8'),
+          stderr: Buffer.concat(stderr).toString('utf8'),
+        })
+        return
+      }
+      reject(new Error('数据库迁移失败，请确认 PostgreSQL 已启动且连接信息正确。'))
+    })
+  })
+}
+
+async function isBackendPortAvailable(port: number) {
+  return new Promise<boolean>((resolve) => {
+    const server = createServer()
+    server.unref()
+    server.once('error', () => resolve(false))
+    server.listen(port, '127.0.0.1', () => {
+      server.close(() => resolve(true))
+    })
+  })
+}
+
+async function isExistingBackendReady() {
+  try {
+    const response = await fetch('http://127.0.0.1:4311/api/health', {
+      signal: AbortSignal.timeout(800),
+    })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+async function prepareLocalRuntime() {
+  const environment = backendEnvironment()
+  const storageRoot = environment['LOCAL_STORAGE_ROOT']
+  const databaseUrl = environment['DATABASE_URL']
+  if (!storageRoot || !databaseUrl) throw new Error('本地运行配置不完整。')
+  await mkdir(storageRoot, { recursive: true })
+  await access(storageRoot, fsConstants.R_OK | fsConstants.W_OK)
+
+  const existingBackendReady = await isExistingBackendReady()
+  if (!existingBackendReady && !(await isBackendPortAvailable(4311))) {
+    throw new Error('本地服务端口 4311 已被其他程序占用。')
+  }
+
+  const backendRoot = backendResourceRoot()
+  const migrationInput = {
+    databaseUrl,
+    nodeExecutable: process.execPath,
+    prismaCliPath: path.join(backendRoot, 'node_modules', 'prisma', 'build', 'index.js'),
+    schemaPath: path.join(backendRoot, 'prisma', 'schema.prisma'),
+  }
+  try {
+    await deployLocalMigrations(migrationInput, runMigrationProcess)
+  } catch {
+    const psqlCandidates = postgresToolCandidates('psql', {
+      platform: process.platform,
+      programFiles: process.env['ProgramFiles'],
+      programFilesX86: process.env['ProgramFiles(x86)'],
+    })
+    let psqlExecutable = psqlCandidates[0]!
+    for (const candidate of psqlCandidates.slice(1)) {
+      try {
+        await access(candidate, fsConstants.X_OK)
+        psqlExecutable = candidate
+        break
+      } catch {
+        // Keep the PATH candidate when no standard Windows installation is present.
+      }
+    }
+    await bootstrapLocalDatabase(
+      {
+        databaseUrl,
+        adminDatabaseUrl:
+          process.env['DATABASE_ADMIN_URL']
+          ?? 'postgresql://127.0.0.1:5432/postgres',
+        psqlExecutable,
+      },
+      runMigrationProcess,
+    )
+    await deployLocalMigrations(migrationInput, runMigrationProcess)
+  }
+  return { existingBackendReady }
+}
+
+async function prepareLocalRuntimeWithRetry() {
+  while (!isQuitting) {
+    try {
+      return await prepareLocalRuntime()
+    } catch (error) {
+      const result = await dialog.showMessageBox({
+        type: 'error',
+        title: '本地环境需要修复',
+        message: '研发工作台尚未准备好',
+        detail: error instanceof Error ? error.message : '本地环境检查失败。',
+        buttons: ['重试', '退出'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+      if (result.response === 0) continue
+      isQuitting = true
+      app.quit()
+      throw error
+    }
+  }
+  throw new Error('应用正在退出。')
 }
 
 async function startBackend(): Promise<void> {
@@ -114,6 +253,49 @@ async function waitForBackend(attempts = 50): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 200))
   }
   throw new Error('本地服务在 10 秒内未就绪，请检查 PostgreSQL 是否已经启动。')
+}
+
+async function discardFailedBackend() {
+  const failedProcess = backendProcess
+  if (!failedProcess) return
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, 2_000)
+    timeout.unref()
+    failedProcess.once('exit', () => {
+      clearTimeout(timeout)
+      resolve()
+    })
+    failedProcess.kill('SIGTERM')
+  })
+  if (backendProcess === failedProcess) backendProcess = null
+}
+
+async function startWorkbenchRuntimeWithRetry() {
+  while (!isQuitting) {
+    const runtime = await prepareLocalRuntimeWithRetry()
+    if (!runtime.existingBackendReady) await startBackend()
+    try {
+      await waitForBackend()
+      return
+    } catch (error) {
+      await discardFailedBackend()
+      const result = await dialog.showMessageBox({
+        type: 'error',
+        title: '本地服务启动失败',
+        message: '研发工作台服务没有正常启动',
+        detail: error instanceof Error ? error.message : String(error),
+        buttons: ['修复后重试', '退出'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+      if (result.response === 0) continue
+      isQuitting = true
+      app.quit()
+      throw error
+    }
+  }
+  throw new Error('应用正在退出。')
 }
 
 function createWindow() {
@@ -271,12 +453,7 @@ if (!hasSingleInstanceLock) app.quit()
 else {
   app.on('second-instance', () => showMainWindow())
   app.whenReady().then(async () => {
-    await startBackend()
-    try {
-      await waitForBackend()
-    } catch (error) {
-      dialog.showErrorBox('无法启动研发工作台', error instanceof Error ? error.message : String(error))
-    }
+    await startWorkbenchRuntimeWithRetry()
     createWindow()
     createTray()
     connectNotifications()

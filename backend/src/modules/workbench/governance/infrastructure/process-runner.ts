@@ -169,6 +169,8 @@ export class ProcessRunner {
         /\b(password|token|secret|api[_-]?key)\s*[=:]\s*[^\s]+/gi,
         '$1=[REDACTED]',
       )
+      .replace(/[A-Za-z]:\\(?:[^\\\s]+\\)+[^\\\s]*/g, '[REDACTED_PATH]')
+      .replace(/\/(?:Users|home)\/[^\s]+/g, '[REDACTED_PATH]')
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
       .trim();
     return Buffer.from(cleaned).subarray(0, this.maxOutputBytes).toString('utf8');

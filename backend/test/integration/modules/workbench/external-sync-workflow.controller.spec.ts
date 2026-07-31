@@ -1,14 +1,15 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { Test } from '@nestjs/testing';
-import { PrismaClient } from '@prisma/client';
-import request from 'supertest';
+import { DataScope, PrismaClient } from '@prisma/client';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
+import { PERMISSIONS } from '../../../../src/modules/iam/domain/permission-catalog';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
 import { ExtensionsGateway } from '../../../../src/modules/workbench/extensions/extensions.gateway';
 import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
 import { ExternalSyncCompletionService } from '../../../../src/modules/workbench/extensions/application/external-sync-completion.service';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 jest.setTimeout(30_000);
 
@@ -16,6 +17,7 @@ describe('Authoritative external sync workflow', () => {
   const prisma = new PrismaClient();
   const prefix = `TEST-SYNC-${Date.now()}`;
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
   let gateway: ExtensionsGateway;
   let storage: StoragePort;
   let syncCompletion: ExternalSyncCompletionService;
@@ -31,6 +33,10 @@ describe('Authoritative external sync workflow', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+    authenticated = await authenticatedRequest(app, prisma, `${prefix}-ROLE`, [
+      { code: PERMISSIONS.EXTENSION_READ, dataScope: DataScope.ALL },
+      { code: PERMISSIONS.EXTENSION_CONFIGURE, dataScope: DataScope.ALL },
+    ]);
     gateway = app.get(ExtensionsGateway);
     storage = app.get(StoragePort);
     syncCompletion = app.get(ExternalSyncCompletionService);
@@ -45,6 +51,15 @@ describe('Authoritative external sync workflow', () => {
     await prisma.fileAsset.deleteMany({ where: { name: { startsWith: prefix } } });
     await prisma.project.deleteMany({ where: { code: { startsWith: 'TSYNC' } } });
     await Promise.all(storageKeys.map((key) => storage.delete(key).catch(() => undefined)));
+    if (authenticated) {
+      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.rolePermission.deleteMany({ where: { roleId: authenticated.role.id } });
+      await prisma.user.delete({ where: { id: authenticated.user.id } });
+      await prisma.role.delete({ where: { id: authenticated.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    }
     await prisma.$disconnect();
     if (app) await app.close();
   });
@@ -58,7 +73,7 @@ describe('Authoritative external sync workflow', () => {
         permissions: ['CALENDAR_SYNC_PREFLIGHT'],
       },
     });
-    const response = await request(app.getHttpServer())
+    const response = await authenticated.agent
       .post('/api/extensions/sync/prepare')
       .send({
         profileId: profile.id,
@@ -81,18 +96,18 @@ describe('Authoritative external sync workflow', () => {
         permissions: ['CALENDAR_SYNC_PREFLIGHT', 'CALENDAR_SYNC_COMMIT'],
       },
     });
-    const prepared = (await request(app.getHttpServer()).post('/api/extensions/sync/prepare').send({
+    const prepared = (await authenticated.agent.post('/api/extensions/sync/prepare').send({
       profileId: profile.id,
       target: { type: 'CALENDAR', startAt: '2026-07-20T00:00:00.000Z', endAt: '2026-07-22T00:00:00.000Z' },
     }).expect(201)).body.data;
     const publish = jest.spyOn(gateway, 'publishRunRequested');
-    const started = (await request(app.getHttpServer())
+    const started = (await authenticated.agent
       .post(`/api/extensions/sync/preflights/${prepared.sessionId}/start`)
       .send({ confirmationHash: prepared.confirmationHash }).expect(201)).body.data;
     const event = publish.mock.calls.at(-1)?.[0];
     expect(event).toMatchObject({ runId: started.runId, operation: 'CALENDAR_SYNC_PREFLIGHT' });
     const remoteTitle = `${prefix} Remote interview`;
-    await request(app.getHttpServer()).post(`/api/extensions/runs/${started.runId}/complete`).send({
+    await authenticated.agent.post(`/api/extensions/runs/${started.runId}/complete`).send({
       completionToken: event!.completionToken,
       status: 'SUCCEEDED',
       output: {
@@ -102,14 +117,14 @@ describe('Authoritative external sync workflow', () => {
         }],
       },
     }).expect(201);
-    const ready = (await request(app.getHttpServer())
+    const ready = (await authenticated.agent
       .get(`/api/extensions/sync/preflights/${prepared.sessionId}`).expect(200)).body.data;
     expect(ready).toMatchObject({ status: 'READY', preflight: { preflightHash: expect.stringMatching(/^[0-9a-f]{64}$/) } });
     expect(ready.preflight.items[0]).toMatchObject({
       itemKey: '/calendar/interview.ics', action: 'ADD', allowedResolutions: ['KEEP_REMOTE'],
       remotePreview: { title: remoteTitle },
     });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/extensions/sync/preflights/${prepared.sessionId}/commit`)
       .send({
         preflightHash: ready.preflight.preflightHash,
@@ -127,22 +142,22 @@ describe('Authoritative external sync workflow', () => {
       where: { id: profile.id },
       data: { publicConfig: { baseUrl: 'https://dav.example.com', calendarPath: '/calendar/', syncDirection: 'BIDIRECTIONAL' } },
     });
-    const conflictPrepared = (await request(app.getHttpServer()).post('/api/extensions/sync/prepare').send({
+    const conflictPrepared = (await authenticated.agent.post('/api/extensions/sync/prepare').send({
       profileId: profile.id,
       target: { type: 'CALENDAR', startAt: '2026-07-20T00:00:00.000Z', endAt: '2026-07-22T00:00:00.000Z' },
     }).expect(201)).body.data;
-    const conflictStarted = (await request(app.getHttpServer())
+    const conflictStarted = (await authenticated.agent
       .post(`/api/extensions/sync/preflights/${conflictPrepared.sessionId}/start`)
       .send({ confirmationHash: conflictPrepared.confirmationHash }).expect(201)).body.data;
     const conflictEvent = publish.mock.calls.at(-1)![0];
-    await request(app.getHttpServer()).post(`/api/extensions/runs/${conflictStarted.runId}/complete`).send({
+    await authenticated.agent.post(`/api/extensions/runs/${conflictStarted.runId}/complete`).send({
       completionToken: conflictEvent.completionToken, status: 'SUCCEEDED',
       output: { items: [{
         remoteId: '/calendar/interview.ics', remoteVersion: '"v2"',
         ical: `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:interview\r\nDTSTART:20260721T020000Z\r\nDTEND:20260721T040000Z\r\nSUMMARY:${remoteTitle} remote edit\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`,
       }] },
     }).expect(201);
-    const conflict = (await request(app.getHttpServer()).get(`/api/extensions/sync/preflights/${conflictPrepared.sessionId}`).expect(200)).body.data;
+    const conflict = (await authenticated.agent.get(`/api/extensions/sync/preflights/${conflictPrepared.sessionId}`).expect(200)).body.data;
     expect(conflict.preflight.items[0]).toMatchObject({
       action: 'CONFLICT', allowedResolutions: ['KEEP_LOCAL', 'KEEP_REMOTE', 'CREATE_COPY'],
     });
@@ -170,22 +185,22 @@ describe('Authoritative external sync workflow', () => {
         permissions: ['CLOUD_UPLOAD_PREFLIGHT', 'CLOUD_UPLOAD_COMMIT', 'CLOUD_DOWNLOAD_PREFLIGHT', 'CLOUD_DOWNLOAD_COMMIT'],
       },
     });
-    const prepared = (await request(app.getHttpServer()).post('/api/extensions/sync/prepare').send({
+    const prepared = (await authenticated.agent.post('/api/extensions/sync/prepare').send({
       profileId: profile.id,
       target: { type: 'FILE', fileAssetId: asset.id, remotePath: 'docs/file.txt', mode: 'UPLOAD' },
     }).expect(201)).body.data;
     const publish = jest.spyOn(gateway, 'publishRunRequested');
-    const started = (await request(app.getHttpServer())
+    const started = (await authenticated.agent
       .post(`/api/extensions/sync/preflights/${prepared.sessionId}/start`)
       .send({ confirmationHash: prepared.confirmationHash }).expect(201)).body.data;
     const preflightEvent = publish.mock.calls.at(-1)![0];
     expect(preflightEvent.payload).toMatchObject({ localId: asset.id, localHash: sha256, remotePath: 'docs/file.txt' });
-    await request(app.getHttpServer()).post(`/api/extensions/runs/${started.runId}/complete`).send({
+    await authenticated.agent.post(`/api/extensions/runs/${started.runId}/complete`).send({
       completionToken: preflightEvent.completionToken, status: 'SUCCEEDED',
       output: { action: 'ADD', remotePath: 'docs/file.txt' },
     }).expect(201);
-    const ready = (await request(app.getHttpServer()).get(`/api/extensions/sync/preflights/${prepared.sessionId}`).expect(200)).body.data;
-    const committing = (await request(app.getHttpServer())
+    const ready = (await authenticated.agent.get(`/api/extensions/sync/preflights/${prepared.sessionId}`).expect(200)).body.data;
+    const committing = (await authenticated.agent
       .post(`/api/extensions/sync/preflights/${prepared.sessionId}/commit`)
       .send({ preflightHash: ready.preflight.preflightHash, resolutions: [{ itemKey: asset.id, resolution: 'KEEP_LOCAL' }] })
       .expect(201)).body.data;
@@ -211,8 +226,8 @@ describe('Authoritative external sync workflow', () => {
       output: { remotePath: 'docs/file.txt', remoteVersion: '"remote-v1"', sha256 },
     };
     const duplicate = await Promise.all([
-      request(app.getHttpServer()).post(`/api/extensions/runs/${committing.runId}/complete`).send(completionBody),
-      request(app.getHttpServer()).post(`/api/extensions/runs/${committing.runId}/complete`).send(completionBody),
+      authenticated.agent.post(`/api/extensions/runs/${committing.runId}/complete`).send(completionBody),
+      authenticated.agent.post(`/api/extensions/runs/${committing.runId}/complete`).send(completionBody),
     ]);
     expect(duplicate.map((response) => response.status)).toEqual([201, 201]);
     expect(externalApplyCount).toBe(1);
@@ -221,28 +236,28 @@ describe('Authoritative external sync workflow', () => {
       where: { profileId_remoteId: { profileId: profile.id, remoteId: 'docs/file.txt' } },
     })).resolves.toMatchObject({ localId: asset.id, remoteVersion: '"remote-v1"', syncHash: sha256 });
 
-    const failedPrepared = (await request(app.getHttpServer()).post('/api/extensions/sync/prepare').send({
+    const failedPrepared = (await authenticated.agent.post('/api/extensions/sync/prepare').send({
       profileId: profile.id,
       target: { type: 'FILE', fileAssetId: asset.id, remotePath: 'docs/failed.txt', mode: 'DOWNLOAD' },
     }).expect(201)).body.data;
-    const failedStarted = (await request(app.getHttpServer())
+    const failedStarted = (await authenticated.agent
       .post(`/api/extensions/sync/preflights/${failedPrepared.sessionId}/start`)
       .send({ confirmationHash: failedPrepared.confirmationHash }).expect(201)).body.data;
     const failedPreflightEvent = publish.mock.calls.at(-1)![0];
-    await request(app.getHttpServer()).post(`/api/extensions/runs/${failedStarted.runId}/complete`).send({
+    await authenticated.agent.post(`/api/extensions/runs/${failedStarted.runId}/complete`).send({
       completionToken: failedPreflightEvent.completionToken, status: 'SUCCEEDED',
       output: { action: 'UPDATE', remotePath: 'docs/failed.txt', remoteVersion: '"failed-v1"', remoteHash: sha256 },
     }).expect(201);
-    const failedReady = (await request(app.getHttpServer()).get(`/api/extensions/sync/preflights/${failedPrepared.sessionId}`).expect(200)).body.data;
-    const failedCommit = (await request(app.getHttpServer())
+    const failedReady = (await authenticated.agent.get(`/api/extensions/sync/preflights/${failedPrepared.sessionId}`).expect(200)).body.data;
+    const failedCommit = (await authenticated.agent
       .post(`/api/extensions/sync/preflights/${failedPrepared.sessionId}/commit`)
       .send({ preflightHash: failedReady.preflight.preflightHash, resolutions: [{ itemKey: asset.id, resolution: 'KEEP_REMOTE' }] })
       .expect(201)).body.data;
     const failedCommitEvent = publish.mock.calls.at(-1)![0];
-    await request(app.getHttpServer()).post(`/api/extensions/runs/${failedCommit.runId}/complete`).send({
+    await authenticated.agent.post(`/api/extensions/runs/${failedCommit.runId}/complete`).send({
       completionToken: failedCommitEvent.completionToken, status: 'FAILED', errorCode: 'HTTP_500', metadata: { retryable: false },
     }).expect(201);
-    await request(app.getHttpServer()).get(`/api/extensions/sync/preflights/${failedPrepared.sessionId}`).expect(200)
+    await authenticated.agent.get(`/api/extensions/sync/preflights/${failedPrepared.sessionId}`).expect(200)
       .expect(({ body }) => expect(body.data).toMatchObject({ status: 'FAILED', errorCode: 'HTTP_500' }));
     expect(await prisma.fileVersion.count({ where: { fileAssetId: asset.id } })).toBe(1);
     expect(await prisma.externalObjectLink.findUnique({
@@ -274,21 +289,21 @@ describe('Authoritative external sync workflow', () => {
     });
     const remote = Buffer.from('verified remote body');
     const remoteHash = createHash('sha256').update(remote).digest('hex');
-    const prepared = (await request(app.getHttpServer()).post('/api/extensions/sync/prepare').send({
+    const prepared = (await authenticated.agent.post('/api/extensions/sync/prepare').send({
       profileId: profile.id,
       target: { type: 'FILE', fileAssetId: source.id, remotePath: 'docs/source.pdf', mode: 'DOWNLOAD' },
     }).expect(201)).body.data;
     const publish = jest.spyOn(gateway, 'publishRunRequested');
-    const started = (await request(app.getHttpServer())
+    const started = (await authenticated.agent
       .post(`/api/extensions/sync/preflights/${prepared.sessionId}/start`)
       .send({ confirmationHash: prepared.confirmationHash }).expect(201)).body.data;
     const preflightEvent = publish.mock.calls.at(-1)![0];
-    await request(app.getHttpServer()).post(`/api/extensions/runs/${started.runId}/complete`).send({
+    await authenticated.agent.post(`/api/extensions/runs/${started.runId}/complete`).send({
       completionToken: preflightEvent.completionToken, status: 'SUCCEEDED',
       output: { action: 'UPDATE', remotePath: 'docs/source.pdf', remoteVersion: '"download-v1"', remoteHash },
     }).expect(201);
-    const ready = (await request(app.getHttpServer()).get(`/api/extensions/sync/preflights/${prepared.sessionId}`).expect(200)).body.data;
-    const committing = (await request(app.getHttpServer())
+    const ready = (await authenticated.agent.get(`/api/extensions/sync/preflights/${prepared.sessionId}`).expect(200)).body.data;
+    const committing = (await authenticated.agent
       .post(`/api/extensions/sync/preflights/${prepared.sessionId}/commit`)
       .send({ preflightHash: ready.preflight.preflightHash, resolutions: [{ itemKey: source.id, resolution: 'CREATE_COPY' }] })
       .expect(201)).body.data;
@@ -297,14 +312,14 @@ describe('Authoritative external sync workflow', () => {
       operation: 'CLOUD_DOWNLOAD_COMMIT',
       payload: { expectedHash: remoteHash, expectedVersion: '"download-v1"' },
     });
-    await request(app.getHttpServer()).post(`/api/extensions/runs/${committing.runId}/complete`).send({
+    await authenticated.agent.post(`/api/extensions/runs/${committing.runId}/complete`).send({
       completionToken: downloadEvent.completionToken, status: 'SUCCEEDED',
       output: {
         remotePath: 'docs/source.pdf', remoteVersion: '"download-v2"', sha256: remoteHash,
         contentBase64: remote.toString('base64'),
       },
     }).expect(400).expect(({ body }) => expect(body.error.code).toBe('EXTERNAL_SYNC_OUTPUT_INVALID'));
-    await request(app.getHttpServer()).post(`/api/extensions/runs/${committing.runId}/complete`).send({
+    await authenticated.agent.post(`/api/extensions/runs/${committing.runId}/complete`).send({
       completionToken: downloadEvent.completionToken, status: 'SUCCEEDED',
       output: {
         remotePath: 'docs/source.pdf', remoteVersion: '"download-v1"', sha256: remoteHash,

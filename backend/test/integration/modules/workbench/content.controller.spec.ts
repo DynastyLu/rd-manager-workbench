@@ -1,15 +1,16 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Content and knowledge API', () => {
   const prisma = new PrismaClient();
   const prefix = `TEST-CONTENT-${Date.now()}`;
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
 
   beforeAll(async () => {
     const { AppModule } = await import('../../../../src/app.module');
@@ -23,28 +24,42 @@ describe('Content and knowledge API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
-  });
+    authenticated = await authenticatedRequest(app, prisma, 'EMPLOYEE', [
+      { code: 'document.read', dataScope: 'INVOLVED' },
+      { code: 'document.create', dataScope: 'INVOLVED' },
+      { code: 'document.update', dataScope: 'INVOLVED' },
+      { code: 'document.delete', dataScope: 'INVOLVED' },
+    ]);
+  }, 120_000);
 
   afterAll(async () => {
     await prisma.contentDocument.deleteMany({ where: { title: { startsWith: prefix } } });
     await prisma.knowledgeSpace.deleteMany({ where: { name: { startsWith: prefix } } });
     await prisma.project.deleteMany({ where: { code: { startsWith: prefix } } });
+    if (authenticated) {
+      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.user.delete({ where: { id: authenticated.user.id } });
+      await prisma.role.delete({ where: { id: authenticated.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    }
     await prisma.$disconnect();
     await app?.close();
   });
 
   it('creates and updates knowledge spaces', async () => {
-    const created = await request(app.getHttpServer())
+    const created = await authenticated.agent
       .post('/api/knowledge-spaces')
       .send({ name: `${prefix} 研发知识`, description: '团队方法与记录', sequence: 2 })
       .expect(201);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/knowledge-spaces/${created.body.data.id}`)
       .send({ name: `${prefix} 研发知识库`, sequence: 1 })
       .expect(200);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get('/api/knowledge-spaces')
       .expect(200)
       .expect(({ body }) => {
@@ -65,7 +80,7 @@ describe('Content and knowledge API', () => {
       prisma.knowledgeSpace.create({ data: { name: `${prefix} 文档空间` } }),
       prisma.project.create({ data: { code: `${prefix}-PROJECT`, name: `${prefix} 项目` } }),
     ]);
-    const created = await request(app.getHttpServer())
+    const created = await authenticated.agent
       .post('/api/documents')
       .send({
         type: 'KNOWLEDGE_PAGE',
@@ -80,7 +95,7 @@ describe('Content and knowledge API', () => {
       .expect(201);
     const documentId = created.body.data.id as string;
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/documents/${documentId}`)
       .send({
         title: `${prefix} 本地部署手册`,
@@ -99,7 +114,7 @@ describe('Content and knowledge API', () => {
         });
       });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get('/api/documents')
       .query({
         type: 'KNOWLEDGE_PAGE',
@@ -116,8 +131,8 @@ describe('Content and knowledge API', () => {
         });
       });
 
-    await request(app.getHttpServer()).delete(`/api/documents/${documentId}`).expect(204);
-    await request(app.getHttpServer())
+    await authenticated.agent.delete(`/api/documents/${documentId}`).expect(204);
+    await authenticated.agent
       .get('/api/documents')
       .query({ status: 'TRASHED', query: prefix })
       .expect(200)
@@ -126,7 +141,7 @@ describe('Content and knowledge API', () => {
           expect.objectContaining({ id: documentId, status: 'TRASHED' }),
         ]);
       });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/documents/${documentId}/restore`)
       .expect(201)
       .expect(({ body }) => {
@@ -141,7 +156,7 @@ describe('Content and knowledge API', () => {
       prisma.project.create({ data: { code: `${prefix}-VERSION-A`, name: `${prefix} 项目 A` } }),
       prisma.project.create({ data: { code: `${prefix}-VERSION-B`, name: `${prefix} 项目 B` } }),
     ]);
-    const created = await request(app.getHttpServer())
+    const created = await authenticated.agent
       .post('/api/documents')
       .send({
         type: 'DOCUMENT',
@@ -154,11 +169,11 @@ describe('Content and knowledge API', () => {
       })
       .expect(201);
     const documentId = created.body.data.id as string;
-    const saved = await request(app.getHttpServer())
+    const saved = await authenticated.agent
       .post(`/api/documents/${documentId}/versions`)
       .expect(201);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/documents/${documentId}`)
       .send({
         title: `${prefix} 设计记录（修改）`,
@@ -170,7 +185,7 @@ describe('Content and knowledge API', () => {
       })
       .expect(200);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/documents/${documentId}/versions/${saved.body.data.id}/restore`)
       .expect(201)
       .expect(({ body }) => {
@@ -184,7 +199,7 @@ describe('Content and knowledge API', () => {
         });
       });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get(`/api/documents/${documentId}/versions`)
       .expect(200)
       .expect(({ body }) => {
@@ -196,12 +211,12 @@ describe('Content and knowledge API', () => {
   });
 
   it('rejects a document as its own parent', async () => {
-    const created = await request(app.getHttpServer())
+    const created = await authenticated.agent
       .post('/api/documents')
       .send({ type: 'DOCUMENT', title: `${prefix} 目录节点` })
       .expect(201);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/documents/${created.body.data.id}`)
       .send({ parentId: created.body.data.id })
       .expect(422);
@@ -211,11 +226,11 @@ describe('Content and knowledge API', () => {
     const space = await prisma.knowledgeSpace.create({
       data: { name: `${prefix} 循环目录空间` },
     });
-    const parent = await request(app.getHttpServer())
+    const parent = await authenticated.agent
       .post('/api/documents')
       .send({ type: 'DOCUMENT', title: `${prefix} 目录 A`, spaceId: space.id })
       .expect(201);
-    const child = await request(app.getHttpServer())
+    const child = await authenticated.agent
       .post('/api/documents')
       .send({
         type: 'DOCUMENT',
@@ -224,21 +239,88 @@ describe('Content and knowledge API', () => {
         parentId: parent.body.data.id,
       })
       .expect(201);
-    const saved = await request(app.getHttpServer())
+    const saved = await authenticated.agent
       .post(`/api/documents/${child.body.data.id}/versions`)
       .expect(201);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/documents/${child.body.data.id}`)
       .send({ parentId: null })
       .expect(200);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/documents/${parent.body.data.id}`)
       .send({ parentId: child.body.data.id })
       .expect(200);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/documents/${child.body.data.id}/versions/${saved.body.data.id}/restore`)
       .expect(422);
+  });
+
+  it('rejects permanent deletion of an active document and deletes it after trashing', async () => {
+    const document = await prisma.contentDocument.create({
+      data: {
+        type: 'DOCUMENT',
+        title: `${prefix} 永久删除契约`,
+        ownerUserId: authenticated.user.id,
+        createdByUserId: authenticated.user.id,
+        updatedByUserId: authenticated.user.id,
+      },
+    });
+
+    await authenticated.agent
+      .delete(`/api/documents/${document.id}/permanent`)
+      .expect(409);
+    await expect(
+      prisma.contentDocument.findUnique({ where: { id: document.id } }),
+    ).resolves.not.toBeNull();
+
+    await authenticated.agent.delete(`/api/documents/${document.id}`).expect(204);
+    await authenticated.agent
+      .delete(`/api/documents/${document.id}/permanent`)
+      .expect(204);
+    await expect(
+      prisma.contentDocument.findUnique({ where: { id: document.id } }),
+    ).resolves.toBeNull();
+  });
+
+  it('clears the document trash and returns the number deleted', async () => {
+    const documents = await Promise.all([
+      prisma.contentDocument.create({
+        data: {
+          type: 'DOCUMENT',
+          title: `${prefix} 清空回收站 A`,
+          status: 'TRASHED',
+          trashedAt: new Date(),
+          ownerUserId: authenticated.user.id,
+          createdByUserId: authenticated.user.id,
+          updatedByUserId: authenticated.user.id,
+        },
+      }),
+      prisma.contentDocument.create({
+        data: {
+          type: 'DOCUMENT',
+          title: `${prefix} 清空回收站 B`,
+          status: 'TRASHED',
+          trashedAt: new Date(),
+          ownerUserId: authenticated.user.id,
+          createdByUserId: authenticated.user.id,
+          updatedByUserId: authenticated.user.id,
+        },
+      }),
+    ]);
+
+    await authenticated.agent
+      .delete('/api/documents/trash')
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.data).toEqual({ deleted: 2 });
+      });
+
+    await expect(
+      prisma.contentDocument.count({
+        where: { id: { in: documents.map(({ id }) => id) } },
+      }),
+    ).resolves.toBe(0);
   });
 });

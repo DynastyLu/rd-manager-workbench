@@ -5,10 +5,11 @@ import { Injectable } from '@nestjs/common';
 import { BackupStatus, RestorePreflightStatus } from '@prisma/client';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { StoragePort } from '../../../../infrastructure/storage/storage.port';
+import { PostgresToolsService } from './postgres-tools.service';
 
 type CheckStatus = 'PASS' | 'WARN' | 'FAIL';
 
-interface HealthCheck {
+export interface HealthCheck {
   key: string;
   label: string;
   status: CheckStatus;
@@ -21,6 +22,7 @@ export class DataHealthService {
   constructor(
     private readonly prisma: PlatformPrismaService,
     private readonly storage: StoragePort,
+    private readonly tools: PostgresToolsService,
   ) {}
 
   async check(input: { deep?: boolean; expectedMigrationHead?: string } = {}) {
@@ -32,6 +34,7 @@ export class DataHealthService {
     checks.push(await this.contentAssociationsCheck());
     checks.push(await this.jobsCheck(new Date()));
     checks.push(await this.backupCheck());
+    checks.push(await this.postgresToolsCheck());
     checks.push(await this.notificationsCheck());
     const status = checks.some((check) => check.status === 'FAIL')
       ? 'UNHEALTHY'
@@ -156,6 +159,22 @@ export class DataHealthService {
         latestSuccessfulAt: latestAt,
         autoBackupEnabled: setting?.autoBackupEnabled ?? false,
       },
+    };
+  }
+
+  private async postgresToolsCheck(): Promise<HealthCheck> {
+    const tools = await this.tools.inspect();
+    const compatible = [tools.pgDump, tools.pgRestore].every(
+      (tool) => tool.available && Number(tool.version) >= 15,
+    );
+    return {
+      key: 'postgres.tools',
+      label: 'PostgreSQL 备份工具',
+      status: compatible ? 'PASS' : 'FAIL',
+      detail: compatible
+        ? 'pg_dump 与 pg_restore 可用于备份恢复'
+        : '缺少 PostgreSQL 15+ 的 pg_dump 或 pg_restore',
+      details: tools,
     };
   }
 

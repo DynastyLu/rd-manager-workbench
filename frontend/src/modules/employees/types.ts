@@ -1,4 +1,5 @@
 export type EmploymentStatus = 'ACTIVE' | 'ON_LEAVE' | 'LEFT'
+export type EmployeeArchiveState = 'ACTIVE' | 'ARCHIVED'
 export type EmployeeSkillLevel = 'AWARE' | 'PRACTICING' | 'PROFICIENT' | 'EXPERT'
 export type EmployeeLoadKind = 'NON_PROJECT_RD' | 'PROJECT' | 'TASK' | 'OTHER'
 
@@ -53,6 +54,7 @@ export interface EmployeeFilters {
   department?: string
   workDirection?: string
   employmentStatus?: EmploymentStatus
+  archiveState?: EmployeeArchiveState
   page?: number
   pageSize?: number
 }
@@ -632,3 +634,72 @@ export interface EmployeeRiskConversionResult {
 }
 
 export type EmployeeWorkExportFormat = 'xlsx'
+
+export type ProjectProgressDraftStatus =
+  | 'PENDING'
+  | 'ADOPTED'
+  | 'IGNORED'
+  | 'INVALIDATED'
+
+export interface ProjectProgressDraftContentLine {
+  sourceId: string
+  employeeId: string
+  employeeName: string
+  text: string
+}
+
+export interface ProjectProgressDraft {
+  id: string
+  projectId: string
+  sourceBatchId: string
+  sourceVersion: number
+  periodStartAt: string
+  periodEndAt: string
+  contentFingerprint: string
+  content: {
+    completed: ProjectProgressDraftContentLine[]
+    nextPlans: Array<ProjectProgressDraftContentLine & { plannedHours: number | null }>
+    blockers: ProjectProgressDraftContentLine[]
+    risks: ProjectProgressDraftContentLine[]
+    hours: {
+      planned: number
+      actual: number
+      nextPlanned: number
+      missingCount: number
+    }
+    unlinkedRows: Array<{
+      sourceId: string
+      rowNumber: number
+      employeeName: string | null
+      title: string
+    }>
+  }
+  summary: string
+  completedResults: string | null
+  nextSteps: string | null
+  blockers: string | null
+  riskSummary: string | null
+  hoursSummary: string | null
+  unlinkedRowCount: number
+  status: ProjectProgressDraftStatus
+  adoptedReportId: string | null
+  adoptedAt: string | null
+  ignoredAt: string | null
+  invalidatedAt: string | null
+  invalidationReason: string | null
+  createdAt: string
+  updatedAt: string
+  project: { id: string; code: string; name: string }
+  sourceBatch: {
+    id: string
+    version: number | null
+    periodStartAt: string
+    periodEndAt: string
+    restoredFromBatchId: string | null
+  }
+}
+
+export interface AdoptProjectProgressDraftInput {
+  createRisks?: boolean
+  createTasks?: boolean
+}

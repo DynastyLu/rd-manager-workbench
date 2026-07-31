@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Button, Empty, Table, Tag } from '@douyinfe/semi-ui'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
 import { ROUTES } from '@/constants/routes'
+import { tableScrollWidth } from '@/lib/tableScrollWidth'
 import type { EmployeeWeekPlan } from '../types'
 import './employee-progress.less'
 
@@ -167,7 +168,7 @@ export function EmployeeWeekPlanTable({
             title: '操作',
             dataIndex: 'id',
             fixed: 'right' as const,
-            width: 260,
+            width: 320,
             render: (_value: unknown, plan: EmployeeWeekPlan) => (
               <div className="employee-week-plan-table__actions">
                 {onEdit && plan.carryStatus !== 'CANCELLED' ? (
@@ -220,7 +221,7 @@ export function EmployeeWeekPlanTable({
         columns={columns}
         dataSource={plans}
         pagination={pagination}
-        scroll={{ x: hasActions ? 1620 : 1360 }}
+        scroll={{ x: tableScrollWidth(columns) }}
         onRow={(record) => ({
           className:
             record && record.id === focusedPlanId

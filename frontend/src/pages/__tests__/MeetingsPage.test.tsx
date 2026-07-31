@@ -368,6 +368,30 @@ describe('MeetingsPage project context', () => {
     )
   })
 
+  it('asks before syncing an edited linked action owner and due date back to its task', async () => {
+    getMeeting.mockResolvedValue({
+      ...meeting,
+      actions: [{ ...meeting.actions[0], taskId: 'task-1' }],
+    })
+    updateMeetingAction.mockResolvedValue({ id: 'action-1' })
+    const user = userEvent.setup()
+    renderMeetingsPage('/meetings?meetingId=meeting-1')
+
+    await user.click(await screen.findByRole('tab', { name: '行动项' }))
+    await user.click(screen.getByRole('button', { name: '编辑：完成验收清单' }))
+    expect(screen.getByText('负责人或截止时间已关联任务，是否同步到任务？')).toBeInTheDocument()
+    await user.click(screen.getByLabelText('同步到关联任务'))
+    await user.click(screen.getByRole('button', { name: '保存行动项' }))
+
+    await waitFor(() =>
+      expect(updateMeetingAction).toHaveBeenCalledWith(
+        'meeting-1',
+        'action-1',
+        expect.objectContaining({ syncTask: true })
+      )
+    )
+  })
+
   it('assigns a newly created meeting to the project supplied in the URL', async () => {
     createMeeting.mockResolvedValue({ id: 'meeting-1', projectId: 'project-42' })
     const user = userEvent.setup()

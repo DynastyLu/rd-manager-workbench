@@ -7,15 +7,16 @@ import {
   EmployeeWorkStatus,
   PrismaClient,
 } from '@prisma/client';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Global search API', () => {
   const prefix = `TEST-SEARCH-${Date.now()}`;
   const prisma = new PrismaClient();
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
   let projectId: string;
   let taskId: string;
   let documentId: string;
@@ -38,17 +39,46 @@ describe('Global search API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+    authenticated = await authenticatedRequest(app, prisma, 'EMPLOYEE', [
+      { code: 'search.read', dataScope: 'INVOLVED' },
+      { code: 'task.update', dataScope: 'INVOLVED' },
+      { code: 'risk.update', dataScope: 'INVOLVED' },
+      { code: 'project.read', dataScope: 'INVOLVED' },
+      { code: 'document.read', dataScope: 'INVOLVED' },
+      { code: 'employee.read', dataScope: 'ALL' },
+      { code: 'nonProjectRd.read', dataScope: 'INVOLVED' },
+    ]);
 
     const project = await prisma.project.create({
-      data: { code: `${prefix}-P`, name: `${prefix} 研发计划` },
+      data: {
+        code: `${prefix}-P`,
+        name: `${prefix} 研发计划`,
+        createdByUserId: authenticated.user.id,
+        updatedByUserId: authenticated.user.id,
+        ownerUserId: authenticated.user.id,
+      },
     });
     projectId = project.id;
     const task = await prisma.workTask.create({
-      data: { projectId, title: `${prefix} 研发任务`, status: 'TODO' },
+      data: {
+        projectId,
+        title: `${prefix} 研发任务`,
+        status: 'TODO',
+        createdByUserId: authenticated.user.id,
+        updatedByUserId: authenticated.user.id,
+        ownerUserId: authenticated.user.id,
+      },
     });
     taskId = task.id;
     const document = await prisma.contentDocument.create({
-      data: { type: 'DOCUMENT', title: `${prefix} 研发文档`, plainText: '研发计划正文' },
+      data: {
+        type: 'DOCUMENT',
+        title: `${prefix} 研发文档`,
+        plainText: '研发计划正文',
+        createdByUserId: authenticated.user.id,
+        updatedByUserId: authenticated.user.id,
+        ownerUserId: authenticated.user.id,
+      },
     });
     documentId = document.id;
     const risk = await prisma.risk.create({
@@ -58,6 +88,8 @@ describe('Global search API', () => {
         likelihood: 'MEDIUM',
         impact: 'MEDIUM',
         level: 'MEDIUM',
+        createdByUserId: authenticated.user.id,
+        updatedByUserId: authenticated.user.id,
       },
     });
     riskId = risk.id;
@@ -70,14 +102,15 @@ describe('Global search API', () => {
       },
     });
     nonProjectRdId = nonProjectRd.id;
-    const employee = await prisma.resourceProfile.create({
+    await prisma.resourceProfile.update({
+      where: { id: authenticated.employee.id },
       data: {
         displayName: `${prefix} 权限工程师`,
         department: `${prefix} 研发平台`,
         roleTitle: '高级工程师',
       },
     });
-    employeeId = employee.id;
+    employeeId = authenticated.employee.id;
     const periodStartAt = new Date('2038-07-19T00:00:00.000Z');
     const periodEndAt = new Date('2038-07-25T00:00:00.000Z');
     for (const [version, status, title] of [
@@ -106,11 +139,11 @@ describe('Global search API', () => {
         data: {
           batchId: batch.id,
           rowNumber: 2,
-          rawValues: { 员工姓名: employee.displayName, 工作内容: title },
+          rawValues: { 员工姓名: `${prefix} 权限工程师`, 工作内容: title },
           normalizedValues: {},
           status: EmployeeImportRowStatus.VALID,
           errors: [],
-          resolvedEmployeeId: employee.id,
+          resolvedEmployeeId: authenticated.employee.id,
           resolvedProjectId: project.id,
           resolvedTaskId: task.id,
         },
@@ -118,7 +151,7 @@ describe('Global search API', () => {
       employeeRowIds.push(row.id);
       const workItem = await prisma.employeeWorkItem.create({
         data: {
-          employeeId: employee.id,
+          employeeId: authenticated.employee.id,
           importBatchId: batch.id,
           sourceRowId: row.id,
           periodStartAt,
@@ -128,7 +161,7 @@ describe('Global search API', () => {
           status: EmployeeWorkStatus.IN_PROGRESS,
           projectId: project.id,
           taskId: task.id,
-          rawRow: { 员工姓名: employee.displayName, 工作内容: title },
+          rawRow: { 员工姓名: `${prefix} 权限工程师`, 工作内容: title },
         },
       });
       employeeWorkItemIds.push(workItem.id);
@@ -139,18 +172,25 @@ describe('Global search API', () => {
     await prisma.employeeWorkItem.deleteMany({ where: { id: { in: employeeWorkItemIds } } });
     await prisma.employeeWorkImportRow.deleteMany({ where: { id: { in: employeeRowIds } } });
     await prisma.employeeWorkImportBatch.deleteMany({ where: { id: { in: employeeBatchIds } } });
-    await prisma.resourceProfile.deleteMany({ where: { id: employeeId } });
     await prisma.nonProjectRdItem.deleteMany({ where: { id: nonProjectRdId } });
     await prisma.risk.deleteMany({ where: { id: riskId } });
     await prisma.contentDocument.deleteMany({ where: { id: documentId } });
     await prisma.workTask.deleteMany({ where: { id: taskId } });
     await prisma.project.deleteMany({ where: { id: projectId } });
+    if (authenticated) {
+      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.user.delete({ where: { id: authenticated.user.id } });
+      await prisma.role.delete({ where: { id: authenticated.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    }
     await prisma.$disconnect();
     await app?.close();
   });
 
   it('searches multiple real object types with groups and safe paths', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await authenticated.agent
       .get('/api/search')
       .query({
         q: prefix,
@@ -179,15 +219,15 @@ describe('Global search API', () => {
   });
 
   it('validates query and type filters', async () => {
-    await request(app.getHttpServer()).get('/api/search').query({ q: 'a' }).expect(400);
-    await request(app.getHttpServer())
+    await authenticated.agent.get('/api/search').query({ q: 'a' }).expect(400);
+    await authenticated.agent
       .get('/api/search')
       .query({ q: prefix, types: 'NOT_A_TYPE' })
       .expect(400);
   });
 
   it('searches active employees and only current confirmed employee work', async () => {
-    const response = await request(app.getHttpServer())
+    const response = await authenticated.agent
       .get('/api/search')
       .query({
         q: prefix,
@@ -213,7 +253,7 @@ describe('Global search API', () => {
         expect.objectContaining({
           type: 'EMPLOYEE_WORK',
           id: employeeWorkItemIds[1],
-          path: `/employees/${employeeId}?periodType=WEEK&periodStart=2038-07-19&workItemId=${employeeWorkItemIds[1]}`,
+          path: `/employees/${employeeId}?periodType=WEEK&periodStart=2038-07-19&sourceSection=CURRENT_WORK&workItemId=${employeeWorkItemIds[1]}`,
         }),
       ]),
     );
@@ -223,7 +263,7 @@ describe('Global search API', () => {
   });
 
   it('runs task and risk actions through the real domain services', async () => {
-    const taskResponse = await request(app.getHttpServer())
+    const taskResponse = await authenticated.agent
       .post(`/api/search/actions/TASK/${taskId}`)
       .send({ action: 'COMPLETE_TASK' })
       .expect(201);
@@ -232,11 +272,11 @@ describe('Global search API', () => {
       prisma.workTask.findUniqueOrThrow({ where: { id: taskId } }),
     ).resolves.toMatchObject({ status: 'DONE' });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/search/actions/RISK/${riskId}`)
       .send({ action: 'CLOSE_RISK' })
       .expect(400);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/search/actions/RISK/${riskId}`)
       .send({ action: 'CLOSE_RISK', confirm: true })
       .expect(201);

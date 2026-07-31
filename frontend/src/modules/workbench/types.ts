@@ -40,6 +40,7 @@ export interface Project {
   archivedAt: string | null
   createdAt: string
   updatedAt: string
+  ownerUserId: string | null
 }
 
 export interface ProjectHealthSnapshot {
@@ -53,10 +54,99 @@ export interface ProjectHealthSnapshot {
 export interface ProjectDetail extends Omit<Project, 'health'> {
   milestones: Milestone[]
   tasks: Array<WorkTask & { dependencyIds: string[] }>
+  workItemViewConfig: ProjectWorkItemViewConfig | null
   progressReports: ProgressReport[]
   progressSummary: ProjectProgressSummary | null
   latestHealthSnapshot: ProjectHealthSnapshot | null
   effectiveHealth: ProjectHealth | null
+}
+
+export type ProjectWorkItemViewType = 'LIST' | 'BOARD' | 'CALENDAR' | 'GANTT'
+
+export interface ProjectWorkItemViewConfig {
+  type: ProjectWorkItemViewType
+  query?: string
+  status?: TaskStatus
+  groupField?: 'status' | 'priority'
+  hiddenFields?: Array<'assignee' | 'dueAt' | 'progress'>
+  ganttScale?: 'DAY' | 'WEEK' | 'MONTH'
+}
+
+export interface ProjectPlanTaskSnapshot {
+  id: string
+  taskId: string
+  milestoneId: string | null
+  title: string
+  status: TaskStatus
+  dueAt: string | null
+  dependencyIds: string[]
+  isCritical: boolean
+}
+
+export interface ProjectPlanMilestoneSnapshot {
+  id: string
+  milestoneId: string
+  name: string
+  plannedAt: string | null
+  plannedStartAt: string | null
+  plannedEndAt: string | null
+  isCritical: boolean
+}
+
+export interface ProjectPlanBaseline {
+  id: string
+  projectId: string
+  version: number
+  name: string
+  projectPlannedStartAt: string | null
+  projectPlannedEndAt: string | null
+  createdAt: string
+  taskSnapshots: ProjectPlanTaskSnapshot[]
+  milestoneSnapshots: ProjectPlanMilestoneSnapshot[]
+}
+
+export interface ProjectPlanChange {
+  id: string
+  projectId: string
+  entityType: 'TASK' | 'MILESTONE'
+  entityId: string
+  field: string
+  beforeValue: string | null
+  afterValue: string | null
+  reason: string
+  impactPreview: unknown
+  changedAt: string
+}
+
+export interface ProjectCriticalPath {
+  criticalTaskIds: string[]
+  terminalTaskId: string | null
+  totalSteps: number
+}
+
+export interface ProjectScheduleChangeInput {
+  entityType: 'TASK' | 'MILESTONE'
+  entityId: string
+  nextDate: string
+  reason: string
+}
+
+export interface ProjectScheduleImpact {
+  entityType: 'TASK' | 'MILESTONE'
+  entityId: string
+  field: string
+  beforeValue: string | null
+  afterValue: string
+  delayDays: number
+  affectedTaskIds: string[]
+  affectedTasks: Array<{
+    id: string
+    title: string
+    beforeDueAt: string | null
+    afterDueAt: string | null
+    isCritical: boolean
+  }>
+  affectsCriticalPath: boolean
 }
 
 export interface ProjectProgressSummary {

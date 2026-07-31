@@ -64,6 +64,91 @@ pnpm verify:migrations:clean
 
 如果普通应用账号没有创建临时数据库的权限，可通过 `DATABASE_ADMIN_URL` 单独提供本机管理连接；业务迁移仍使用生成的临时数据库连接。
 
+## 企业认证与权限
+
+本版本已启用企业级账号、角色与权限体系。首次启动且数据库中没有任何用户时，系统会自动创建一个默认超级管理员；登录后即可在「系统管理」中创建其他用户、角色和权限。
+
+### 首次启动（默认超级管理员）
+
+1. 启动后端并确保 PostgreSQL 可连接：`cd backend && pnpm prisma:migrate:deploy && pnpm start:dev`。
+2. 打开前端 `http://127.0.0.1:4312/#/`，使用默认账号登录：
+   - 账号：`admin`
+   - 工号：`ADMIN`
+   - 密码：`RdManager2026!`
+3. 首次登录必须修改默认密码；修改完成后进入工作台。
+4. 进入「系统管理 → 账号 / 角色 / 权限」创建其他用户并分配权限。
+
+默认账号密码可在 `backend/.env` 中通过 `DEFAULT_ADMIN_USERNAME` 和 `DEFAULT_ADMIN_PASSWORD` 修改；生产环境必须修改默认密码，否则后端启动会失败。
+
+### 登录、改密与会话
+
+- 登录支持账号或工号；连续失败 5 次后账号锁定 15 分钟。
+- Access Token 保存在前端内存中，Refresh Token 通过 HttpOnly Cookie 由后端管理并逐次轮换。
+- 个人安全页（`/#/settings/security`）可修改密码、查看当前会话并强制退出全部设备。
+- 账号被管理员停用或会话被撤销后，客户端会立即收到通知并返回登录页。
+
+### 角色与权限
+
+- 系统内置 `SUPER_ADMIN`（全部功能和数据）、`EMPLOYEE`（本人及参与数据）。
+- 管理员可在「系统管理 → 角色」创建自定义角色，为每个权限选择数据范围：`SELF`（仅自己）、`INVOLVED`（参与）、`DEPARTMENT`（部门）、`PROJECT`（项目）、`ALL`（全部）。
+- 系统内置角色不可编辑或删除；删除正在使用的角色会返回 409。
+
+### 用户管理
+
+- 「系统管理 → 账号」创建账号时必须绑定一个在职员工档案；账号与员工档案一一对应。
+- 可停用/启用账号、重置密码、强制退出全部设备、永久删除账号。
+- 永久删除前必须先停用账号、撤销全部会话，并确认无未处理的数据归属引用。
+
+### 历史数据归属迁移
+
+- 启用普通员工登录前，管理员需先完成「系统管理 → 归属迁移」。
+- 系统会分析 Project、Milestone、WorkTask、Risk、Issue、MeetingAction、ApplicationCase、NonProjectRdItem 八类业务对象的历史归属人。
+- 精确匹配和唯一姓名匹配的记录可直接应用；模糊或缺失记录会归到首个超级管理员并标记待复核。
+- 待复核记录可批量分配给真实用户；全部处理完成后点击「完成迁移」，普通用户方可登录。
+
+### 安全审计
+
+- 「系统管理 → 安全审计」记录登录成功/失败、密码修改、越权拦截、用户/角色变更、会话撤销等事件。
+- 审计不保存密码、令牌原文或数据库 URL。
+
+### 备份 IAM 数据
+
+- IAM 表（`users`、`roles`、`permissions`、`user_roles`、`role_permissions`、`auth_sessions`、`login_audits`）与业务数据在同一 PostgreSQL 库中。
+- 使用常规备份命令即可同时备份 IAM 与业务数据；恢复后建议重新登录以刷新令牌。
+
+## 运维与故障恢复
+
+### JWT 密钥轮换
+
+1. 更新 `backend/.env` 中的 `JWT_SECRET` 与 `JWT_REFRESH_SECRET`。
+2. 重启后端服务。
+3. 旧 Access Token 会在过期后自然失效；如需立即让某用户全部会话失效，管理员可在「系统管理 → 账号」中对该用户执行「强制退出全部设备」。
+
+### 最后一位管理员被锁定
+
+若唯一超级管理员账号被锁定且无法登录，需使用数据库管理员连接直接解锁：
+
+```sql
+UPDATE "app"."users"
+SET "failed_login_count" = 0,
+    "locked_until" = NULL,
+    "status" = 'ACTIVE'
+WHERE "username" = '你的管理员账号';
+```
+
+若同时忘记密码，需由具备数据库访问权限的运维人员在该表中写入一个新的 Argon2id 哈希并设置 `must_change_password = true`，强制下次登录改密。系统不保留明文密码，也没有后门重置接口。
+
+### 历史归属迁移未完成时禁止普通登录
+
+在「系统管理 → 归属迁移」全部处理完成前，普通员工账号即使存在也不应开放登录；迁移完成前登录会因全局迁移状态检查被拒绝。
+
+## Windows 与 Electron 边界
+
+- macOS 本机只能验证脚本、类型、单测和 macOS 目录包；Windows 安装包必须由仓库 Windows runner 原生重建 `@node-rs/argon2` 等平台依赖后生成 NSIS，不能把 macOS 的 `node_modules` 直接复制到 Windows 包中。
+- Electron 正式包通过 preload 注入运行时 API 基址，前端代码不能依赖 `import.meta.env.DEV` 或相对空字符串构造请求；否则在 `file://` 或 `app://` 协议下会请求错误地址。
+- HttpOnly Refresh Cookie 在 Electron 中由 `electron-fetch`/`net` 模块或浏览器 Cookie API 管理；打包后应验证登录、刷新、退出smoke通过。
+- Windows 实机安装、首次启动 PostgreSQL 检测/迁移引导、LibreOffice 与 `pg_dump`/`pg_restore` 探测仍由 CI runner 和实机验收覆盖，本机开发环境不伪造这些结果。
+
 ## 员工工作进展
 
 员工工作区位于 `http://127.0.0.1:4312/#/employees`，包含团队概览、员工目录、工作明细和计划导入四个页签；员工详情页为 `/#/employees/:id`，项目空间「进展」页签内嵌当前周团队进展，双向可穿透。

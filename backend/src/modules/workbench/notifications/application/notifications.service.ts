@@ -1,5 +1,6 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { NotificationStatus } from '@prisma/client';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
@@ -14,12 +15,19 @@ const MAX_PAGE_SIZE = 100;
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly requestContext: RequestContextService,
+  ) {}
 
   async list(query: ListNotificationsQueryDto) {
+    const principal = this.requestContext.requirePrincipal();
     const page = query.page ?? DEFAULT_PAGE;
     const pageSize = Math.min(query.pageSize ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
-    const where = query.status ? { status: query.status } : {};
+    const where = {
+      ...(query.status ? { status: query.status } : {}),
+      reminderRule: { ownerUserId: principal.userId },
+    };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
         where,
@@ -36,8 +44,9 @@ export class NotificationsService {
   }
 
   async markRead(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     const result = await this.prisma.notification.updateMany({
-      where: { id, status: { not: NotificationStatus.DISMISSED } },
+      where: { id, status: { not: NotificationStatus.DISMISSED }, reminderRule: { ownerUserId: principal.userId } },
       data: {
         status: NotificationStatus.READ,
         readAt: new Date(),
@@ -50,8 +59,9 @@ export class NotificationsService {
   }
 
   async dismiss(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     const result = await this.prisma.notification.updateMany({
-      where: { id },
+      where: { id, reminderRule: { ownerUserId: principal.userId } },
       data: {
         status: NotificationStatus.DISMISSED,
         dismissedAt: new Date(),
@@ -62,6 +72,7 @@ export class NotificationsService {
   }
 
   async snooze(id: string, dto: SnoozeNotificationDto) {
+    const principal = this.requestContext.requirePrincipal();
     const snoozedUntil = new Date(dto.snoozeUntil);
     if (!Number.isFinite(snoozedUntil.getTime()) || snoozedUntil.getTime() <= Date.now()) {
       throw new AppError({
@@ -71,7 +82,7 @@ export class NotificationsService {
       });
     }
     const result = await this.prisma.notification.updateMany({
-      where: { id, status: { not: NotificationStatus.DISMISSED } },
+      where: { id, status: { not: NotificationStatus.DISMISSED }, reminderRule: { ownerUserId: principal.userId } },
       data: {
         status: NotificationStatus.SNOOZED,
         snoozedUntil,

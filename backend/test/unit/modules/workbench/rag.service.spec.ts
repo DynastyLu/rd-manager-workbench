@@ -2,12 +2,18 @@ import { RagService } from '../../../../src/modules/workbench/knowledge/applicat
 
 describe('RagService', () => {
   let mockPrisma: any; let mockDeepseek: any; let mockEmbeddings: any; let service: RagService;
+  const requestContext = {
+    requirePrincipal: jest.fn().mockReturnValue({ userId: 'user-1', roleCodes: [] }),
+  };
+  const dataScope = {
+    knowledge: jest.fn().mockReturnValue({}),
+  };
 
   beforeEach(() => {
     mockPrisma = { $queryRaw: jest.fn() } as any;
     mockDeepseek = { streamChat: jest.fn() } as any;
     mockEmbeddings = { embed: jest.fn().mockResolvedValue([null]) } as any;
-    service = new RagService(mockPrisma, mockDeepseek, mockEmbeddings);
+    service = new RagService(mockPrisma, mockDeepseek, mockEmbeddings, requestContext as never, dataScope as never);
   });
 
   it('combines local vector retrieval with full-text retrieval when the model is ready', async () => {

@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Banner, Button, Modal, Progress, Skeleton, Tag } from '@douyinfe/semi-ui'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  Banner,
+  Button,
+  Input,
+  Modal,
+  Progress,
+  Select,
+  Skeleton,
+  Tag,
+} from '@douyinfe/semi-ui'
+import { DateTimePickerField } from '@/components/FormControls/DateTimePickerField'
 import {
   IconCalendarStroked,
   IconChevronLeft,
@@ -12,10 +22,17 @@ import {
   archiveMilestone,
   archiveProgressReport,
   archiveProject,
+  applyProjectScheduleChange,
+  createProjectPlanBaseline,
   getProject,
+  getProjectCriticalPath,
+  listProjectPlanBaselines,
+  listProjectPlanChanges,
+  previewProjectScheduleImpact,
+  updateProjectWorkItemView,
 } from '@/modules/workbench/api/projects'
 import { listMeetings, listPartners, listRisks } from '@/modules/workbench/api/management'
-import { archiveTask } from '@/modules/workbench/api/tasks'
+import { archiveTask, updateTask } from '@/modules/workbench/api/tasks'
 import { listNonProjectRd } from '@/modules/workbench/api/operations'
 import { request } from '@/lib/http'
 import {
@@ -25,17 +42,29 @@ import {
 } from '@/modules/employees/api'
 import { EmployeeWeekPlanTable } from '@/modules/employees/components/EmployeeWeekPlanTable'
 import { EmployeeWorkTable } from '@/modules/employees/components/EmployeeWorkTable'
+import { ProjectProgressDrafts } from '@/modules/employees/components/ProjectProgressDrafts'
+import { ActivityTimeline } from '@/modules/activity/components/ActivityTimeline'
 import { defaultPeriodStart } from '@/modules/employees/periods'
+import { useAuthStore } from '@/modules/auth/store'
+import { listProjectProgressDrafts } from '@/modules/employees/api'
 import { employeeQueryKeys } from '@/modules/employees/queryKeys'
 import type {
   ProjectDetail,
   ProjectHealth,
   ProjectStatus,
+  ProjectWorkItemViewConfig,
+  ProjectWorkItemViewType,
+  ProjectScheduleChangeInput,
+  ProjectScheduleImpact,
   Milestone,
   ProgressReport,
   TaskStatus,
   WorkTask,
 } from '@/modules/workbench/types'
+import type { BaseRecord, DataField, GanttViewConfig } from '@/modules/base/types'
+import { KanbanView } from '@/modules/base/components/KanbanView'
+import { CalendarView } from '@/modules/base/components/CalendarView'
+import { GanttView } from '@/modules/base/components/GanttView'
 import { ROUTES } from '@/constants/routes'
 import { ProgressReportForm } from '@/modules/workbench/components/ProgressReportForm'
 import { ProjectProgressTimeline } from '@/modules/workbench/components/ProjectProgressTimeline'
@@ -53,6 +82,7 @@ const SECTIONS = [
   { key: 'risks', label: '风险与问题' },
   { key: 'meetings', label: '会议' },
   { key: 'docs', label: '文档与资料' },
+  { key: 'activity', label: '动态' },
 ] as const
 
 type ProjectSection = (typeof SECTIONS)[number]['key']
@@ -105,6 +135,16 @@ function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleDateString('zh-CN') : '未设置'
 }
 
+function useCanPublishProject(project: ProjectDetail | undefined): boolean {
+  return useAuthStore((state) => {
+    const user = state.user
+    if (!user || !project) return false
+    if (user.roleCodes.includes('SUPER_ADMIN')) return true
+    if (user.permissions.some((grant) => grant.code === 'project.progress.publish')) return true
+    return project.ownerUserId === user.id
+  })
+}
+
 function ProjectWorkspaceSkeleton() {
   return (
     <div className="project-workspace project-workspace--loading" aria-label="正在加载项目空间">
@@ -129,6 +169,207 @@ function EmptySection({
       <p>{description}</p>
       {action}
     </div>
+  )
+}
+
+function ProjectPlanPanel({ project }: { project: ProjectDetail }) {
+  const queryClient = useQueryClient()
+  const baselinesQuery = useQuery({
+    queryKey: ['project-plan-baselines', project.id],
+    queryFn: () => listProjectPlanBaselines(project.id),
+  })
+  const changesQuery = useQuery({
+    queryKey: ['project-plan-changes', project.id],
+    queryFn: () => listProjectPlanChanges(project.id),
+  })
+  const criticalPathQuery = useQuery({
+    queryKey: ['project-critical-path', project.id],
+    queryFn: () => getProjectCriticalPath(project.id),
+  })
+  const defaultEntity = project.tasks[0]
+    ? `TASK:${project.tasks[0].id}`
+    : project.milestones[0]
+      ? `MILESTONE:${project.milestones[0].id}`
+      : ''
+  const [selectedEntity, setSelectedEntity] = useState(defaultEntity)
+  const [nextDate, setNextDate] = useState('')
+  const [reason, setReason] = useState('')
+  const [impact, setImpact] = useState<ProjectScheduleImpact | null>(null)
+  const baselineMutation = useMutation({
+    mutationFn: () =>
+      createProjectPlanBaseline(project.id, {
+        name: `计划基线 ${new Date().toLocaleDateString('zh-CN')}`,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['project-plan-baselines', project.id] })
+      toast.success('当前计划已生成只读基线')
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '生成计划基线失败。'),
+  })
+  const scheduleInput = (): ProjectScheduleChangeInput | null => {
+    const [entityType, entityId] = selectedEntity.split(':')
+    if (
+      (entityType !== 'TASK' && entityType !== 'MILESTONE') ||
+      !entityId ||
+      !nextDate ||
+      !reason.trim()
+    ) {
+      return null
+    }
+    return {
+      entityType,
+      entityId,
+      nextDate: new Date(`${nextDate}T00:00:00.000Z`).toISOString(),
+      reason: reason.trim(),
+    }
+  }
+  const previewMutation = useMutation({
+    mutationFn: async () => {
+      const input = scheduleInput()
+      if (!input) throw new Error('请选择变更对象、日期并填写变更原因。')
+      return previewProjectScheduleImpact(project.id, input)
+    },
+    onSuccess: setImpact,
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '影响预览失败。'),
+  })
+  const applyMutation = useMutation({
+    mutationFn: async () => {
+      const input = scheduleInput()
+      if (!input || !impact) throw new Error('请先生成最新影响预览。')
+      return applyProjectScheduleChange(project.id, input)
+    },
+    onSuccess: async () => {
+      setImpact(null)
+      setReason('')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['project', project.id] }),
+        queryClient.invalidateQueries({ queryKey: ['project-plan-changes', project.id] }),
+        queryClient.invalidateQueries({ queryKey: ['project-critical-path', project.id] }),
+      ])
+      toast.success('计划变更已记录')
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : '计划变更失败。'),
+  })
+  const latestBaseline = baselinesQuery.data?.[0]
+
+  return (
+    <section className="project-workspace__panel project-workspace__panel--wide project-workspace__plan">
+      <header>
+        <div>
+          <h2>计划基线与关键路径</h2>
+          <span>
+            {criticalPathQuery.data
+              ? `关键路径 ${criticalPathQuery.data.criticalTaskIds.length} 个工作项`
+              : '正在计算关键路径'}
+          </span>
+        </div>
+        <Button
+          size="small"
+          loading={baselineMutation.isPending}
+          aria-label="生成当前计划基线"
+          onClick={() => baselineMutation.mutate()}
+        >
+          生成基线
+        </Button>
+      </header>
+      {latestBaseline ? (
+        <div className="project-workspace__baseline-summary">
+          <strong>{latestBaseline.name} · V{latestBaseline.version}</strong>
+          <span>生成于 {formatDate(latestBaseline.createdAt)}</span>
+          <span>只读快照：{latestBaseline.milestoneSnapshots.length} 个里程碑 / {latestBaseline.taskSnapshots.length} 个工作项</span>
+        </div>
+      ) : baselinesQuery.isPending ? (
+        <Skeleton.Paragraph rows={1} />
+      ) : (
+        <p className="project-workspace__muted">尚未批准计划基线。</p>
+      )}
+      <div className="project-workspace__schedule-change">
+        <div className="project-workspace__schedule-field">
+          <span id="project-plan-entity-label">计划变更对象</span>
+          <Select
+            aria-labelledby="project-plan-entity-label"
+            value={selectedEntity}
+            optionList={[
+              ...project.tasks.map((task) => ({
+                value: `TASK:${task.id}`,
+                label: `工作项 · ${task.title}`,
+              })),
+              ...project.milestones.map((milestone) => ({
+                value: `MILESTONE:${milestone.id}`,
+                label: `里程碑 · ${milestone.name}`,
+              })),
+            ]}
+            onChange={(value) => {
+              setSelectedEntity(String(value))
+              setImpact(null)
+            }}
+            style={{ width: '100%' }}
+          />
+        </div>
+        <div className="project-workspace__schedule-field">
+          <span>调整后日期</span>
+          <DateTimePickerField
+            id="project-plan-next-date"
+            mode="date"
+            aria-label="调整后日期"
+            value={nextDate}
+            onChange={(value) => {
+              setNextDate(value)
+              setImpact(null)
+            }}
+          />
+        </div>
+        <div className="project-workspace__schedule-field project-workspace__schedule-reason">
+          <span>变更原因</span>
+          <Input
+            aria-label="计划变更原因"
+            value={reason}
+            onChange={(value) => {
+              setReason(value)
+              setImpact(null)
+            }}
+          />
+        </div>
+        <Button
+          loading={previewMutation.isPending}
+          aria-label="预览计划影响"
+          onClick={() => previewMutation.mutate()}
+        >
+          预览影响
+        </Button>
+      </div>
+      {impact ? (
+        <div className="project-workspace__impact-preview" role="status">
+          <strong>将影响 {impact.affectedTaskIds.length} 个工作项</strong>
+          <Tag color={impact.affectsCriticalPath ? 'red' : 'blue'}>
+            {impact.affectsCriticalPath ? '影响关键路径' : '不影响关键路径'}
+          </Tag>
+          <span>{impact.delayDays >= 0 ? `延期 ${impact.delayDays} 天` : `提前 ${Math.abs(impact.delayDays)} 天`}</span>
+          <Button
+            theme="solid"
+            type="primary"
+            loading={applyMutation.isPending}
+            aria-label="确认计划变更"
+            onClick={() => applyMutation.mutate()}
+          >
+            确认变更
+          </Button>
+        </div>
+      ) : null}
+      {changesQuery.data?.length ? (
+        <ol className="project-workspace__plan-changes" aria-label="计划变更记录">
+          {changesQuery.data.slice(0, 5).map((change) => (
+            <li key={change.id}>
+              <strong>{change.reason}</strong>
+              <span>{change.entityType === 'TASK' ? '工作项' : '里程碑'} · {formatDate(change.changedAt)}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </section>
   )
 }
 
@@ -316,6 +557,7 @@ function OverviewSection({
           ) : <p className="project-workspace__muted">当前没有待处理工作项。</p>}
         </section>
 
+        <ProjectPlanPanel project={project} />
         <ProjectPartnersSection projectId={project.id} />
         <ProjectNonProjectRdSection projectId={project.id} />
       </div>
@@ -334,12 +576,238 @@ function WorkItemsSection({
   onEdit: (task: WorkTask) => void
   onDelete: (task: WorkTask) => void
 }) {
-  return project.tasks.length ? (
+  const queryClient = useQueryClient()
+  const baselinesQuery = useQuery({
+    queryKey: ['project-plan-baselines', project.id],
+    queryFn: () => listProjectPlanBaselines(project.id),
+  })
+  const criticalPathQuery = useQuery({
+    queryKey: ['project-critical-path', project.id],
+    queryFn: () => getProjectCriticalPath(project.id),
+  })
+  const initialConfig = project.workItemViewConfig ?? {
+    type: 'LIST',
+    groupField: 'status',
+    hiddenFields: [],
+    ganttScale: 'WEEK',
+  }
+  const [config, setConfig] = useState<ProjectWorkItemViewConfig>(initialConfig)
+  const [isSavingView, setIsSavingView] = useState(false)
+  const taskById = useMemo(() => new Map(project.tasks.map((task) => [task.id, task])), [project.tasks])
+  const fields = useMemo<DataField[]>(
+    () => [
+      {
+        id: 'project-task-title',
+        tableId: project.id,
+        key: 'title',
+        name: '任务',
+        type: 'TEXT',
+        config: { readOnly: true },
+        isPrimary: true,
+        isRequired: true,
+        sequence: 0,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'project-task-status',
+        tableId: project.id,
+        key: 'status',
+        name: '状态',
+        type: 'SINGLE_SELECT',
+        config: {
+          options: Object.entries(TASK_LABELS).map(([value, label]) => ({ value, label })),
+        },
+        isPrimary: false,
+        isRequired: true,
+        sequence: 1,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'project-task-priority',
+        tableId: project.id,
+        key: 'priority',
+        name: '优先级',
+        type: 'SINGLE_SELECT',
+        config: {
+          options: [
+            { value: 'LOW', label: '低' },
+            { value: 'MEDIUM', label: '中' },
+            { value: 'HIGH', label: '高' },
+            { value: 'CRITICAL', label: '紧急' },
+          ],
+        },
+        isPrimary: false,
+        isRequired: true,
+        sequence: 2,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'project-task-assignee',
+        tableId: project.id,
+        key: 'assigneeName',
+        name: '负责人',
+        type: 'TEXT',
+        config: { readOnly: true },
+        isPrimary: false,
+        isRequired: false,
+        sequence: 3,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'project-task-due',
+        tableId: project.id,
+        key: 'dueAt',
+        name: '计划日期',
+        type: 'DATETIME',
+        config: {},
+        isPrimary: false,
+        isRequired: false,
+        sequence: 4,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ],
+    [project.id]
+  )
+  const records = useMemo<BaseRecord[]>(
+    () =>
+      project.tasks
+        .filter((task) => !config.status || task.status === config.status)
+        .filter((task) => {
+          const query = config.query?.trim().toLocaleLowerCase()
+          return !query || `${task.title} ${task.assigneeName ?? ''}`.toLocaleLowerCase().includes(query)
+        })
+        .map((task) => ({
+          id: task.id,
+          values: {
+            title: task.title,
+            status: task.status,
+            priority: task.priority,
+            assigneeName: task.assigneeName,
+            dueAt: task.dueAt,
+          },
+          sourceType: 'WORK_TASK',
+          sourceId: task.id,
+          sourcePath: `/tasks/${encodeURIComponent(task.id)}`,
+          createdAt: task.createdAt,
+          updatedAt: task.updatedAt,
+        })),
+    [config.query, config.status, project.tasks]
+  )
+
+  async function persistConfig(next: ProjectWorkItemViewConfig) {
+    const previous = config
+    setConfig(next)
+    setIsSavingView(true)
+    try {
+      await updateProjectWorkItemView(project.id, next)
+    } catch (error) {
+      setConfig(previous)
+      toast.error(error instanceof Error ? error.message : '工作项视图保存失败。')
+    } finally {
+      setIsSavingView(false)
+    }
+  }
+
+  async function updateTaskValues(
+    taskId: string,
+    values: Record<string, unknown>
+  ) {
+    const status = typeof values.status === 'string' && values.status in TASK_LABELS
+      ? values.status as TaskStatus
+      : undefined
+    const priority = typeof values.priority === 'string'
+      && ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes(values.priority)
+      ? values.priority as WorkTask['priority']
+      : undefined
+    const dueAt = typeof values.dueAt === 'string' ? values.dueAt : undefined
+    if (!status && !priority && !dueAt) return
+    await updateTask(taskId, { ...(status ? { status } : {}), ...(priority ? { priority } : {}), ...(dueAt ? { dueAt } : {}) })
+    await queryClient.invalidateQueries({ queryKey: ['project', project.id] })
+  }
+
+  const viewTypes: Array<{ type: ProjectWorkItemViewType; label: string }> = [
+    { type: 'LIST', label: '列表' },
+    { type: 'BOARD', label: '看板' },
+    { type: 'CALENDAR', label: '日历' },
+    { type: 'GANTT', label: '甘特' },
+  ]
+  const openRecord = (record: BaseRecord) => {
+    const task = taskById.get(record.id)
+    if (task) onEdit(task)
+  }
+  const ganttConfig: GanttViewConfig = {
+    titleFieldKey: 'title',
+    startFieldKey: 'dueAt',
+    endFieldKey: 'dueAt',
+    scale: config.ganttScale ?? 'WEEK',
+  }
+  const criticalTasks = (criticalPathQuery.data?.criticalTaskIds ?? [])
+    .map((taskId) => taskById.get(taskId))
+    .filter((task): task is WorkTask & { dependencyIds: string[] } => Boolean(task))
+  const latestBaseline = baselinesQuery.data?.[0]
+  const baselineVariance = latestBaseline?.taskSnapshots.flatMap((snapshot) => {
+    const task = taskById.get(snapshot.taskId)
+    if (!task?.dueAt || !snapshot.dueAt) return []
+    const days = Math.round(
+      (new Date(task.dueAt).getTime() - new Date(snapshot.dueAt).getTime()) /
+        (24 * 60 * 60 * 1000)
+    )
+    return days === 0 ? [] : [{ taskId: task.id, days }]
+  }) ?? []
+
+  if (!project.tasks.length) {
+    return (
+      <EmptySection title="还没有工作项" description="为这个项目创建第一个可执行任务。" action={<Button onClick={onCreate}>新建任务</Button>} />
+    )
+  }
+
+  return (
     <section className="project-workspace__panel project-workspace__panel--section">
       <header><div><h2>全部工作项</h2><span>{project.tasks.length}</span></div><Button size="small" theme="borderless" icon={<IconPlus />} aria-label="新建工作项" onClick={onCreate}>新建工作项</Button></header>
-      <ul className="project-workspace__task-list">
-        {project.tasks.map((task) => (
-          <li key={task.id}>
+      <div className="project-workspace__work-item-toolbar">
+        <div role="tablist" aria-label="工作项视图">
+          {viewTypes.map((view) => (
+            <button
+              key={view.type}
+              type="button"
+              role="tab"
+              aria-selected={config.type === view.type}
+              disabled={isSavingView}
+              onClick={() => void persistConfig({ ...config, type: view.type })}
+            >
+              {view.label}
+            </button>
+          ))}
+        </div>
+        <Input
+          aria-label="筛选项目工作项"
+          value={config.query ?? ''}
+          placeholder="筛选任务或负责人"
+          onChange={(value) => void persistConfig({ ...config, query: value || undefined })}
+        />
+        <Select
+          aria-label="按状态筛选工作项"
+          value={config.status ?? ''}
+          optionList={[
+            { value: '', label: '全部状态' },
+            ...Object.entries(TASK_LABELS).map(([value, label]) => ({ value, label })),
+          ]}
+          onChange={(value) => void persistConfig({
+            ...config,
+            status: (String(value) || undefined) as TaskStatus | undefined,
+          })}
+          style={{ minWidth: 150 }}
+        />
+      </div>
+      {config.type === 'LIST' ? <ul className="project-workspace__task-list">
+        {records.map((record) => {
+          const task = taskById.get(record.id)!
+          return <li key={task.id} data-testid={`list-task-${task.id}`}>
             <span className={`project-workspace__priority project-workspace__priority--${task.priority.toLowerCase()}`} />
             <div className="project-workspace__task-title"><strong>{task.title}</strong><Progress percent={task.completionPercent ?? 0} showInfo={false} aria-label={`${task.title}完成进度`} /></div>
             <span>{task.assigneeName || '未指定负责人'}</span>
@@ -348,11 +816,45 @@ function WorkItemsSection({
             <Tag size="small" color={task.status === 'DONE' ? 'blue' : task.status === 'IN_PROGRESS' ? 'green' : task.status === 'BLOCKED' ? 'red' : 'grey'}>{TASK_LABELS[task.status]}</Tag>
             <div className="project-workspace__row-actions"><Button size="small" theme="borderless" onClick={() => onEdit(task)}>编辑</Button><Button size="small" theme="borderless" type="danger" onClick={() => onDelete(task)}>删除</Button></div>
           </li>
-        ))}
-      </ul>
+        })}
+      </ul> : null}
+      {config.type === 'BOARD' ? (
+        <KanbanView
+          fields={fields}
+          records={records}
+          groupFieldKey={config.groupField ?? 'status'}
+          onGroupFieldChange={(groupField) => void persistConfig({ ...config, groupField: groupField as 'status' | 'priority' })}
+          onRecordUpdate={(taskId, input) => updateTaskValues(taskId, input.values)}
+          onOpenRecord={openRecord}
+        />
+      ) : null}
+      {config.type === 'CALENDAR' ? (
+        <CalendarView fields={fields} records={records} dateFieldKey="dueAt" onOpenRecord={openRecord} />
+      ) : null}
+      {config.type === 'GANTT' ? (
+        <div className="project-workspace__gantt-plan">
+          <div className="project-workspace__gantt-markers">
+            {criticalTasks.map((task) => (
+              <Tag key={task.id} color="red">关键路径：{task.title}</Tag>
+            ))}
+            {baselineVariance.map(({ taskId, days }) => (
+              <Tag key={taskId} color={days > 0 ? 'amber' : 'green'}>
+                基线偏差 {days > 0 ? '+' : ''}{days} 天
+              </Tag>
+            ))}
+          </div>
+          <GanttView
+            fields={fields}
+            records={records}
+            totalRecords={records.length}
+            config={ganttConfig}
+            onConfigChange={(next) => void persistConfig({ ...config, ganttScale: next.scale })}
+            onRecordChange={updateTaskValues}
+            onOpenRecord={openRecord}
+          />
+        </div>
+      ) : null}
     </section>
-  ) : (
-    <EmptySection title="还没有工作项" description="为这个项目创建第一个可执行任务。" action={<Button onClick={onCreate}>新建任务</Button>} />
   )
 }
 
@@ -705,6 +1207,7 @@ function ProjectTeamProgressSection({ projectId }: { projectId: string }) {
 function ProjectSectionContent({
   section,
   project,
+  canPublish,
   onCreateProgress,
   onCreateTask,
   onEditProject,
@@ -719,6 +1222,7 @@ function ProjectSectionContent({
 }: {
   section: ProjectSection
   project: ProjectDetail
+  canPublish: boolean
   onCreateProgress: () => void
   onCreateTask: () => void
   onEditProject: () => void
@@ -736,6 +1240,7 @@ function ProjectSectionContent({
     return (
       <>
         <ProgressSection project={project} onCreate={onCreateProgress} onEdit={onEditProgress} onDelete={onDeleteProgress} />
+        <ProjectProgressDrafts projectId={project.id} canPublish={canPublish} />
         <ProjectTeamProgressSection projectId={project.id} />
       </>
     )
@@ -748,6 +1253,13 @@ function ProjectSectionContent({
   }
   if (section === 'docs') {
     return <ProjectDocumentsSection project={project} focusedFileId={focusedFileId} />
+  }
+  if (section === 'activity') {
+    return (
+      <>
+        <ActivityTimeline projectId={project.id} />
+      </>
+    )
   }
   return <OverviewSection project={project} onEditProject={onEditProject} onCreateMilestone={onCreateMilestone} onEditMilestone={onEditMilestone} onDeleteMilestone={onDeleteMilestone} />
 }
@@ -776,6 +1288,14 @@ export default function ProjectWorkspacePage() {
     queryFn: () => getProject(projectId),
     enabled: Boolean(projectId),
   })
+  const pendingDraftsQuery = useQuery({
+    queryKey: ['project-progress-drafts', projectId, undefined],
+    queryFn: () => listProjectProgressDrafts({ projectId }),
+    enabled: Boolean(projectId),
+    select: (drafts) => drafts.filter((draft) => draft.status === 'PENDING').length,
+  })
+  const pendingDraftCount = pendingDraftsQuery.data ?? 0
+  const canPublish = useCanPublishProject(projectQuery.data)
 
   useEffect(() => {
     if (projectQuery.data) rememberProjectVisit(projectQuery.data.id)
@@ -862,6 +1382,9 @@ export default function ProjectWorkspacePage() {
             }}
           >
             {item.label}
+            {item.key === 'progress' && pendingDraftCount > 0 ? (
+              <span className="project-workspace__tab-badge">{pendingDraftCount}</span>
+            ) : null}
           </button>
         ))}
       </div>
@@ -870,6 +1393,7 @@ export default function ProjectWorkspacePage() {
         <ProjectSectionContent
           section={section}
           project={project}
+          canPublish={canPublish}
           onCreateProgress={() => setDialog({ type: 'progress' })}
           onCreateTask={() => setDialog({ type: 'task' })}
           onEditProject={() => setDialog({ type: 'project' })}

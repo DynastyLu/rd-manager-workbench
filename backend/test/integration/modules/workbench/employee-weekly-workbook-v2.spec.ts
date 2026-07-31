@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
+  DataScope,
   EmployeePlanCarryStatus,
   EmployeePlanPriority,
   EmployeeProgressPeriod,
@@ -11,13 +12,14 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import ExcelJS from 'exceljs';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
+import { PERMISSIONS } from '../../../../src/modules/iam/domain/permission-catalog';
 import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
 import { EmployeeWorkbookService } from '../../../../src/modules/workbench/employees/application/employee-workbook.service';
 import { ErrorCodes } from '../../../../src/shared/errors/error-codes';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('Employee weekly workbook V2 integration', () => {
   jest.setTimeout(240_000);
@@ -48,6 +50,7 @@ describe('Employee weekly workbook V2 integration', () => {
 
   const prisma = new PrismaClient();
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
   let storage: StoragePort;
   let employeeId: string;
   let projectId: string;
@@ -92,6 +95,9 @@ describe('Employee weekly workbook V2 integration', () => {
       });
       await prisma.employeeProgressSnapshot.deleteMany({
         where: { sourceBatchIds: { hasSome: batchIds } },
+      });
+      await prisma.projectProgressDraft.deleteMany({
+        where: { sourceBatchId: { in: batchIds } },
       });
       await prisma.employeeWorkItem.deleteMany({
         where: { importBatchId: { in: batchIds } },
@@ -207,6 +213,10 @@ describe('Employee weekly workbook V2 integration', () => {
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
     storage = app.get(StoragePort);
+    authenticated = await authenticatedRequest(app, prisma, `${prefix}-ROLE`, [
+      { code: PERMISSIONS.EMPLOYEE_READ, dataScope: DataScope.ALL },
+      { code: PERMISSIONS.EMPLOYEE_UPDATE, dataScope: DataScope.ALL },
+    ]);
     await cleanupFixtures();
 
     const employee = await prisma.resourceProfile.create({
@@ -230,6 +240,14 @@ describe('Employee weekly workbook V2 integration', () => {
   afterAll(async () => {
     try {
       if (storage) await cleanupFixtures();
+      if (authenticated) {
+        await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+        await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+        await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+        await prisma.user.delete({ where: { id: authenticated.user.id } });
+        await prisma.role.delete({ where: { id: authenticated.role.id } });
+        await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+      }
     } finally {
       try {
         await prisma.$disconnect();
@@ -241,7 +259,7 @@ describe('Employee weekly workbook V2 integration', () => {
 
   it('imports, resolves, queries, acts on, and restores every V2 row kind', async () => {
     const source = await workbookBuffer();
-    const uploaded = await request(app.getHttpServer())
+    const uploaded = await authenticated.agent
       .post('/api/employee-work-imports')
       .attach('file', source, {
         filename: `${prefix}-weekly.xlsx`,
@@ -262,7 +280,7 @@ describe('Employee weekly workbook V2 integration', () => {
       storage.read(storedBatch.sourceStorageKey).then(({ content }) => content),
     ).resolves.toEqual(source);
 
-    const previewed = await request(app.getHttpServer())
+    const previewed = await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/preview`)
       .send({})
       .expect(200);
@@ -291,7 +309,7 @@ describe('Employee weekly workbook V2 integration', () => {
       ]),
     );
 
-    const staged = await request(app.getHttpServer())
+    const staged = await authenticated.agent
       .get(`/api/employee-work-imports/${batchId}`)
       .query({ rowsPageSize: 20 })
       .expect(200);
@@ -340,7 +358,7 @@ describe('Employee weekly workbook V2 integration', () => {
     ]);
     const rowByTitle = new Map(stagedRows.map((row) => [row.normalizedValues.title, row] as const));
 
-    const resolved = await request(app.getHttpServer())
+    const resolved = await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/resolutions`)
       .send({
         rows: [
@@ -390,7 +408,7 @@ describe('Employee weekly workbook V2 integration', () => {
       unresolvedRows: 0,
     });
 
-    const committed = await request(app.getHttpServer())
+    const committed = await authenticated.agent
       .post(`/api/employee-work-imports/${batchId}/commit`)
       .send({});
     if (committed.status !== 201) {
@@ -494,7 +512,7 @@ describe('Employee weekly workbook V2 integration', () => {
       ]),
     );
 
-    const currentQuery = await request(app.getHttpServer())
+    const currentQuery = await authenticated.agent
       .get('/api/employee-work-items')
       .query({
         periodType: EmployeeProgressPeriod.WEEK,
@@ -528,7 +546,7 @@ describe('Employee weekly workbook V2 integration', () => {
       ]),
     );
 
-    const planQuery = await request(app.getHttpServer())
+    const planQuery = await authenticated.agent
       .get('/api/employee-week-plans')
       .query({
         periodType: EmployeeProgressPeriod.WEEK,
@@ -562,7 +580,7 @@ describe('Employee weekly workbook V2 integration', () => {
     const weekPlanByTitle = new Map(weekPlans.map((item) => [item.title, item] as const));
     const matchedPlan = weekPlanByTitle.get(matchedPlanTitle)!;
     const cancelledPlan = weekPlanByTitle.get(cancelledPlanTitle)!;
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/employee-week-plans/${matchedPlan.id}/match`)
       .send({ workItemId: workItemByTitle.get(riskTitle)!.id })
       .expect(422)
@@ -576,7 +594,7 @@ describe('Employee weekly workbook V2 integration', () => {
         });
       });
     for (const alreadyCancelled of [false, true]) {
-      await request(app.getHttpServer())
+      await authenticated.agent
         .post(`/api/employee-week-plans/${cancelledPlan.id}/cancel`)
         .send({ reason: alreadyCancelled ? `${prefix}-第二次取消` : `${prefix}-首次取消` })
         .expect(201)
@@ -592,7 +610,7 @@ describe('Employee weekly workbook V2 integration', () => {
         });
     }
 
-    const restored = await request(app.getHttpServer())
+    const restored = await authenticated.agent
       .post(`/api/employee-work-imports/${batchId}/restore`)
       .send({});
     if (restored.status !== 201) {
@@ -724,7 +742,7 @@ describe('Employee weekly workbook V2 integration', () => {
       null,
     ];
     const source = Buffer.from(await workbook.xlsx.writeBuffer());
-    const uploaded = await request(app.getHttpServer())
+    const uploaded = await authenticated.agent
       .post('/api/employee-work-imports')
       .attach('file', source, {
         filename: `${prefix}-duplicate-profile-weekly.xlsx`,
@@ -732,18 +750,18 @@ describe('Employee weekly workbook V2 integration', () => {
       })
       .expect(201);
     const batchId = uploaded.body.data.id as string;
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/preview`)
       .send({})
       .expect(200);
-    const detail = await request(app.getHttpServer())
+    const detail = await authenticated.agent
       .get(`/api/employee-work-imports/${batchId}`)
       .query({ rowsPageSize: 20 })
       .expect(200);
     const stagedRows = detail.body.data.rows as Array<{ id: string }>;
     expect(stagedRows).toHaveLength(2);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/employee-work-imports/${batchId}/resolutions`)
       .send({
         rows: stagedRows.map(({ id }, index) => ({

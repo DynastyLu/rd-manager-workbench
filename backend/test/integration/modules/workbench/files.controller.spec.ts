@@ -5,17 +5,18 @@ import { join } from 'node:path';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { NonProjectRdKind, PrismaClient } from '@prisma/client';
-import request from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { LocalStorageAdapter } from '../../../../src/infrastructure/storage/local-storage.adapter';
 import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
+import { authenticatedRequest } from '../../../helpers/authenticated-request';
 
 describe('File assets API', () => {
   const prisma = new PrismaClient();
   const prefix = `TEST-FILE-${Date.now()}`;
   let app: INestApplication;
+  let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
   let storageRoot: string;
 
   beforeAll(async () => {
@@ -34,6 +35,7 @@ describe('File assets API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
+    authenticated = await authenticatedRequest(app, prisma, 'SUPER_ADMIN', []);
   });
 
   afterAll(async () => {
@@ -42,6 +44,15 @@ describe('File assets API', () => {
     await prisma.partner.deleteMany({ where: { name: { startsWith: prefix } } });
     await prisma.nonProjectRdItem.deleteMany({ where: { code: { startsWith: prefix } } });
     await prisma.project.deleteMany({ where: { code: { startsWith: prefix } } });
+    if (authenticated) {
+      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
+      await prisma.rolePermission.deleteMany({ where: { roleId: authenticated.role.id } });
+      await prisma.user.delete({ where: { id: authenticated.user.id } });
+      await prisma.role.delete({ where: { id: authenticated.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    }
     await prisma.$disconnect();
     await app?.close();
     await rm(storageRoot, { recursive: true, force: true });
@@ -52,7 +63,7 @@ describe('File assets API', () => {
       data: { type: 'DOCUMENT', title: `${prefix} 附件文档` },
     });
     const content = Buffer.from('first local attachment version\n', 'utf8');
-    const uploaded = await request(app.getHttpServer())
+    const uploaded = await authenticated.agent
       .post('/api/files')
       .field('documentId', document.id)
       .field('name', `${prefix} 研究附件.bin`)
@@ -76,7 +87,7 @@ describe('File assets API', () => {
       sha256: createHash('sha256').update(content).digest('hex'),
     });
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get('/api/files')
       .query({ documentId: document.id, status: 'ACTIVE' })
       .expect(200)
@@ -87,7 +98,7 @@ describe('File assets API', () => {
         });
       });
 
-    const downloaded = await request(app.getHttpServer())
+    const downloaded = await authenticated.agent
       .get(`/api/files/${asset.id}/download`)
       .buffer(true)
       .parse((response, callback) => {
@@ -111,7 +122,7 @@ describe('File assets API', () => {
     });
     const first = Buffer.from('file-version-one');
     const second = Buffer.from('file-version-two-with-change');
-    const created = await request(app.getHttpServer())
+    const created = await authenticated.agent
       .post('/api/files')
       .field('documentId', document.id)
       .field('name', `${prefix} 版本附件.bin`)
@@ -119,7 +130,7 @@ describe('File assets API', () => {
       .expect(201);
     const assetId = created.body.data.id as string;
     const firstVersion = created.body.data.versions[0];
-    const next = await request(app.getHttpServer())
+    const next = await authenticated.agent
       .post(`/api/files/${assetId}/versions`)
       .attach('file', second, 'version.bin')
       .expect(201);
@@ -129,7 +140,7 @@ describe('File assets API', () => {
       sha256: createHash('sha256').update(second).digest('hex'),
     });
     const downloadHash = async (versionId?: string) => {
-      const response = await request(app.getHttpServer())
+      const response = await authenticated.agent
         .get(`/api/files/${assetId}/download`)
         .query(versionId ? { versionId } : {})
         .buffer(true)
@@ -153,7 +164,7 @@ describe('File assets API', () => {
       prisma.contentDocument.create({ data: { type: 'DOCUMENT', title: `${prefix} 关联文档` } }),
       prisma.project.create({ data: { code: `${prefix}-OWNER`, name: `${prefix} 关联项目` } }),
     ]);
-    const created = await request(app.getHttpServer())
+    const created = await authenticated.agent
       .post('/api/files')
       .field('documentId', document.id)
       .field('name', `${prefix} 待调整.bin`)
@@ -161,7 +172,7 @@ describe('File assets API', () => {
       .expect(201);
     const assetId = created.body.data.id as string;
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .patch(`/api/files/${assetId}`)
       .send({ name: `${prefix} 已调整.bin`, documentId: null, projectId: project.id })
       .expect(200)
@@ -174,8 +185,8 @@ describe('File assets API', () => {
         });
       });
 
-    await request(app.getHttpServer()).delete(`/api/files/${assetId}`).expect(204);
-    await request(app.getHttpServer())
+    await authenticated.agent.delete(`/api/files/${assetId}`).expect(204);
+    await authenticated.agent
       .get('/api/files')
       .query({ projectId: project.id, status: 'TRASHED' })
       .expect(200)
@@ -184,7 +195,7 @@ describe('File assets API', () => {
           expect.objectContaining({ id: assetId, status: 'TRASHED' }),
         ]);
       });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post(`/api/files/${assetId}/restore`)
       .expect(201)
       .expect(({ body }) => {
@@ -193,11 +204,11 @@ describe('File assets API', () => {
   });
 
   it('rejects uploads without a file or an owning object', async () => {
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/files')
       .field('name', `${prefix} 无文件.bin`)
       .expect(422);
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/files')
       .field('name', `${prefix} 无关联.bin`)
       .attach('file', Buffer.from('orphan'), 'orphan.bin')
@@ -206,7 +217,7 @@ describe('File assets API', () => {
 
   it('uploads and filters attachments by a real partner association', async () => {
     const partner = await prisma.partner.create({ data: { name: `${prefix} 资料合作方` } });
-    const uploaded = await request(app.getHttpServer())
+    const uploaded = await authenticated.agent
       .post('/api/files')
       .field('partnerId', partner.id)
       .field('name', `${prefix} 合作协议.pdf`)
@@ -214,7 +225,7 @@ describe('File assets API', () => {
       .expect(201);
 
     expect(uploaded.body.data).toMatchObject({ partnerId: partner.id });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get('/api/files')
       .query({ partnerId: partner.id })
       .expect(200)
@@ -223,9 +234,9 @@ describe('File assets API', () => {
           expect.objectContaining({ id: uploaded.body.data.id, partnerId: partner.id }),
         ]);
       });
-    await request(app.getHttpServer()).delete(`/api/partners/${partner.id}`).expect(409);
-    await request(app.getHttpServer()).delete(`/api/files/${uploaded.body.data.id}`).expect(204);
-    await request(app.getHttpServer()).delete(`/api/partners/${partner.id}`).expect(204);
+    await authenticated.agent.delete(`/api/partners/${partner.id}`).expect(409);
+    await authenticated.agent.delete(`/api/files/${uploaded.body.data.id}`).expect(204);
+    await authenticated.agent.delete(`/api/partners/${partner.id}`).expect(204);
   });
 
   it('rejects an attachment that is assigned to more than one owning object', async () => {
@@ -234,7 +245,7 @@ describe('File assets API', () => {
       prisma.partner.create({ data: { name: `${prefix} 单一归属合作方` } }),
     ]);
 
-    await request(app.getHttpServer())
+    await authenticated.agent
       .post('/api/files')
       .field('documentId', document.id)
       .field('partnerId', partner.id)
@@ -251,7 +262,7 @@ describe('File assets API', () => {
         kind: NonProjectRdKind.TECH_EXPLORATION,
       },
     });
-    const uploaded = await request(app.getHttpServer())
+    const uploaded = await authenticated.agent
       .post('/api/files')
       .field('nonProjectRdItemId', item.id)
       .field('name', `${prefix} 预研资料.md`)
@@ -259,7 +270,7 @@ describe('File assets API', () => {
       .expect(201);
 
     expect(uploaded.body.data).toMatchObject({ nonProjectRdItemId: item.id });
-    await request(app.getHttpServer())
+    await authenticated.agent
       .get('/api/files')
       .query({ nonProjectRdItemId: item.id })
       .expect(200)
