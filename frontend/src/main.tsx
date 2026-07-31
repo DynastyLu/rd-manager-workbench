@@ -3,17 +3,10 @@ import '@douyinfe/semi-ui/lib/es/react19-adapter'
 // 读完运行时配置后清除 window 引用，防止外部脚本篡改
 delete window.__APP_CONFIG__
 
-import { DEFAULT_THEME, THEME_STORAGE_NAME, resolveStoredTheme } from '@/stores/theme'
+import { useThemeStore } from '@/stores/theme'
 
-// Sync theme before React renders (prevents flash during Zustand persist hydration)
-const _initialTheme = (() => {
-  try {
-    return resolveStoredTheme(localStorage.getItem(THEME_STORAGE_NAME))
-  } catch {
-    return DEFAULT_THEME
-  }
-})()
-document.documentElement.setAttribute('data-theme', _initialTheme)
+const theme = useThemeStore.getState().theme
+document.documentElement.setAttribute('data-theme', theme)
 
 import { type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'

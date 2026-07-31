@@ -1,6 +1,47 @@
 import { Banner, Tag } from '@douyinfe/semi-ui'
 import { Link } from 'react-router-dom'
 import { ROUTES } from '@/constants/routes'
+import { useThemeStore } from '@/stores/theme'
+
+function ThemeSection() {
+  const { theme, setTheme } = useThemeStore()
+
+  return (
+    <section className="project-workspace__panel">
+      <header>
+        <h2>外观</h2>
+        <Tag color="blue">本地主题</Tag>
+      </header>
+      <p>选择工作台界面主题；设置会自动保存到本机浏览器。</p>
+      <div className="mt-4 flex gap-3">
+        <button
+          type="button"
+          aria-pressed={theme === 'aurora'}
+          onClick={() => setTheme('aurora')}
+          className={`rounded-lg border px-4 py-2 text-sm transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98] ${
+            theme === 'aurora'
+              ? 'border-[var(--workspace-brand)] bg-[var(--workspace-brand-soft)] text-[var(--workspace-brand)]'
+              : 'border-[var(--workspace-border-strong)] text-[var(--workspace-text)]'
+          }`}
+        >
+          极光
+        </button>
+        <button
+          type="button"
+          aria-pressed={theme === 'eye-care'}
+          onClick={() => setTheme('eye-care')}
+          className={`rounded-lg border px-4 py-2 text-sm transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98] ${
+            theme === 'eye-care'
+              ? 'border-[var(--workspace-brand)] bg-[var(--workspace-brand-soft)] text-[var(--workspace-brand)]'
+              : 'border-[var(--workspace-border-strong)] text-[var(--workspace-text)]'
+          }`}
+        >
+          护眼
+        </button>
+      </div>
+    </section>
+  )
+}
 
 export default function WorkbenchSettings() {
   return (
@@ -13,6 +54,8 @@ export default function WorkbenchSettings() {
             <p className="app-page__subtitle">查看本地数据、通知和外部通道的当前运行边界。</p>
           </div>
         </div>
+
+        <ThemeSection />
 
         <section className="project-workspace__panel">
           <header><h2>通知送达范围</h2><Tag color="green">本地通知已启用</Tag></header>
