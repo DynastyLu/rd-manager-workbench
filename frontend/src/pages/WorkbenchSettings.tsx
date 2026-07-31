@@ -18,7 +18,7 @@ function ThemeSection() {
           type="button"
           aria-pressed={theme === 'aurora'}
           onClick={() => setTheme('aurora')}
-          className={`rounded-lg border px-4 py-2 text-sm transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98] ${
+          className={`rounded-lg border px-4 py-2 text-sm motion-safe:transition-transform motion-safe:duration-150 motion-safe:hover:scale-[1.02] motion-safe:active:scale-[0.98] ${
             theme === 'aurora'
               ? 'border-[var(--workspace-brand)] bg-[var(--workspace-brand-soft)] text-[var(--workspace-brand)]'
               : 'border-[var(--workspace-border-strong)] text-[var(--workspace-text)]'
@@ -30,7 +30,7 @@ function ThemeSection() {
           type="button"
           aria-pressed={theme === 'eye-care'}
           onClick={() => setTheme('eye-care')}
-          className={`rounded-lg border px-4 py-2 text-sm transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98] ${
+          className={`rounded-lg border px-4 py-2 text-sm motion-safe:transition-transform motion-safe:duration-150 motion-safe:hover:scale-[1.02] motion-safe:active:scale-[0.98] ${
             theme === 'eye-care'
               ? 'border-[var(--workspace-brand)] bg-[var(--workspace-brand-soft)] text-[var(--workspace-brand)]'
               : 'border-[var(--workspace-border-strong)] text-[var(--workspace-text)]'
