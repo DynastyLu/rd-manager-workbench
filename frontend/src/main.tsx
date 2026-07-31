@@ -20,11 +20,11 @@ import { createRoot } from 'react-dom/client'
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import '@douyinfe/semi-ui/lib/es/_base/base.css'
 import '@/index.css'
+import './animations.css'
 import '@/styles/workspace-tokens.css'
 import '@/lib/i18n' // i18n initialisation (side effect)
 
 import { MotionConfig } from 'framer-motion'
-import { useThemeStore } from '@/stores/theme'
 
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary'
 import { AppShell } from '@/components/AppShell/AppShell'
@@ -41,10 +41,7 @@ import { UpdateNotifier } from '@/components/UpdateNotifier/UpdateNotifier'
 
 // eslint-disable-next-line react-refresh/only-export-components
 function MotionConfigProvider({ children }: { children: ReactNode }) {
-  const theme = useThemeStore((s) => s.theme)
-  return (
-    <MotionConfig reducedMotion={theme === 'classic' ? 'always' : 'user'}>{children}</MotionConfig>
-  )
+  return <MotionConfig reducedMotion="user">{children}</MotionConfig>
 }
 
 Sentry.init({
