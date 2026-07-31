@@ -138,7 +138,7 @@ export default function SecurityAuditsPage() {
             aria-labelledby={resultLabelId}
             placeholder="按结果筛选"
             value={success}
-            onChange={(value) => setSuccess(value as string)}
+            onChange={(value) => setSuccess(value as string | undefined)}
             optionList={[
               { value: 'true', label: '成功' },
               { value: 'false', label: '失败' },
