@@ -419,13 +419,11 @@ body::after {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 16px;
   border: none;
   border-radius: var(--workspace-radius);
   background: var(--workspace-brand-gradient);
   color: var(--workspace-text-inverse);
   font-family: var(--font-main);
-  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   /* State transition (not motion); ok per design system */
