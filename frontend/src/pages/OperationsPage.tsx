@@ -182,49 +182,51 @@ function NonProjectRdPage() {
 
   const selected = detail.data
   return (
-    <div className="operations-page">
-      <header className="operations-page__header">
-        <div>
-          <p>R&amp;D OPERATIONS</p>
-          <h1>非项目研发</h1>
-          <span>把预研、技术债、专利、培训和临时支持纳入可追踪的工作闭环。</span>
-        </div>
-        <div className="operations-page__header-actions">
-          <Link className="operations-page__switch" to={`${ROUTES.OPERATIONS}?tab=resources`}>资源负荷</Link>
-          <Link className="operations-page__switch" to={ROUTES.REPORTS}>统计报表</Link>
-          <Button aria-label="新建事项" theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditor({ mode: 'create' })}>新建事项</Button>
-        </div>
-      </header>
+    <div className="operations-page workspace-page">
+      <div className="workspace-page__inner">
+        <header className="operations-page__header">
+          <div>
+            <p>R&amp;D OPERATIONS</p>
+            <h1>非项目研发</h1>
+            <span>把预研、技术债、专利、培训和临时支持纳入可追踪的工作闭环。</span>
+          </div>
+          <div className="operations-page__header-actions">
+            <Link className="operations-page__switch" to={`${ROUTES.OPERATIONS}?tab=resources`}>资源负荷</Link>
+            <Link className="operations-page__switch" to={ROUTES.REPORTS}>统计报表</Link>
+            <Button aria-label="新建事项" theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditor({ mode: 'create' })}>新建事项</Button>
+          </div>
+        </header>
 
-      <section className="operations-page__surface" aria-label="非项目研发目录">
-        <div className="operations-page__filters">
-          <Input prefix={<IconSearch />} aria-label="搜索非项目研发" placeholder="搜索编号、标题、目标或预期成果" value={queryText} onChange={setQueryText} onEnterPress={submitFilters} />
-          <Select aria-label="事项类型" placeholder="全部类型" showClear value={kind} optionList={KINDS} onChange={(value) => setKind(value as NonProjectRdKind | undefined)} />
-          <Select aria-label="事项状态" placeholder="全部状态" showClear value={status} optionList={STATUSES} onChange={(value) => setStatus(value as NonProjectRdStatus | undefined)} />
-          <Button onClick={submitFilters}>筛选</Button>
-        </div>
-        {items.isError ? <Banner type="danger" fullMode={false} title="无法读取非项目研发" closeIcon={null}><Button onClick={() => { void items.refetch() }}>重试</Button></Banner> : null}
-        <div className="operations-list" aria-busy={items.isLoading}>
-          {items.isLoading ? <Skeleton.Paragraph rows={6} /> : null}
-          {!items.isLoading && !items.data?.data.length ? <Empty title="还没有非项目研发事项" description="从预研、技术债或培训计划开始记录。" /> : null}
-          {items.data?.data.map((item) => (
-            <article className="operations-card" key={item.id}>
-              <button type="button" aria-label={`打开：${item.title}`} onClick={() => openItem(item.id)}>
-                <span className="operations-card__kind">{kindLabel(item.kind)}</span>
-                <h2>{item.title}</h2>
-                <p>{item.expectedOutcome || item.objective || '尚未填写预期成果'}</p>
-                <footer>
-                  <span>{item.code}</span>
-                  <Tag color={item.status === 'COMPLETED' ? 'green' : item.status === 'ON_HOLD' ? 'amber' : 'blue'}>{statusLabel(item.status)}</Tag>
-                  <span>{date(item.plannedEndAt)}</span>
-                  <span>{item.plannedPersonHours}h</span>
-                </footer>
-              </button>
-            </article>
-          ))}
-        </div>
-        {(items.data?.meta.total ?? 0) > 20 ? <Pagination currentPage={page} pageSize={20} total={items.data?.meta.total ?? 0} onPageChange={setPage} /> : null}
-      </section>
+        <section className="operations-page__surface workspace-card" aria-label="非项目研发目录">
+          <div className="operations-page__filters">
+            <Input prefix={<IconSearch />} aria-label="搜索非项目研发" placeholder="搜索编号、标题、目标或预期成果" value={queryText} onChange={setQueryText} onEnterPress={submitFilters} />
+            <Select aria-label="事项类型" placeholder="全部类型" showClear value={kind} optionList={KINDS} onChange={(value) => setKind(value as NonProjectRdKind | undefined)} />
+            <Select aria-label="事项状态" placeholder="全部状态" showClear value={status} optionList={STATUSES} onChange={(value) => setStatus(value as NonProjectRdStatus | undefined)} />
+            <Button onClick={submitFilters}>筛选</Button>
+          </div>
+          {items.isError ? <Banner type="danger" fullMode={false} title="无法读取非项目研发" closeIcon={null}><Button onClick={() => { void items.refetch() }}>重试</Button></Banner> : null}
+          <div className="operations-list" aria-busy={items.isLoading}>
+            {items.isLoading ? <Skeleton.Paragraph rows={6} /> : null}
+            {!items.isLoading && !items.data?.data.length ? <Empty title="还没有非项目研发事项" description="从预研、技术债或培训计划开始记录。" /> : null}
+            {items.data?.data.map((item) => (
+              <article className="operations-card" key={item.id}>
+                <button type="button" aria-label={`打开：${item.title}`} onClick={() => openItem(item.id)}>
+                  <span className="operations-card__kind">{kindLabel(item.kind)}</span>
+                  <h2>{item.title}</h2>
+                  <p>{item.expectedOutcome || item.objective || '尚未填写预期成果'}</p>
+                  <footer>
+                    <span>{item.code}</span>
+                    <Tag color={item.status === 'COMPLETED' ? 'green' : item.status === 'ON_HOLD' ? 'amber' : 'blue'}>{statusLabel(item.status)}</Tag>
+                    <span>{date(item.plannedEndAt)}</span>
+                    <span>{item.plannedPersonHours}h</span>
+                  </footer>
+                </button>
+              </article>
+            ))}
+          </div>
+          {(items.data?.meta.total ?? 0) > 20 ? <Pagination currentPage={page} pageSize={20} total={items.data?.meta.total ?? 0} onPageChange={setPage} /> : null}
+        </section>
+      </div>
 
       <SideSheet visible={Boolean(recordId)} width={760} onCancel={closeItem} title={selected?.title ?? '非项目研发详情'}>
         <section role="dialog" aria-label="非项目研发详情" className="operations-detail">

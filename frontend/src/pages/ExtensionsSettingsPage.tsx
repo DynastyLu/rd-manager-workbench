@@ -274,82 +274,84 @@ export default function ExtensionsSettingsPage() {
   const enabledCount = useMemo(() => profiles.filter((profile) => profile.enabled).length, [profiles])
 
   return (
-    <div className="extensions-page">
-      <header className="extensions-page__hero">
-        <div>
-          <p>CONTROLLED EXTERNAL ACCESS</p>
-          <h1>外部能力</h1>
-          <span>本地功能始终可用。外部调用默认关闭、逐次确认，凭据只保存在 Electron 加密保险箱。</span>
-        </div>
-        <div className="extensions-page__hero-status">
-          <Tag color="blue">{enabledCount} 个服务已启用</Tag>
-          <Tag color={storeQuery.data ? 'green' : 'grey'}>{storeQuery.data ? '凭据保险箱可用' : '仅本地模式'}</Tag>
-        </div>
-      </header>
-
-      {!storeQuery.data ? (
-        <Banner
-          className="extensions-page__fallback"
-          type="warning"
-          fullMode={false}
-          closeIcon={null}
-          title="浏览器模式不能安全保存或使用外部服务凭据"
-          description="短信本地预览与本地手动 AI 仍可配置；真实短信、AI、CalDAV 和 WebDAV 请在 Electron 桌面端使用。"
-        />
-      ) : null}
-
-      <Tabs type="line" activeKey={kind} onChange={(value) => setKind(value as ExtensionKind)} className="extensions-page__tabs">
-        {(Object.keys(KIND_COPY) as ExtensionKind[]).map((item) => <TabPane key={item} itemKey={item} tab={KIND_COPY[item].tab} />)}
-      </Tabs>
-
-      <section className="extensions-workspace">
-        <header className="extensions-workspace__header">
-          <div><p>{copy.eyebrow}</p><h2>{copy.title}</h2><span>{copy.description}</span></div>
-          <Button theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditor(defaultDraft(kind))}>添加服务</Button>
+    <div className="extensions-page workspace-page">
+      <div className="workspace-page__inner">
+        <header className="extensions-page__hero">
+          <div>
+            <p>CONTROLLED EXTERNAL ACCESS</p>
+            <h1>外部能力</h1>
+            <span>本地功能始终可用。外部调用默认关闭、逐次确认，凭据只保存在 Electron 加密保险箱。</span>
+          </div>
+          <div className="extensions-page__hero-status">
+            <Tag color="blue">{enabledCount} 个服务已启用</Tag>
+            <Tag color={storeQuery.data ? 'green' : 'grey'}>{storeQuery.data ? '凭据保险箱可用' : '仅本地模式'}</Tag>
+          </div>
         </header>
 
-        <Banner
-          type="warning"
-          fullMode={false}
-          closeIcon={null}
-          title="连接测试会真实外呼"
-          description="除“本地预览/本地手动”外，点击测试后会先展示目标服务商和数据范围；只有再次确认才发起网络请求，可能产生费用。"
-        />
+        {!storeQuery.data ? (
+          <Banner
+            className="extensions-page__fallback"
+            type="warning"
+            fullMode={false}
+            closeIcon={null}
+            title="浏览器模式不能安全保存或使用外部服务凭据"
+            description="短信本地预览与本地手动 AI 仍可配置；真实短信、AI、CalDAV 和 WebDAV 请在 Electron 桌面端使用。"
+          />
+        ) : null}
 
-        {profilesQuery.isError ? <Banner type="danger" fullMode={false} closeIcon={null} title="无法读取外部服务配置" description="请确认本地服务已启动。" /> : null}
-        <div className="extension-profile-grid">
-          {activeProfiles.map((profile) => {
-            const credentialAvailable = LOCAL_PROVIDERS.has(profile.provider) || Boolean(credentialAvailability.data?.[profile.id])
-            return (
-              <article key={profile.id} className="extension-profile-card">
-                <div className="extension-profile-card__top">
-                  <div className={`extension-profile-card__mark extension-profile-card__mark--${profile.kind.toLowerCase()}`}>{profile.kind === 'CLOUD_DRIVE' ? 'DRIVE' : profile.kind}</div>
-                  <div className="extension-profile-card__tags">{statusTag(profile, credentialAvailable)}<Tag>{profile.provider}</Tag></div>
-                </div>
-                <h3>{profile.name}</h3>
-                <p>{LOCAL_PROVIDERS.has(profile.provider) ? '数据不离开本机，不会伪造真实发送或 AI 执行结果。' : `凭据：${credentialAvailable ? '已在本机保险箱中确认' : '本机不可用'}`}</p>
-                <dl>
-                  <div><dt>权限</dt><dd>{profile.permissions.length} 项</dd></div>
-                  <div><dt>更新</dt><dd>{new Date(profile.updatedAt).toLocaleDateString('zh-CN')}</dd></div>
-                </dl>
-                <div className="extension-profile-card__actions">
-                  <Button
-                    icon={<IconRefresh />}
-                    disabled={!profile.enabled || (!LOCAL_PROVIDERS.has(profile.provider) && !credentialAvailable)}
-                    onClick={() => { void beginConnectionTest(profile) }}
-                    aria-label={`测试 ${profile.name} 连接`}
-                  >测试连接</Button>
-                  <Button icon={<IconHistory />} aria-label="查看运行历史" onClick={() => setHistoryProfile(profile)}>查看运行历史</Button>
-                  <Switch aria-label={`${profile.name} 启用状态`} checked={profile.enabled} loading={toggleProfile.isPending} onChange={(enabled) => toggleProfile.mutate({ profile, enabled })} />
-                  <Button type="danger" onClick={() => archiveProfile.mutate(profile)}>停用并归档</Button>
-                </div>
-              </article>
-            )
-          })}
-        </div>
-        {!profilesQuery.isLoading && activeProfiles.length === 0 ? <Empty title={`尚未配置${copy.title}`} description="添加后默认保持关闭；凭据保存完成才能启用真实服务。" /> : null}
-        {kind === 'SMS' ? <SmsRecipientManager /> : null}
-      </section>
+        <Tabs type="line" activeKey={kind} onChange={(value) => setKind(value as ExtensionKind)} className="extensions-page__tabs">
+          {(Object.keys(KIND_COPY) as ExtensionKind[]).map((item) => <TabPane key={item} itemKey={item} tab={KIND_COPY[item].tab} />)}
+        </Tabs>
+
+        <section className="extensions-workspace workspace-card">
+          <header className="extensions-workspace__header">
+            <div><p>{copy.eyebrow}</p><h2>{copy.title}</h2><span>{copy.description}</span></div>
+            <Button theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditor(defaultDraft(kind))}>添加服务</Button>
+          </header>
+
+          <Banner
+            type="warning"
+            fullMode={false}
+            closeIcon={null}
+            title="连接测试会真实外呼"
+            description="除“本地预览/本地手动”外，点击测试后会先展示目标服务商和数据范围；只有再次确认才发起网络请求，可能产生费用。"
+          />
+
+          {profilesQuery.isError ? <Banner type="danger" fullMode={false} closeIcon={null} title="无法读取外部服务配置" description="请确认本地服务已启动。" /> : null}
+          <div className="extension-profile-grid">
+            {activeProfiles.map((profile) => {
+              const credentialAvailable = LOCAL_PROVIDERS.has(profile.provider) || Boolean(credentialAvailability.data?.[profile.id])
+              return (
+                <article key={profile.id} className="extension-profile-card">
+                  <div className="extension-profile-card__top">
+                    <div className={`extension-profile-card__mark extension-profile-card__mark--${profile.kind.toLowerCase()}`}>{profile.kind === 'CLOUD_DRIVE' ? 'DRIVE' : profile.kind}</div>
+                    <div className="extension-profile-card__tags">{statusTag(profile, credentialAvailable)}<Tag>{profile.provider}</Tag></div>
+                  </div>
+                  <h3>{profile.name}</h3>
+                  <p>{LOCAL_PROVIDERS.has(profile.provider) ? '数据不离开本机，不会伪造真实发送或 AI 执行结果。' : `凭据：${credentialAvailable ? '已在本机保险箱中确认' : '本机不可用'}`}</p>
+                  <dl>
+                    <div><dt>权限</dt><dd>{profile.permissions.length} 项</dd></div>
+                    <div><dt>更新</dt><dd>{new Date(profile.updatedAt).toLocaleDateString('zh-CN')}</dd></div>
+                  </dl>
+                  <div className="extension-profile-card__actions">
+                    <Button
+                      icon={<IconRefresh />}
+                      disabled={!profile.enabled || (!LOCAL_PROVIDERS.has(profile.provider) && !credentialAvailable)}
+                      onClick={() => { void beginConnectionTest(profile) }}
+                      aria-label={`测试 ${profile.name} 连接`}
+                    >测试连接</Button>
+                    <Button icon={<IconHistory />} aria-label="查看运行历史" onClick={() => setHistoryProfile(profile)}>查看运行历史</Button>
+                    <Switch aria-label={`${profile.name} 启用状态`} checked={profile.enabled} loading={toggleProfile.isPending} onChange={(enabled) => toggleProfile.mutate({ profile, enabled })} />
+                    <Button type="danger" onClick={() => archiveProfile.mutate(profile)}>停用并归档</Button>
+                  </div>
+                </article>
+              )
+            })}
+          </div>
+          {!profilesQuery.isLoading && activeProfiles.length === 0 ? <Empty title={`尚未配置${copy.title}`} description="添加后默认保持关闭；凭据保存完成才能启用真实服务。" /> : null}
+          {kind === 'SMS' ? <SmsRecipientManager /> : null}
+        </section>
+      </div>
 
       <ProfileEditor
         draft={editor}
