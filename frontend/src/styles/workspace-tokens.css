@@ -10,58 +10,72 @@
 [data-theme='worldcup'] {
   --workspace-sidebar-width: 208px;
   --workspace-header-height: 56px;
-  --workspace-page-padding: 24px 28px 40px;
+  --workspace-page-padding: 24px 32px 48px;
   --workspace-control-height: 32px;
   --workspace-control-height-lg: 36px;
   --workspace-form-gap: 16px;
   --workspace-field-gap: 6px;
   --workspace-modal-padding: 24px;
   --workspace-modal-footer-gap: 8px;
-  --workspace-brand: #3370ff;
-  --workspace-brand-hover: #245bdb;
-  --workspace-brand-soft: #e8f0ff;
-  --workspace-canvas: #f5f6f7;
-  --workspace-surface: #ffffff;
-  --workspace-surface-subtle: #f8f9fa;
-  --workspace-border: #e5e7eb;
-  --workspace-border-strong: #d9dce1;
-  --workspace-text: #1f2329;
-  --workspace-text-secondary: #646a73;
-  --workspace-text-muted: #8f959e;
-  --workspace-success: #2f9b65;
-  --workspace-warning: #d98909;
-  --workspace-danger: #d83931;
-  --workspace-info: #3370ff;
-  --workspace-overlay: rgb(31 35 41 / 46%);
-  --workspace-focus-ring: 0 0 0 2px rgb(51 112 255 / 22%);
+
+  /* Aurora color system */
+  --workspace-brand: #8b5cf6;
+  --workspace-brand-rgb: 139, 92, 246;
+  --workspace-brand-hover: #7c3aed;
+  --workspace-brand-gradient: linear-gradient(135deg, #8b5cf6, #3b82f6);
+  --workspace-brand-soft: #ede9fe;
+  --workspace-canvas: #f8fafc;
+  --workspace-canvas-rgb: 248, 250, 252;
+  --workspace-canvas-gradient:
+    radial-gradient(circle at 10% 10%, rgba(139, 92, 246, 0.08), transparent 35%),
+    radial-gradient(circle at 90% 20%, rgba(59, 130, 246, 0.06), transparent 30%),
+    radial-gradient(circle at 50% 90%, rgba(236, 72, 153, 0.04), transparent 35%),
+    var(--workspace-canvas);
+  --workspace-surface: rgba(255, 255, 255, 0.72);
+  --workspace-surface-elevated: rgba(255, 255, 255, 0.88);
+  --workspace-surface-subtle: #f5f3ff;
+  --workspace-border: rgba(255, 255, 255, 0.6);
+  --workspace-border-strong: rgba(226, 232, 240, 0.8);
+  --workspace-text: #1e1b4b;
+  --workspace-text-secondary: #5b558e;
+  --workspace-text-muted: #8a84b3;
+  --workspace-text-inverse: #ffffff;
+  --workspace-success: #10b981;
+  --workspace-warning: #f59e0b;
+  --workspace-danger: #ef4444;
+  --workspace-info: #3b82f6;
+  --workspace-overlay: rgba(30, 27, 75, 0.45);
+  --workspace-focus-ring: 0 0 0 3px rgba(139, 92, 246, 0.15);
+  --workspace-shadow-panel: 0 8px 32px rgba(31, 35, 41, 0.06);
+  --workspace-shadow-float: 0 20px 60px rgba(31, 35, 41, 0.12);
   --workspace-radius-sm: 6px;
   --workspace-radius: 8px;
   --workspace-radius-lg: 12px;
-  --workspace-shadow-float: 0 8px 28px rgba(31, 35, 41, 0.1);
-  --workspace-shadow-panel: 0 1px 2px rgba(31, 35, 41, 0.04);
 
-  /* Compatibility aliases while legacy pages move to Semi components. */
+  /* Compatibility aliases */
   --bg-primary: var(--workspace-surface);
   --bg-secondary: var(--workspace-canvas);
   --bg-surface: var(--workspace-surface);
   --bg-panel: var(--workspace-surface);
-  --bg-hover: #f0f2f5;
-  --accent-cyan: var(--workspace-brand);
-  --accent-pink: #8f5cff;
+  --bg-hover: var(--workspace-surface-subtle);
+  --accent-cyan: var(--workspace-info);
+  --accent-pink: #ec4899;
   --accent-gold: var(--workspace-warning);
   --accent-green: var(--workspace-success);
   --text-primary: var(--workspace-text);
   --text-secondary: var(--workspace-text-secondary);
   --text-muted: var(--workspace-text-muted);
-  --text-inverse: #ffffff;
-  --border-color: var(--workspace-border);
+  --text-inverse: var(--workspace-text-inverse);
+  --border-color: var(--workspace-border-strong);
   --border-active: var(--workspace-brand);
   --header-bg: var(--workspace-surface);
-  --header-border: var(--workspace-border);
+  --header-border: var(--workspace-border-strong);
   --sidebar-bg: var(--workspace-surface);
   --sidebar-width: var(--workspace-sidebar-width);
   --font-main: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --radius: var(--workspace-radius);
+
+  /* Legacy theme effect controls. */
   --scanline-opacity: 0;
   --neon-line-opacity: 0;
   --dot-visibility: hidden;
@@ -70,23 +84,23 @@
   --glow-gold: none;
 
   /* Keep the remaining shadcn utilities visually aligned until migration ends. */
-  --background: #f5f6f7;
-  --foreground: #1f2329;
-  --card: #ffffff;
-  --card-foreground: #1f2329;
-  --popover: #ffffff;
-  --popover-foreground: #1f2329;
-  --primary: #3370ff;
+  --background: #f8fafc;
+  --foreground: #1e1b4b;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-foreground: #1e1b4b;
+  --popover: rgba(255, 255, 255, 0.88);
+  --popover-foreground: #1e1b4b;
+  --primary: #8b5cf6;
   --primary-foreground: #ffffff;
-  --secondary: #f2f3f5;
-  --secondary-foreground: #1f2329;
-  --muted: #f2f3f5;
-  --muted-foreground: #646a73;
-  --accent: #e8f0ff;
-  --accent-foreground: #245bdb;
-  --border: #e5e7eb;
-  --input: #d9dce1;
-  --ring: #3370ff;
+  --secondary: #f5f3ff;
+  --secondary-foreground: #1e1b4b;
+  --muted: #f5f3ff;
+  --muted-foreground: #5b558e;
+  --accent: #ede9fe;
+  --accent-foreground: #7c3aed;
+  --border: rgba(226, 232, 240, 0.8);
+  --input: rgba(226, 232, 240, 0.8);
+  --ring: #8b5cf6;
 
   --semi-color-primary: var(--workspace-brand);
   --semi-color-primary-hover: var(--workspace-brand-hover);
@@ -361,4 +375,100 @@ body::after {
   :root { --workspace-page-padding: 18px 16px 32px; }
   .workspace-modal-form__grid,
   .workspace-modal-form__grid--three { grid-template-columns: 1fr; }
+}
+
+/* Unified page shell */
+.workspace-page {
+  min-height: 100%;
+  padding: var(--workspace-page-padding);
+  background: var(--workspace-canvas-gradient);
+  color: var(--workspace-text);
+}
+
+.workspace-page__inner {
+  width: 100%;
+  max-width: none;
+  margin: 0 auto;
+}
+
+.workspace-page__inner--narrow {
+  max-width: 1040px;
+}
+
+/* Glass card */
+.workspace-card {
+  background: var(--workspace-surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--workspace-radius-lg);
+  /* State transition (not motion); ok per design system */
+  box-shadow: var(--workspace-shadow-panel);
+  transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+}
+
+.workspace-card:hover {
+  transform: translateY(-2px);
+  /* State transition (not motion); ok per design system */
+  box-shadow: var(--workspace-shadow-float);
+}
+
+/* Primary button */
+.workspace-button-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--workspace-radius);
+  background: var(--workspace-brand-gradient);
+  color: var(--workspace-text-inverse);
+  font-family: var(--font-main);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  /* State transition (not motion); ok per design system */
+  box-shadow: 0 4px 14px rgba(var(--workspace-brand-rgb), 0.3);
+  transition: transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+}
+
+.workspace-button-primary:hover {
+  transform: scale(1.02);
+  /* State transition (not motion); ok per design system */
+  box-shadow: 0 6px 20px rgba(var(--workspace-brand-rgb), 0.4);
+}
+
+.workspace-button-primary:active {
+  transform: scale(0.98);
+}
+
+.workspace-button-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Input */
+.workspace-input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--workspace-border-strong);
+  border-radius: var(--workspace-radius);
+  background: rgba(var(--workspace-canvas-rgb), 0.8);
+  color: var(--workspace-text);
+  font-family: var(--font-main);
+  font-size: 14px;
+  /* State transition (not motion); ok per design system */
+  transition: border-color 150ms var(--ease-standard), box-shadow 150ms var(--ease-standard);
+}
+
+.workspace-input::placeholder {
+  color: var(--workspace-text-muted);
+}
+
+.workspace-input:focus {
+  border-color: var(--workspace-brand);
+  box-shadow: var(--workspace-focus-ring);
+  outline: none;
 }
