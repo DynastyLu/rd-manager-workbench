@@ -486,3 +486,32 @@ body::after {
   outline: 2px solid transparent;
   outline-offset: 2px;
 }
+
+[data-theme='eye-care'] {
+  --workspace-canvas: #f7f5f0;
+  --workspace-canvas-rgb: 247, 245, 240;
+  --workspace-canvas-gradient:
+    radial-gradient(circle at 10% 10%, rgba(107, 140, 94, 0.06), transparent 35%),
+    radial-gradient(circle at 90% 20%, rgba(165, 160, 90, 0.05), transparent 30%),
+    var(--workspace-canvas);
+  --workspace-surface: rgba(253, 251, 247, 0.85);
+  --workspace-surface-elevated: rgba(253, 251, 247, 0.94);
+  --workspace-surface-subtle: #eef4ea;
+  --workspace-border: rgba(232, 228, 220, 0.8);
+  --workspace-border-strong: rgba(218, 213, 202, 0.8);
+  --workspace-brand: #6b8c5e;
+  --workspace-brand-rgb: 107, 140, 94;
+  --workspace-brand-hover: #5d7a52;
+  --workspace-brand-gradient: linear-gradient(135deg, #6b8c5e, #a5a05a);
+  --workspace-brand-soft: #eef4ea;
+  --workspace-aurora-purple-rgb: 107, 140, 94;
+  --workspace-aurora-blue-rgb: 165, 160, 90;
+  --workspace-aurora-pink-rgb: 181, 170, 130;
+  --workspace-text: #3d3a34;
+  --workspace-text-secondary: #6b665a;
+  --workspace-text-muted: #9a9485;
+  --workspace-text-inverse: #ffffff;
+  --workspace-focus-ring: 0 0 0 3px rgba(107, 140, 94, 0.15);
+  --workspace-shadow-panel: 0 8px 32px rgba(61, 58, 52, 0.05);
+  --workspace-shadow-float: 0 20px 60px rgba(61, 58, 52, 0.08);
+}
