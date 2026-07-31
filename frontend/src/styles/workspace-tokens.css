@@ -44,7 +44,11 @@
   --workspace-text-muted: #8a84b3;
   --workspace-text-inverse: #ffffff;
   --workspace-success: #10b981;
+  --workspace-success-soft: #d1fae5;
+  --workspace-success-text: #047857;
   --workspace-warning: #f59e0b;
+  --workspace-warning-soft: #fef3c7;
+  --workspace-warning-text: #92400e;
   --workspace-danger: #ef4444;
   --workspace-info: #3b82f6;
   --workspace-info-rgb: 59, 130, 246;
