@@ -1,11 +1,6 @@
 import { Suspense, useEffect, useRef, type ReactNode } from 'react'
-import {
-  matchRoutes,
-  Outlet,
-  useLocation,
-  useNavigate,
-  type RouteObject,
-} from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
+import { matchRoutes, Outlet, useLocation, useNavigate, type RouteObject } from 'react-router-dom'
 import routes, { primaryNavigation, type RouteDefinition } from '@/router/routes'
 import { WorkspaceHeader } from './WorkspaceHeader'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
@@ -64,9 +59,20 @@ export function AppShell({ skeleton = null }: AppShellProps) {
       <div className="app-shell__main">
         <WorkspaceHeader route={activeRoute} />
         <main className="app-shell__content">
-          <Suspense fallback={skeleton}>
-            <Outlet />
-          </Suspense>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={pathname}
+              className="app-shell__page"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <Suspense fallback={skeleton}>
+                <Outlet />
+              </Suspense>
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>
