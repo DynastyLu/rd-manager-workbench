@@ -1,0 +1,152 @@
+.aurora-login-page {
+  position: relative;
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+  background: var(--workspace-canvas-gradient);
+
+  &__blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+    pointer-events: none;
+    will-change: transform;
+
+    &--1 {
+      width: 320px;
+      height: 320px;
+      top: 10%;
+      left: 15%;
+      background: rgba(var(--workspace-aurora-purple-rgb), 0.25);
+      animation: float 14s ease-in-out infinite;
+    }
+
+    &--2 {
+      width: 280px;
+      height: 280px;
+      top: 50%;
+      right: 12%;
+      background: rgba(var(--workspace-aurora-blue-rgb), 0.22);
+      animation: float 12s ease-in-out infinite reverse;
+    }
+
+    &--3 {
+      width: 220px;
+      height: 220px;
+      bottom: 12%;
+      left: 35%;
+      background: rgba(var(--workspace-aurora-pink-rgb), 0.16);
+      animation: float 16s ease-in-out infinite;
+    }
+  }
+
+  &__card {
+    position: relative;
+    width: min(100%, 400px);
+    padding: 36px;
+    border: 1px solid var(--workspace-border);
+    border-radius: var(--workspace-radius-lg);
+    background: var(--workspace-surface);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: var(--workspace-shadow-float);
+    animation: scaleIn 400ms var(--ease-out) both;
+
+    &--shake {
+      animation: shake 300ms var(--ease-standard);
+    }
+  }
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+    color: var(--workspace-text);
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  &__logo {
+    display: inline-block;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: var(--workspace-brand-gradient);
+    box-shadow: 0 4px 12px rgba(var(--workspace-brand-rgb), 0.3);
+  }
+
+  &__title {
+    margin: 0 0 6px;
+    color: var(--workspace-text);
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  &__subtitle {
+    margin: 0 0 22px;
+    color: var(--workspace-text-secondary);
+    font-size: 14px;
+  }
+
+  &__banner {
+    margin-bottom: 16px;
+    border-radius: var(--workspace-radius);
+  }
+}
+
+.aurora-login-form {
+  &__field {
+    margin-bottom: 16px;
+
+    .semi-form-field-label {
+      color: var(--workspace-text-secondary);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .workspace-input {
+      min-height: 44px;
+      border: 1px solid var(--workspace-border-strong);
+      border-radius: var(--workspace-radius);
+      background: rgba(var(--workspace-canvas-rgb), 0.8);
+      transition: border-color 150ms var(--ease-standard), box-shadow 150ms var(--ease-standard);
+    }
+
+    .workspace-input:focus {
+      border-color: var(--workspace-brand);
+      box-shadow: var(--workspace-focus-ring);
+    }
+
+    input {
+      color: var(--workspace-text);
+      font-size: 14px;
+    }
+  }
+
+  &__options {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: -4px 0 20px;
+    color: var(--workspace-text-muted);
+    font-size: 13px;
+  }
+
+  &__submit {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .aurora-login-page {
+    padding: 16px;
+
+    &__card {
+      padding: 28px 24px;
+    }
+  }
+}

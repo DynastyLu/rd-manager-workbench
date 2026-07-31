@@ -21,6 +21,9 @@
   /* Aurora color system */
   --workspace-brand: #8b5cf6;
   --workspace-brand-rgb: 139, 92, 246;
+  --workspace-aurora-purple-rgb: 139, 92, 246;
+  --workspace-aurora-blue-rgb: 59, 130, 246;
+  --workspace-aurora-pink-rgb: 236, 72, 153;
   --workspace-brand-hover: #7c3aed;
   --workspace-brand-gradient: linear-gradient(135deg, #8b5cf6, #3b82f6);
   --workspace-brand-soft: #ede9fe;

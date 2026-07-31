@@ -3,7 +3,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 type WorkspaceButtonVariant = 'primary' | 'secondary' | 'ghost'
 type WorkspaceButtonSize = 'sm' | 'md' | 'lg'
 
-interface WorkspaceButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type'> {
+interface WorkspaceButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: WorkspaceButtonVariant
   size?: WorkspaceButtonSize
   loading?: boolean
