@@ -74,6 +74,7 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
         to={item.path}
         className={`workspace-navigation__link${active ? ' workspace-navigation__link--active' : ''}`}
         aria-current={active ? 'page' : undefined}
+        title={item.title}
       >
         <span className="workspace-navigation__icon" aria-hidden="true">
           <NavigationIcon size="large" />
