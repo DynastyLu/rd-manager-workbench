@@ -1,9 +1,11 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { useMotionValue } from 'framer-motion'
+import { Fragment } from 'react'
+import { useLocation } from 'react-router-dom'
 import { ROUTES } from '@/constants/routes'
 import { useAuthStore } from '@/modules/auth/store'
 import type { CurrentUser } from '@/modules/auth/types'
 import type { NavigationItem } from '@/router/routes'
-import { WorkspaceDockIcon } from './WorkspaceDockIcon'
+import { DockItem } from './DockItem'
 
 interface WorkspaceNavigationProps {
   items: NavigationItem[]
@@ -35,44 +37,69 @@ function isActivePath(item: NavigationItem, pathname: string): boolean {
   return false
 }
 
+type DockGroupKey = 'core' | 'content' | 'tools'
+
+interface DockGroup {
+  key: DockGroupKey
+  items: NavigationItem[]
+}
+
+const DOCK_GROUP_ITEMS: Record<DockGroupKey, ReadonlySet<string>> = {
+  core: new Set(['home', 'my-work', 'projects', 'employees']),
+  content: new Set(['docs', 'base', 'calendar']),
+  tools: new Set(['search', 'admin']),
+}
+
+function groupNavigationItems(items: NavigationItem[]): DockGroup[] {
+  return (Object.keys(DOCK_GROUP_ITEMS) as DockGroupKey[]).map((key) => ({
+    key,
+    items: items.filter((item) => DOCK_GROUP_ITEMS[key].has(item.key)),
+  }))
+}
+
 export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
   const { pathname } = useLocation()
   const user = useAuthStore((state) => state.user)
+  const mouseY = useMotionValue(Number.POSITIVE_INFINITY)
   const visibleItems = canAccessAdmin(user)
     ? [...items, { key: 'admin', title: '系统管理', icon: 'settings' as const, path: ROUTES.ADMIN_USERS }]
     : items
+  const groups = groupNavigationItems(visibleItems)
 
-  function renderItem(item: NavigationItem) {
-    const active = isActivePath(item, pathname)
-
-    return (
-      <NavLink
-        key={item.key}
-        to={item.path}
-        className={`workspace-dock__item${active ? ' workspace-dock__item--active' : ''}`}
-        aria-current={active ? 'page' : undefined}
-        aria-label={item.title}
-        title={item.title}
-      >
-        <span className="workspace-dock__tile" aria-hidden="true">
-          <span className="workspace-dock__icon">
-            <WorkspaceDockIcon icon={item.icon} />
-          </span>
-        </span>
-        <span className="workspace-dock__label">{item.title}</span>
-        {active && <span className="workspace-dock__dot" aria-hidden="true" />}
-      </NavLink>
-    )
-  }
+  const resetPointer = () => mouseY.set(Number.POSITIVE_INFINITY)
 
   return (
-    <nav className="workspace-dock" aria-label="主导航">
-      <div className="workspace-dock__brand" aria-label="研发工作空间">
-        <span className="workspace-dock__brand-mark" aria-hidden="true">
-          RD
-        </span>
+    <nav
+      className="workspace-dock"
+      aria-label="主导航"
+      onPointerMove={(event) => mouseY.set(event.clientY)}
+      onPointerLeave={resetPointer}
+      onPointerCancel={resetPointer}
+    >
+      <div className="workspace-dock__scroll">
+        <div className="workspace-dock__brand" aria-label="研发工作空间">
+          <span className="workspace-dock__brand-mark" aria-hidden="true">
+            RD
+          </span>
+        </div>
+        <div className="workspace-dock__items">
+          {groups.map((group, index) => (
+            <Fragment key={group.key}>
+              {index === 2 && <span className="workspace-dock__separator" aria-hidden="true" />}
+              <div className="workspace-dock__group" data-dock-group={group.key}>
+                {group.items.map((item) => (
+                  <DockItem
+                    key={item.key}
+                    item={item}
+                    active={isActivePath(item, pathname)}
+                    mouseY={mouseY}
+                  />
+                ))}
+              </div>
+            </Fragment>
+          ))}
+        </div>
       </div>
-      <div className="workspace-dock__items">{visibleItems.map(renderItem)}</div>
     </nav>
   )
 }

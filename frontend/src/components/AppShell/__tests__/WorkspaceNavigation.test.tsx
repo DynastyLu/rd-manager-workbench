@@ -90,6 +90,27 @@ describe('WorkspaceNavigation', () => {
     ])
   })
 
+  it('groups core, content and tool apps without changing their order', () => {
+    useAuthStore.setState({ user: superAdmin })
+    const { container } = render(
+      <MemoryRouter>
+        <WorkspaceNavigation items={primaryNavigation} />
+      </MemoryRouter>,
+    )
+
+    expect(container.querySelectorAll('[data-dock-group]')).toHaveLength(3)
+    expect(container.querySelector('[data-dock-group="core"]')).toHaveTextContent(
+      '工作台我的工作项目员工',
+    )
+    expect(container.querySelector('[data-dock-group="content"]')).toHaveTextContent(
+      '文档与知识库多维表格日历',
+    )
+    expect(container.querySelector('[data-dock-group="tools"]')).toHaveTextContent(
+      '搜索系统管理',
+    )
+    expect(container.querySelectorAll('.workspace-dock__separator')).toHaveLength(1)
+  })
+
   it('marks the current core app with aria-current, including nested paths', () => {
     render(
       <MemoryRouter initialEntries={['/docs/project-alpha']}>
