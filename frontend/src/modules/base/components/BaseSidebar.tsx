@@ -25,7 +25,7 @@ export function BaseSidebar({
   const tables = [...(workspace.tables ?? [])].sort((left, right) => left.sequence - right.sequence)
 
   return (
-    <aside className="base-sidebar" aria-label="多维表格目录">
+    <aside className="base-sidebar workspace-card" aria-label="多维表格目录">
       <div className="base-sidebar__workspace">
         <span className="base-sidebar__mark">B</span>
         <div>

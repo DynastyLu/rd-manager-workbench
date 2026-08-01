@@ -358,7 +358,7 @@ export default function LibraryHomePage() {
         onSelectTable={selectTable}
         onCreateTable={() => setIsCreateTableOpen(true)}
       />
-      <section className="base-page__main" aria-label="多维表格工作区">
+      <section className="base-page__main workspace-card" aria-label="多维表格工作区">
         {selectedTable ? (
           <>
             <nav className="base-business-links" aria-label="业务库快捷入口">
