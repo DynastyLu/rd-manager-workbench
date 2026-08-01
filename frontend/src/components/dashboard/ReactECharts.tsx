@@ -35,7 +35,6 @@ export function ReactECharts({ option, className, style }: ReactEChartsProps) {
     if (!containerRef.current) return
     const chart = echarts.init(containerRef.current)
     chartRef.current = chart
-    chart.setOption(option)
 
     const handleResize = () => chart.resize()
     window.addEventListener('resize', handleResize)
