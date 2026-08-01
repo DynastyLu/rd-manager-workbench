@@ -27,18 +27,18 @@
   width: var(--workspace-sidebar-width);
   flex: 0 0 var(--workspace-sidebar-width);
   flex-direction: column;
-  padding: 16px 12px 12px;
+  padding: 16px 10px 12px;
   border-right: 1px solid var(--workspace-border-strong);
-  background: var(--workspace-surface);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: var(--workspace-sidebar-bg);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
 
   &__brand {
     display: flex;
     align-items: center;
     gap: 10px;
     min-height: 40px;
-    padding: 0 10px 18px;
+    padding: 0 12px 16px;
   }
 
   &__brand-mark {
@@ -62,6 +62,17 @@
     letter-spacing: -0.01em;
   }
 
+  &__section-title {
+    margin: 0;
+    padding: 8px 12px 4px;
+    color: var(--workspace-text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    user-select: none;
+  }
+
   &__links,
   &__footer {
     display: flex;
@@ -82,24 +93,23 @@
   &__link {
     display: flex;
     min-width: 0;
-    min-height: 32px;
+    min-height: 28px;
     align-items: center;
-    gap: 10px;
-    padding: 0 10px;
-    border-radius: 8px;
+    gap: 8px;
+    margin: 0 8px;
+    padding: 0 8px;
+    border-radius: 6px;
     color: var(--workspace-text-secondary);
     font-size: 13px;
-    font-weight: 450;
+    font-weight: 440;
     line-height: 1;
     text-decoration: none;
     transition:
       background-color 120ms ease,
-      color 120ms ease,
-      transform 120ms ease,
-      box-shadow 120ms ease;
+      color 120ms ease;
 
     &:hover {
-      background: var(--workspace-surface-hover);
+      background: var(--workspace-sidebar-hover);
       color: var(--workspace-text);
     }
 
@@ -108,15 +118,10 @@
       outline-offset: 1px;
     }
 
-    &:active {
-      transform: scale(0.98);
-    }
-
     &--active {
-      background: var(--workspace-brand);
+      background: var(--workspace-sidebar-active);
       color: var(--workspace-text-inverse);
-      font-weight: 600;
-      box-shadow: 0 4px 12px rgba(var(--workspace-brand-rgb), 0.25);
+      font-weight: 590;
 
       .workspace-navigation__icon {
         color: var(--workspace-text-inverse);

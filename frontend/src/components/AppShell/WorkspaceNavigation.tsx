@@ -92,6 +92,7 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
         </span>
         <span className="workspace-navigation__brand-name">研发工作空间</span>
       </div>
+      <h2 className="workspace-navigation__section-title">应用</h2>
       <div className="workspace-navigation__links">{visibleItems.map(renderItem)}</div>
     </nav>
   )
