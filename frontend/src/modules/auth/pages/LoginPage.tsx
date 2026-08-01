@@ -10,6 +10,8 @@ import { useAuthStore } from '@/modules/auth/store'
 import { WorkspaceButton } from '@/components/workspace/WorkspaceButton'
 import { WorkspaceInput } from '@/components/workspace/WorkspaceInput'
 
+import './LoginPage.less'
+
 interface LoginValues {
   identifier: string
   password: string
