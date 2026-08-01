@@ -24,6 +24,7 @@ import {
 } from '@/modules/workbench/api/applications'
 import { ApplicationCaseForm } from '@/modules/workbench/components/ApplicationCaseForm'
 import { ApplicationCaseWorkspace } from '@/modules/workbench/components/ApplicationCaseWorkspace'
+import './ApplicationCasesPage.less'
 
 export default function ApplicationCasesPage() {
   const [searchParams] = useSearchParams()
@@ -69,13 +70,12 @@ export default function ApplicationCasesPage() {
   })
 
   return (
-    <div className="app-page">
-      <div className="app-page__inner app-page__inner--wide">
-        <div className="app-page__hero">
+    <div className="application-cases-page workspace-page">
+      <div className="application-cases-page__inner workspace-page__inner">
+        <header className="application-cases-page__header">
           <div>
-            <p className="app-page__eyebrow">Application Dossier</p>
-            <h1 className="app-page__title">申报认定</h1>
-            <p className="app-page__subtitle">用可配置流程管理条件、材料版本、证据、补正与提交。</p>
+            <h1>申报认定</h1>
+            <p>用可配置流程管理条件、材料版本、证据、补正与提交。</p>
           </div>
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild><Button>新建案件</Button></DialogTrigger>
@@ -91,9 +91,9 @@ export default function ApplicationCasesPage() {
               />
             </DialogContent>
           </Dialog>
-        </div>
+        </header>
 
-        <Card className="mb-4">
+        <Card className="workspace-card application-cases-page__filter">
           <CardContent className="pt-4">
             <Input
               aria-label="筛选申报案件"
@@ -105,15 +105,15 @@ export default function ApplicationCasesPage() {
         </Card>
 
         {casesQuery.isPending ? (
-          <Card aria-busy="true" aria-label="正在加载申报案件"><CardContent className="grid gap-3 pt-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></CardContent></Card>
+          <Card className="workspace-card" aria-busy="true" aria-label="正在加载申报案件"><CardContent className="grid gap-3 pt-4"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></CardContent></Card>
         ) : null}
         {casesQuery.isError ? (
-          <Card><CardHeader><CardTitle>无法读取申报案件</CardTitle><CardDescription>请确认本地服务已启动后重试。</CardDescription></CardHeader><CardContent><Button onClick={() => void casesQuery.refetch()}>重试</Button></CardContent></Card>
+          <Card className="workspace-card application-cases-page__feedback"><CardHeader><CardTitle>无法读取申报案件</CardTitle><CardDescription>请确认本地服务已启动后重试。</CardDescription></CardHeader><CardContent><Button onClick={() => void casesQuery.refetch()}>重试</Button></CardContent></Card>
         ) : null}
         {casesQuery.data ? (
           casesQuery.data.data.length || selectedCaseId ? (
-            <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
-              <Card>
+            <div className="application-cases-page__layout">
+              <Card className="workspace-card application-cases-page__list">
                 <CardHeader><CardTitle>案件列表</CardTitle></CardHeader>
                 <CardContent className="grid gap-2">
                   {casesQuery.data.data.map((applicationCase) => (
@@ -128,8 +128,8 @@ export default function ApplicationCasesPage() {
                   ))}
                 </CardContent>
               </Card>
-              {selectedCaseQuery.isPending ? <Card aria-busy="true"><CardContent className="pt-4"><Skeleton className="h-72 w-full" /></CardContent></Card> : null}
-              {selectedCaseQuery.isError ? <Card><CardHeader><CardTitle>无法读取案件详情</CardTitle></CardHeader><CardContent><Button onClick={() => void selectedCaseQuery.refetch()}>重试</Button></CardContent></Card> : null}
+              {selectedCaseQuery.isPending ? <Card className="workspace-card" aria-busy="true"><CardContent className="pt-4"><Skeleton className="h-72 w-full" /></CardContent></Card> : null}
+              {selectedCaseQuery.isError ? <Card className="workspace-card application-cases-page__feedback"><CardHeader><CardTitle>无法读取案件详情</CardTitle></CardHeader><CardContent><Button onClick={() => void selectedCaseQuery.refetch()}>重试</Button></CardContent></Card> : null}
               {selectedCaseQuery.data ? (
                 <ApplicationCaseWorkspace
                   applicationCase={selectedCaseQuery.data}
@@ -137,9 +137,9 @@ export default function ApplicationCasesPage() {
                   onCompleteNode={(node) => completeNodeMutation.mutateAsync({ caseId: selectedCaseQuery.data.id, nodeId: node.id }).then(() => undefined)}
                 />
               ) : null}
-              {selectedCaseId === null ? <Card><CardHeader><CardTitle>选择一个案件查看详情</CardTitle></CardHeader></Card> : null}
+              {selectedCaseId === null ? <Card className="workspace-card application-cases-page__empty"><CardHeader><CardTitle>选择一个案件查看详情</CardTitle></CardHeader></Card> : null}
             </div>
-          ) : <Card><CardHeader><CardTitle>还没有申报案件，先创建一个案件吧。</CardTitle></CardHeader></Card>
+          ) : <Card className="workspace-card application-cases-page__empty"><CardHeader><CardTitle>还没有申报案件，先创建一个案件吧。</CardTitle></CardHeader></Card>
         ) : null}
       </div>
     </div>

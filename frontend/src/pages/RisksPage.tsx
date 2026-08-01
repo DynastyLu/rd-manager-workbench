@@ -21,6 +21,7 @@ import {
   ManagementLoading,
 } from '@/modules/workbench/components/management/ManagementState'
 import type { RiskLevel, RiskStatus } from '@/modules/workbench/types'
+import './RisksPage.less'
 
 const RISK_LEVEL_META: Record<RiskLevel, { label: string; color: 'green' | 'amber' | 'red' }> = {
   LOW: { label: '低风险', color: 'green' },
@@ -73,17 +74,14 @@ export default function RisksPage() {
   })
 
   return (
-    <div className="app-page">
-      <div className="app-page__inner app-page__inner--wide">
-        <header className="app-page__hero">
+    <div className="risks-page workspace-page">
+      <div className="risks-page__inner workspace-page__inner">
+        <header className="risks-page__header">
           <div>
-            <p className="app-page__eyebrow">Management Loop</p>
-            <h1 className="app-page__title">风险对象库</h1>
-            <p className="app-page__subtitle">
-              按状态筛选未关闭风险；高风险会实时影响关联项目健康度。
-            </p>
+            <h1>风险对象库</h1>
+            <p>按状态筛选未关闭风险；高风险会实时影响关联项目健康度。</p>
             {projectId ? (
-              <p className="mt-2 text-sm text-muted-foreground">当前仅显示本项目风险</p>
+              <p className="risks-page__scope">当前仅显示本项目风险</p>
             ) : null}
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
@@ -123,12 +121,12 @@ export default function RisksPage() {
 
         {focusedRiskQuery.data ? (
           <section aria-label="当前定位风险">
-            <Card className="mb-4 border-blue-300 bg-blue-50/50">
+            <Card className="workspace-card risks-page__focus-card mb-4">
               <CardHeader>
-                <p className="text-xs font-semibold text-blue-700">当前定位</p>
+                <p className="risks-page__focus-label">当前定位</p>
                 <CardTitle>{focusedRiskQuery.data.title}</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
+              <CardContent className="risks-page__focus-meta">
                 <RiskLevelTag level={focusedRiskQuery.data.level} /> · 状态：{focusedRiskQuery.data.status} · 负责人：
                 {focusedRiskQuery.data.ownerName ?? '未指定'}
               </CardContent>
@@ -136,7 +134,7 @@ export default function RisksPage() {
           </section>
         ) : null}
 
-        <Card className="mb-4">
+        <Card className="workspace-card mb-4">
           <CardContent className="pt-4">
             <WorkspaceSelect
               aria-label="按风险状态筛选"
@@ -160,16 +158,16 @@ export default function RisksPage() {
         ) : null}
         {risksQuery.data ? (
           risksQuery.data.data.length ? (
-            <section className="grid gap-3">
+            <section className="risks-page__list">
               {risksQuery.data.data.map((risk) => (
-                <Card key={risk.id}>
+                <Card key={risk.id} className="workspace-card risks-page__card">
                   <CardHeader>
                     <CardTitle>{risk.title}</CardTitle>
                   </CardHeader>
-                  <CardContent className="text-sm text-muted-foreground">
+                  <CardContent className="risks-page__card-meta">
                     <RiskLevelTag level={risk.level} /> · 状态：{risk.status} · 负责人：
                     {risk.ownerName ?? '未指定'}
-                    <p className="mt-2">详情可继续关联任务、项目和处置记录。</p>
+                    <p>详情可继续关联任务、项目和处置记录。</p>
                   </CardContent>
                 </Card>
               ))}

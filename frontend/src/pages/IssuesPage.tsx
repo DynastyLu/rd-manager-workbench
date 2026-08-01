@@ -18,6 +18,7 @@ import {
   ManagementError,
   ManagementLoading,
 } from '@/modules/workbench/components/management/ManagementState'
+import './IssuesPage.less'
 
 export default function IssuesPage() {
   const [searchParams] = useSearchParams()
@@ -53,13 +54,12 @@ export default function IssuesPage() {
   })
 
   return (
-    <div className="app-page">
-      <div className="app-page__inner app-page__inner--wide">
-        <header className="app-page__hero">
+    <div className="issues-page workspace-page">
+      <div className="issues-page__inner workspace-page__inner">
+        <header className="issues-page__header">
           <div>
-            <p className="app-page__eyebrow">Management Loop</p>
-            <h1 className="app-page__title">问题与阻塞</h1>
-            <p className="app-page__subtitle">记录影响对象、解决方案、期限与验证结果。</p>
+            <h1>问题与阻塞</h1>
+            <p>记录影响对象、解决方案、期限与验证结果。</p>
           </div>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -86,12 +86,12 @@ export default function IssuesPage() {
 
         {focusedIssueQuery.data ? (
           <section aria-label="当前定位问题">
-            <Card className="mb-4 border-blue-300 bg-blue-50/50">
+            <Card className="workspace-card issues-page__focus-card mb-4">
               <CardHeader>
-                <p className="text-xs font-semibold text-blue-700">当前定位</p>
+                <p className="issues-page__focus-label">当前定位</p>
                 <CardTitle>{focusedIssueQuery.data.title}</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
+              <CardContent className="issues-page__focus-meta">
                 状态：{focusedIssueQuery.data.status} · 负责人：
                 {focusedIssueQuery.data.ownerName ?? '未指定'}
               </CardContent>
@@ -99,28 +99,31 @@ export default function IssuesPage() {
           </section>
         ) : null}
 
-        <Button
-          variant={overdue ? 'default' : 'outline'}
-          onClick={() => setOverdue((value) => !value)}
-          className="mb-4"
-        >
-          {overdue ? '仅显示逾期' : '筛选逾期'}
-        </Button>
+        <Card className="workspace-card mb-4">
+          <CardContent className="pt-4">
+            <Button
+              variant={overdue ? 'default' : 'outline'}
+              onClick={() => setOverdue((value) => !value)}
+            >
+              {overdue ? '仅显示逾期' : '筛选逾期'}
+            </Button>
+          </CardContent>
+        </Card>
         {issuesQuery.isPending ? <ManagementLoading label="问题" /> : null}
         {issuesQuery.isError ? (
           <ManagementError label="问题" retry={() => void issuesQuery.refetch()} />
         ) : null}
         {issuesQuery.data ? (
           issuesQuery.data.data.length ? (
-            <section className="grid gap-3">
+            <section className="issues-page__list">
               {issuesQuery.data.data.map((item) => (
-                <Card key={item.id}>
+                <Card key={item.id} className="workspace-card issues-page__card">
                   <CardHeader>
                     <CardTitle>{item.title}</CardTitle>
                   </CardHeader>
-                  <CardContent className="text-sm text-muted-foreground">
+                  <CardContent className="issues-page__card-meta">
                     状态：{item.status} · 截止：{item.dueAt?.slice(0, 10) ?? '未设定'}
-                    <p className="mt-2">关闭时需要记录验证结果。</p>
+                    <p>关闭时需要记录验证结果。</p>
                   </CardContent>
                 </Card>
               ))}

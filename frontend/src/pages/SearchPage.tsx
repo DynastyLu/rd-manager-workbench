@@ -26,6 +26,7 @@ import { buildLocalSearchResultLink } from '@/modules/workbench/search/searchLin
 import { SearchFilters } from '@/modules/workbench/components/search/SearchFilters'
 import { SearchResultItem } from '@/modules/workbench/components/search/SearchResultItem'
 import { useWorkspaceSearchParams } from '@/hooks/useWorkspaceSearchParams'
+import './SearchPage.less'
 
 const SEARCH_TYPE_LABELS: Record<SearchType, string> = {
   PROJECT: '项目',
@@ -96,30 +97,30 @@ const SEARCH_ACTION_CACHE_KEYS: Partial<Record<SearchType, string[][]>> = {
 function SearchPreview({ hit }: { hit: SearchHit | null }) {
   if (!hit) {
     return (
-      <aside className="rounded-xl border border-dashed border-[var(--semi-color-border)] p-6 text-sm text-[var(--semi-color-text-2)]">
+      <aside className="search-page__preview search-page__preview--empty">
         选择一条结果后，可在这里查看对象类型、更新时间和可执行操作。
       </aside>
     )
   }
 
   return (
-    <aside className="sticky top-4 rounded-xl border border-[var(--semi-color-border)] bg-[var(--semi-color-bg-0)] p-5 shadow-sm">
-      <p className="text-xs font-medium text-[var(--semi-color-primary)]">快速预览</p>
-      <h2 className="mt-2 text-lg font-semibold text-[var(--semi-color-text-0)]">{hit.title}</h2>
-      <dl className="mt-5 grid gap-3 text-sm">
+    <aside className="search-page__preview">
+      <p className="search-page__preview-label">快速预览</p>
+      <h2 className="search-page__preview-title">{hit.title}</h2>
+      <dl className="search-page__preview-list">
         <div>
-          <dt className="text-[var(--semi-color-text-2)]">类型</dt>
-          <dd className="mt-1 text-[var(--semi-color-text-0)]">{SEARCH_TYPE_LABELS[hit.type]}</dd>
+          <dt>类型</dt>
+          <dd>{SEARCH_TYPE_LABELS[hit.type]}</dd>
         </div>
         <div>
-          <dt className="text-[var(--semi-color-text-2)]">更新时间</dt>
-          <dd className="mt-1 text-[var(--semi-color-text-0)]">
+          <dt>更新时间</dt>
+          <dd>
             {new Date(hit.updatedAt).toLocaleString('zh-CN', { hour12: false })}
           </dd>
         </div>
         <div>
-          <dt className="text-[var(--semi-color-text-2)]">位置</dt>
-          <dd className="mt-1 break-all text-[var(--semi-color-text-1)]">{hit.path}</dd>
+          <dt>位置</dt>
+          <dd>{hit.path}</dd>
         </div>
       </dl>
     </aside>
@@ -322,28 +323,27 @@ export default function SearchPage() {
   const showRecent = !lastRequest && query.length === 0
 
   return (
-    <div className="app-page">
-      <div className="app-page__inner app-page__inner--wide">
-        <header className="app-page__hero items-end">
+    <div className="search-page workspace-page">
+      <div className="search-page__inner workspace-page__inner">
+        <header className="search-page__header">
           <div>
-            <p className="app-page__eyebrow">Search</p>
-            <h1 className="app-page__title">全局搜索</h1>
-            <p className="app-page__subtitle">在一个入口找到项目、任务、文档、会议与业务记录。</p>
+            <h1>全局搜索</h1>
+            <p>在一个入口找到项目、任务、文档、会议与业务记录。</p>
           </div>
-          <span className="rounded-md bg-[var(--semi-color-fill-0)] px-2 py-1 text-xs text-[var(--semi-color-text-2)]">
+          <span className="search-page__shortcut">
             ⌘K / Ctrl K
           </span>
         </header>
 
-        <section className="rounded-2xl border border-[var(--semi-color-border)] bg-[var(--semi-color-bg-0)] p-5 shadow-sm">
+        <section className="workspace-card search-page__surface">
           <form
-            className="flex items-center gap-3"
+            className="search-page__form"
             onSubmit={(event) => {
               event.preventDefault()
               executeSearch(query, selectedTypes, true)
             }}
           >
-            <div ref={searchFieldRef} className="min-w-0 flex-1">
+            <div ref={searchFieldRef} className="search-page__field">
               <Input
                 size="large"
                 showClear
@@ -373,11 +373,11 @@ export default function SearchPage() {
             </Button>
           </form>
           {validationMessage ? (
-            <p className="mt-2 text-sm text-[var(--semi-color-danger)]" role="alert">
+            <p className="search-page__validation" role="alert">
               {validationMessage}
             </p>
           ) : null}
-          <div className="mt-4 border-t border-[var(--semi-color-border)] pt-4">
+          <div className="search-page__filters">
             <SearchFilters
               selectedTypes={selectedTypes}
               groups={result?.groups}
@@ -387,9 +387,9 @@ export default function SearchPage() {
         </section>
 
         {showRecent ? (
-          <section className="mt-6" aria-labelledby="recent-search-heading">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 id="recent-search-heading" className="text-base font-semibold">
+          <section className="search-page__recent" aria-labelledby="recent-search-heading">
+            <div className="search-page__section-header">
+              <h2 id="recent-search-heading">
                 最近搜索
               </h2>
               {recentSearches.length ? (
@@ -406,20 +406,20 @@ export default function SearchPage() {
               ) : null}
             </div>
             {recentSearches.length ? (
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="search-page__recent-grid">
                 {recentSearches.map((recent) => (
                   <div
                     key={`${recent.query}:${recent.types.join(',')}`}
-                    className="flex items-center rounded-xl border border-[var(--semi-color-border)] bg-[var(--semi-color-bg-0)] p-2"
+                    className="search-page__recent-card"
                   >
                     <button
                       type="button"
-                      className="min-w-0 flex-1 px-2 py-1 text-left"
+                      className="search-page__recent-query"
                       aria-label={`再次搜索：${recent.query}`}
                       onClick={() => openRecent(recent)}
                     >
-                      <strong className="block truncate text-sm">{recent.query}</strong>
-                      <span className="text-xs text-[var(--semi-color-text-2)]">
+                      <strong>{recent.query}</strong>
+                      <span>
                         {recent.types.length
                           ? recent.types.map((type) => SEARCH_TYPE_LABELS[type]).join('、')
                           : '全部内容'}
@@ -446,7 +446,7 @@ export default function SearchPage() {
 
         {searchMutation.isPending ? (
           <section
-            className="mt-6 grid gap-3"
+            className="search-page__status"
             role="status"
             aria-label="搜索状态"
             aria-live="polite"
@@ -457,7 +457,7 @@ export default function SearchPage() {
         ) : null}
 
         {searchMutation.isError ? (
-          <section className="mt-6">
+          <section className="search-page__feedback">
             <Banner
               type="danger"
               fullMode={false}
@@ -465,7 +465,7 @@ export default function SearchPage() {
               description="请确认本地服务已启动，然后重试上一次搜索。"
             />
             <Button
-              className="mt-3"
+              className="search-page__retry"
               onClick={() => {
                 if (lastRequest)
                   searchMutation.mutate({ params: lastRequest, recordHistory: false })
@@ -477,7 +477,7 @@ export default function SearchPage() {
         ) : null}
 
         {result && result.partialFailures.length > 0 ? (
-          <section className="mt-6">
+          <section className="search-page__feedback">
             <Banner
               type="warning"
               fullMode={false}
@@ -485,7 +485,7 @@ export default function SearchPage() {
               description={result.partialFailures.map((failure) => failure.message).join('；')}
             />
             <Button
-              className="mt-3"
+              className="search-page__retry"
               aria-label="重试未完成的类型"
               onClick={() => {
                 if (lastRequest) mutateSearch({ params: lastRequest, recordHistory: false })
@@ -497,21 +497,21 @@ export default function SearchPage() {
         ) : null}
 
         {result && !searchMutation.isPending && result.data.length === 0 ? (
-          <section className="mt-8">
+          <section className="search-page__empty">
             <Empty title="没有找到相关内容" description="尝试缩短关键词或切换搜索分类。" />
           </section>
         ) : null}
 
         {result && result.data.length > 0 ? (
-          <section className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div>
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold">搜索结果</h2>
-                <span className="text-sm text-[var(--semi-color-text-2)]">
+          <section className="search-page__results">
+            <div className="search-page__results-main">
+              <div className="search-page__section-header">
+                <h2>搜索结果</h2>
+                <span className="search-page__count">
                   共 {result.meta.total} 条
                 </span>
               </div>
-              <div className="grid gap-3">
+              <div className="search-page__hits">
                 {result.data.map((hit) => (
                   <SearchResultItem
                     key={`${hit.type}:${hit.id}`}
@@ -526,7 +526,7 @@ export default function SearchPage() {
                 ))}
               </div>
               {result.meta.total > result.meta.pageSize ? (
-                <nav className="mt-4 flex items-center justify-between" aria-label="搜索结果分页">
+                <nav className="search-page__pagination" aria-label="搜索结果分页">
                   <Button
                     aria-label="上一页搜索结果"
                     disabled={result.meta.page <= 1 || searchMutation.isPending}
@@ -536,7 +536,7 @@ export default function SearchPage() {
                   >
                     上一页
                   </Button>
-                  <span className="text-sm text-[var(--semi-color-text-2)]">
+                  <span className="search-page__page-info">
                     第 {result.meta.page} / {Math.ceil(result.meta.total / result.meta.pageSize)} 页
                   </span>
                   <Button
@@ -565,7 +565,7 @@ export default function SearchPage() {
         onCancel={() => setRiskToClose(null)}
         closeOnEsc
         footer={
-          <div className="flex justify-end gap-2">
+          <div className="workspace-modal-footer">
             <Button onClick={() => setRiskToClose(null)}>取消</Button>
             <Button
               theme="solid"

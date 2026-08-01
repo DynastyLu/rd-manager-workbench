@@ -1,11 +1,25 @@
 .partner-workspace {
-  min-height: 100%;
-  background:
-    radial-gradient(circle at 92% 5%, rgb(51 112 255 / 7%), transparent 24rem),
-    var(--workspace-canvas);
+  display: grid;
+  gap: 18px;
 
-  &__hero {
-    align-items: center;
+  &__header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+
+    h1 {
+      margin: 0;
+      color: var(--workspace-text);
+      font-size: 30px;
+      font-weight: 700;
+    }
+
+    p {
+      margin: 7px 0 0;
+      color: var(--workspace-text-secondary);
+      font-size: 14px;
+    }
   }
 
   &__toolbar {
@@ -69,7 +83,7 @@
     border-bottom: 0;
   }
   &:hover {
-    background: #f7f9fe;
+    background: var(--workspace-surface-subtle);
   }
   &:active {
     transform: translateY(1px);
@@ -86,8 +100,8 @@
     flex: 0 0 auto;
     place-items: center;
     border-radius: 12px;
-    background: linear-gradient(145deg, #eaf1ff, #dce8ff);
-    color: #245bdb;
+    background: var(--workspace-info-soft);
+    color: var(--workspace-info-text);
     font-size: 17px;
     font-weight: 720;
   }
@@ -186,7 +200,7 @@
     overflow: hidden;
     border: 1px solid var(--workspace-border);
     border-radius: 12px;
-    background: #fbfcff;
+    background: var(--workspace-surface-subtle);
   }
 
   &__metrics div {
@@ -212,7 +226,7 @@
     padding: 18px;
     border: 1px solid var(--workspace-border);
     border-radius: 12px;
-    background: #fff;
+    background: var(--workspace-surface);
   }
   &__panel h3 {
     margin: 0 0 14px;
@@ -268,7 +282,7 @@
     overflow: hidden;
     border: 1px solid var(--workspace-border);
     border-radius: 12px;
-    background: #fff;
+    background: var(--workspace-surface);
   }
   &__available {
     display: flex;
@@ -277,7 +291,7 @@
     gap: 8px;
     padding: 14px;
     border-radius: 10px;
-    background: #f7f9fc;
+    background: var(--workspace-surface-subtle);
   }
   &__available h4 {
     margin: 0 8px 0 0;
@@ -297,10 +311,10 @@
     justify-content: space-between;
     gap: 14px;
     padding: 11px 14px;
-    border: 1px solid #b7c9ff;
+    border: 1px solid var(--workspace-info-border);
     border-radius: 10px;
-    background: #f2f6ff;
-    color: #245bdb;
+    background: var(--workspace-info-soft);
+    color: var(--workspace-info-text);
     font-size: 12px;
   }
   &__timeline {
@@ -315,7 +329,7 @@
     gap: 9px;
     border: 1px dashed var(--workspace-border);
     border-radius: 12px;
-    background: #fbfcff;
+    background: var(--workspace-surface-subtle);
     text-align: center;
   }
   &__integration strong {
@@ -388,20 +402,20 @@
   padding: 15px 14px;
   border: 1px solid var(--workspace-border);
   border-radius: 12px;
-  background: #fff;
+  background: var(--workspace-surface);
 
   &[aria-current='true'] {
-    border-color: #8eabff;
-    box-shadow: 0 0 0 3px rgb(51 112 255 / 9%);
+    border-color: var(--workspace-info-border);
+    box-shadow: var(--workspace-info-ring);
   }
   &__dot {
     width: 9px;
     height: 9px;
     margin-top: 5px;
-    border: 2px solid #fff;
+    border: 2px solid var(--workspace-surface);
     border-radius: 50%;
     background: var(--workspace-brand);
-    box-shadow: 0 0 0 2px #c8d6ff;
+    box-shadow: 0 0 0 2px var(--workspace-info-border);
   }
   > div:nth-child(2) {
     display: grid;
@@ -428,7 +442,7 @@
     line-height: 1.6;
   }
   &__promise {
-    color: #9b5c00 !important;
+    color: var(--workspace-warning-text) !important;
   }
   &__actions {
     display: flex;
@@ -484,8 +498,8 @@
     margin: 0;
     padding: 10px 12px;
     border-radius: 8px;
-    background: #f2f6ff;
-    color: #245bdb;
+    background: var(--workspace-info-soft);
+    color: var(--workspace-info-text);
     font-size: 12px;
   }
   > .semi-button {

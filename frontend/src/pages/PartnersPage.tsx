@@ -682,15 +682,12 @@ export default function PartnersPage() {
   }
 
   return (
-    <div className="partner-workspace app-page">
-      <div className="app-page__inner app-page__inner--wide">
-        <header className="partner-workspace__hero app-page__hero">
+    <div className="partner-workspace workspace-page">
+      <div className="partner-workspace__inner workspace-page__inner">
+        <header className="partner-workspace__header">
           <div>
-            <p className="app-page__eyebrow">Partner Hub</p>
-            <h1 className="app-page__title">合作方与沟通</h1>
-            <p className="app-page__subtitle">
-              像飞书联系人一样管理关系，用项目、协议和每次跟进保留完整上下文。
-            </p>
+            <h1>合作方与沟通</h1>
+            <p>像飞书联系人一样管理关系，用项目、协议和每次跟进保留完整上下文。</p>
           </div>
           <Button
             theme="solid"
