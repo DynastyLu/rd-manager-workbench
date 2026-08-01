@@ -10,8 +10,9 @@ import {
   Table,
   Tag,
   Toast,
+  Tooltip,
 } from '@douyinfe/semi-ui'
-import { IconPlus, IconSearch } from '@douyinfe/semi-icons'
+import { IconDelete, IconEdit, IconExit, IconKey, IconPlus, IconSearch, IconStop, IconTickCircle } from '@douyinfe/semi-icons'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
 import { ApiError } from '@/lib/http'
 import { tableScrollWidth } from '@/lib/tableScrollWidth'
@@ -228,68 +229,74 @@ export default function UsersPage() {
       {
         title: '操作',
         fixed: 'right',
-        width: 300,
+        width: 152,
         render: (_, record) => {
           const displayName = userDisplayName(record)
           const canDelete = record.status === 'DISABLED'
           return (
             <div className="admin-users__actions">
-              <Button
-                theme="borderless"
-                size="small"
-                aria-label={`编辑账号：${displayName}`}
-                onClick={() => setEditor({ mode: 'edit', user: record })}
-              >
-                编辑
-              </Button>
-              <Button
-                theme="borderless"
-                size="small"
-                aria-label={`重置密码：${displayName}`}
-                onClick={() => {
-                  setConfirm({ kind: 'reset-password', user: record })
-                }}
-              >
-                重置密码
-              </Button>
-              {record.status === 'DISABLED' ? (
+              <Tooltip content="编辑">
                 <Button
                   theme="borderless"
                   size="small"
-                  aria-label={`启用账号：${displayName}`}
-                  onClick={() => setConfirm({ kind: 'enable', user: record })}
-                >
-                  启用
-                </Button>
+                  icon={<IconEdit />}
+                  aria-label={`编辑账号：${displayName}`}
+                  onClick={() => setEditor({ mode: 'edit', user: record })}
+                />
+              </Tooltip>
+              <Tooltip content="重置密码">
+                <Button
+                  theme="borderless"
+                  size="small"
+                  icon={<IconKey />}
+                  aria-label={`重置密码：${displayName}`}
+                  onClick={() => {
+                    setConfirm({ kind: 'reset-password', user: record })
+                  }}
+                />
+              </Tooltip>
+              {record.status === 'DISABLED' ? (
+                <Tooltip content="启用">
+                  <Button
+                    theme="borderless"
+                    size="small"
+                    icon={<IconTickCircle />}
+                    aria-label={`启用账号：${displayName}`}
+                    onClick={() => setConfirm({ kind: 'enable', user: record })}
+                  />
+                </Tooltip>
               ) : (
+                <Tooltip content="停用">
+                  <Button
+                    theme="borderless"
+                    size="small"
+                    type="danger"
+                    icon={<IconStop />}
+                    aria-label={`停用账号：${displayName}`}
+                    onClick={() => setConfirm({ kind: 'disable', user: record })}
+                  />
+                </Tooltip>
+              )}
+              <Tooltip content="强制退出">
+                <Button
+                  theme="borderless"
+                  size="small"
+                  icon={<IconExit />}
+                  aria-label={`强制退出：${displayName}`}
+                  onClick={() => setConfirm({ kind: 'revoke-sessions', user: record })}
+                />
+              </Tooltip>
+              <Tooltip content="永久删除">
                 <Button
                   theme="borderless"
                   size="small"
                   type="danger"
-                  aria-label={`停用账号：${displayName}`}
-                  onClick={() => setConfirm({ kind: 'disable', user: record })}
-                >
-                  停用
-                </Button>
-              )}
-              <Button
-                theme="borderless"
-                size="small"
-                aria-label={`强制退出：${displayName}`}
-                onClick={() => setConfirm({ kind: 'revoke-sessions', user: record })}
-              >
-                强制退出
-              </Button>
-              <Button
-                theme="borderless"
-                size="small"
-                type="danger"
-                disabled={!canDelete}
-                aria-label={`永久删除账号：${displayName}`}
-                onClick={() => setConfirm({ kind: 'delete', user: record })}
-              >
-                永久删除
-              </Button>
+                  icon={<IconDelete />}
+                  disabled={!canDelete}
+                  aria-label={`永久删除账号：${displayName}`}
+                  onClick={() => setConfirm({ kind: 'delete', user: record })}
+                />
+              </Tooltip>
             </div>
           )
         },
@@ -479,14 +486,14 @@ export default function UsersPage() {
               onClick={handleConfirmAction}
             >
               {confirm?.kind === 'reset-password'
-                ? '确认重置密码'
+                ? '重置'
                 : confirm?.kind === 'disable'
-                  ? '确认停用账号'
+                  ? '停用'
                   : confirm?.kind === 'enable'
-                    ? '确认启用账号'
+                    ? '启用'
                     : confirm?.kind === 'revoke-sessions'
-                      ? '确认强制退出'
-                      : '永久删除账号'}
+                      ? '退出'
+                      : '删除'}
             </Button>
           </div>
         )}

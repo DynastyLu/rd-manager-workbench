@@ -372,7 +372,7 @@ describe('system management user experience', () => {
 
     const employeeRow = (await screen.findByText('普通员工')).closest('tr')
     expect(employeeRow).not.toBeNull()
-    expect(within(employeeRow!).getByText('系统内置角色，不可编辑、停用或删除')).toBeInTheDocument()
+    expect(within(employeeRow!).queryByText('系统内置角色，不可编辑、停用或删除')).not.toBeInTheDocument()
     expect(within(employeeRow!).getByRole('button', { name: '编辑角色：普通员工' })).toBeDisabled()
     expect(within(employeeRow!).getByRole('button', { name: '删除角色：普通员工' })).toBeDisabled()
 

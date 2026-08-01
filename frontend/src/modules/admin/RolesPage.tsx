@@ -8,6 +8,7 @@ import {
   Table,
   Tag,
   Toast,
+  Tooltip,
 } from '@douyinfe/semi-ui'
 import { IconCopy, IconDelete, IconEdit } from '@douyinfe/semi-icons'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
@@ -151,57 +152,58 @@ export default function RolesPage() {
       {
         title: '操作',
         fixed: 'right',
-        width: 300,
+        width: 120,
         render: (_, record) => {
           const isSystem = record.isSystem
           return (
             <div className="admin-roles__actions">
-              {isSystem ? (
-                <span className="admin-roles__system-hint">
-                  系统内置角色，不可编辑、停用或删除
+              <Tooltip content={isSystem ? '系统内置角色不可编辑' : '编辑角色'}>
+                <span>
+                  <Button
+                    theme="borderless"
+                    size="small"
+                    icon={<IconEdit />}
+                    disabled={isSystem}
+                    aria-label={`编辑角色：${record.name}`}
+                    onClick={() => {
+                      form.setValues({
+                        code: record.code,
+                        name: record.name,
+                        description: record.description ?? '',
+                        isEnabled: record.isEnabled,
+                      })
+                      setEditor({ mode: 'edit', role: record })
+                    }}
+                  />
                 </span>
-              ) : null}
-              <Button
-                theme="borderless"
-                size="small"
-                icon={<IconEdit />}
-                disabled={isSystem}
-                aria-label={`编辑角色：${record.name}`}
-                onClick={() => {
-                  form.setValues({
-                    code: record.code,
-                    name: record.name,
-                    description: record.description ?? '',
-                    isEnabled: record.isEnabled,
-                  })
-                  setEditor({ mode: 'edit', role: record })
-                }}
-              >
-                编辑
-              </Button>
-              <Button
-                theme="borderless"
-                size="small"
-                icon={<IconCopy />}
-                aria-label={`复制角色：${record.name}`}
-                onClick={() => {
-                  form.reset()
-                  setEditor({ mode: 'copy', role: record })
-                }}
-              >
-                复制
-              </Button>
-              <Button
-                theme="borderless"
-                size="small"
-                type="danger"
-                icon={<IconDelete />}
-                disabled={isSystem}
-                aria-label={`删除角色：${record.name}`}
-                onClick={() => setDeleteTarget(record)}
-              >
-                删除
-              </Button>
+              </Tooltip>
+              <Tooltip content="复制角色">
+                <span>
+                  <Button
+                    theme="borderless"
+                    size="small"
+                    icon={<IconCopy />}
+                    aria-label={`复制角色：${record.name}`}
+                    onClick={() => {
+                      form.reset()
+                      setEditor({ mode: 'copy', role: record })
+                    }}
+                  />
+                </span>
+              </Tooltip>
+              <Tooltip content={isSystem ? '系统内置角色不可删除' : '删除角色'}>
+                <span>
+                  <Button
+                    theme="borderless"
+                    size="small"
+                    type="danger"
+                    icon={<IconDelete />}
+                    disabled={isSystem}
+                    aria-label={`删除角色：${record.name}`}
+                    onClick={() => setDeleteTarget(record)}
+                  />
+                </span>
+              </Tooltip>
             </div>
           )
         },
@@ -371,7 +373,7 @@ export default function RolesPage() {
                 if (deleteTarget) deleteMutation.mutate(deleteTarget.id)
               }}
             >
-              确认删除
+              删除
             </Button>
           </div>
         )}
