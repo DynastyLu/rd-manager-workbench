@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 const mockRequest = vi.fn();
 const mockApiUrl = vi.fn((path: string) => `http://runtime.test/api${path}`);
-vi.mock('@/lib/http', () => ({ request: mockRequest }));
+vi.mock('@/lib/http', () => ({
+  request: mockRequest,
+  authenticatedFetch: (input: string, init?: RequestInit) => fetch(input, init),
+}));
 vi.mock('@/lib/api-url', () => ({ apiUrl: mockApiUrl }));
 
 describe('knowledge API', () => {

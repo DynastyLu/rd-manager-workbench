@@ -55,7 +55,7 @@ describe('ReportsPage', () => {
     expect(screen.getByRole('tab', { name: '行业情报' })).toBeInTheDocument()
     expect(await screen.findByRole('table', { name: '项目组合明细' })).toBeInTheDocument()
     expect(screen.getByText('平台升级')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '导出 CSV' })).toHaveAttribute('href', '/report-PORTFOLIO.CSV')
+    expect(screen.getByRole('button', { name: '导出 CSV' })).toBeInTheDocument()
     const user = userEvent.setup()
     await user.click(screen.getByRole('tab', { name: '风险趋势' }))
     expect(await screen.findByRole('table', { name: '风险趋势数据' })).toBeInTheDocument()

@@ -249,6 +249,50 @@ export async function download(
   }
 }
 
+/**
+ * Low-level fetch that attaches the current access token and sends cookies.
+ * Use this for endpoints that must bypass the JSON envelope client
+ * (binary files, streams, or direct downloads).
+ */
+export function authenticatedFetch(input: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers)
+  const { accessToken } = useAuthStore.getState()
+  if (accessToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${accessToken}`)
+  }
+  return fetch(input, { ...init, credentials: 'include', headers })
+}
+
+/**
+ * Fetch a binary file with authentication and trigger a browser download.
+ * Reads the filename from Content-Disposition when available.
+ */
+export async function downloadAuthenticated(url: string, fileName?: string): Promise<void> {
+  const response = await authenticatedFetch(url)
+  if (!response.ok) {
+    const payload = await parseJson(response)
+    if (isFailureEnvelope(payload)) {
+      throw getEnvelopeError(payload, response.status)
+    }
+    throw getHttpError(response)
+  }
+
+  const blob = await response.blob()
+  const objectUrl = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = objectUrl
+
+  const disposition = response.headers.get('Content-Disposition')
+  const encoded = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  const fallback = disposition?.match(/filename="([^"]+)"/i)?.[1]
+  link.download = fileName || (encoded ? decodeURIComponent(encoded) : fallback) || 'download'
+
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 100)
+}
+
 async function ensureFreshAccessToken(snapshot: AuthSnapshot): Promise<boolean> {
   const current = authSnapshot()
   if (current.authEpoch !== snapshot.authEpoch || current.userId !== snapshot.userId) {

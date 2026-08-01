@@ -1,4 +1,4 @@
-import { request } from '@/lib/http'
+import { request, authenticatedFetch } from '@/lib/http'
 import { apiUrl } from '@/lib/api-url'
 import { getConnectionTicket } from '@/modules/auth/api'
 import type {
@@ -41,7 +41,7 @@ export function archiveSession(id: string) {
   return request<void>(`/knowledge/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 export function chatStream(sessionId: string, question: string, signal?: AbortSignal) {
-  return fetch(apiUrl(`/knowledge/chat/${encodeURIComponent(sessionId)}/messages`), {
+  return authenticatedFetch(apiUrl(`/knowledge/chat/${encodeURIComponent(sessionId)}/messages`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question }),

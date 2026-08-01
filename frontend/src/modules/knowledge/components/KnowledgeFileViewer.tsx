@@ -5,6 +5,7 @@ import { KnowledgeMarkdown } from './KnowledgeMarkdown'
 import { KnowledgeSpreadsheetViewer } from './KnowledgeSpreadsheetViewer'
 import { KnowledgeDocxViewer } from './KnowledgeDocxViewer'
 import { resolveKnowledgeViewerKind } from '../viewer-kind'
+import { authenticatedFetch, downloadAuthenticated } from '@/lib/http'
 import { apiUrl } from '@/lib/api-url'
 
 type ProcessingStatus = 'PENDING' | 'PROCESSING' | 'READY' | 'PARTIAL' | 'FAILED' | 'MISSING'
@@ -92,6 +93,11 @@ export function KnowledgeFileViewer({
     objectUrl: string | null
     error: string | null
   }>({ url: '', objectUrl: null, error: null })
+  const [imagePreview, setImagePreview] = useState<{
+    url: string
+    objectUrl: string | null
+    error: string | null
+  }>({ url: '', objectUrl: null, error: null })
   const mimeType = (document.mimeType || 'application/octet-stream')
     .split(';')[0]
     ?.toLowerCase() || 'application/octet-stream'
@@ -109,7 +115,7 @@ export function KnowledgeFileViewer({
   useEffect(() => {
     if (!isTextual) return
     const controller = new AbortController()
-    void fetch(sourceUrl, { signal: controller.signal })
+    void authenticatedFetch(sourceUrl, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`预览读取失败（${response.status}）`)
         return response.text()
@@ -132,7 +138,7 @@ export function KnowledgeFileViewer({
     if (!usesPdfReader) return
     const controller = new AbortController()
     let objectUrl: string | null = null
-    void fetch(previewUrl, { signal: controller.signal })
+    void authenticatedFetch(previewUrl, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(await previewErrorMessage(response))
         const blob = await response.blob()
@@ -155,6 +161,31 @@ export function KnowledgeFileViewer({
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
   }, [usesPdfReader, previewUrl])
+  useEffect(() => {
+    if (viewerKind !== 'image') return
+    const controller = new AbortController()
+    let objectUrl: string | null = null
+    void authenticatedFetch(sourceUrl, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`图片读取失败（${response.status}）`)
+        const blob = await response.blob()
+        objectUrl = URL.createObjectURL(blob)
+        setImagePreview({ url: sourceUrl, objectUrl, error: null })
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setImagePreview({
+          url: sourceUrl,
+          objectUrl: null,
+          error: error instanceof Error ? error.message : '图片读取失败',
+        })
+      })
+    return () => {
+      controller.abort()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [viewerKind, sourceUrl])
+
   const activeBinaryUrl = binaryPreview.url === previewUrl ? binaryPreview.objectUrl : null
   const activeBinaryError = binaryPreview.url === previewUrl ? binaryPreview.error : null
   const positionedBinaryUrl = activeBinaryUrl && citationPage
@@ -191,15 +222,14 @@ export function KnowledgeFileViewer({
               <IconExternalOpen /> 用本机应用打开
             </button>
           ) : null}
-          <a
+          <button
+            type="button"
             className="knowledge-file-viewer__download"
             aria-label="下载原文件"
-            href={downloadUrl}
-            target="_blank"
-            rel="noreferrer"
+            onClick={() => { void downloadAuthenticated(downloadUrl, fileName) }}
           >
             <IconDownload /> 下载原文件
-          </a>
+          </button>
         </div>
       </header>
 
@@ -238,9 +268,15 @@ export function KnowledgeFileViewer({
           </pre>
         )
       ) : viewerKind === 'image' ? (
-        <div className="knowledge-file-viewer__image">
-          <img src={sourceUrl} alt={fileName} />
-        </div>
+        imagePreview.error ? (
+          <div className="knowledge-file-viewer__fallback">{imagePreview.error}，可下载原文件查看。</div>
+        ) : imagePreview.objectUrl ? (
+          <div className="knowledge-file-viewer__image">
+            <img src={imagePreview.objectUrl} alt={fileName} />
+          </div>
+        ) : (
+          <div className="knowledge-file-viewer__loading"><Spin /> 正在加载图片…</div>
+        )
       ) : usesPdfReader ? (
         activeBinaryError ? (
           <div className="knowledge-file-viewer__fallback">

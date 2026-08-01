@@ -4,7 +4,8 @@ import { KnowledgeChatPanel } from './KnowledgeChatPanel';
 import { KnowledgeCitationDrawer } from './KnowledgeCitationDrawer';
 import { KnowledgeSessionHistory } from './KnowledgeSessionHistory';
 import { KnowledgeSessionList } from './KnowledgeSessionList';
-import { apiUrl } from '@/lib/api-url';
+import { apiUrl } from '@/lib/api-url'
+import { downloadAuthenticated } from '@/lib/http';
 
 interface Props {
   sessionId: string | null;
@@ -35,10 +36,8 @@ export function KnowledgeAssistantWorkspace({
   };
 
   const download = (source: ChunkCitation) => {
-    window.open(
+    void downloadAuthenticated(
       apiUrl(`/knowledge/documents/${encodeURIComponent(source.documentId)}/source?download=1`),
-      '_blank',
-      'noopener,noreferrer',
     );
   };
 

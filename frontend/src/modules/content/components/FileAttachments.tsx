@@ -8,6 +8,7 @@ import {
   uploadFile,
   uploadFileVersion,
 } from '@/modules/workbench/api/documents'
+import { downloadAuthenticated } from '@/lib/http'
 import { SyncBusinessAction } from '@/modules/workbench/components/extensions/SyncBusinessAction'
 import './FileAttachments.less'
 
@@ -94,7 +95,13 @@ export function FileAttachments({
                 aria-current={file.id === focusedFileId ? 'true' : undefined}
                 className={file.id === focusedFileId ? 'file-attachments__item--focused' : undefined}
               >
-                <a href={getFileDownloadUrl(file.id)} download>{file.name}</a>
+                <button
+                  type="button"
+                  className="file-attachments__download"
+                  onClick={() => { void downloadAuthenticated(getFileDownloadUrl(file.id), file.name) }}
+                >
+                  {file.name}
+                </button>
                 <span>{latest ? `${Math.ceil(latest.size / 1024)} KB · v${latest.versionNumber}` : '暂无版本'}</span>
                 <span className="file-attachments__actions">
                   {latest && latest.size <= 750 * 1024 ? (

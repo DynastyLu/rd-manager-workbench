@@ -41,10 +41,7 @@ describe('KnowledgeFileViewer', () => {
       )
     })
     expect(createObjectURL).toHaveBeenCalledWith(previewBlob)
-    expect(screen.getByRole('link', { name: '下载原文件' })).toHaveAttribute(
-      'href',
-      expect.stringContaining('/knowledge/documents/document-1/source?download=1'),
-    )
+    expect(screen.getByRole('button', { name: '下载原文件' })).toBeInTheDocument()
     expect(screen.queryByText('抽取文本仅用于检索')).not.toBeInTheDocument()
   })
 
@@ -169,7 +166,7 @@ describe('KnowledgeFileViewer', () => {
       '未检测到 LibreOffice，Office 文件仍可下载，但暂时无法生成保真 PDF 预览。',
     )).toBeInTheDocument()
     expect(screen.queryByTitle('旧版研发计划.doc 在线预览')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '下载原文件' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '下载原文件' })).toBeInTheDocument()
   })
 
   it('uses the narrow Electron bridge to open watched local files', async () => {

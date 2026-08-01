@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Spin } from '@douyinfe/semi-ui'
 import { IconFile } from '@douyinfe/semi-icons'
 
+import { authenticatedFetch } from '@/lib/http'
+
 export function KnowledgeDocxViewer({
   sourceUrl,
 }: {
@@ -19,7 +21,7 @@ export function KnowledgeDocxViewer({
     const controller = new AbortController()
     const renderDocument = async () => {
       try {
-        const response = await fetch(sourceUrl, { signal: controller.signal })
+        const response = await authenticatedFetch(sourceUrl, { signal: controller.signal })
         if (!response.ok) throw new Error(`原文件读取失败（${response.status}）`)
         const content = await response.arrayBuffer()
         if (controller.signal.aborted || !documentHost.current || !styleHost.current) return

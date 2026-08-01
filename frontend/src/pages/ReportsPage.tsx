@@ -7,6 +7,7 @@ import {
   getIntelligenceReport, getPortfolioReport, getResourceLoadReport, getRiskTrendReport, getTaskTrendReport,
   reportExportUrl, type ReportKind, type ReportsQuery,
 } from '@/modules/workbench/api/reports'
+import { downloadAuthenticated } from '@/lib/http'
 import './ReportsPage.less'
 
 function initialRange(): ReportsQuery {
@@ -132,7 +133,7 @@ export default function ReportsPage() {
   return <div className="reports-page">
     <header className="reports-page__header">
       <div><p>INSIGHTS</p><h1>统计报表</h1><span>项目组合、任务、风险、资源与情报均由本地真实数据聚合。</span></div>
-      <div><Button icon={<IconRefresh />} onClick={refresh}>刷新</Button><Button onClick={saveSnapshot}>保存快照</Button><Button icon={<IconDownload />}><a href={reportExportUrl(currentKind, 'CSV', query)} download>导出 CSV</a></Button><Button icon={<IconDownload />}><a href={reportExportUrl(currentKind, 'XLSX', query)} download>导出 Excel</a></Button></div>
+      <div><Button icon={<IconRefresh />} onClick={refresh}>刷新</Button><Button onClick={saveSnapshot}>保存快照</Button><Button icon={<IconDownload />} aria-label="导出 CSV" onClick={() => { void downloadAuthenticated(reportExportUrl(currentKind, 'CSV', query)) }}>导出 CSV</Button><Button icon={<IconDownload />} aria-label="导出 Excel" onClick={() => { void downloadAuthenticated(reportExportUrl(currentKind, 'XLSX', query)) }}>导出 Excel</Button></div>
     </header>
     <section className="reports-filter" aria-label="报表筛选">
       <Select

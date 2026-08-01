@@ -33,7 +33,7 @@ import { KnowledgeAssistantWorkspace } from '@/modules/knowledge/components/Know
 import { KnowledgeFolderSync } from '@/modules/knowledge/components/KnowledgeFolderSync'
 import { KnowledgeFileViewer } from '@/modules/knowledge/components/KnowledgeFileViewer'
 import { KnowledgeIndexHealth } from '@/modules/knowledge/components/KnowledgeIndexHealth'
-import { apiUrl } from '@/lib/api-url'
+import { request } from '@/lib/http'
 import './KnowledgeHomePage.less'
 
 type DirectoryView = 'all' | 'favorites' | 'trash'
@@ -421,21 +421,12 @@ export default function KnowledgeHomePage() {
     mutationFn: async (uploadFile: File) => {
       const form = new FormData()
       form.append('file', uploadFile)
-      const resp = await fetch(apiUrl('/knowledge/documents/upload'), { method: 'POST', body: form })
-      if (!resp.ok) {
-        const body = await resp.json().catch(() => ({})) as { error?: { message?: string } }
-        throw new Error(body.error?.message || 'Upload failed')
-      }
-      const body = await resp.json() as {
-        success: boolean
-        data: {
-          title: string
-          documentId: string
-          originalName: string
-          processing: { preview: string; index: string }
-        }
-      }
-      return body.data
+      return request<{
+        title: string
+        documentId: string
+        originalName: string
+        processing: { preview: string; index: string }
+      }>('/knowledge/documents/upload', { method: 'POST', body: form })
     },
     onSuccess: (result) => {
       // Backend already created the document and triggered indexing.
