@@ -15,12 +15,8 @@ const projectItem: NavigationItem = {
 function renderItem(active = false) {
   return render(
     <MemoryRouter initialEntries={[active ? projectItem.path : '/']}>
-      <DockItem
-        item={projectItem}
-        active={active}
-        mouseY={motionValue(Number.POSITIVE_INFINITY)}
-      />
-    </MemoryRouter>,
+      <DockItem item={projectItem} active={active} mouseY={motionValue(Number.POSITIVE_INFINITY)} />
+    </MemoryRouter>
   )
 }
 
@@ -47,5 +43,15 @@ describe('DockItem', () => {
     link.focus()
     fireEvent.focus(link)
     expect(link).toHaveFocus()
+  })
+
+  it('keeps a stable pointer hit area while the visual tile magnifies', () => {
+    const { container } = renderItem()
+
+    expect(container.querySelector('.workspace-dock__slot')).toHaveStyle({ height: '56px' })
+    expect(container.querySelector('.workspace-dock__tile')).toHaveStyle({
+      width: '46px',
+      height: '46px',
+    })
   })
 })

@@ -1,10 +1,4 @@
-import {
-  motion,
-  useReducedMotion,
-  useSpring,
-  useTransform,
-  type MotionValue,
-} from 'framer-motion'
+import { motion, useReducedMotion, useSpring, useTransform, type MotionValue } from 'framer-motion'
 import { useEffect, useId, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import type { NavigationItem } from '@/router/routes'
@@ -40,11 +34,11 @@ export function DockItem({ item, active, mouseY }: DockItemProps) {
   })
   const sizeTarget = useTransform(
     distance,
-    (value) => mapDockDistance(value, reduceMotion, metrics).size,
+    (value) => mapDockDistance(value, reduceMotion, metrics).size
   )
   const displacementTarget = useTransform(
     distance,
-    (value) => mapDockDistance(value, reduceMotion, metrics).displacement,
+    (value) => mapDockDistance(value, reduceMotion, metrics).displacement
   )
   const size = useSpring(sizeTarget, { mass: 0.12, stiffness: 180, damping: 16 })
   const y = useSpring(displacementTarget, { mass: 0.12, stiffness: 180, damping: 16 })
@@ -53,8 +47,7 @@ export function DockItem({ item, active, mouseY }: DockItemProps) {
     <motion.div
       ref={slotRef}
       className="workspace-dock__slot"
-      style={{ height: size, y }}
-      layout={!reduceMotion}
+      style={{ height: metrics.itemSlot, y }}
     >
       <NavLink
         to={item.path}
