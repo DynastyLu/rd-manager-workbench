@@ -17,6 +17,7 @@
   --workspace-field-gap: 6px;
   --workspace-modal-padding: 24px;
   --workspace-modal-footer-gap: 8px;
+  --ease-out: cubic-bezier(0.33, 1, 0.68, 1);
 
   /* Aurora color system */
   --workspace-brand: #8b5cf6;
