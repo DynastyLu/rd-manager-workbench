@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -148,5 +150,22 @@ describe('WorkspaceNavigation', () => {
       'href',
       '/admin/users',
     )
+  })
+
+  it('uses runtime dock motion instead of fixed sibling hover scaling', () => {
+    const styles = readFileSync(
+      resolve(process.cwd(), 'src/components/AppShell/AppShell.less'),
+      'utf8',
+    )
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/components/AppShell/WorkspaceNavigation.tsx'),
+      'utf8',
+    )
+
+    expect(styles).not.toMatch(/:has\([^)]*:hover/)
+    expect(styles).not.toMatch(/hover\s*\+\s*\.workspace-dock__item/)
+    expect(styles).toContain('@media (max-height: 719px)')
+    expect(styles).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(source).not.toMatch(/title=\{item\.title\}/)
   })
 })

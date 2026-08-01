@@ -63,10 +63,17 @@
   --workspace-sidebar-bg: rgba(246, 246, 246, 0.82);
   --workspace-sidebar-hover: rgba(0, 0, 0, 0.05);
   --workspace-sidebar-active: var(--workspace-info);
-  --workspace-dock-bg: rgba(255, 255, 255, 0.55);
-  --workspace-dock-tile: rgba(255, 255, 255, 0.9);
-  --workspace-dock-tile-hover: rgba(255, 255, 255, 1);
-  --workspace-dock-shadow: 0 6px 16px rgba(31, 35, 41, 0.12);
+  --workspace-dock-width: 82px;
+  --workspace-dock-compact-width: 70px;
+  --workspace-dock-bg: rgba(245, 248, 252, 0.68);
+  --workspace-dock-border: rgba(255, 255, 255, 0.76);
+  --workspace-dock-shadow: 12px 0 34px rgba(31, 35, 41, 0.11);
+  --workspace-dock-icon-shadow:
+    0 10px 22px rgba(31, 35, 41, 0.18), 0 2px 5px rgba(31, 35, 41, 0.12);
+  --workspace-dock-icon-shadow-active:
+    0 12px 28px rgba(31, 35, 41, 0.24), 0 3px 8px rgba(31, 35, 41, 0.14);
+  --workspace-dock-tooltip-bg: rgba(31, 35, 41, 0.92);
+  --workspace-dock-tooltip-text: #ffffff;
   --workspace-overlay: rgba(30, 27, 75, 0.45);
   --workspace-focus-ring: 0 0 0 3px rgba(139, 92, 246, 0.15);
   --workspace-shadow-panel: 0 8px 32px rgba(31, 35, 41, 0.06);
@@ -192,7 +199,9 @@ body::after {
   margin: 0 auto;
 }
 
-.app-page__inner--narrow { max-width: 1040px; }
+.app-page__inner--narrow {
+  max-width: 1040px;
+}
 
 .app-page__hero,
 [data-theme] .app-page__hero {
@@ -204,7 +213,9 @@ body::after {
   background: transparent;
 }
 
-.app-page__eyebrow { display: none; }
+.app-page__eyebrow {
+  display: none;
+}
 
 .app-page__title,
 [data-theme] .app-page__title {
@@ -258,13 +269,27 @@ body::after {
 }
 
 .app-page--settings .project-workspace__panel h2,
-.workspace-page--settings .project-workspace__panel h2 { margin: 0; font-size: 15px; }
+.workspace-page--settings .project-workspace__panel h2 {
+  margin: 0;
+  font-size: 15px;
+}
 .app-page--settings .project-workspace__panel p,
-.workspace-page--settings .project-workspace__panel p { margin: 8px 0; color: var(--workspace-text-secondary); line-height: 1.65; }
+.workspace-page--settings .project-workspace__panel p {
+  margin: 8px 0;
+  color: var(--workspace-text-secondary);
+  line-height: 1.65;
+}
 .app-page--settings .project-workspace__panel > a,
-.workspace-page--settings .project-workspace__panel > a { display: inline-flex; margin-top: 8px; color: var(--workspace-brand); text-decoration: none; }
+.workspace-page--settings .project-workspace__panel > a {
+  display: inline-flex;
+  margin-top: 8px;
+  color: var(--workspace-brand);
+  text-decoration: none;
+}
 .app-page--settings .project-workspace__panel .semi-banner,
-.workspace-page--settings .project-workspace__panel .semi-banner { margin-top: 16px; }
+.workspace-page--settings .project-workspace__panel .semi-banner {
+  margin-top: 16px;
+}
 
 /* Semi modal and local forms share one predictable layout. */
 .semi-modal-content {
@@ -402,9 +427,13 @@ body::after {
 }
 
 @media (max-width: 720px) {
-  :root { --workspace-page-padding: 18px 16px 32px; }
+  :root {
+    --workspace-page-padding: 18px 16px 32px;
+  }
   .workspace-modal-form__grid,
-  .workspace-modal-form__grid--three { grid-template-columns: 1fr; }
+  .workspace-modal-form__grid--three {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Unified page shell */
@@ -434,7 +463,9 @@ body::after {
   border-radius: var(--workspace-radius-lg);
   /* State transition (not motion); ok per design system */
   box-shadow: var(--workspace-shadow-panel);
-  transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+  transition:
+    transform 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
 }
 
 .workspace-card:hover {
@@ -524,7 +555,9 @@ body::after {
   cursor: pointer;
   /* State transition (not motion); ok per design system */
   box-shadow: 0 4px 14px rgba(var(--workspace-brand-rgb), 0.3);
-  transition: transform 150ms var(--ease-out), box-shadow 150ms var(--ease-out);
+  transition:
+    transform 150ms var(--ease-out),
+    box-shadow 150ms var(--ease-out);
 }
 
 .workspace-button-primary:hover {
@@ -554,7 +587,9 @@ body::after {
   font-family: var(--font-main);
   font-size: 14px;
   /* State transition (not motion); ok per design system */
-  transition: border-color 150ms var(--ease-standard), box-shadow 150ms var(--ease-standard);
+  transition:
+    border-color 150ms var(--ease-standard),
+    box-shadow 150ms var(--ease-standard);
 }
 
 .workspace-input::placeholder {
@@ -595,10 +630,12 @@ body::after {
   --workspace-sidebar-bg: rgba(252, 251, 247, 0.85);
   --workspace-sidebar-hover: rgba(61, 58, 52, 0.05);
   --workspace-sidebar-active: var(--workspace-brand);
-  --workspace-dock-bg: rgba(253, 251, 247, 0.72);
-  --workspace-dock-tile: rgba(255, 255, 255, 0.92);
-  --workspace-dock-tile-hover: rgba(255, 255, 255, 1);
-  --workspace-dock-shadow: 0 6px 16px rgba(61, 58, 52, 0.1);
+  --workspace-dock-bg: rgba(249, 247, 240, 0.72);
+  --workspace-dock-border: rgba(255, 255, 255, 0.7);
+  --workspace-dock-shadow: 12px 0 34px rgba(61, 58, 52, 0.1);
+  --workspace-dock-icon-shadow: 0 10px 22px rgba(61, 58, 52, 0.16), 0 2px 5px rgba(61, 58, 52, 0.1);
+  --workspace-dock-icon-shadow-active:
+    0 12px 28px rgba(61, 58, 52, 0.22), 0 3px 8px rgba(61, 58, 52, 0.12);
   --workspace-focus-ring: 0 0 0 3px rgba(107, 140, 94, 0.15);
   --workspace-shadow-panel: 0 8px 32px rgba(61, 58, 52, 0.05);
   --workspace-shadow-float: 0 20px 60px rgba(61, 58, 52, 0.08);
