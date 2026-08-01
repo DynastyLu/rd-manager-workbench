@@ -13,15 +13,17 @@ const plannedModules = [
 
 export default function AutomationDataPage() {
   return (
-    <div className="app-page">
-      <div className="app-page__inner grid gap-4">
-        <header className="app-page__hero">
-          <div>
-            <p className="app-page__eyebrow">Automation &amp; Data</p>
-            <h1 className="app-page__title">自动化与数据</h1>
-            <p className="app-page__subtitle">这些本地能力正在规划，当前不会发起未实现的请求。</p>
-          </div>
-        </header>
+    <div className="workspace-page automation-data-page">
+      <div className="workspace-page__inner grid gap-4">
+        <div className="workspace-page__hero-card">
+          <header className="app-page__hero">
+            <div>
+              <p className="app-page__eyebrow">Automation &amp; Data</p>
+              <h1 className="app-page__title">自动化与数据</h1>
+              <p className="app-page__subtitle">这些本地能力正在规划，当前不会发起未实现的请求。</p>
+            </div>
+          </header>
+        </div>
 
         <PlannedModuleState
           title="自动化与数据能力"
@@ -29,9 +31,9 @@ export default function AutomationDataPage() {
           nextStep="下一步：按本地使用优先级拆分首批能力。"
         />
 
-        <section aria-label="规划中的自动化与数据模块" className="rounded-xl border p-4">
-          <h2 className="font-medium">规划模块</h2>
-          <ul className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+        <section aria-label="规划中的自动化与数据模块" className="workspace-card p-4">
+          <h2 className="font-medium" style={{ color: 'var(--workspace-text)' }}>规划模块</h2>
+          <ul className="mt-3 grid gap-2 text-sm sm:grid-cols-2" style={{ color: 'var(--workspace-text-secondary)' }}>
             {plannedModules.map((module) => (
               <li key={module}>{module}</li>
             ))}

@@ -3,15 +3,17 @@ import { MeetingsWorkspace } from './MeetingsPage'
 
 export default function MeetingsAndMaterialsPage() {
   return (
-    <div className="app-page">
-      <div className="app-page__inner app-page__inner--wide grid gap-4">
-        <header className="app-page__hero">
-          <div>
-            <p className="app-page__eyebrow">Meetings &amp; Materials</p>
-            <h1 className="app-page__title">会议与资料</h1>
-            <p className="app-page__subtitle">从会议记录进入行动项管理，并逐步补齐资料能力。</p>
-          </div>
-        </header>
+    <div className="workspace-page meetings-materials-page">
+      <div className="workspace-page__inner grid gap-4">
+        <div className="workspace-page__hero-card">
+          <header className="app-page__hero">
+            <div>
+              <p className="app-page__eyebrow">Meetings &amp; Materials</p>
+              <h1 className="app-page__title">会议与资料</h1>
+              <p className="app-page__subtitle">从会议记录进入行动项管理，并逐步补齐资料能力。</p>
+            </div>
+          </header>
+        </div>
 
         <section aria-label="规划中的会议资料能力" className="grid gap-3 md:grid-cols-2">
           <PlannedModuleState

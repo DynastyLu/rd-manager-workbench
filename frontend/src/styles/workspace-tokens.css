@@ -194,6 +194,7 @@ body::after {
   margin-bottom: 18px;
   padding: 0;
   border: 0;
+  background: transparent;
 }
 
 .app-page__eyebrow { display: none; }
@@ -433,6 +434,33 @@ body::after {
   transform: translateY(-2px);
   /* State transition (not motion); ok per design system */
   box-shadow: var(--workspace-shadow-float);
+}
+
+.workspace-card:focus-visible,
+.workspace-card:focus-within {
+  outline: 2px solid var(--workspace-brand);
+  outline-offset: 2px;
+}
+
+.workspace-card--active {
+  border-top: 2px solid var(--workspace-brand);
+}
+
+/* Glass hero card for migrated app-page headers */
+.workspace-page__hero-card {
+  margin-bottom: 18px;
+  padding: 20px 24px;
+  background: var(--workspace-surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--workspace-border);
+  border-left: 4px solid var(--workspace-brand);
+  border-radius: var(--workspace-radius-lg);
+  box-shadow: var(--workspace-shadow-panel);
+}
+
+.workspace-page__hero-card .app-page__hero {
+  margin-bottom: 0;
 }
 
 /* Dashboard widget */
