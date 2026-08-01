@@ -97,15 +97,17 @@ export default function WorkbenchHome() {
   return (
     <div className="workspace-page workbench-home">
       <div className="workspace-page__inner">
-        <header className="workbench-home__header">
-          <div>
-            <h1 className="workbench-home__title">研发主管工作台</h1>
-            <p className="workbench-home__subtitle">优先处理今日行动、风险和临近里程碑。</p>
-          </div>
-          <time className="workbench-home__date" dateTime={new Date().toISOString()}>
-            {formatDateLabel()}
-          </time>
-        </header>
+        <div className="workspace-card workbench-home__hero">
+          <header className="workbench-home__header">
+            <div>
+              <h1 className="workbench-home__title">研发主管工作台</h1>
+              <p className="workbench-home__subtitle">优先处理今日行动、风险和临近里程碑。</p>
+            </div>
+            <time className="workbench-home__date" dateTime={new Date().toISOString()}>
+              {formatDateLabel()}
+            </time>
+          </header>
+        </div>
 
         {dashboardQuery.isPending ? <DashboardSkeleton /> : null}
 
@@ -119,7 +121,8 @@ export default function WorkbenchHome() {
 
         {dashboardQuery.data && kpi ? (
           <>
-            <section className="workbench-home__kpi-row">
+            <h2 className="workbench-home__section-label">核心指标</h2>
+            <section className="workbench-home__kpi-row workbench-home__kpi-row--animated">
               <DashboardKpiCard label="进行项目" value={kpi.totalProjects} icon={<IconBriefcase />} tone="brand" />
               <DashboardKpiCard label="今日待办" value={kpi.todayActions} icon={<IconCalendar />} tone="info" />
               <DashboardKpiCard label="逾期任务" value={kpi.overdueTasks} icon={<IconBeaker />} tone="warning" />
@@ -130,11 +133,12 @@ export default function WorkbenchHome() {
               <DashboardQuickApps items={quickApps} />
             </section>
 
+            <h2 className="workbench-home__section-label">数据概览</h2>
             <section className="workbench-home__widget-grid">
               <HealthDonutChart data={dashboardQuery.data.healthDistribution} onSliceClick={setAttentionFilter} />
               <TaskStatusBarChart todayActions={dashboardQuery.data.todayActions} overdueTasks={dashboardQuery.data.overdueTasks} />
 
-              <DashboardWidget title="今日行动">
+              <DashboardWidget title="今日行动" tone="info">
                 {dashboardQuery.data.todayActions.length ? (
                   <ul className="dashboard-list">
                     {dashboardQuery.data.todayActions.slice(0, 6).map((task) => (
@@ -151,7 +155,7 @@ export default function WorkbenchHome() {
                 )}
               </DashboardWidget>
 
-              <DashboardWidget title="逾期任务">
+              <DashboardWidget title="逾期任务" tone="danger">
                 {dashboardQuery.data.overdueTasks.length ? (
                   <ul className="dashboard-list">
                     {dashboardQuery.data.overdueTasks.slice(0, 6).map((task) => {
@@ -171,7 +175,7 @@ export default function WorkbenchHome() {
                 )}
               </DashboardWidget>
 
-              <DashboardWidget title="临近里程碑">
+              <DashboardWidget title="临近里程碑" tone="warning">
                 {dashboardQuery.data.dueSoonMilestones.length ? (
                   <ul className="dashboard-list">
                     {dashboardQuery.data.dueSoonMilestones.slice(0, 6).map((milestone) => (
@@ -190,7 +194,7 @@ export default function WorkbenchHome() {
                 )}
               </DashboardWidget>
 
-              <DashboardWidget title="需关注项目">
+              <DashboardWidget title="需关注项目" tone="danger">
                 {attentionProjects.length ? (
                   <ul className="dashboard-list">
                     {attentionProjects.slice(0, 6).map((project) => (
@@ -206,7 +210,7 @@ export default function WorkbenchHome() {
                 )}
               </DashboardWidget>
 
-              <DashboardWidget title="最近进展汇报" className="dashboard-widget--wide">
+              <DashboardWidget title="最近进展汇报" className="dashboard-widget--wide" tone="brand">
                 {dashboardQuery.data.recentProgressReports.length ? (
                   <ul className="dashboard-list">
                     {dashboardQuery.data.recentProgressReports.slice(0, 5).map((report) => (
