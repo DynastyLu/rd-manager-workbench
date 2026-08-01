@@ -23,8 +23,8 @@ export default function AdminLayout() {
   const { pathname } = useLocation()
 
   return (
-    <div className="admin-layout app-page">
-      <div className="admin-layout__inner app-page__inner">
+    <div className="admin-layout workspace-page">
+      <div className="admin-layout__inner workspace-page__inner">
         <header className="admin-layout__header">
           <div>
             <h1 className="app-page__title">系统管理</h1>
