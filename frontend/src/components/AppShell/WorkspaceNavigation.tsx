@@ -1,19 +1,9 @@
-import {
-  IconBookOpenStroked,
-  IconBriefcaseStroked,
-  IconCalendarStroked,
-  IconChecklistStroked,
-  IconGridStroked,
-  IconHomeStroked,
-  IconSearchStroked,
-  IconSetting,
-  IconUserGroup,
-} from '@douyinfe/semi-icons'
 import { NavLink, useLocation } from 'react-router-dom'
 import { ROUTES } from '@/constants/routes'
 import { useAuthStore } from '@/modules/auth/store'
 import type { CurrentUser } from '@/modules/auth/types'
-import type { NavigationIcon, NavigationItem } from '@/router/routes'
+import type { NavigationItem } from '@/router/routes'
+import { WorkspaceDockIcon } from './WorkspaceDockIcon'
 
 interface WorkspaceNavigationProps {
   items: NavigationItem[]
@@ -38,18 +28,6 @@ function canAccessAdmin(user: CurrentUser | undefined): boolean {
   return user.permissions.some((grant) => ADMIN_PERMISSION_CODES.has(grant.code))
 }
 
-const navigationIcons: Record<NavigationIcon, typeof IconHomeStroked> = {
-  home: IconHomeStroked,
-  tasks: IconChecklistStroked,
-  projects: IconBriefcaseStroked,
-  employees: IconUserGroup,
-  docs: IconBookOpenStroked,
-  base: IconGridStroked,
-  calendar: IconCalendarStroked,
-  search: IconSearchStroked,
-  settings: IconSetting,
-}
-
 function isActivePath(item: NavigationItem, pathname: string): boolean {
   if (pathname === item.path) return true
   if (item.path !== '/' && pathname.startsWith(`${item.path}/`)) return true
@@ -66,7 +44,6 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
 
   function renderItem(item: NavigationItem) {
     const active = isActivePath(item, pathname)
-    const NavigationIcon = navigationIcons[item.icon]
 
     return (
       <NavLink
@@ -79,7 +56,7 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
       >
         <span className="workspace-dock__tile" aria-hidden="true">
           <span className="workspace-dock__icon">
-            <NavigationIcon size="extra-large" />
+            <WorkspaceDockIcon icon={item.icon} />
           </span>
         </span>
         <span className="workspace-dock__label">{item.title}</span>

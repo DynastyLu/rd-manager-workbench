@@ -41,7 +41,7 @@ describe('WorkspaceNavigation', () => {
     })
   })
 
-  it('renders the eight core apps with Semi icons and no planning badges', () => {
+  it('renders the eight core apps with project-owned icons and no planning badges', () => {
     const { container } = render(
       <MemoryRouter>
         <WorkspaceNavigation items={primaryNavigation} />
@@ -52,7 +52,23 @@ describe('WorkspaceNavigation', () => {
     expect(screen.getAllByRole('link')).toHaveLength(8)
     expect(navigation).not.toHaveTextContent('设置')
     expect(navigation).not.toHaveTextContent('规划中')
-    expect(container.querySelectorAll('.semi-icon')).toHaveLength(8)
+    expect(container.querySelectorAll('[data-dock-icon]')).toHaveLength(8)
+    expect(container.querySelectorAll('.semi-icon')).toHaveLength(0)
+  })
+
+  it('uses a distinct project-owned icon for every administrator app', () => {
+    useAuthStore.setState({ user: superAdmin })
+    const { container } = render(
+      <MemoryRouter>
+        <WorkspaceNavigation items={primaryNavigation} />
+      </MemoryRouter>,
+    )
+
+    const iconNames = [...container.querySelectorAll('[data-dock-icon]')].map((node) =>
+      node.getAttribute('data-dock-icon'),
+    )
+    expect(iconNames).toHaveLength(9)
+    expect(new Set(iconNames).size).toBe(9)
   })
 
   it('renders the employee app immediately after projects', () => {
