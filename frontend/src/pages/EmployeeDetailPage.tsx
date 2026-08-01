@@ -452,40 +452,42 @@ export default function EmployeeDetailPage() {
         </Link>
       </div>
 
-      <header className="employee-detail__header">
-        <div className="employee-detail__avatar" aria-hidden="true">
-          {profile.displayName.slice(0, 1)}
-        </div>
-        <div>
-          <h1>{profile.displayName}</h1>
-          <dl className="employee-detail__facts">
-            <div>
-              <dt>部门</dt>
-              <dd>{profile.department || '未设置'}</dd>
-            </div>
-            <div>
-              <dt>岗位</dt>
-              <dd>{profile.roleTitle || '未设置'}</dd>
-            </div>
-            <div>
-              <dt>工作方向</dt>
-              <dd>{profile.workDirection || '未设置'}</dd>
-            </div>
-            <div>
-              <dt>直属负责人</dt>
-              <dd>{profile.managerName || '未设置'}</dd>
-            </div>
-            <div>
-              <dt>在职状态</dt>
-              <dd>{EMPLOYMENT_STATUS_LABELS[profile.employmentStatus]}</dd>
-            </div>
-            <div>
-              <dt>每周容量</dt>
-              <dd>{profile.weeklyCapacityHours} 小时</dd>
-            </div>
-          </dl>
-        </div>
-      </header>
+      <div className="employee-detail__hero">
+        <header className="employee-detail__header">
+          <div className="employee-detail__avatar" aria-hidden="true">
+            {profile.displayName.slice(0, 1)}
+          </div>
+          <div>
+            <h1>{profile.displayName}</h1>
+            <dl className="employee-detail__facts">
+              <div>
+                <dt>部门</dt>
+                <dd>{profile.department || '未设置'}</dd>
+              </div>
+              <div>
+                <dt>岗位</dt>
+                <dd>{profile.roleTitle || '未设置'}</dd>
+              </div>
+              <div>
+                <dt>工作方向</dt>
+                <dd>{profile.workDirection || '未设置'}</dd>
+              </div>
+              <div>
+                <dt>直属负责人</dt>
+                <dd>{profile.managerName || '未设置'}</dd>
+              </div>
+              <div>
+                <dt>在职状态</dt>
+                <dd>{EMPLOYMENT_STATUS_LABELS[profile.employmentStatus]}</dd>
+              </div>
+              <div>
+                <dt>每周容量</dt>
+                <dd>{profile.weeklyCapacityHours} 小时</dd>
+              </div>
+            </dl>
+          </div>
+        </header>
+      </div>
 
       <section className="employee-detail__surface workspace-card" aria-label="员工周期进展">
         <EmployeeProgressFilters
