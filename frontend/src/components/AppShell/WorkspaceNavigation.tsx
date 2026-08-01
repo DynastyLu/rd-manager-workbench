@@ -50,7 +50,7 @@ const navigationIcons: Record<NavigationIcon, typeof IconHomeStroked> = {
   settings: IconSetting,
 }
 
-function isActivePath(item: NavigationItem, pathname: string) {
+function isActivePath(item: NavigationItem, pathname: string): boolean {
   if (pathname === item.path) return true
   if (item.path !== '/' && pathname.startsWith(`${item.path}/`)) return true
   if (item.key === 'admin' && pathname.startsWith(`${ROUTES.ADMIN}/`)) return true
@@ -72,28 +72,30 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
       <NavLink
         key={item.key}
         to={item.path}
-        className={`workspace-navigation__link${active ? ' workspace-navigation__link--active' : ''}`}
+        className={`workspace-dock__item${active ? ' workspace-dock__item--active' : ''}`}
         aria-current={active ? 'page' : undefined}
+        aria-label={item.title}
         title={item.title}
       >
-        <span className="workspace-navigation__icon" aria-hidden="true">
-          <NavigationIcon size="large" />
+        <span className="workspace-dock__tile" aria-hidden="true">
+          <span className="workspace-dock__icon">
+            <NavigationIcon size="extra-large" />
+          </span>
         </span>
-        <span className="workspace-navigation__label">{item.title}</span>
+        <span className="workspace-dock__label">{item.title}</span>
+        {active && <span className="workspace-dock__dot" aria-hidden="true" />}
       </NavLink>
     )
   }
 
   return (
-    <nav className="workspace-navigation" aria-label="主导航">
-      <div className="workspace-navigation__brand" aria-label="研发工作空间">
-        <span className="workspace-navigation__brand-mark" aria-hidden="true">
+    <nav className="workspace-dock" aria-label="主导航">
+      <div className="workspace-dock__brand" aria-label="研发工作空间">
+        <span className="workspace-dock__brand-mark" aria-hidden="true">
           RD
         </span>
-        <span className="workspace-navigation__brand-name">研发工作空间</span>
       </div>
-      <h2 className="workspace-navigation__section-title">应用</h2>
-      <div className="workspace-navigation__links">{visibleItems.map(renderItem)}</div>
+      <div className="workspace-dock__items">{visibleItems.map(renderItem)}</div>
     </nav>
   )
 }
