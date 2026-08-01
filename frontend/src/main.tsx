@@ -36,12 +36,14 @@ import { MotionConfig } from 'framer-motion'
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary'
 import { AppShell } from '@/components/AppShell/AppShell'
 import { Skeleton } from '@/components/workspace/SemiCompat'
+import { AuthProvider } from '@/modules/auth/AuthProvider'
+import { RequireAuth } from '@/modules/auth/RequireAuth'
 
 import { Toaster } from 'sonner'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-import routes, { type AppRoute } from '@/router/routes'
+import { protectedRoutes, publicRoutes, type AppRoute } from '@/router/routes'
 import { config } from '@/lib/config'
 import * as Sentry from '@sentry/react'
 import { UpdateNotifier } from '@/components/UpdateNotifier/UpdateNotifier'
@@ -77,28 +79,35 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <HashRouter>
-          <MotionConfigProvider>
-            <Routes>
-              <Route
-                element={
-                  <AppShell
-                    skeleton={
-                      <div className="flex flex-col gap-4 p-6">
-                        <Skeleton className="h-8 w-48" />
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="h-4 w-3/4" />
-                      </div>
-                    }
-                  />
-                }
-              >
-                {routes.map((route: AppRoute) => (
+          <AuthProvider>
+            <MotionConfigProvider>
+              <Routes>
+                {publicRoutes.map((route: AppRoute) => (
                   <Route key={route.path} path={route.path} element={<route.component />} />
                 ))}
-              </Route>
-            </Routes>
-            <UpdateNotifier />
-          </MotionConfigProvider>
+                <Route element={<RequireAuth />}>
+                  <Route
+                    element={
+                      <AppShell
+                        skeleton={
+                          <div className="flex flex-col gap-4 p-6">
+                            <Skeleton className="h-8 w-48" />
+                            <Skeleton className="h-4 w-full" />
+                            <Skeleton className="h-4 w-3/4" />
+                          </div>
+                        }
+                      />
+                    }
+                  >
+                    {protectedRoutes.map((route: AppRoute) => (
+                      <Route key={route.path} path={route.path} element={<route.component />} />
+                    ))}
+                  </Route>
+                </Route>
+              </Routes>
+              <UpdateNotifier />
+            </MotionConfigProvider>
+          </AuthProvider>
         </HashRouter>
       </QueryClientProvider>
     </ErrorBoundary>
