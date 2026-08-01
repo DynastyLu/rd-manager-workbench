@@ -58,7 +58,7 @@ export default function DecisionsPage() {
 
         {focusedDecisionQuery.data ? (
           <section aria-label="当前定位决策">
-            <Card className="workspace-card decisions-page__focus-card mb-4">
+            <Card className="workspace-card decisions-page__focus-card">
               <CardHeader>
                 <p className="decisions-page__focus-label">当前定位</p>
                 <CardTitle>{focusedDecisionQuery.data.title}</CardTitle>

@@ -86,7 +86,7 @@ export default function IssuesPage() {
 
         {focusedIssueQuery.data ? (
           <section aria-label="当前定位问题">
-            <Card className="workspace-card issues-page__focus-card mb-4">
+            <Card className="workspace-card issues-page__focus-card">
               <CardHeader>
                 <p className="issues-page__focus-label">当前定位</p>
                 <CardTitle>{focusedIssueQuery.data.title}</CardTitle>
@@ -99,7 +99,7 @@ export default function IssuesPage() {
           </section>
         ) : null}
 
-        <Card className="workspace-card mb-4">
+        <Card className="workspace-card">
           <CardContent className="pt-4">
             <Button
               variant={overdue ? 'default' : 'outline'}

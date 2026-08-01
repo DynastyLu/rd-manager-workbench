@@ -94,7 +94,7 @@ export default function ApplicationCasesPage() {
         </header>
 
         <Card className="workspace-card application-cases-page__filter">
-          <CardContent className="pt-4">
+          <CardContent>
             <Input
               aria-label="筛选申报案件"
               placeholder="按案件名称或编号筛选"

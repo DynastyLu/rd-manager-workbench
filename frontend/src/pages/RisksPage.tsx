@@ -121,7 +121,7 @@ export default function RisksPage() {
 
         {focusedRiskQuery.data ? (
           <section aria-label="当前定位风险">
-            <Card className="workspace-card risks-page__focus-card mb-4">
+            <Card className="workspace-card risks-page__focus-card">
               <CardHeader>
                 <p className="risks-page__focus-label">当前定位</p>
                 <CardTitle>{focusedRiskQuery.data.title}</CardTitle>
@@ -134,7 +134,7 @@ export default function RisksPage() {
           </section>
         ) : null}
 
-        <Card className="workspace-card mb-4">
+        <Card className="workspace-card">
           <CardContent className="pt-4">
             <WorkspaceSelect
               aria-label="按风险状态筛选"

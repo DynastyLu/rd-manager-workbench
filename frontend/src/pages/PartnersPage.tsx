@@ -699,7 +699,7 @@ export default function PartnersPage() {
           </Button>
         </header>
 
-        <section className="partner-workspace__toolbar" aria-label="合作方筛选">
+        <section className="partner-workspace__toolbar workspace-card" aria-label="合作方筛选">
           <form
             className="partner-workspace__search"
             onSubmit={(event) => {
