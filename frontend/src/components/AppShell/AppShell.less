@@ -517,8 +517,21 @@
 @media (max-height: 519px) {
   .workspace-dock {
     &__scroll {
-      padding: 4px 0;
-      overflow: visible;
+      width: calc(var(--workspace-dock-compact-width) + 180px);
+      align-self: flex-start;
+      align-items: flex-start;
+      box-sizing: border-box;
+      padding: 4px 180px 4px 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      pointer-events: none;
+    }
+
+    &__brand,
+    &__items {
+      width: var(--workspace-dock-compact-width);
+      pointer-events: auto;
     }
 
     &__brand {
@@ -534,6 +547,8 @@
     }
 
     &__items {
+      min-height: auto;
+      flex: 0 0 auto;
       gap: 2px;
       padding: 0;
     }

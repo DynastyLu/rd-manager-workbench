@@ -74,13 +74,16 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
 
   const resetPointer = () => mouseY.set(Number.POSITIVE_INFINITY)
   const updatePointer = (event: PointerEvent<HTMLElement>) => {
+    const target = event.target
+    const isInsideVisibleTile =
+      target instanceof Element && target.closest('.workspace-dock__tile') !== null
     const isInsideStableSlot = [...event.currentTarget.querySelectorAll('.workspace-dock__slot')].some(
       (slot) => {
         const rect = slot.getBoundingClientRect()
         return event.clientY >= rect.top && event.clientY <= rect.bottom
       },
     )
-    if (isInsideStableSlot) {
+    if (isInsideVisibleTile || isInsideStableSlot) {
       mouseY.set(event.clientY)
       return
     }

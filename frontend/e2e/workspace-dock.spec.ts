@@ -5,6 +5,7 @@ for (const viewport of [
   { width: 1280, height: 720 },
   { width: 1280, height: 600 },
   { width: 1280, height: 500 },
+  { width: 1280, height: 340 },
 ]) {
   test(`keeps every Dock app accessible at ${viewport.width}x${viewport.height}`, async ({
     page,
@@ -113,6 +114,7 @@ test('creates a continuous magnification wave and keeps the hovered tooltip visi
   expect(documentsAfter!.y).toBeGreaterThan(documentsBefore!.y)
   expect(employeeLinkBox?.height).toBe(56)
 
+  await page.getByRole('main').hover()
   await dock.locator('.workspace-dock__brand').hover()
   await expect
     .poll(async () => {
@@ -134,4 +136,24 @@ test('shows the same custom tooltip for keyboard focus', async ({ page }) => {
   await expect(employees).toBeFocused()
   await expect(employees.getByRole('tooltip')).toBeVisible()
   await expect(employees.getByRole('tooltip')).toHaveCSS('opacity', '1')
+})
+
+test('honours reduced-motion without magnifying or pulsing Dock apps', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await loginAsDefaultAdmin(page)
+
+  const dock = page.getByRole('navigation', { name: '主导航', exact: true })
+  const employees = dock.getByRole('link', { name: '员工', exact: true })
+  const homeTile = dock.getByRole('link', { name: '工作台', exact: true }).locator(
+    '.workspace-dock__tile',
+  )
+  const employeeTile = employees.locator('.workspace-dock__tile')
+
+  await employees.hover()
+
+  await expect(employeeTile).toHaveCSS('width', '46px')
+  await expect(employeeTile).toHaveCSS('height', '46px')
+  await expect(employeeTile).toHaveCSS('transform', 'none')
+  await expect(homeTile).toHaveCSS('transform', 'none')
 })
