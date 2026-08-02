@@ -30,7 +30,7 @@ export function DockItem({ item, active, mouseY }: DockItemProps) {
   const distance = useTransform(mouseY, (pointerY) => {
     const rect = slotRef.current?.getBoundingClientRect()
     if (!rect || !Number.isFinite(pointerY)) return Number.POSITIVE_INFINITY
-    return pointerY - (rect.top + rect.height / 2)
+    return rect.top + rect.height / 2 - pointerY
   })
   const motionTarget = useTransform(distance, (value) =>
     mapDockDistance(value, reduceMotion, metrics)

@@ -35,9 +35,14 @@ test('creates a continuous magnification wave and keeps the hovered tooltip visi
   await loginAsDefaultAdmin(page)
 
   const dock = page.getByRole('navigation', { name: '主导航', exact: true })
+  const tasks = dock.getByRole('link', { name: '我的工作', exact: true })
   const projects = dock.getByRole('link', { name: '项目', exact: true })
   const employees = dock.getByRole('link', { name: '员工', exact: true })
   const documents = dock.getByRole('link', { name: '文档与知识库', exact: true })
+  const base = dock.getByRole('link', { name: '多维表格', exact: true })
+
+  const projectsBefore = await projects.locator('.workspace-dock__tile').boundingBox()
+  const documentsBefore = await documents.locator('.workspace-dock__tile').boundingBox()
 
   await expect(employees).toBeVisible()
   await employees.hover()
@@ -51,9 +56,47 @@ test('creates a continuous magnification wave and keeps the hovered tooltip visi
   await expect
     .poll(async () => (await documents.locator('.workspace-dock__tile').boundingBox())?.width ?? 0)
     .toBeGreaterThan(56)
+  await expect
+    .poll(async () => {
+      const centerWidth =
+        (await employees.locator('.workspace-dock__tile').boundingBox())?.width ?? 0
+      const firstWidth =
+        (await projects.locator('.workspace-dock__tile').boundingBox())?.width ?? 0
+      const secondWidth =
+        (await tasks.locator('.workspace-dock__tile').boundingBox())?.width ?? 0
+      return centerWidth - firstWidth > 8 && firstWidth - secondWidth > 10
+    })
+    .toBe(true)
+  await expect
+    .poll(async () => {
+      const centerWidth =
+        (await employees.locator('.workspace-dock__tile').boundingBox())?.width ?? 0
+      const firstWidth =
+        (await documents.locator('.workspace-dock__tile').boundingBox())?.width ?? 0
+      const secondWidth =
+        (await base.locator('.workspace-dock__tile').boundingBox())?.width ?? 0
+      return centerWidth - firstWidth > 8 && firstWidth - secondWidth > 10
+    })
+    .toBe(true)
   await expect(employees.getByRole('tooltip')).toBeVisible()
 
+  const dockBox = await dock.boundingBox()
+  const employeeTileBox = await employees.locator('.workspace-dock__tile').boundingBox()
+  const projectsAfter = await projects.locator('.workspace-dock__tile').boundingBox()
+  const documentsAfter = await documents.locator('.workspace-dock__tile').boundingBox()
   const employeeLinkBox = await employees.boundingBox()
+
+  expect(dockBox).not.toBeNull()
+  expect(employeeTileBox).not.toBeNull()
+  expect(projectsBefore).not.toBeNull()
+  expect(projectsAfter).not.toBeNull()
+  expect(documentsBefore).not.toBeNull()
+  expect(documentsAfter).not.toBeNull()
+  expect(employeeTileBox!.x + employeeTileBox!.width - (dockBox!.x + dockBox!.width)).toBeGreaterThan(
+    24,
+  )
+  expect(projectsAfter!.y).toBeLessThan(projectsBefore!.y)
+  expect(documentsAfter!.y).toBeGreaterThan(documentsBefore!.y)
   expect(employeeLinkBox?.height).toBe(56)
 })
 
