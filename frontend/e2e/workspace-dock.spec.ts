@@ -4,6 +4,7 @@ import { loginAsDefaultAdmin } from './support/auth'
 for (const viewport of [
   { width: 1280, height: 720 },
   { width: 1280, height: 600 },
+  { width: 1280, height: 500 },
 ]) {
   test(`keeps every Dock app accessible at ${viewport.width}x${viewport.height}`, async ({
     page,
@@ -25,6 +26,18 @@ for (const viewport of [
     const lastBox = await lastLink.boundingBox()
     expect(lastBox).not.toBeNull()
     expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(viewport.height)
+
+    const employees = dock.getByRole('link', { name: '员工', exact: true })
+    await employees.scrollIntoViewIfNeeded()
+    await employees.hover()
+    await expect
+      .poll(async () => {
+        const dockBox = await dock.boundingBox()
+        const tileBox = await employees.locator('.workspace-dock__tile').boundingBox()
+        if (!dockBox || !tileBox) return 0
+        return tileBox.x + tileBox.width - (dockBox.x + dockBox.width)
+      })
+      .toBeGreaterThan(24)
   })
 }
 
@@ -79,6 +92,7 @@ test('creates a continuous magnification wave and keeps the hovered tooltip visi
     })
     .toBe(true)
   await expect(employees.getByRole('tooltip')).toBeVisible()
+  await expect(employees.getByRole('tooltip')).toHaveCSS('opacity', '1')
 
   const dockBox = await dock.boundingBox()
   const employeeTileBox = await employees.locator('.workspace-dock__tile').boundingBox()
@@ -98,6 +112,14 @@ test('creates a continuous magnification wave and keeps the hovered tooltip visi
   expect(projectsAfter!.y).toBeLessThan(projectsBefore!.y)
   expect(documentsAfter!.y).toBeGreaterThan(documentsBefore!.y)
   expect(employeeLinkBox?.height).toBe(56)
+
+  await dock.locator('.workspace-dock__brand').hover()
+  await expect
+    .poll(async () => {
+      const projectBox = await projects.locator('.workspace-dock__tile').boundingBox()
+      return projectBox ? Math.abs(projectBox.y - projectsBefore!.y) : Number.POSITIVE_INFINITY
+    })
+    .toBeLessThan(1)
 })
 
 test('shows the same custom tooltip for keyboard focus', async ({ page }) => {
@@ -111,4 +133,5 @@ test('shows the same custom tooltip for keyboard focus', async ({ page }) => {
 
   await expect(employees).toBeFocused()
   await expect(employees.getByRole('tooltip')).toBeVisible()
+  await expect(employees.getByRole('tooltip')).toHaveCSS('opacity', '1')
 })

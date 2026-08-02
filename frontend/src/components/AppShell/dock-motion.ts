@@ -32,7 +32,17 @@ export const COMPACT_DOCK_METRICS: DockMetrics = {
   maxSpread: 38,
 }
 
+export const ULTRA_COMPACT_DOCK_METRICS: DockMetrics = {
+  baseSize: 32,
+  maxSize: 64,
+  itemSlot: 38,
+  influenceRadius: 114,
+  outwardBoost: 12,
+  maxSpread: 28,
+}
+
 export function getDockMetrics(viewportHeight: number): DockMetrics {
+  if (viewportHeight < 520) return ULTRA_COMPACT_DOCK_METRICS
   return viewportHeight < 720 ? COMPACT_DOCK_METRICS : REGULAR_DOCK_METRICS
 }
 

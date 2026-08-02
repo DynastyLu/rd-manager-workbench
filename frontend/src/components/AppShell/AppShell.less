@@ -128,7 +128,6 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    will-change: height, transform;
   }
 
   &__item {
@@ -182,8 +181,7 @@
     cursor: pointer;
     transition:
       filter 180ms var(--ease-out),
-      box-shadow 180ms var(--ease-out),
-      transform 180ms var(--ease-out);
+      box-shadow 180ms var(--ease-out);
     will-change: width, height, transform;
   }
 
@@ -459,7 +457,7 @@
     }
 
     &__label {
-      left: calc(100% + 8px);
+      left: calc(100% + 54px);
     }
   }
 
@@ -507,7 +505,7 @@
     }
 
     &__label {
-      left: calc(100% + 8px);
+      left: calc(100% + 42px);
     }
 
     &__dot {
@@ -517,10 +515,36 @@
 }
 
 @media (max-height: 519px) {
-  .workspace-dock__scroll {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+  .workspace-dock {
+    &__scroll {
+      padding: 4px 0;
+      overflow: visible;
+    }
+
+    &__brand {
+      min-height: 28px;
+      padding-bottom: 2px;
+    }
+
+    &__brand-mark {
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
+      font-size: 9px;
+    }
+
+    &__items {
+      gap: 2px;
+      padding: 0;
+    }
+
+    &__group {
+      gap: 1px;
+    }
+
+    &__label {
+      left: calc(100% + 36px);
+    }
   }
 }
 

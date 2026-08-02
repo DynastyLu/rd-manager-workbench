@@ -1,5 +1,5 @@
 import { useMotionValue } from 'framer-motion'
-import { Fragment } from 'react'
+import { Fragment, type PointerEvent } from 'react'
 import { useLocation } from 'react-router-dom'
 import { ROUTES } from '@/constants/routes'
 import { useAuthStore } from '@/modules/auth/store'
@@ -37,24 +37,30 @@ function isActivePath(item: NavigationItem, pathname: string): boolean {
   return false
 }
 
-type DockGroupKey = 'core' | 'content' | 'tools'
+type DockGroupKey = 'core' | 'content' | 'tools' | 'other'
 
 interface DockGroup {
   key: DockGroupKey
   items: NavigationItem[]
 }
 
-const DOCK_GROUP_ITEMS: Record<DockGroupKey, ReadonlySet<string>> = {
+const DOCK_GROUP_ITEMS: Record<Exclude<DockGroupKey, 'other'>, ReadonlySet<string>> = {
   core: new Set(['home', 'my-work', 'projects', 'employees']),
   content: new Set(['docs', 'base', 'calendar']),
   tools: new Set(['search', 'admin']),
 }
 
 function groupNavigationItems(items: NavigationItem[]): DockGroup[] {
-  return (Object.keys(DOCK_GROUP_ITEMS) as DockGroupKey[]).map((key) => ({
+  const groupedKeys = new Set(Object.values(DOCK_GROUP_ITEMS).flatMap((keys) => [...keys]))
+  const groups = (Object.keys(DOCK_GROUP_ITEMS) as Exclude<DockGroupKey, 'other'>[]).map((key) => ({
     key,
     items: items.filter((item) => DOCK_GROUP_ITEMS[key].has(item.key)),
   }))
+  const ungroupedItems = items.filter((item) => !groupedKeys.has(item.key))
+
+  return ungroupedItems.length > 0
+    ? [...groups, { key: 'other', items: ungroupedItems }]
+    : groups
 }
 
 export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
@@ -67,12 +73,25 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
   const groups = groupNavigationItems(visibleItems)
 
   const resetPointer = () => mouseY.set(Number.POSITIVE_INFINITY)
+  const updatePointer = (event: PointerEvent<HTMLElement>) => {
+    const isInsideStableSlot = [...event.currentTarget.querySelectorAll('.workspace-dock__slot')].some(
+      (slot) => {
+        const rect = slot.getBoundingClientRect()
+        return event.clientY >= rect.top && event.clientY <= rect.bottom
+      },
+    )
+    if (isInsideStableSlot) {
+      mouseY.set(event.clientY)
+      return
+    }
+    resetPointer()
+  }
 
   return (
     <nav
       className="workspace-dock"
       aria-label="主导航"
-      onPointerMove={(event) => mouseY.set(event.clientY)}
+      onPointerMove={updatePointer}
       onPointerLeave={resetPointer}
       onPointerCancel={resetPointer}
     >
@@ -83,9 +102,11 @@ export function WorkspaceNavigation({ items }: WorkspaceNavigationProps) {
           </span>
         </div>
         <div className="workspace-dock__items">
-          {groups.map((group, index) => (
+          {groups.map((group) => (
             <Fragment key={group.key}>
-              {index === 2 && <span className="workspace-dock__separator" aria-hidden="true" />}
+              {group.key === 'tools' && (
+                <span className="workspace-dock__separator" aria-hidden="true" />
+              )}
               <div className="workspace-dock__group" data-dock-group={group.key}>
                 {group.items.map((item) => (
                   <DockItem

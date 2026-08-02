@@ -171,6 +171,30 @@ describe('WorkspaceNavigation', () => {
     expect(styles).not.toMatch(/hover\s*\+\s*\.workspace-dock__item/)
     expect(styles).toContain('@media (max-height: 719px)')
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(styles).not.toContain(
+      'box-shadow 180ms var(--ease-out),\n      transform 180ms var(--ease-out)',
+    )
+    expect(styles).not.toContain('will-change: height, transform')
     expect(source).not.toMatch(/title=\{item\.title\}/)
+  })
+
+  it('keeps newly added navigation items visible before they are assigned to a group', () => {
+    const experimentalItem = {
+      key: 'experimental',
+      title: '实验应用',
+      icon: 'search' as const,
+      path: '/experimental',
+    }
+
+    render(
+      <MemoryRouter>
+        <WorkspaceNavigation items={[...primaryNavigation, experimentalItem]} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('link', { name: '实验应用' })).toHaveAttribute(
+      'href',
+      '/experimental',
+    )
   })
 })

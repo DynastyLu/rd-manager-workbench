@@ -35,6 +35,14 @@ describe('dock motion model', () => {
   })
 
   it('uses compact dimensions for short viewports', () => {
+    expect(getDockMetrics(500)).toMatchObject({
+      baseSize: 32,
+      maxSize: 64,
+      itemSlot: 38,
+      influenceRadius: 114,
+      outwardBoost: 12,
+      maxSpread: 28,
+    })
     expect(getDockMetrics(600)).toMatchObject({
       baseSize: 40,
       maxSize: 78,
