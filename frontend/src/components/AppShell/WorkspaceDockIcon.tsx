@@ -5,149 +5,189 @@ interface WorkspaceDockIconProps {
   icon: NavigationIcon
 }
 
-interface DockIconPalette {
-  start: string
-  end: string
-  glow: string
-}
-
-const palettes: Record<NavigationIcon, DockIconPalette> = {
-  home: { start: '#66A6FF', end: '#3157D8', glow: '#B8D7FF' },
-  tasks: { start: '#9B82FF', end: '#5A3FC7', glow: '#D8CDFF' },
-  projects: { start: '#3ED6B2', end: '#07866F', glow: '#B6F4E5' },
-  employees: { start: '#FFB45E', end: '#E46B2D', glow: '#FFE0B7' },
-  docs: { start: '#55B7FF', end: '#2860D8', glow: '#C3E4FF' },
-  base: { start: '#C678FF', end: '#7041C9', glow: '#E8C8FF' },
-  calendar: { start: '#FF7588', end: '#D63B58', glow: '#FFC9D1' },
-  search: { start: '#63D2FF', end: '#2879D7', glow: '#CBEEFF' },
-  settings: { start: '#98A4B7', end: '#535D70', glow: '#DDE3EC' },
-}
-
-function renderGlyph(icon: NavigationIcon): ReactNode {
+function renderArtwork(icon: NavigationIcon, id: string): ReactNode {
   switch (icon) {
     case 'home':
       return (
         <>
-          <path d="M17 29.5 32 17l15 12.5" />
-          <path d="M21 27.5V47h22V27.5M28 47V35h8v12" />
+          <defs>
+            <linearGradient id={`${id}-surface`} x1="9" y1="5" x2="57" y2="60">
+              <stop stopColor="#65A8FF" />
+              <stop offset="1" stopColor="#2854D9" />
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${id}-surface)`} />
+          <path d="M12 27.5 32 11l20 16.5v24A4.5 4.5 0 0 1 47.5 56h-31a4.5 4.5 0 0 1-4.5-4.5z" fill="#fff" />
+          <rect x="18" y="31" width="12" height="9" rx="3" fill="#56C8FF" />
+          <rect x="34" y="31" width="12" height="9" rx="3" fill="#FF7798" />
+          <rect x="24" y="44" width="16" height="12" rx="4" fill="#DDE8FF" />
         </>
       )
     case 'tasks':
       return (
         <>
-          <path d="m17 20 3 3 5-6M17 32l3 3 5-6M17 44l3 3 5-6" />
-          <path d="M30 21h18M30 33h18M30 45h13" />
+          <defs>
+            <linearGradient id={`${id}-paper`} x1="11" y1="3" x2="54" y2="61">
+              <stop stopColor="#FEFEFF" />
+              <stop offset="1" stopColor="#DDE6FA" />
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${id}-paper)`} />
+          <rect x="14" y="12" width="36" height="43" rx="8" fill="#4D6FEA" />
+          <rect x="21" y="8" width="22" height="10" rx="5" fill="#2F46A9" />
+          <circle cx="22" cy="28" r="5" fill="#57D6A1" />
+          <path d="m19.5 28 2 2 3.5-4" fill="none" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+          <circle cx="22" cy="42" r="5" fill="#FFB14D" />
+          <path d="m19.5 42 2 2 3.5-4" fill="none" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+          <path d="M31 27h12M31 31h8M31 41h12M31 45h7" stroke="#fff" strokeLinecap="round" strokeWidth="2.6" />
         </>
       )
     case 'projects':
       return (
         <>
-          <path d="M14.5 23h14l4.5 5h16.5v19h-35z" />
-          <path d="M14.5 28H33M24 36h16" />
+          <defs>
+            <linearGradient id={`${id}-sky`} x1="8" y1="3" x2="55" y2="62">
+              <stop stopColor="#DFF6FF" />
+              <stop offset="1" stopColor="#6FC6FF" />
+            </linearGradient>
+            <linearGradient id={`${id}-folder`} x1="13" y1="23" x2="52" y2="55">
+              <stop stopColor="#3C9CFF" />
+              <stop offset="1" stopColor="#1762DF" />
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${id}-sky)`} />
+          <path d="M10 20a5 5 0 0 1 5-5h13l5 6h16a5 5 0 0 1 5 5v23a6 6 0 0 1-6 6H16a6 6 0 0 1-6-6z" fill="#FFCF4F" />
+          <path d="M10 29h44v20a6 6 0 0 1-6 6H16a6 6 0 0 1-6-6z" fill={`url(#${id}-folder)`} />
+          <path d="M16 35h32" stroke="#86C7FF" strokeLinecap="round" strokeWidth="3" />
+          <rect x="23" y="40" width="18" height="9" rx="4.5" fill="#fff" opacity=".92" />
         </>
       )
     case 'employees':
       return (
         <>
-          <circle cx="26" cy="26" r="7" />
-          <circle cx="42" cy="29" r="5" />
-          <path d="M14 48c1.8-9.5 21.8-9.5 23.5 0M37 45.5c1.4-6.4 12.2-6.4 13.5 0" />
+          <defs>
+            <linearGradient id={`${id}-people`} x1="8" y1="5" x2="56" y2="60">
+              <stop stopColor="#43E29B" />
+              <stop offset="1" stopColor="#0A9A74" />
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${id}-people)`} />
+          <circle cx="25" cy="25" r="9" fill="#fff" />
+          <circle cx="43" cy="28" r="7" fill="#D9FFF0" />
+          <path d="M10 51c1.7-12 27.8-12 30 0v5H10z" fill="#fff" />
+          <path d="M35 51c1.2-8.3 17.5-8.3 19 0v5H35z" fill="#D9FFF0" />
+          <circle cx="47" cy="15" r="7" fill="#4F73F5" />
+          <path d="M43.5 15h7M47 11.5v7" stroke="#fff" strokeLinecap="round" strokeWidth="2" />
         </>
       )
     case 'docs':
       return (
         <>
-          <path d="M14.5 18.5c8-2.8 13.3-.2 17.5 4.3v26c-4.2-4.2-9.5-6.5-17.5-3.7z" />
-          <path d="M49.5 18.5c-8-2.8-13.3-.2-17.5 4.3v26c4.2-4.2 9.5-6.5 17.5-3.7z" />
-          <path d="M20 27h7M37 27h7M20 33h7M37 33h7" />
+          <defs>
+            <linearGradient id={`${id}-book`} x1="7" y1="3" x2="57" y2="61">
+              <stop stopColor="#6CCBFF" />
+              <stop offset="1" stopColor="#315AE3" />
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${id}-book)`} />
+          <path d="M10 16c9-3 16-.7 22 5.5V54c-6-5.2-13-7-22-4z" fill="#fff" />
+          <path d="M54 16c-9-3-16-.7-22 5.5V54c6-5.2 13-7 22-4z" fill="#EAF3FF" />
+          <path d="M18 24h9M18 30h9M18 36h7M37 24h9M37 30h9M37 36h7" stroke="#6F8CD8" strokeLinecap="round" strokeWidth="2.2" />
+          <path d="M43 14v12l-4-3-4 3V17" fill="#FFCA47" />
         </>
       )
     case 'base':
       return (
         <>
-          <rect x="14.5" y="14.5" width="15" height="15" rx="3.5" />
-          <rect x="34.5" y="14.5" width="15" height="15" rx="3.5" />
-          <rect x="14.5" y="34.5" width="15" height="15" rx="3.5" />
-          <rect x="34.5" y="34.5" width="15" height="15" rx="3.5" />
-          <path d="M22 19v6M42 19v6M19 42h6M39 42h6" />
+          <defs>
+            <linearGradient id={`${id}-grid`} x1="8" y1="4" x2="57" y2="61">
+              <stop stopColor="#5DE2D5" />
+              <stop offset="1" stopColor="#0C8EAD" />
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${id}-grid)`} />
+          <rect x="11" y="12" width="42" height="40" rx="8" fill="#fff" opacity=".96" />
+          <path d="M11 23h42M24 23v29M39 23v29M11 37h42" stroke="#B9DAE6" strokeWidth="2" />
+          <rect x="14" y="15" width="36" height="6" rx="3" fill="#246CD6" />
+          <rect x="27" y="26" width="9" height="8" rx="2" fill="#69DCAA" />
+          <rect x="42" y="40" width="8" height="8" rx="2" fill="#FF9A75" />
         </>
       )
     case 'calendar':
       return (
         <>
-          <rect x="14.5" y="18" width="35" height="31.5" rx="5" />
-          <path d="M14.5 28h35M23 14.5v8M41 14.5v8" />
-          <circle cx="25" cy="37" r="1.5" fill="currentColor" stroke="none" />
-          <circle cx="33" cy="37" r="1.5" fill="currentColor" stroke="none" />
-          <circle cx="41" cy="37" r="1.5" fill="currentColor" stroke="none" />
-          <circle cx="25" cy="44" r="1.5" fill="currentColor" stroke="none" />
-          <circle cx="33" cy="44" r="1.5" fill="currentColor" stroke="none" />
+          <defs>
+            <linearGradient id={`${id}-calendar`} x1="9" y1="2" x2="54" y2="62">
+              <stop stopColor="#FFF" />
+              <stop offset="1" stopColor="#E7EAF1" />
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${id}-calendar)`} />
+          <path d="M2 18A16 16 0 0 1 18 2h28a16 16 0 0 1 16 16v8H2z" fill="#FF4D5E" />
+          <path d="M17 15V9M47 15V9" stroke="#fff" strokeLinecap="round" strokeWidth="3" />
+          <path
+            d="M22 35.5c.4-6.4 4.3-10 10.2-10 5.8 0 9.8 3.2 9.8 8.1 0 4-2.2 6.6-7.6 10.1l-5.1 3.4h13.2"
+            fill="none"
+            stroke="#263248"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="5"
+          />
         </>
       )
     case 'search':
       return (
         <>
-          <circle cx="28.5" cy="28.5" r="13" />
-          <path d="m38.5 38.5 11 11" />
-          <path d="M22 25c2-3.8 6.5-5.4 10.5-3.6" opacity=".72" />
+          <defs>
+            <radialGradient id={`${id}-search`} cx="30%" cy="20%" r="90%">
+              <stop stopColor="#FFF" />
+              <stop offset="1" stopColor="#DDE5F3" />
+            </radialGradient>
+            <linearGradient id={`${id}-lens`} x1="15" y1="13" x2="44" y2="46">
+              <stop stopColor="#65D6FF" />
+              <stop offset="1" stopColor="#3971EF" />
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${id}-search)`} />
+          <circle cx="28" cy="28" r="15" fill={`url(#${id}-lens)`} />
+          <circle cx="28" cy="28" r="9" fill="#EAF8FF" opacity=".9" />
+          <path d="m39 39 13 13" stroke="#2455C7" strokeLinecap="round" strokeWidth="7" />
+          <circle cx="22" cy="21" r="3.5" fill="#fff" opacity=".75" />
         </>
       )
     case 'settings':
       return (
         <>
-          <circle cx="32" cy="32" r="8" />
-          <path d="M32 14v6M32 44v6M14 32h6M44 32h6M19.3 19.3l4.3 4.3M40.4 40.4l4.3 4.3M44.7 19.3l-4.3 4.3M23.6 40.4l-4.3 4.3" />
+          <defs>
+            <linearGradient id={`${id}-metal`} x1="7" y1="3" x2="58" y2="62">
+              <stop stopColor="#F9FAFC" />
+              <stop offset=".48" stopColor="#AEB8C7" />
+              <stop offset="1" stopColor="#6D7788" />
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${id}-metal)`} />
+          <path d="M35.8 10.5 38 17a16 16 0 0 1 4.2 2.4l6.6-1.3 4.7 8.2-4.4 5a17 17 0 0 1 0 4.8l4.4 5-4.7 8.2-6.6-1.3a16 16 0 0 1-4.2 2.4L35.8 57h-9.6L24 50.5a16 16 0 0 1-4.2-2.4l-6.6 1.3-4.7-8.2 4.4-5a17 17 0 0 1 0-4.8l-4.4-5 4.7-8.2 6.6 1.3A16 16 0 0 1 24 17l2.2-6.5z" fill="#4D5666" />
+          <circle cx="31" cy="34" r="11" fill="#E9EDF4" />
+          <circle cx="31" cy="34" r="6" fill="#4B8EFF" />
+          <circle cx="29" cy="31" r="2" fill="#BDE4FF" />
         </>
       )
   }
 }
 
 export function WorkspaceDockIcon({ icon }: WorkspaceDockIconProps) {
-  const uniqueId = useId().replace(/:/g, '')
-  const gradientId = `dock-gradient-${icon}-${uniqueId}`
-  const highlightId = `dock-highlight-${icon}-${uniqueId}`
-  const palette = palettes[icon]
+  const uniqueId = `dock-${icon}-${useId().replace(/:/g, '')}`
 
   return (
     <svg
       className="workspace-dock-icon"
       data-dock-icon={icon}
+      data-dock-artwork={icon}
       viewBox="0 0 64 64"
       aria-hidden="true"
       focusable="false"
     >
-      <defs>
-        <linearGradient id={gradientId} x1="9" y1="5" x2="55" y2="59">
-          <stop stopColor={palette.start} />
-          <stop offset="1" stopColor={palette.end} />
-        </linearGradient>
-        <linearGradient id={highlightId} x1="32" y1="4" x2="32" y2="36">
-          <stop stopColor="#fff" stopOpacity=".4" />
-          <stop offset="1" stopColor={palette.glow} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="2" width="60" height="60" rx="16" fill={`url(#${gradientId})`} />
-      <rect x="3" y="3" width="58" height="31" rx="15" fill={`url(#${highlightId})`} />
-      <rect
-        x="2.75"
-        y="2.75"
-        width="58.5"
-        height="58.5"
-        rx="15.25"
-        fill="none"
-        stroke="#fff"
-        strokeOpacity=".32"
-        strokeWidth="1.5"
-      />
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="3.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        {renderGlyph(icon)}
-      </g>
+      {renderArtwork(icon, uniqueId)}
     </svg>
   )
 }

@@ -69,8 +69,13 @@ describe('WorkspaceNavigation', () => {
     const iconNames = [...container.querySelectorAll('[data-dock-icon]')].map((node) =>
       node.getAttribute('data-dock-icon'),
     )
+    const artworkNames = [...container.querySelectorAll('[data-dock-artwork]')].map((node) =>
+      node.getAttribute('data-dock-artwork'),
+    )
     expect(iconNames).toHaveLength(9)
     expect(new Set(iconNames).size).toBe(9)
+    expect(artworkNames).toEqual(iconNames)
+    expect(new Set(artworkNames).size).toBe(9)
   })
 
   it('renders the employee app immediately after projects', () => {
