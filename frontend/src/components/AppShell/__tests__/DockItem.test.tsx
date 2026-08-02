@@ -48,8 +48,13 @@ describe('DockItem', () => {
   it('keeps a stable pointer hit area while the visual tile magnifies', () => {
     const { container } = renderItem()
 
-    expect(container.querySelector('.workspace-dock__slot')).toHaveStyle({ height: '56px' })
-    expect(container.querySelector('.workspace-dock__tile')).toHaveStyle({
+    const slot = container.querySelector('.workspace-dock__slot')
+    const visual = screen.getByTestId('dock-visual-projects')
+
+    expect(slot).toHaveStyle({ height: '56px' })
+    expect(slot?.getAttribute('style') ?? '').not.toContain('transform')
+    expect(visual).toHaveAttribute('data-motion-axis', 'xy')
+    expect(visual).toHaveStyle({
       width: '46px',
       height: '46px',
     })
