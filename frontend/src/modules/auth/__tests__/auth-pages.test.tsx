@@ -1,13 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import {
-  MemoryRouter,
-  Route,
-  Routes,
-  useLocation,
-  type InitialEntry,
-} from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, type InitialEntry } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/lib/http'
@@ -16,6 +10,7 @@ import type { CurrentUser, LoginResponse } from '@/modules/auth/types'
 import FirstPasswordChangePage from '@/modules/auth/pages/FirstPasswordChangePage'
 import ForbiddenPage from '@/modules/auth/pages/ForbiddenPage'
 import LoginPage from '@/modules/auth/pages/LoginPage'
+import { LOGIN_GALAXY_PRESET } from '@/modules/auth/pages/loginGalaxyPreset'
 import PersonalSecurityPage from '@/modules/auth/pages/PersonalSecurityPage'
 
 const authApi = vi.hoisted(() => ({
@@ -116,6 +111,51 @@ describe('authentication pages', () => {
     expect(authApi.login).not.toHaveBeenCalled()
   })
 
+  it('presents the login as a branded split workspace with a decorative galaxy', () => {
+    renderAuthPage(<LoginPage />, { initialEntries: ['/login'] })
+
+    expect(screen.getByLabelText('研发工作台能力概览')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '把研发计划变成清晰行动' })).toBeInTheDocument()
+    expect(screen.getByText('项目全周期可视')).toBeInTheDocument()
+    expect(screen.getByText('周计划自动汇总')).toBeInTheDocument()
+    expect(screen.getByText('本地知识安全检索')).toBeInTheDocument()
+    expect(screen.getByTestId('login-galaxy')).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByRole('heading', { name: '登录工作空间' })).toBeInTheDocument()
+  })
+
+  it('uses the interactive React Bits galaxy preset instead of a muted star field', () => {
+    expect(LOGIN_GALAXY_PRESET).toEqual({
+      density: 1.5,
+      glowIntensity: 0.5,
+      hueShift: 240,
+      mouseRepulsion: true,
+      rotationSpeed: 0.1,
+      saturation: 0.8,
+      speed: 1,
+      starSpeed: 0.5,
+      twinkleIntensity: 0.3,
+    })
+  })
+
+  it('uses accessible floating labels for only the login inputs', async () => {
+    const user = userEvent.setup()
+    renderAuthPage(<LoginPage />, { initialEntries: ['/login'] })
+
+    const identifier = screen.getByRole('textbox', { name: '账号或工号' })
+    const password = screen.getByLabelText('密码')
+    const identifierField = identifier.closest('.aurora-floating-field')
+    const passwordField = password.closest('.aurora-floating-field')
+
+    expect(identifierField).toContainElement(screen.getByText('账号或工号'))
+    expect(passwordField).toContainElement(screen.getByText('密码'))
+    expect(identifier).toHaveAttribute('placeholder', '请输入账号或员工工号')
+    expect(password).toHaveAttribute('placeholder', '请输入密码')
+
+    await user.click(identifier)
+    expect(identifier).toHaveFocus()
+    expect(screen.getByRole('button', { name: '登录' })).not.toHaveClass('aurora-floating-field')
+  })
+
   it('returns to the original protected URL after a successful login', async () => {
     const user = userEvent.setup()
     authApi.login.mockResolvedValue(loginResponse)
@@ -127,12 +167,7 @@ describe('authentication pages', () => {
           state: { from: '/spaces/projects/project-1/tasks?owner=me' },
         },
       ],
-      extraRoutes: (
-        <Route
-          path="/spaces/projects/project-1/tasks"
-          element={<LocationProbe />}
-        />
-      ),
+      extraRoutes: <Route path="/spaces/projects/project-1/tasks" element={<LocationProbe />} />,
     })
 
     await user.type(screen.getByRole('textbox', { name: '账号或工号' }), 'RD-001')
@@ -253,9 +288,7 @@ describe('authentication pages', () => {
     expect(screen.getByText('192.168.1.8')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '退出全部设备' })).toBeInTheDocument()
 
-    await user.click(
-      screen.getByRole('button', { name: '退出设备：Windows 11 · Edge' })
-    )
+    await user.click(screen.getByRole('button', { name: '退出设备：Windows 11 · Edge' }))
     await waitFor(() => expect(authApi.revokeSession).toHaveBeenCalledWith('session-2'))
   })
 })
