@@ -23,36 +23,8 @@
     position: relative;
     min-width: 0;
     overflow: hidden;
-    background:
-      radial-gradient(circle at 72% 18%, rgba(43, 111, 255, 0.13), transparent 38%),
-      linear-gradient(90deg, rgba(3, 11, 23, 0.34), rgba(3, 11, 23, 0.08));
+    background: transparent;
     isolation: isolate;
-  }
-
-  &__story::after {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    background:
-      linear-gradient(90deg, rgba(4, 13, 26, 0.18), transparent 44%),
-      linear-gradient(180deg, rgba(2, 9, 20, 0.06), rgba(2, 9, 20, 0.55));
-    content: '';
-    pointer-events: none;
-  }
-
-  &__story-glow {
-    position: absolute;
-    z-index: 1;
-    right: -16%;
-    bottom: -20%;
-    width: min(56vw, 780px);
-    aspect-ratio: 1;
-    border: 1px solid rgba(126, 179, 255, 0.16);
-    border-radius: 50%;
-    box-shadow:
-      0 0 0 72px rgba(80, 143, 255, 0.035),
-      0 0 0 144px rgba(80, 143, 255, 0.025);
-    pointer-events: none;
   }
 
   &__story-content {
@@ -194,12 +166,12 @@
     position: relative;
     width: min(100%, 440px);
     padding: clamp(32px, 4vw, 48px);
-    border: 1px solid rgba(255, 255, 255, 0.48);
+    border: 1px solid rgba(255, 255, 255, 0.24);
     border-radius: 24px;
-    background: rgba(255, 255, 255, 0.76);
+    background: rgba(255, 255, 255, 0.42);
     box-shadow:
       0 30px 90px rgba(2, 9, 20, 0.3),
-      inset 0 1px 0 rgba(255, 255, 255, 0.62);
+      inset 0 1px 0 rgba(255, 255, 255, 0.28);
     backdrop-filter: blur(24px) saturate(135%);
     pointer-events: auto;
     -webkit-backdrop-filter: blur(24px) saturate(135%);

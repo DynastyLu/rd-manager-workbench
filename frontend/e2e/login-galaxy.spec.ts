@@ -17,6 +17,24 @@ test('keeps the React Bits galaxy canvas interactive beneath the login copy', as
     'none',
   )
 
+  const decorativeLayers = await page.evaluate(() => {
+    const story = document.querySelector('.aurora-login-page__story')
+    const storyStyle = story ? window.getComputedStyle(story) : null
+    const afterStyle = story ? window.getComputedStyle(story, '::after') : null
+
+    return {
+      storyBackgroundImage: storyStyle?.backgroundImage,
+      storyAfterContent: afterStyle?.content,
+      glowCount: document.querySelectorAll('.aurora-login-page__story-glow').length,
+    }
+  })
+
+  expect(decorativeLayers).toEqual({
+    storyBackgroundImage: 'none',
+    storyAfterContent: 'none',
+    glowCount: 0,
+  })
+
   const access = page.locator('.aurora-login-page__access')
   await expect(access).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
 
@@ -34,7 +52,7 @@ test('keeps the React Bits galaxy canvas interactive beneath the login copy', as
   })
 
   expect(cardMaterial.alpha).toBeGreaterThan(0)
-  expect(cardMaterial.alpha).toBeLessThan(0.9)
+  expect(cardMaterial.alpha).toBeLessThanOrEqual(0.45)
   expect(cardMaterial.backdropFilter).not.toBe('none')
 })
 

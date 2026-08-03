@@ -182,7 +182,6 @@ export default function LoginPage() {
       />
       <main className="aurora-login-page__workspace">
         <section className="aurora-login-page__story" aria-label="研发工作台能力概览">
-          <div className="aurora-login-page__story-glow" aria-hidden="true" />
           <div className="aurora-login-page__story-content">
             <div className="aurora-login-page__brand aurora-login-page__brand--inverse">
               <span className="aurora-login-page__logo" aria-hidden="true">
