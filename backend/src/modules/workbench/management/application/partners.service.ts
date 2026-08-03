@@ -81,7 +81,7 @@ export class PartnersService {
               }
             : {}),
         },
-        this.dataScope.partners(principal),
+        this.dataScope.partners(principal, 'partner.read'),
       ],
     };
     const [data, total] = await this.prisma.$transaction([
@@ -134,12 +134,12 @@ export class PartnersService {
   async get(id: string) {
     const principal = this.requestContext.requirePrincipal();
     const entity = await this.prisma.partner.findFirst({
-      where: { AND: [{ id, archivedAt: null }, this.dataScope.partners(principal)] },
+      where: { AND: [{ id, archivedAt: null }, this.dataScope.partners(principal, 'partner.read')] },
       include: {
         contacts: { where: { archivedAt: null }, orderBy: { updatedAt: 'desc' as const } },
         agreements: { where: { archivedAt: null }, orderBy: { updatedAt: 'desc' as const } },
         communications: {
-          where: { AND: [{ archivedAt: null }, this.dataScope.communications(principal)] },
+          where: { AND: [{ archivedAt: null }, this.dataScope.communications(principal, 'partner.read')] },
           orderBy: { occurredAt: 'desc' as const },
           include: { contact: true, project: true, task: true },
         },
@@ -373,7 +373,7 @@ export class PartnersService {
             ? { nextFollowUpAt: { lte: new Date(query.nextFollowUpBefore) } }
             : {}),
         },
-        this.dataScope.communications(principal),
+        this.dataScope.communications(principal, 'partner.read'),
       ],
     };
     const [data, total] = await this.prisma.$transaction([

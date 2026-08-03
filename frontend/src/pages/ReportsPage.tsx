@@ -131,33 +131,38 @@ export default function ReportsPage() {
   }
 
   return <div className="reports-page">
-    <header className="reports-page__header">
-      <div><p>INSIGHTS</p><h1>统计报表</h1><span>项目组合、任务、风险、资源与情报均由本地真实数据聚合。</span></div>
-      <div><Button icon={<IconRefresh />} onClick={refresh}>刷新</Button><Button onClick={saveSnapshot}>保存快照</Button><Button icon={<IconDownload />} aria-label="导出 CSV" onClick={() => { void downloadAuthenticated(reportExportUrl(currentKind, 'CSV', query)) }}>导出 CSV</Button><Button icon={<IconDownload />} aria-label="导出 Excel" onClick={() => { void downloadAuthenticated(reportExportUrl(currentKind, 'XLSX', query)) }}>导出 Excel</Button></div>
-    </header>
+    <div className="workspace-module-toolbar">
+      <div className="workspace-module-toolbar__actions"><Button icon={<IconRefresh />} onClick={refresh}>刷新</Button><Button onClick={saveSnapshot}>保存快照</Button><Button icon={<IconDownload />} aria-label="导出 CSV" onClick={() => { void downloadAuthenticated(reportExportUrl(currentKind, 'CSV', query)) }}>导出 CSV</Button><Button icon={<IconDownload />} aria-label="导出 Excel" onClick={() => { void downloadAuthenticated(reportExportUrl(currentKind, 'XLSX', query)) }}>导出 Excel</Button></div>
+    </div>
     <section className="reports-filter" aria-label="报表筛选">
-      <Select
-        aria-label="快捷周期"
-        placeholder="快捷周期"
-        optionList={[
-          { value: 'THIS_WEEK', label: '本周' },
-          { value: 'THIS_MONTH', label: '本月' },
-          { value: 'LAST_12_WEEKS', label: '近 12 周' },
-        ]}
-        onChange={(value) => {
-          const range = presetRange(value as 'THIS_WEEK' | 'THIS_MONTH' | 'LAST_12_WEEKS')
-          setDraft(range); setQuery(range)
-        }}
-      />
-      <DatePicker aria-label="开始日期" type="date" value={draft.from} onChange={(_, text) => setDraft((current) => ({ ...current, from: String(text) }))} /><span>至</span>
-      <DatePicker aria-label="结束日期" type="date" value={draft.to} onChange={(_, text) => setDraft((current) => ({ ...current, to: String(text) }))} />
-      <Select aria-label="聚合周期" value={draft.bucket} optionList={[{ value: 'WEEK', label: '按周' }, { value: 'MONTH', label: '按月' }]} onChange={(value) => setDraft((current) => ({ ...current, bucket: value as ReportsQuery['bucket'] }))} />
-      <Button theme="solid" type="primary" onClick={() => setQuery(draft)}>应用</Button>
-      <Checkbox checked={compare} onChange={(event) => setCompare(Boolean(event.target.checked))}>对比上一周期</Checkbox>
+      <div className="reports-filter__range">
+        <Select
+          className="reports-filter__preset"
+          aria-label="快捷周期"
+          placeholder="快捷周期"
+          optionList={[
+            { value: 'THIS_WEEK', label: '本周' },
+            { value: 'THIS_MONTH', label: '本月' },
+            { value: 'LAST_12_WEEKS', label: '近 12 周' },
+          ]}
+          onChange={(value) => {
+            const range = presetRange(value as 'THIS_WEEK' | 'THIS_MONTH' | 'LAST_12_WEEKS')
+            setDraft(range); setQuery(range)
+          }}
+        />
+        <DatePicker aria-label="开始日期" type="date" value={draft.from} onChange={(_, text) => setDraft((current) => ({ ...current, from: String(text) }))} />
+        <span className="reports-filter__range-separator">至</span>
+        <DatePicker aria-label="结束日期" type="date" value={draft.to} onChange={(_, text) => setDraft((current) => ({ ...current, to: String(text) }))} />
+        <Select className="reports-filter__bucket" aria-label="聚合周期" value={draft.bucket} optionList={[{ value: 'WEEK', label: '按周' }, { value: 'MONTH', label: '按月' }]} onChange={(value) => setDraft((current) => ({ ...current, bucket: value as ReportsQuery['bucket'] }))} />
+        <Button theme="solid" type="primary" onClick={() => setQuery(draft)}>应用</Button>
+        <Checkbox checked={compare} onChange={(event) => setCompare(Boolean(event.target.checked))}>对比上一周期</Checkbox>
+      </div>
       <span className="reports-filter__divider" />
-      <Input aria-label="视图名称" value={viewName} onChange={setViewName} placeholder="视图名称" />
-      <Button onClick={saveView}>保存当前视图</Button>
-      <Select aria-label="已保存视图" placeholder="已保存视图" optionList={savedViews.map((view) => ({ value: view.id, label: view.name }))} onChange={applySavedView} />
+      <div className="reports-filter__views">
+        <Input aria-label="视图名称" value={viewName} onChange={setViewName} placeholder="视图名称" />
+        <Button onClick={saveView}>保存当前视图</Button>
+        <Select aria-label="已保存视图" placeholder="已保存视图" optionList={savedViews.map((view) => ({ value: view.id, label: view.name }))} onChange={applySavedView} />
+      </div>
     </section>
     {reports.some(({ isError }) => isError) ? <Banner type="danger" fullMode={false} title="部分报表读取失败" description="请检查日期范围或本地服务状态后重试。" closeIcon={null} /> : null}
     {reports.some(({ isLoading }) => isLoading) ? <Skeleton.Paragraph rows={6} /> : null}

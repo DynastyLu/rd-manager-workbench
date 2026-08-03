@@ -85,7 +85,7 @@ function parseTable(text: string): { headers: string[]; rows: string[][] } {
 function DocumentPreview({ content }: { content: string }) {
   if (!content || !content.trim()) {
     return (
-      <div style={{ padding: 40, textAlign: 'center', color: '#8f959e' }}>
+      <div className="kb-preview-empty">
         暂无内容。此文件的文本未能提取，可能是图片型 PDF 或加密文件。
       </div>
     );
@@ -108,38 +108,13 @@ function DocumentPreview({ content }: { content: string }) {
             ))}
           </tbody>
         </table>
-        <style>{`
-          .kb-preview-table-wrap {
-            overflow: auto; max-height: calc(100vh - 320px);
-            border: 1px solid #e5e6eb; border-radius: 8px; background: #fff;
-          }
-          .kb-preview-table {
-            width: 100%; border-collapse: collapse; font-size: 13px;
-          }
-          .kb-preview-table th {
-            position: sticky; top: 0; z-index: 1;
-            background: #f5f6f8; color: #4e5969; font-weight: 600;
-            padding: 8px 12px; text-align: left; border-bottom: 2px solid #e5e6eb;
-            white-space: nowrap;
-          }
-          .kb-preview-table td {
-            padding: 6px 12px; border-bottom: 1px solid #f0f1f3;
-            color: #1f2b3d; max-width: 300px; overflow: hidden; text-overflow: ellipsis;
-          }
-          .kb-preview-table tr:hover td { background: #f8f9fd; }
-        `}</style>
       </div>
     );
   }
 
   // Plain text view
   return (
-    <div style={{
-      padding: 24, minHeight: 200, fontFamily: 'system-ui, -apple-system, sans-serif',
-      fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-      background: '#fff', borderRadius: 8, border: '1px solid #e5e6eb',
-      overflow: 'auto', maxHeight: 'calc(100vh - 320px)', color: '#1f2b3d',
-    }}>
+    <div className="kb-preview-text">
       {cleanContent || '暂无内容'}
     </div>
   );
@@ -460,23 +435,13 @@ export default function KnowledgeHomePage() {
 
   if (activeTab === 'folders') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
-        <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #e5e6eb', padding: '0 20px', background: '#fff' }}>
-          <button onClick={() => selectTab('documents')} style={{
-            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
-            color: '#4e5969', fontSize: 14, borderBottom: '2px solid transparent',
-          }}>文档浏览</button>
-          <button onClick={() => selectTab('chat')} style={{
-            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
-            color: '#4e5969', fontSize: 14, borderBottom: '2px solid transparent',
-          }}>AI 问答</button>
-          <button data-active style={{
-            padding: '12px 20px', border: 0, background: 'none', cursor: 'pointer',
-            color: '#1456f0', fontSize: 14, fontWeight: 600,
-            borderBottom: '2px solid #1456f0',
-          }}>本地文件夹</button>
+      <div className="knowledge-tab-page">
+        <div className="knowledge-tab-page__tabs" role="tablist" aria-label="文档与知识库视图">
+          <button role="tab" aria-selected="false" onClick={() => selectTab('documents')}>文档浏览</button>
+          <button role="tab" aria-selected="false" onClick={() => selectTab('chat')}>AI 问答</button>
+          <button role="tab" aria-selected="true">本地文件夹</button>
         </div>
-        <div style={{ flex: 1, overflow: 'auto', padding: '0 20px' }}>
+        <div className="knowledge-tab-page__content">
           <KnowledgeFolderSync />
           <KnowledgeIndexHealth />
         </div>
@@ -486,7 +451,7 @@ export default function KnowledgeHomePage() {
 
   if (activeTab === 'chat') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)' }}>
+      <div className="knowledge-tab-page">
         <div className="knowledge-workspace--chat">
           <KnowledgeAssistantWorkspace
             sessionId={chatSessionId}
@@ -502,10 +467,13 @@ export default function KnowledgeHomePage() {
   return (
     <div className="knowledge-workspace">
       <aside className="knowledge-workspace__directory" aria-label="文档目录">
-        <h1>文档与知识库</h1>
-        <button data-active onClick={() => selectTab('documents')}><IconFile /> 文档浏览</button>
-        <button onClick={() => selectTab('chat')}><IconComment /> AI 问答</button>
-        <button onClick={() => selectTab('folders')}><IconFolder /> 本地文件夹</button>
+        <strong className="knowledge-workspace__directory-title">知识空间</strong>
+        <nav className="knowledge-workspace__module-nav" aria-label="知识库功能">
+          <button data-active onClick={() => selectTab('documents')}><IconFile /> 文档浏览</button>
+          <button onClick={() => selectTab('chat')}><IconComment /> AI 问答</button>
+          <button onClick={() => selectTab('folders')}><IconFolder /> 本地文件夹</button>
+        </nav>
+        <span className="knowledge-workspace__section-label">文档筛选</span>
         <button data-active={directoryView === 'all' && !spaceId} onClick={() => selectDirectory('all')}><IconFile /> 全部文档</button>
         <button data-active={directoryView === 'favorites'} onClick={() => selectDirectory('favorites')}><IconStar /> 收藏</button>
         <button data-active={directoryView === 'trash'} onClick={() => selectDirectory('trash')}><IconDelete /> 回收站</button>

@@ -15,7 +15,10 @@ export async function loginAsDefaultAdmin(page: Page): Promise<void> {
   await page
     .getByPlaceholder('请输入密码', { exact: true })
     .fill(process.env['E2E_ADMIN_PASSWORD'] ?? DEFAULT_E2E_PASSWORD)
-  await page.getByRole('button', { name: '登录', exact: true }).click()
+  // HashRouter plus the post-login bootstrap can keep Playwright's implicit
+  // navigation wait open even after the authenticated shell is ready. The
+  // navigation landmark below is the user-visible readiness signal.
+  await page.getByRole('button', { name: '登录', exact: true }).click({ noWaitAfter: true })
 
   await expect(navigation).toBeVisible()
 }

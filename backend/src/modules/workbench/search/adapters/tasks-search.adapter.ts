@@ -41,7 +41,7 @@ export class TasksSearchAdapter implements SearchAdapter {
             { collaboratorNames: { has: query } },
           ],
         },
-        this.dataScope.tasks(this.principal()),
+        this.dataScope.tasks(this.principal(), 'task.read'),
       ],
     };
     const tasks = await this.prisma.workTask.findMany({

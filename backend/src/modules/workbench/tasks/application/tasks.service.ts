@@ -25,6 +25,7 @@ import { UpdateProgressReportDto } from '../interface/http/dto/update-progress-r
 import { UpdateTaskDto } from '../interface/http/dto/update-task.dto';
 import { UpsertTaskLaterDto } from '../interface/http/dto/upsert-task-later.dto';
 import { UpsertTaskReminderDto } from '../interface/http/dto/upsert-task-reminder.dto';
+import type { PermissionCode } from '../../../../modules/iam/domain/permission-catalog';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
@@ -130,7 +131,7 @@ export class TasksService {
     ];
     const where: Prisma.WorkTaskWhereInput = {
       archivedAt: null,
-      ...this.dataScope.tasks(principal),
+      ...this.dataScope.tasks(principal, 'task.read'),
       ...(query.projectId ? { projectId: query.projectId } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(query.assigneeName ? { assigneeName: query.assigneeName } : {}),
@@ -153,11 +154,11 @@ export class TasksService {
   async getTask(id: string) {
     const principal = this.requestContext.requirePrincipal();
     const task = await this.prisma.workTask.findFirst({
-      where: { id, archivedAt: null, ...this.dataScope.tasks(principal) },
+      where: { id, archivedAt: null, ...this.dataScope.tasks(principal, 'task.read') },
       include: TASK_RESPONSE_INCLUDE,
     });
     if (!task) {
-      await this.assertTaskAccessible(this.prisma, id);
+      await this.assertTaskAccessible(this.prisma, id, 'task.read');
     }
     return this.toTaskResponse(task!);
   }
@@ -167,7 +168,7 @@ export class TasksService {
     const data = await this.prisma.workTask.findMany({
       where: {
         ...this.buildMyWorkWhere(query.view, now),
-        ...this.dataScope.tasks(principal),
+        ...this.dataScope.tasks(principal, 'task.read'),
         ...(query.projectId ? { projectId: query.projectId } : {}),
       },
       orderBy: [{ dueAt: 'asc' }, { updatedAt: 'desc' }, { id: 'desc' }],
@@ -246,11 +247,11 @@ export class TasksService {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireTaskGraphLock(tx);
       const existing = await tx.workTask.findFirst({
-        where: { id, archivedAt: null, ...this.dataScope.tasks(principal) },
+        where: { id, archivedAt: null, ...this.dataScope.tasks(principal, 'task.update') },
         include: { dependencies: { select: { dependsOnTaskId: true } } },
       });
       if (!existing) {
-        await this.assertTaskAccessible(tx, id);
+        await this.assertTaskAccessible(tx, id, 'task.update');
         throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
       }
       const merged = {
@@ -349,10 +350,10 @@ export class TasksService {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireTaskGraphLock(tx);
       const task = await tx.workTask.findFirst({
-        where: { id, archivedAt: null, ...this.dataScope.tasks(principal) },
+        where: { id, archivedAt: null, ...this.dataScope.tasks(principal, 'task.delete') },
       });
       if (!task) {
-        await this.assertTaskAccessible(tx, id);
+        await this.assertTaskAccessible(tx, id, 'task.delete');
         throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
       }
       await this.acquireProjectHealthLocks(tx, [task.projectId]);
@@ -378,7 +379,7 @@ export class TasksService {
   async createMilestone(projectId: string, dto: CreateMilestoneDto) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
-      await this.assertProjectAccessible(tx, projectId);
+      await this.assertProjectAccessible(tx, projectId, 'project.update');
       await this.assertActiveProject(tx, projectId);
       this.assertMilestoneRange(dto.plannedStartAt, dto.plannedEndAt);
       const milestone = await tx.milestone.create({
@@ -415,7 +416,7 @@ export class TasksService {
   async updateMilestone(projectId: string, milestoneId: string, dto: UpdateMilestoneDto) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
-      await this.assertProjectAccessible(tx, projectId);
+      await this.assertProjectAccessible(tx, projectId, 'project.update');
       await this.assertActiveProject(tx, projectId);
       const milestone = await tx.milestone.findFirst({ where: { id: milestoneId, projectId } });
       if (!milestone) throw this.notFound(ErrorCodes.MILESTONE_NOT_FOUND, 'Milestone not found');
@@ -457,7 +458,7 @@ export class TasksService {
   async deleteMilestone(projectId: string, milestoneId: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
-      await this.assertProjectAccessible(tx, projectId);
+      await this.assertProjectAccessible(tx, projectId, 'project.update');
       await this.assertActiveProject(tx, projectId);
       const milestone = await tx.milestone.findFirst({ where: { id: milestoneId, projectId } });
       if (!milestone) throw this.notFound(ErrorCodes.MILESTONE_NOT_FOUND, 'Milestone not found');
@@ -475,7 +476,7 @@ export class TasksService {
     const principal = this.requestContext.requirePrincipal();
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
-      await this.assertProjectAccessible(tx, projectId);
+      await this.assertProjectAccessible(tx, projectId, 'project.update');
       await this.assertActiveProject(tx, projectId);
       const progressSummary = await this.projectProgressService?.getSummary(tx, projectId);
       const report = await tx.progressReport.create({
@@ -509,7 +510,7 @@ export class TasksService {
   ) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
-      await this.assertProjectAccessible(tx, projectId);
+      await this.assertProjectAccessible(tx, projectId, 'project.update');
       await this.assertActiveProject(tx, projectId);
       const report = await tx.progressReport.findFirst({ where: { id: reportId, projectId } });
       if (!report) {
@@ -546,7 +547,7 @@ export class TasksService {
   async deleteProgressReport(projectId: string, reportId: string) {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireProjectHealthLocks(tx, [projectId]);
-      await this.assertProjectAccessible(tx, projectId);
+      await this.assertProjectAccessible(tx, projectId, 'project.update');
       await this.assertActiveProject(tx, projectId);
       const report = await tx.progressReport.findFirst({ where: { id: reportId, projectId } });
       if (!report) {
@@ -689,8 +690,9 @@ export class TasksService {
   }
 
   private async assertActionableTask(taskId: string): Promise<void> {
+    const principal = this.requestContext.requirePrincipal();
     const task = await this.prisma.workTask.findFirst({
-      where: { id: taskId, archivedAt: null },
+      where: { id: taskId, archivedAt: null, ...this.dataScope.tasks(principal, 'task.update') },
       select: { id: true, status: true },
     });
     if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
@@ -703,8 +705,9 @@ export class TasksService {
   }
 
   private async assertTaskExists(taskId: string): Promise<void> {
+    const principal = this.requestContext.requirePrincipal();
     const task = await this.prisma.workTask.findFirst({
-      where: { id: taskId, archivedAt: null },
+      where: { id: taskId, archivedAt: null, ...this.dataScope.tasks(principal, 'task.update') },
       select: { id: true },
     });
     if (!task) throw this.notFound(ErrorCodes.TASK_NOT_FOUND, 'Task not found');
@@ -897,10 +900,13 @@ export class TasksService {
     }
   }
 
-  private async assertTaskAccessible(tx: DatabaseClient, taskId: string) {
+  private async assertTaskAccessible(
+    tx: DatabaseClient,
+    taskId: string,
+    permissionCode: PermissionCode,
+  ) {
     const principal = this.requestContext.requirePrincipal();
-    const scope = this.dataScope.tasks(principal);
-    if (Object.keys(scope).length === 0) return;
+    const scope = this.dataScope.tasks(principal, permissionCode);
     const accessible = await tx.workTask.findFirst({
       where: { id: taskId, archivedAt: null, ...scope },
       select: { id: true },
@@ -921,10 +927,13 @@ export class TasksService {
     }
   }
 
-  private async assertProjectAccessible(tx: DatabaseClient, projectId: string) {
+  private async assertProjectAccessible(
+    tx: DatabaseClient,
+    projectId: string,
+    permissionCode: PermissionCode,
+  ) {
     const principal = this.requestContext.requirePrincipal();
-    const scope = this.dataScope.projects(principal);
-    if (Object.keys(scope).length === 0) return;
+    const scope = this.dataScope.projects(principal, permissionCode);
     const accessible = await tx.project.findFirst({
       where: { id: projectId, archivedAt: null, ...scope },
       select: { id: true },

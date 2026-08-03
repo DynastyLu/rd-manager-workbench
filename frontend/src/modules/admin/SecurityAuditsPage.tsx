@@ -9,7 +9,6 @@ import {
 } from '@douyinfe/semi-ui'
 import { IconSearch } from '@douyinfe/semi-icons'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
-import { tableScrollWidth } from '@/lib/tableScrollWidth'
 import { listSecurityAudits } from './api'
 import type { SecurityAuditEvent } from './types'
 import './AdminPages.less'
@@ -170,7 +169,6 @@ export default function SecurityAuditsPage() {
               }
             : false
         }
-        scroll={{ x: tableScrollWidth(columns) }}
         rowKey="id"
       />
     </section>

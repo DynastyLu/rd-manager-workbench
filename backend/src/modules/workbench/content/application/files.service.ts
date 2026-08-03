@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { HttpStatus, Injectable } from '@nestjs/common';
 import { FileAssetStatus, Prisma } from '@prisma/client';
 import type { AuthenticatedPrincipal } from '../../../iam/domain/principal';
+import type { PermissionCode } from '../../../iam/domain/permission-catalog';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { StoragePort } from '../../../../infrastructure/storage/storage.port';
@@ -44,7 +45,7 @@ export class FilesService {
       status: query.status ?? FileAssetStatus.ACTIVE,
     };
     const scopedWhere: Prisma.FileAssetWhereInput = {
-      AND: [where, this.fileScope(principal)],
+      AND: [where, this.fileScope(principal, 'document.read')],
     };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.fileAsset.findMany({
@@ -99,7 +100,7 @@ export class FilesService {
 
   async addVersion(id: string, file: UploadedContentFile | undefined) {
     const upload = this.requireUpload(file);
-    await this.requireActiveAsset(id);
+    await this.requireActiveAsset(id, 'document.update');
     const versionId = randomUUID();
     const storageKey = this.storageKey(id, versionId);
     const originalName = this.normalizeOriginalName(upload.originalname);
@@ -141,7 +142,7 @@ export class FilesService {
 
   async download(id: string, versionId?: string) {
     const principal = this.requestContext.requirePrincipal();
-    const scope = this.fileScope(principal);
+    const scope = this.fileScope(principal, 'document.read');
     const authorized = await this.prisma.fileAsset.findFirst({
       where: { AND: [{ id, status: FileAssetStatus.ACTIVE }, scope] },
     });
@@ -174,7 +175,7 @@ export class FilesService {
   }
 
   async update(id: string, dto: UpdateFileDto) {
-    const asset = await this.requireActiveAsset(id);
+    const asset = await this.requireActiveAsset(id, 'document.update');
     const references = await this.validateReferences({
       documentId: dto.documentId !== undefined ? dto.documentId : asset.documentId,
       projectId: dto.projectId !== undefined ? dto.projectId : asset.projectId,
@@ -195,6 +196,7 @@ export class FilesService {
   }
 
   async trash(id: string) {
+    await this.requireActiveAsset(id, 'document.delete');
     const result = await this.prisma.fileAsset.updateMany({
       where: { id, status: FileAssetStatus.ACTIVE },
       data: { status: FileAssetStatus.TRASHED, trashedAt: new Date() },
@@ -203,8 +205,14 @@ export class FilesService {
   }
 
   async restore(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     const asset = await this.prisma.fileAsset.findFirst({
-      where: { id, status: FileAssetStatus.TRASHED },
+      where: {
+        AND: [
+          { id, status: FileAssetStatus.TRASHED },
+          this.fileScope(principal, 'document.update'),
+        ],
+      },
     });
     if (!asset) throw this.fileNotFound();
     await this.validateReferences(asset);
@@ -216,11 +224,23 @@ export class FilesService {
   }
 
   async permanentDelete(id: string) {
+    const principal = this.requestContext.requirePrincipal();
     const asset = await this.prisma.fileAsset.findUnique({
       where: { id },
       include: { versions: true },
     });
     if (!asset) throw this.fileNotFound();
+    const authorized = await this.prisma.fileAsset.findFirst({
+      where: { AND: [{ id }, this.fileScope(principal, 'document.delete')] },
+      select: { id: true },
+    });
+    if (!authorized) {
+      throw new AppError({
+        code: ErrorCodes.PERMISSION_DENIED,
+        message: 'You do not have permission to delete this file',
+        statusCode: HttpStatus.FORBIDDEN,
+      });
+    }
 
     // Delete all stored versions from storage backend
     const deletePromises = asset.versions.map((version) =>
@@ -236,12 +256,15 @@ export class FilesService {
     await this.prisma.fileAsset.delete({ where: { id } });
   }
 
-  private fileScope(principal: AuthenticatedPrincipal): Prisma.FileAssetWhereInput {
+  private fileScope(
+    principal: AuthenticatedPrincipal,
+    permissionCode: PermissionCode,
+  ): Prisma.FileAssetWhereInput {
     return {
       OR: [
-        { document: this.dataScope.documents(principal) },
-        { project: this.dataScope.projects(principal) },
-        { meeting: this.dataScope.meetings(principal) },
+        { document: this.dataScope.documents(principal, permissionCode) },
+        { project: this.dataScope.projects(principal, permissionCode) },
+        { meeting: this.dataScope.meetings(principal, permissionCode) },
       ],
     };
   }
@@ -253,9 +276,15 @@ export class FilesService {
     });
   }
 
-  private async requireActiveAsset(id: string) {
+  private async requireActiveAsset(id: string, permissionCode: PermissionCode) {
+    const principal = this.requestContext.requirePrincipal();
     const asset = await this.prisma.fileAsset.findFirst({
-      where: { id, status: FileAssetStatus.ACTIVE },
+      where: {
+        AND: [
+          { id, status: FileAssetStatus.ACTIVE },
+          this.fileScope(principal, permissionCode),
+        ],
+      },
     });
     if (!asset) throw this.fileNotFound();
     return asset;

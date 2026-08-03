@@ -5,6 +5,7 @@ import { RequestContextService } from '../../../../infrastructure/context/reques
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
+import type { PermissionCode } from '../../../../modules/iam/domain/permission-catalog';
 import { ActivityService } from '../../activity/application/activity.service';
 import {
   CreateEmployeeDto,
@@ -30,7 +31,7 @@ export class EmployeesService {
     const principal = this.requestContext.requirePrincipal();
     const page = this.normalizePaginationValue(query.page, 1, MAX_EMPLOYEE_PAGE);
     const pageSize = this.normalizePaginationValue(query.pageSize, 20, MAX_EMPLOYEE_PAGE_SIZE);
-    const scopeWhere = this.dataScope.employees(principal);
+    const scopeWhere = this.dataScope.employees(principal, 'employee.read');
     const searchWhere = query.q
       ? {
           OR: [
@@ -81,7 +82,7 @@ export class EmployeesService {
   async get(id: string) {
     const principal = this.requestContext.requirePrincipal();
     const employee = await this.prisma.resourceProfile.findFirst({
-      where: { id, ...this.dataScope.employees(principal) },
+      where: { id, ...this.dataScope.employees(principal, 'employee.read') },
       include: {
         skills: { orderBy: { name: 'asc' } },
         loadEntries: {
@@ -97,7 +98,7 @@ export class EmployeesService {
   }
 
   async update(id: string, dto: UpdateEmployeeDto) {
-    await this.assertAccessible(id);
+    await this.assertAccessible(id, 'employee.update');
     try {
       return await this.prisma.$transaction(async (transaction) => {
         await this.lockActiveEmployee(transaction, id);
@@ -121,7 +122,7 @@ export class EmployeesService {
   }
 
   async archive(id: string) {
-    await this.assertAccessible(id);
+    await this.assertAccessible(id, 'employee.archive');
     await this.prisma.$transaction(async (transaction) => {
       await this.lockActiveEmployee(transaction, id);
       // Import-owned load entries (linked to an employee work item) are historical import
@@ -150,7 +151,7 @@ export class EmployeesService {
   }
 
   async restore(id: string) {
-    await this.assertAccessible(id);
+    await this.assertAccessible(id, 'employee.archive');
     return this.prisma.$transaction(async (transaction) => {
       const employee = await this.lockEmployee(transaction, id);
       if (employee.archivedAt === null) {
@@ -175,7 +176,7 @@ export class EmployeesService {
   }
 
   async permanentDelete(id: string) {
-    await this.assertAccessible(id);
+    await this.assertAccessible(id, 'employee.delete');
     await this.prisma.$transaction(async (transaction) => {
       const employee = await this.lockEmployee(transaction, id);
       const [workItems, weekPlans, importRows, loadEntries] = await Promise.all([
@@ -211,10 +212,10 @@ export class EmployeesService {
     return Math.min(Math.max(value, 1), maximum);
   }
 
-  private async assertAccessible(id: string) {
+  private async assertAccessible(id: string, permissionCode: PermissionCode) {
     const principal = this.requestContext.requirePrincipal();
     const accessible = await this.prisma.resourceProfile.findFirst({
-      where: { id, ...this.dataScope.employees(principal) },
+      where: { id, ...this.dataScope.employees(principal, permissionCode) },
       select: { id: true },
     });
     if (!accessible) {

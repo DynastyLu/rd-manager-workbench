@@ -101,7 +101,7 @@ export class ActivityService {
     };
     const data = await this.prisma.activityRecord.findMany({
       where: {
-        AND: [baseWhere, this.dataScope.activities(this.principal())],
+        AND: [baseWhere, this.dataScope.activities(this.principal(), 'activity.read')],
       },
       orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,

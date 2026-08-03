@@ -45,7 +45,7 @@ export class BaseSearchAdapter implements SearchAdapter {
             id: { in: matchingIds.map(({ id }) => id) },
             table: { source: 'CUSTOM', archivedAt: null },
           },
-          this.dataScope.baseRecords(this.principal()),
+          this.dataScope.baseRecords(this.principal(), 'base.read'),
         ],
       },
       include: {

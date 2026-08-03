@@ -380,12 +380,8 @@ export default function CalendarPage() {
 
   return (
     <div className="calendar-page">
-      <header className="calendar-page__header">
-        <div>
-          <h1>日历</h1>
-          <p>统一查看任务截止、会议、面试、评审和普通日程。</p>
-        </div>
-        <div className="calendar-page__actions">
+      <div className="workspace-module-toolbar">
+        <div className="calendar-page__actions workspace-module-toolbar__actions">
           <ButtonGroup aria-label="日历工作区">
             <Button
               theme={!isMeetingWorkspace ? 'solid' : 'light'}
@@ -441,7 +437,7 @@ export default function CalendarPage() {
             </>
           ) : null}
         </div>
-      </header>
+      </div>
 
       {!isMeetingWorkspace && entriesQuery.isError ? (
         <Banner

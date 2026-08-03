@@ -1,7 +1,8 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { PrismaClient } from '@prisma/client';
+import { DataScope, PrismaClient } from '@prisma/client';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
+import { PERMISSIONS } from '../../../../src/modules/iam/domain/permission-catalog';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
 import { ResponseInterceptor } from '../../../../src/shared/interceptors/response.interceptor';
 import { authenticatedRequest } from '../../../helpers/authenticated-request';
@@ -24,6 +25,10 @@ describe('Dashboard API', () => {
   const prisma = new PrismaClient();
   let app: INestApplication;
   let authenticated: Awaited<ReturnType<typeof authenticatedRequest>>;
+  let missingProjectRead: Awaited<ReturnType<typeof authenticatedRequest>>;
+  let missingTaskRead: Awaited<ReturnType<typeof authenticatedRequest>>;
+  let employeeA: Awaited<ReturnType<typeof authenticatedRequest>>;
+  let employeeB: Awaited<ReturnType<typeof authenticatedRequest>>;
   let baselineHealthDistribution: { GREEN: number; YELLOW: number; RED: number };
 
   const createProject = (suffix: string, archivedAt: Date | null = null) =>
@@ -47,19 +52,47 @@ describe('Dashboard API', () => {
     app.useGlobalFilters(app.get(HttpExceptionFilter));
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
-    authenticated = await authenticatedRequest(app, prisma, `${prefix}-ROLE`);
+    authenticated = await authenticatedRequest(app, prisma, `${prefix}-ROLE`, [
+      { code: PERMISSIONS.PROJECT_READ, dataScope: DataScope.ALL },
+      { code: PERMISSIONS.TASK_READ, dataScope: DataScope.ALL },
+    ]);
+    missingProjectRead = await authenticatedRequest(
+      app,
+      prisma,
+      `${prefix}-MISSING-PROJECT-READ`,
+      [{ code: PERMISSIONS.TASK_READ, dataScope: DataScope.ALL }],
+    );
+    missingTaskRead = await authenticatedRequest(app, prisma, `${prefix}-MISSING-TASK-READ`, [
+      { code: PERMISSIONS.PROJECT_READ, dataScope: DataScope.ALL },
+    ]);
+    employeeA = await authenticatedRequest(app, prisma, `${prefix}-EMPLOYEE-A`, [
+      { code: PERMISSIONS.PROJECT_READ, dataScope: DataScope.SELF },
+      { code: PERMISSIONS.TASK_READ, dataScope: DataScope.SELF },
+    ]);
+    employeeB = await authenticatedRequest(app, prisma, `${prefix}-EMPLOYEE-B`, [
+      { code: PERMISSIONS.PROJECT_READ, dataScope: DataScope.INVOLVED },
+      { code: PERMISSIONS.TASK_READ, dataScope: DataScope.INVOLVED },
+    ]);
   });
 
   afterAll(async () => {
     await prisma.workTask.deleteMany({ where: { title: { startsWith: prefix } } });
     await prisma.project.deleteMany({ where: { code: { startsWith: prefix } } });
-    if (authenticated) {
-      await prisma.loginAudit.deleteMany({ where: { userId: authenticated.user.id } });
-      await prisma.authSession.deleteMany({ where: { userId: authenticated.user.id } });
-      await prisma.userRole.deleteMany({ where: { userId: authenticated.user.id } });
-      await prisma.user.delete({ where: { id: authenticated.user.id } });
-      await prisma.role.delete({ where: { id: authenticated.role.id } });
-      await prisma.resourceProfile.delete({ where: { id: authenticated.employee.id } });
+    for (const fixture of [
+      employeeB,
+      employeeA,
+      missingTaskRead,
+      missingProjectRead,
+      authenticated,
+    ]) {
+      if (!fixture) continue;
+      await prisma.loginAudit.deleteMany({ where: { userId: fixture.user.id } });
+      await prisma.authSession.deleteMany({ where: { userId: fixture.user.id } });
+      await prisma.userRole.deleteMany({ where: { userId: fixture.user.id } });
+      await prisma.rolePermission.deleteMany({ where: { roleId: fixture.role.id } });
+      await prisma.user.delete({ where: { id: fixture.user.id } });
+      await prisma.role.delete({ where: { id: fixture.role.id } });
+      await prisma.resourceProfile.delete({ where: { id: fixture.employee.id } });
     }
     await prisma.$disconnect();
     await app?.close();
@@ -88,6 +121,16 @@ describe('Dashboard API', () => {
       'YELLOW',
     ]);
     baselineHealthDistribution = response.body.data.healthDistribution;
+  });
+
+  it('requires both project.read and task.read through the real permission guard', async () => {
+    for (const fixture of [missingProjectRead, missingTaskRead]) {
+      const response = await fixture.agent.get('/api/dashboard').expect(403);
+      expect(response.body).toMatchObject({
+        success: false,
+        error: { code: 'PERMISSION_DENIED' },
+      });
+    }
   });
 
   it('groups only in-window non-archived work and uses the latest health snapshot tie breaker', async () => {
@@ -276,5 +319,141 @@ describe('Dashboard API', () => {
         projectId: attentionProject.id,
       }),
     ]);
+  });
+
+  it('isolates SELF and INVOLVED users from another employee project dashboard data', async () => {
+    const [projectA, projectB] = await Promise.all([
+      prisma.project.create({
+        data: {
+          code: `${prefix}-SCOPE-A`,
+          name: `${prefix}-Scope-A`,
+          ownerUserId: employeeA.user.id,
+        },
+      }),
+      prisma.project.create({
+        data: {
+          code: `${prefix}-SCOPE-B`,
+          name: `${prefix}-Scope-B`,
+          ownerUserId: employeeB.user.id,
+        },
+      }),
+    ]);
+    const [taskA, taskB] = await Promise.all([
+      prisma.workTask.create({
+        data: {
+          projectId: projectA.id,
+          title: `${prefix} scope task A`,
+          status: 'TODO',
+          dueAt: atLocalHour(0, 12),
+          ownerUserId: employeeA.user.id,
+        },
+      }),
+      prisma.workTask.create({
+        data: {
+          projectId: projectB.id,
+          title: `${prefix} scope task B`,
+          status: 'TODO',
+          dueAt: atLocalHour(0, 13),
+          ownerUserId: employeeB.user.id,
+        },
+      }),
+    ]);
+    const [milestoneA, milestoneB] = await Promise.all([
+      prisma.milestone.create({
+        data: {
+          projectId: projectA.id,
+          name: `${prefix} scope milestone A`,
+          plannedAt: atLocalHour(1, 9),
+        },
+      }),
+      prisma.milestone.create({
+        data: {
+          projectId: projectB.id,
+          name: `${prefix} scope milestone B`,
+          plannedAt: atLocalHour(1, 10),
+        },
+      }),
+    ]);
+    const [progressA, progressB] = await Promise.all([
+      prisma.progressReport.create({
+        data: {
+          projectId: projectA.id,
+          summary: `${prefix} scope progress A`,
+          completionPercent: 40,
+          reportedAt: atLocalHour(0, 10),
+        },
+      }),
+      prisma.progressReport.create({
+        data: {
+          projectId: projectB.id,
+          summary: `${prefix} scope progress B`,
+          completionPercent: 60,
+          reportedAt: atLocalHour(0, 11),
+        },
+      }),
+    ]);
+    await prisma.projectHealthSnapshot.createMany({
+      data: [
+        {
+          projectId: projectA.id,
+          health: 'YELLOW',
+          reasons: ['A'],
+          calculatedAt: atLocalHour(0, 8),
+        },
+        {
+          projectId: projectB.id,
+          health: 'RED',
+          reasons: ['B'],
+          calculatedAt: atLocalHour(0, 8),
+        },
+      ],
+    });
+
+    const [dashboardA, dashboardB] = await Promise.all([
+      employeeA.agent.get('/api/dashboard').expect(200),
+      employeeB.agent.get('/api/dashboard').expect(200),
+    ]);
+
+    expect(dashboardA.body.data.todayActions.map(({ id }: { id: string }) => id)).toContain(taskA.id);
+    expect(dashboardA.body.data.todayActions.map(({ id }: { id: string }) => id)).not.toContain(taskB.id);
+    expect(dashboardA.body.data.dueSoonMilestones.map(({ id }: { id: string }) => id)).toContain(
+      milestoneA.id,
+    );
+    expect(dashboardA.body.data.dueSoonMilestones.map(({ id }: { id: string }) => id)).not.toContain(
+      milestoneB.id,
+    );
+    expect(
+      dashboardA.body.data.projectsNeedingAttention.map(({ id }: { id: string }) => id),
+    ).toContain(projectA.id);
+    expect(
+      dashboardA.body.data.projectsNeedingAttention.map(({ id }: { id: string }) => id),
+    ).not.toContain(projectB.id);
+    expect(
+      dashboardA.body.data.recentProgressReports.map(({ id }: { id: string }) => id),
+    ).toContain(progressA.id);
+    expect(
+      dashboardA.body.data.recentProgressReports.map(({ id }: { id: string }) => id),
+    ).not.toContain(progressB.id);
+
+    expect(dashboardB.body.data.todayActions.map(({ id }: { id: string }) => id)).toContain(taskB.id);
+    expect(dashboardB.body.data.todayActions.map(({ id }: { id: string }) => id)).not.toContain(taskA.id);
+    expect(dashboardB.body.data.dueSoonMilestones.map(({ id }: { id: string }) => id)).toContain(
+      milestoneB.id,
+    );
+    expect(dashboardB.body.data.dueSoonMilestones.map(({ id }: { id: string }) => id)).not.toContain(
+      milestoneA.id,
+    );
+    expect(
+      dashboardB.body.data.projectsNeedingAttention.map(({ id }: { id: string }) => id),
+    ).toContain(projectB.id);
+    expect(
+      dashboardB.body.data.projectsNeedingAttention.map(({ id }: { id: string }) => id),
+    ).not.toContain(projectA.id);
+    expect(
+      dashboardB.body.data.recentProgressReports.map(({ id }: { id: string }) => id),
+    ).toContain(progressB.id);
+    expect(
+      dashboardB.body.data.recentProgressReports.map(({ id }: { id: string }) => id),
+    ).not.toContain(progressA.id);
   });
 });

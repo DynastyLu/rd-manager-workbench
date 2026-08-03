@@ -684,11 +684,8 @@ export default function PartnersPage() {
   return (
     <div className="partner-workspace workspace-page">
       <div className="partner-workspace__inner workspace-page__inner">
-        <header className="partner-workspace__header">
-          <div>
-            <h1>合作方与沟通</h1>
-            <p>像飞书联系人一样管理关系，用项目、协议和每次跟进保留完整上下文。</p>
-          </div>
+        <div className="workspace-module-toolbar">
+          <div className="workspace-module-toolbar__actions">
           <Button
             theme="solid"
             type="primary"
@@ -697,7 +694,8 @@ export default function PartnersPage() {
           >
             新建合作方
           </Button>
-        </header>
+          </div>
+        </div>
 
         <section className="partner-workspace__toolbar workspace-card" aria-label="合作方筛选">
           <form

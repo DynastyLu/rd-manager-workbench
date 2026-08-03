@@ -43,7 +43,10 @@ function useAnimatedNumber(target: number, duration = 600): number {
 export function DashboardKpiCard({ label, value, icon, tone = 'brand' }: DashboardKpiCardProps) {
   const animated = useAnimatedNumber(value)
   return (
-    <div className={`workspace-card dashboard-kpi-card ${toneMap[tone]}`}>
+    <div
+      className={`workspace-card dashboard-kpi-card ${toneMap[tone]}`}
+      data-interactive="true"
+    >
       <div className="dashboard-kpi-card__icon" aria-hidden="true">{icon}</div>
       <div className="dashboard-kpi-card__body">
         <strong className="dashboard-kpi-card__value">{animated}</strong>

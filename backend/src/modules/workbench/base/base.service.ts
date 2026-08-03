@@ -170,7 +170,7 @@ export class BaseService {
       where: {
         AND: [
           { workspaceId, archivedAt: null },
-          this.dataScope.baseTables(this.principal()),
+          this.dataScope.baseTables(this.principal(), 'base.read'),
         ],
       },
       include: this.tableInclude(),
@@ -183,7 +183,7 @@ export class BaseService {
       where: {
         AND: [
           { id, archivedAt: null },
-          this.dataScope.baseTables(this.principal()),
+          this.dataScope.baseTables(this.principal(), 'base.read'),
         ],
       },
       include: this.tableInclude(),
@@ -272,7 +272,7 @@ export class BaseService {
   }
 
   async listFields(tableId: string) {
-    await this.assertTable(tableId);
+    await this.assertTable(tableId, 'base.read');
     return this.prisma.dataField.findMany({
       where: { tableId, archivedAt: null },
       orderBy: [{ sequence: 'asc' }, { id: 'asc' }],
@@ -507,7 +507,7 @@ export class BaseService {
   }
 
   async listRecords(tableId: string, query: RecordQuery) {
-    const table = await this.assertTable(tableId);
+    const table = await this.assertTable(tableId, 'base.read');
     const view = query.viewId
       ? await this.prisma.dataView.findUnique({ where: { id: query.viewId } })
       : null;
@@ -544,7 +544,7 @@ export class BaseService {
       return this.systemRecords.list(table.source, normalizedQuery);
     const [records, generatedFields] = await Promise.all([
       this.prisma.dataRecord.findMany({
-        where: { AND: [{ tableId }, this.dataScope.baseRecords(this.principal())] },
+        where: { AND: [{ tableId }, this.dataScope.baseRecords(this.principal(), 'base.read')] },
         orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
       }),
       this.generatedFields(tableId),
@@ -562,7 +562,7 @@ export class BaseService {
         where: {
           AND: [
             { tableId, id: { in: ids } },
-            this.dataScope.baseRecords(this.principal()),
+            this.dataScope.baseRecords(this.principal(), 'base.read'),
           ],
         },
       }),
@@ -591,7 +591,7 @@ export class BaseService {
   }
 
   async updateRecord(tableId: string, id: string, dto: RecordValuesDto) {
-    const table = await this.assertTable(tableId);
+    const table = await this.assertTable(tableId, 'base.update');
     if (table.source !== DataTableSource.CUSTOM) {
       await this.validateRecordValues(tableId, dto.values, false);
       return this.systemRecords.update(table.source, id, dto.values);
@@ -619,7 +619,7 @@ export class BaseService {
   }
 
   async deleteRecord(tableId: string, id: string) {
-    await this.assertCustomTable(tableId);
+    await this.assertCustomTable(tableId, 'base.delete');
     await this.prisma.$transaction(async (tx) => {
       await this.relationSync.lockTableConfigs(
         tx,
@@ -634,7 +634,7 @@ export class BaseService {
   }
 
   async listViews(tableId: string) {
-    await this.assertTable(tableId);
+    await this.assertTable(tableId, 'base.read');
     return this.prisma.dataView.findMany({
       where: { tableId },
       orderBy: [{ sequence: 'asc' }, { id: 'asc' }],
@@ -930,20 +930,20 @@ export class BaseService {
     if (!workspace) throw new NotFoundException('Data workspace not found');
     return workspace;
   }
-  private async assertTable(id: string) {
+  private async assertTable(id: string, permissionCode: import('../../iam/domain/permission-catalog').PermissionCode) {
     const table = await this.prisma.dataTable.findFirst({
       where: {
         AND: [
           { id, archivedAt: null },
-          this.dataScope.baseTables(this.principal()),
+          this.dataScope.baseTables(this.principal(), permissionCode),
         ],
       },
     });
     if (!table) throw new NotFoundException('Data table not found');
     return table;
   }
-  private async assertCustomTable(id: string) {
-    const table = await this.assertTable(id);
+  private async assertCustomTable(id: string, permissionCode: import('../../iam/domain/permission-catalog').PermissionCode) {
+    const table = await this.assertTable(id, permissionCode);
     if (table.source !== DataTableSource.CUSTOM)
       throw new BadRequestException('This operation is only available for custom tables');
     return table;
@@ -971,7 +971,7 @@ export class BaseService {
   private workspaceInclude() {
     return {
       tables: {
-        where: { AND: [{ archivedAt: null }, this.dataScope.baseTables(this.principal())] },
+        where: { AND: [{ archivedAt: null }, this.dataScope.baseTables(this.principal(), 'base.read')] },
         include: this.tableInclude(),
         orderBy: [{ sequence: 'asc' as const }, { name: 'asc' as const }],
       },

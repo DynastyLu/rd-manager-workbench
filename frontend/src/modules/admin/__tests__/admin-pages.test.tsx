@@ -454,8 +454,7 @@ describe('system management user experience', () => {
   it('renders the system permission catalog as a read-only, sensitive-aware matrix', async () => {
     renderAdmin(<PermissionsPage />)
 
-    expect(await screen.findByRole('heading', { name: '权限目录' })).toBeInTheDocument()
-    expect(screen.getByText('user.read')).toBeInTheDocument()
+    expect(await screen.findByText('user.read')).toBeInTheDocument()
     expect(screen.getByText('user.create')).toBeInTheDocument()
     expect(screen.getAllByText('敏感权限').length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: '新建权限' })).not.toBeInTheDocument()

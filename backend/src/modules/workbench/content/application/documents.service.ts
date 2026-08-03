@@ -13,6 +13,7 @@ import { StoragePort } from '../../../../infrastructure/storage/storage.port';
 import { DataScopeService } from '../../../iam/application/data-scope.service';
 import { AppError } from '../../../../shared/errors/app-error';
 import { ErrorCodes } from '../../../../shared/errors/error-codes';
+import type { PermissionCode } from '../../../iam/domain/permission-catalog';
 import {
   CreateDocumentDto,
   ListDocumentsQueryDto,
@@ -77,7 +78,7 @@ export class DocumentsService implements OnModuleInit {
         : {}),
     };
     const principal = this.requestContext.requirePrincipal();
-    const scope = this.dataScope.documents(principal);
+    const scope = this.dataScope.documents(principal, 'document.read');
     const scopedWhere: Prisma.ContentDocumentWhereInput = { AND: [where, scope] };
     const [data, total] = await this.prisma.$transaction([
       this.prisma.contentDocument.findMany({
@@ -209,7 +210,7 @@ export class DocumentsService implements OnModuleInit {
 
   async update(id: string, dto: UpdateDocumentDto) {
     const principal = this.requestContext.requirePrincipal();
-    await this.assertAccessible(id);
+    await this.assertAccessible(id, 'document.update');
     const current = await this.prisma.contentDocument.findFirst({
       where: { id, status: ContentStatus.ACTIVE },
     });
@@ -242,7 +243,7 @@ export class DocumentsService implements OnModuleInit {
   }
 
   async trash(id: string) {
-    await this.assertAccessible(id, [
+    await this.assertAccessible(id, 'document.delete', [
       ContentStatus.ACTIVE,
       ContentStatus.TRASHED,
     ]);
@@ -254,7 +255,7 @@ export class DocumentsService implements OnModuleInit {
   }
 
   async restore(id: string) {
-    await this.assertAccessible(id, [
+    await this.assertAccessible(id, 'document.update', [
       ContentStatus.ACTIVE,
       ContentStatus.TRASHED,
     ]);
@@ -263,7 +264,24 @@ export class DocumentsService implements OnModuleInit {
       data: { status: ContentStatus.ACTIVE, trashedAt: null },
     });
     if (!result.count) throw this.documentNotFound();
-    return this.get(id);
+    const principal = this.requestContext.requirePrincipal();
+    const restored = await this.prisma.contentDocument.findFirst({
+      where: {
+        id,
+        status: ContentStatus.ACTIVE,
+        AND: [this.dataScope.documents(principal, 'document.update')],
+      },
+      include: {
+        space: true,
+        fileAssets: {
+          where: { status: 'ACTIVE' },
+          include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
+          orderBy: { updatedAt: 'desc' },
+        },
+      },
+    });
+    if (!restored) throw this.documentNotFound();
+    return restored;
   }
 
   permanentDelete(id: string): Promise<void> {
@@ -271,7 +289,7 @@ export class DocumentsService implements OnModuleInit {
   }
 
   private async permanentDeleteWithLock(id: string): Promise<void> {
-    await this.assertAccessible(id, [
+    await this.assertAccessible(id, 'document.delete', [
       ContentStatus.ACTIVE,
       ContentStatus.TRASHED,
     ]);
@@ -302,37 +320,21 @@ export class DocumentsService implements OnModuleInit {
   }
 
   private async assertReadable(id: string, statuses: ContentStatus[] = [ContentStatus.ACTIVE]) {
+    return this.assertAccessible(id, 'document.read', statuses);
+  }
+
+  private async assertAccessible(
+    id: string,
+    permissionCode: PermissionCode,
+    statuses: ContentStatus[] = [ContentStatus.ACTIVE],
+  ) {
     const principal = this.requestContext.requirePrincipal();
-    const scope = this.dataScope.documents(principal);
+    const scope = this.dataScope.documents(principal, permissionCode);
     const accessible = await this.prisma.contentDocument.findFirst({
       where: {
         id,
         status: statuses.length > 0 ? { in: statuses } : undefined,
         AND: [scope],
-      },
-      select: { id: true },
-    });
-    if (accessible) return;
-    const exists = await this.prisma.contentDocument.count({ where: { id } });
-    if (!exists) throw this.documentNotFound();
-    throw new AppError({
-      code: ErrorCodes.PERMISSION_DENIED,
-      message: 'You do not have permission to access this document',
-      statusCode: HttpStatus.FORBIDDEN,
-    });
-  }
-
-  private async assertAccessible(
-    id: string,
-    statuses: ContentStatus[] = [ContentStatus.ACTIVE],
-  ) {
-    const principal = this.requestContext.requirePrincipal();
-    if (principal.roleCodes.includes('SUPER_ADMIN')) return;
-    const accessible = await this.prisma.contentDocument.findFirst({
-      where: {
-        id,
-        status: statuses.length > 0 ? { in: statuses } : undefined,
-        ownerUserId: principal.userId,
       },
       select: { id: true },
     });
@@ -488,6 +490,7 @@ export class DocumentsService implements OnModuleInit {
   }
 
   async listVersions(id: string) {
+    await this.assertAccessible(id, 'document.read');
     const document = await this.prisma.contentDocument.findUnique({
       where: { id },
       select: { id: true },
@@ -499,14 +502,16 @@ export class DocumentsService implements OnModuleInit {
     });
   }
 
-  saveVersion(id: string) {
+  async saveVersion(id: string) {
+    await this.assertAccessible(id, 'document.update');
     return this.prisma.$transaction(async (tx) => {
       const document = await this.lockActiveDocument(tx, id);
       return this.createVersion(tx, document);
     });
   }
 
-  restoreVersion(id: string, versionId: string) {
+  async restoreVersion(id: string, versionId: string) {
+    await this.assertAccessible(id, 'document.update');
     return this.prisma.$transaction(async (tx) => {
       await this.lockActiveDocument(tx, id);
       const source = await tx.documentVersion.findFirst({

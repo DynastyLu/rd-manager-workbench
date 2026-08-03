@@ -44,6 +44,7 @@ import { listProjects } from '@/modules/workbench/api/projects'
 import { listTasks } from '@/modules/workbench/api/tasks'
 import { loadAllPages } from '@/lib/loadAllPages'
 import './EmployeeDetailPage.less'
+import { useRouteHistoryTitle } from '@/components/AppShell/RouteHistoryTitleContext'
 
 const PAGE_SIZE = 10
 const WORK_STATUS_VALUES = ['ALL', 'NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'AT_RISK', 'BLOCKED'] as const
@@ -93,6 +94,7 @@ export default function EmployeeDetailPage() {
     queryFn: () => getEmployeeProgress(employeeId, filters),
     enabled: Boolean(employeeId),
   })
+  useRouteHistoryTitle(progressQuery.data?.employee.displayName)
   const workItemsQuery = useQuery({
     queryKey: employeeQueryKeys.workItems({ ...filters, employeeId, page, pageSize: PAGE_SIZE }),
     queryFn: () =>

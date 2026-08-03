@@ -34,7 +34,7 @@ export class BaseExportService {
       where: {
         AND: [
           { id: tableId, archivedAt: null },
-          this.dataScope.baseTables(this.principal()),
+          this.dataScope.baseTables(this.principal(), 'base.read'),
         ],
       },
       include: { fields: { where: { archivedAt: null }, orderBy: [{ sequence: 'asc' }, { id: 'asc' }] } },

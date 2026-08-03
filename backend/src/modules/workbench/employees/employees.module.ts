@@ -4,6 +4,7 @@ import { GovernanceModule } from '../governance/governance.module';
 import { ManagementModule } from '../management/management.module';
 import { TasksModule } from '../tasks/tasks.module';
 import { EmployeeImportCommitService } from './application/employee-import-commit.service';
+import { EmployeeImportAccessService } from './application/employee-import-access.service';
 import { EmployeeImportValidatorService } from './application/employee-import-validator.service';
 import { EmployeeImportsService } from './application/employee-imports.service';
 import { EmployeeProgressQueryService } from './application/employee-progress-query.service';
@@ -16,6 +17,7 @@ import { EmployeeWorkbookService } from './application/employee-workbook.service
 import { EmployeesService } from './application/employees.service';
 import { ProjectProgressDraftService } from './application/project-progress-draft.service';
 import { EmployeeImportsController } from './interface/http/employee-imports.controller';
+import { EmployeeImportAllScopeGuard } from './interface/http/employee-import-all-scope.guard';
 import {
   EmployeeProgressController,
   EmployeesController,
@@ -34,6 +36,8 @@ import {
     EmployeesService,
     EmployeeProgressQueryService,
     EmployeeWorkbookService,
+    EmployeeImportAccessService,
+    EmployeeImportAllScopeGuard,
     EmployeeImportValidatorService,
     EmployeeImportCommitService,
     EmployeeProgressSnapshotService,

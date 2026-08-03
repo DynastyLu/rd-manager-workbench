@@ -25,13 +25,6 @@ export default function AdminLayout() {
   return (
     <div className="admin-layout workspace-page">
       <div className="admin-layout__inner workspace-page__inner">
-        <header className="admin-layout__header">
-          <div>
-            <h1 className="app-page__title">系统管理</h1>
-            <p className="app-page__subtitle">管理用户账号、角色、权限、安全审计及数据归属</p>
-          </div>
-        </header>
-
         <nav className="admin-layout__tabs" aria-label="系统管理子导航">
           {adminTabs.map((tab) => {
             const active = isActive(tab.path, pathname)

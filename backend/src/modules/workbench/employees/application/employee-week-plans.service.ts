@@ -395,7 +395,7 @@ export class EmployeeWeekPlansService {
   private async findActivePlan(tx: Prisma.TransactionClient, planId: string) {
     const principal = this.requestContext.requirePrincipal();
     const plan = await tx.employeeWeekPlanItem.findFirst({
-      where: { id: planId, ...ACTIVE_PLAN_WHERE, ...this.dataScope.employeeWeekPlanItems(principal) },
+      where: { id: planId, ...ACTIVE_PLAN_WHERE, ...this.dataScope.employeeWeekPlanItems(principal, 'employee.update') },
       include: ACTIVE_PLAN_INCLUDE,
     });
     if (!plan) throw this.planNotFound();

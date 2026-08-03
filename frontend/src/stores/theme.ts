@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware'
 export type Theme = 'aurora' | 'eye-care'
 
 export const THEME_LABELS: Record<Theme, { label: string; icon: string; desc: string }> = {
-  aurora: { label: '极光', icon: '✦', desc: 'Aurora Glass' },
+  aurora: { label: '流光', icon: '✦', desc: 'Luminous Workspace' },
   'eye-care': { label: '护眼', icon: '☀', desc: 'Eye Care' },
 }
 

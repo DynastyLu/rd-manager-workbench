@@ -1,18 +1,33 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, ProjectHealth, TaskStatus } from '@prisma/client';
+import { RequestContextService } from '../../../../infrastructure/context/request-context.service';
 import { PlatformPrismaService } from '../../../../infrastructure/prisma/platform-prisma.service';
+import { DataScopeService } from '../../../iam/application/data-scope.service';
 
 const ACTIVE_TASK_STATUSES = [TaskStatus.TODO, TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED];
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PlatformPrismaService) {}
+  constructor(
+    private readonly prisma: PlatformPrismaService,
+    private readonly dataScope: DataScopeService,
+    private readonly requestContext: RequestContextService,
+  ) {}
 
   async getDashboard() {
+    const principal = this.requestContext.requirePrincipal();
+    const taskScope = this.dataScope.tasks(principal, 'task.read');
+    const projectScope = this.dataScope.projects(principal, 'project.read');
     const { startOfToday, startOfTomorrow, startOfEighthDay } = this.getLocalDayBounds();
     const visibleTaskScope: Prisma.WorkTaskWhereInput = {
       archivedAt: null,
-      OR: [{ projectId: null }, { project: { is: { archivedAt: null } } }],
+      AND: [
+        taskScope,
+        { OR: [{ projectId: null }, { project: { is: { archivedAt: null } } }] },
+      ],
+    };
+    const visibleProjectScope: Prisma.ProjectWhereInput = {
+      AND: [projectScope, { archivedAt: null }],
     };
 
     const [todayActions, overdueTasks, dueSoonMilestones, projects, recentProgressReports] =
@@ -39,13 +54,13 @@ export class DashboardService {
           where: {
             plannedAt: { gte: startOfToday, lt: startOfEighthDay },
             status: { not: 'COMPLETED' },
-            project: { is: { archivedAt: null } },
+            project: { is: visibleProjectScope },
           },
           orderBy: [{ plannedAt: 'asc' }, { id: 'asc' }],
           include: { project: { select: { id: true, code: true, name: true } } },
         }),
         this.prisma.project.findMany({
-          where: { archivedAt: null },
+          where: visibleProjectScope,
           select: {
             id: true,
             code: true,
@@ -58,7 +73,7 @@ export class DashboardService {
           },
         }),
         this.prisma.progressReport.findMany({
-          where: { project: { is: { archivedAt: null } } },
+          where: { project: { is: visibleProjectScope } },
           orderBy: [{ reportedAt: 'desc' }, { id: 'desc' }],
           take: 10,
           include: { project: { select: { id: true, code: true, name: true } } },

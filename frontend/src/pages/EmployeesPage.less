@@ -305,7 +305,7 @@
 
   &__select {
     display: grid;
-    justify-items: start;
+    justify-items: stretch;
     gap: 14px;
   }
 
@@ -347,7 +347,7 @@
 
   &__template-download {
     display: grid;
-    width: min(100%, 420px);
+    width: 100%;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: end;
     gap: 8px 12px;
@@ -515,7 +515,8 @@
 
 .employee-import-association {
   .semi-modal {
-    max-width: 1480px;
+    width: min(96vw, 1480px) !important;
+    max-width: none;
   }
 
   .semi-modal-body {

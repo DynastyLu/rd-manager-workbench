@@ -362,11 +362,8 @@ export default function TasksPage() {
   return (
     <div className="my-work-page workspace-page">
       <div className="my-work-page__inner workspace-page__inner">
-      <header className="my-work-page__header">
-        <div>
-          <h1>我的工作</h1>
-          <p>把零散任务收进一个清晰、可提醒的个人执行流。</p>
-        </div>
+      <div className="workspace-module-toolbar">
+        <div className="workspace-module-toolbar__actions">
         <Button
           theme="solid"
           type="primary"
@@ -376,7 +373,8 @@ export default function TasksPage() {
         >
           新建任务
         </Button>
-      </header>
+        </div>
+      </div>
 
       {projectId ? <div className="my-work-page__context">当前仅显示本项目任务</div> : null}
 

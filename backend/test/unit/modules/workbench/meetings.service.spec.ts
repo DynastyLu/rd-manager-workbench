@@ -16,6 +16,35 @@ const dataScope = {
 } as unknown as DataScopeService;
 
 describe('MeetingsService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('checks meeting.update scope before mutating a meeting action', async () => {
+    const transaction = {
+      meeting: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'meeting-1', projectId: null }),
+      },
+      meetingAction: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'action-1',
+          meetingId: 'meeting-1',
+          taskId: null,
+          meeting: { projectId: null },
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'action-1', title: 'Action' }),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(async (work: (tx: typeof transaction) => unknown) => work(transaction)),
+    } as unknown as PlatformPrismaService;
+    const service = new MeetingsService(prisma, {} as TasksService, requestContext, dataScope);
+
+    await service.updateAction('meeting-1', 'action-1', { title: 'Action' });
+
+    expect(dataScope.meetings).toHaveBeenCalledWith(mockPrincipal, 'meeting.update');
+  });
+
   it('accepts partial action updates without requiring the title', async () => {
     const dto = Object.assign(new UpdateMeetingActionDto(), { status: 'DONE' });
 
@@ -25,6 +54,9 @@ describe('MeetingsService', () => {
   it('clears an action due date when the update explicitly sends null', async () => {
     const update = jest.fn().mockResolvedValue({ id: 'action-1', dueAt: null });
     const transaction = {
+      meeting: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'meeting-1', projectId: null }),
+      },
       meetingAction: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'action-1',
@@ -59,6 +91,9 @@ describe('MeetingsService', () => {
       dueAt: new Date('2026-07-30T00:00:00.000Z'),
     };
     const transaction = {
+      meeting: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'meeting-1', projectId: null }),
+      },
       meetingAction: {
         findFirst: jest.fn().mockResolvedValue(current),
         update: jest.fn().mockResolvedValue({
@@ -328,6 +363,9 @@ describe('MeetingsService', () => {
   it('creates a source-traceable task and marks the first conversion as new', async () => {
     const transaction = {
       $executeRaw: jest.fn().mockResolvedValue(0),
+      meeting: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'meeting-1', projectId: null }),
+      },
       meetingAction: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'action-1',
@@ -381,6 +419,9 @@ describe('MeetingsService', () => {
     };
     const transaction = {
       $executeRaw: jest.fn().mockResolvedValue(0),
+      meeting: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'meeting-1', projectId: null }),
+      },
       meetingAction: {
         findFirst: jest.fn().mockResolvedValue({
           id: 'action-1',

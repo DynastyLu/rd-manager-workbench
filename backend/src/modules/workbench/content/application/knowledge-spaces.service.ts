@@ -19,7 +19,7 @@ export class KnowledgeSpacesService {
 
   list() {
     const principal = this.requestContext.requirePrincipal();
-    const scope = this.dataScope.knowledgeSpaces(principal);
+    const scope = this.dataScope.knowledgeSpaces(principal, 'document.read');
     return this.prisma.knowledgeSpace.findMany({
       where: { archivedAt: null, ...scope },
       orderBy: [{ sequence: 'asc' }, { name: 'asc' }, { id: 'asc' }],
@@ -54,7 +54,7 @@ export class KnowledgeSpacesService {
 
   private async assertAccessible(id: string) {
     const principal = this.requestContext.requirePrincipal();
-    const scope = this.dataScope.knowledgeSpaces(principal);
+    const scope = this.dataScope.knowledgeSpaces(principal, 'document.update');
     const accessible = await this.prisma.knowledgeSpace.findFirst({
       where: { id, archivedAt: null, ...scope },
       select: { id: true },

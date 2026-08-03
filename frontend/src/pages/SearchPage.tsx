@@ -325,16 +325,6 @@ export default function SearchPage() {
   return (
     <div className="search-page workspace-page">
       <div className="search-page__inner workspace-page__inner">
-        <header className="search-page__header">
-          <div>
-            <h1>全局搜索</h1>
-            <p>在一个入口找到项目、任务、文档、会议与业务记录。</p>
-          </div>
-          <span className="search-page__shortcut">
-            ⌘K / Ctrl K
-          </span>
-        </header>
-
         <section className="workspace-card search-page__surface">
           <form
             className="search-page__form"

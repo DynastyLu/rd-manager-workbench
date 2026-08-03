@@ -235,6 +235,20 @@
   }
 }
 
+.search-category-filters {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+
+  .semi-button {
+    flex: 0 0 auto;
+  }
+}
+
 @media (max-width: 720px) {
   .search-page {
     &__header {

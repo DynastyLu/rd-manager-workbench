@@ -48,7 +48,7 @@ export class ContentSearchAdapter implements SearchAdapter {
             { tags: { has: query } },
           ],
         },
-        this.dataScope.documents(this.principal()),
+        this.dataScope.documents(this.principal(), 'document.read'),
       ],
     };
     const documents = await this.prisma.contentDocument.findMany({
@@ -104,7 +104,7 @@ export class ContentSearchAdapter implements SearchAdapter {
                       { OR: [{ meetingId: null }, { meeting: { archivedAt: null } }] },
                     ],
                   },
-                  this.dataScope.documents(principal),
+                  this.dataScope.documents(principal, 'document.read'),
                 ],
               },
             },
@@ -113,13 +113,13 @@ export class ContentSearchAdapter implements SearchAdapter {
         {
           OR: [
             { projectId: null },
-            { project: { AND: [{ archivedAt: null }, this.dataScope.projects(principal)] } },
+            { project: { AND: [{ archivedAt: null }, this.dataScope.projects(principal, 'project.read')] } },
           ],
         },
         {
           OR: [
             { meetingId: null },
-            { meeting: { AND: [{ archivedAt: null }, this.dataScope.meetings(principal)] } },
+            { meeting: { AND: [{ archivedAt: null }, this.dataScope.meetings(principal, 'meeting.read')] } },
           ],
         },
       ],

@@ -48,7 +48,7 @@ export class EmployeesSearchAdapter implements SearchAdapter {
               { notes: contains },
             ],
           },
-          this.dataScope.employees(this.principal()),
+          this.dataScope.employees(this.principal(), 'employee.read'),
         ],
       },
       select: {
@@ -111,7 +111,7 @@ export class EmployeesSearchAdapter implements SearchAdapter {
             { task: { title: contains } },
           ],
         },
-        this.dataScope.employeeWork(this.principal()),
+        this.dataScope.employeeWork(this.principal(), 'employee.read'),
       ],
     };
     const items = await this.prisma.employeeWorkItem.findMany({
@@ -207,7 +207,7 @@ export class EmployeesSearchAdapter implements SearchAdapter {
             { task: { title: contains } },
           ],
         },
-        { employee: this.dataScope.employees(this.principal()) },
+        { employee: this.dataScope.employees(this.principal(), 'employee.read') },
       ],
     };
     const items = await this.prisma.employeeWeekPlanItem.findMany({

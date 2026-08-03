@@ -77,6 +77,6 @@ import { PermissionGuard } from './interface/http/permission.guard';
       useClass: PermissionGuard,
     },
   ],
-  exports: [AuthService, AuthorizationService, ConnectionTicketService, DataScopeService, PasswordService, RolesService, TokenService],
+  exports: [AuthService, AuthorizationService, ConnectionTicketService, DataScopeService, PasswordService, RolesService, SecurityAuditService, TokenService],
 })
 export class IamModule {}

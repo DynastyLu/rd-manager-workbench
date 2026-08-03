@@ -3,27 +3,144 @@
   grid-template-columns: 208px 320px minmax(540px, 1fr);
   height: calc(100vh - 56px);
   min-height: 620px;
-  background: #fff;
-  color: #1f2329;
+  background: var(--workspace-canvas);
+  color: var(--workspace-text);
   overflow: hidden;
+}
+
+.knowledge-tab-page {
+  display: flex;
+  height: calc(100vh - 56px);
+  min-height: 0;
+  flex-direction: column;
+  background: var(--workspace-canvas);
+
+  &__tabs {
+    display: flex;
+    flex: 0 0 auto;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--workspace-border);
+    background: var(--workspace-surface);
+
+    button {
+      min-height: 46px;
+      padding: 0 20px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--workspace-text-secondary);
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      color: var(--workspace-text);
+    }
+
+    button[aria-selected='true'] {
+      border-bottom-color: var(--workspace-brand);
+      color: var(--workspace-brand);
+      font-weight: 600;
+    }
+  }
+
+  &__content {
+    min-height: 0;
+    flex: 1;
+    padding: 0 20px;
+    overflow: auto;
+  }
+}
+
+.kb-preview-empty {
+  padding: 40px;
+  color: var(--workspace-text-muted);
+  text-align: center;
+}
+
+.kb-preview-table-wrap,
+.kb-preview-text {
+  max-height: calc(100vh - 320px);
+  overflow: auto;
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--workspace-radius);
+  background: var(--workspace-surface);
+}
+
+.kb-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    padding: 8px 12px;
+    border-bottom: 2px solid var(--workspace-border);
+    background: var(--workspace-surface-subtle);
+    color: var(--workspace-text-secondary);
+    font-weight: 600;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  td {
+    overflow: hidden;
+    max-width: 300px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--workspace-border);
+    color: var(--workspace-text);
+    text-overflow: ellipsis;
+  }
+
+  tr:hover td {
+    background: var(--workspace-surface-hover);
+  }
+}
+
+.kb-preview-text {
+  min-height: 200px;
+  padding: 24px;
+  color: var(--workspace-text);
+  font: 14px/1.8 system-ui, -apple-system, sans-serif;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .knowledge-workspace__directory,
 .knowledge-workspace__list {
   min-width: 0;
-  border-right: 1px solid #e5e6eb;
-  background: #f7f8fa;
+  border-right: 1px solid var(--workspace-border);
+  background: rgba(248, 250, 252, 0.78);
   overflow-y: auto;
 }
 
 .knowledge-workspace__directory {
   padding: 18px 12px;
 }
-.knowledge-workspace__directory h1 {
-  margin: 0 8px 18px;
-  font-size: 17px;
+.knowledge-workspace__directory-title {
+  display: block;
+  margin: 0 8px 14px;
+  color: var(--workspace-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
 }
-.knowledge-workspace__directory > button {
+.knowledge-workspace__module-nav {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--workspace-border);
+}
+.knowledge-workspace__section-label {
+  display: block;
+  margin: 0 10px 6px;
+  color: var(--workspace-text-muted);
+  font-size: 12px;
+}
+.knowledge-workspace__directory > button,
+.knowledge-workspace__module-nav > button {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -32,14 +149,21 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #4e5969;
+  color: var(--workspace-text-secondary);
   text-align: left;
   cursor: pointer;
 }
 .knowledge-workspace__directory > button:hover,
-.knowledge-workspace__directory > button[data-active='true'] {
-  background: #e8f3ff;
-  color: #1456f0;
+.knowledge-workspace__directory > button[data-active='true'],
+.knowledge-workspace__module-nav > button:hover {
+  background: var(--workspace-brand-soft);
+  color: var(--workspace-brand);
+}
+.knowledge-workspace__module-nav > button[data-active='true'] {
+  background: var(--workspace-surface);
+  box-shadow: inset 3px 0 0 var(--workspace-brand);
+  color: var(--workspace-text);
+  font-weight: 600;
 }
 .knowledge-workspace__space-title {
   display: flex;

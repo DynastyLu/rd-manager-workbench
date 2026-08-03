@@ -32,7 +32,7 @@ export function SearchFilters({ selectedTypes, groups = [], onChange }: SearchFi
   const selected = new Set(selectedTypes)
 
   return (
-    <div className="flex flex-wrap gap-2" aria-label="搜索分类">
+    <div className="search-category-filters" aria-label="搜索分类">
       <Button
         size="small"
         theme={selectedTypes.length === 0 ? 'solid' : 'light'}

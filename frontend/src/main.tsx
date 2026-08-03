@@ -29,6 +29,7 @@ import '@douyinfe/semi-ui/lib/es/_base/base.css'
 import '@/index.css'
 import './animations.css'
 import '@/styles/workspace-tokens.css'
+import '@/styles/luminous-skin.css'
 import '@/lib/i18n' // i18n initialisation (side effect)
 
 import { MotionConfig } from 'framer-motion'

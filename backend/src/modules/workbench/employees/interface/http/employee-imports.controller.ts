@@ -17,8 +17,13 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { UploadedContentFile } from '../../../content/application/files.service';
+import {
+  PERMISSIONS,
+  RequirePermissions,
+} from '../../../../iam/interface/http/permissions.decorator';
 import { EmployeeImportsService } from '../../application/employee-imports.service';
 import { EmployeeProgressQueryService } from '../../application/employee-progress-query.service';
+import { RequireEmployeeImportAllScope } from './employee-import-all-scope.guard';
 import {
   EmployeeWorkbookTemplateQueryDto,
   ResolveEmployeeImportDto,
@@ -38,6 +43,7 @@ export class EmployeeImportsController {
   ) {}
 
   @Get('template')
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_READ)
   async template(
     @Query() query: EmployeeWorkbookTemplateQueryDto,
     @Res() response: Response,
@@ -49,17 +55,23 @@ export class EmployeeImportsController {
   }
 
   @Get()
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_READ)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_READ)
   list(@Query() query: ListEmployeeImportsQueryDto) {
     return this.progress.listImports(query);
   }
 
   @Post()
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_UPDATE)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_UPDATE)
   @UseInterceptors(FileInterceptor('file', importUploadOptions))
   upload(@UploadedFile() file: UploadedContentFile | undefined) {
     return this.imports.upload(file);
   }
 
   @Get(':id')
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_READ)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_READ)
   get(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Query() query: EmployeeImportDetailQueryDto,
@@ -68,11 +80,15 @@ export class EmployeeImportsController {
   }
 
   @Patch(':id/preview')
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_UPDATE)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_UPDATE)
   preview(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.imports.preview(id);
   }
 
   @Patch(':id/resolutions')
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_UPDATE)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_UPDATE)
   resolve(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: ResolveEmployeeImportDto,
@@ -81,21 +97,29 @@ export class EmployeeImportsController {
   }
 
   @Post(':id/commit')
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_UPDATE)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_UPDATE)
   commit(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.imports.commit(id);
   }
 
   @Post(':id/rebuild-snapshots')
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_UPDATE)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_UPDATE)
   rebuildSnapshots(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.imports.rebuildSnapshots(id);
   }
 
   @Post(':id/restore')
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_UPDATE)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_UPDATE)
   restore(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.imports.restore(id);
   }
 
   @Get(':id/errors')
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_READ)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_READ)
   async errors(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Res() response: Response,
@@ -108,6 +132,8 @@ export class EmployeeImportsController {
   }
 
   @Get(':id/source')
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_READ)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_READ)
   async source(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Res() response: Response,
@@ -121,6 +147,8 @@ export class EmployeeImportsController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermissions(PERMISSIONS.EMPLOYEE_DELETE)
+  @RequireEmployeeImportAllScope(PERMISSIONS.EMPLOYEE_DELETE)
   remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
     return this.imports.remove(id);
   }

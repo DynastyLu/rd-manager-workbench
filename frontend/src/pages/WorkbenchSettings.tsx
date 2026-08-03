@@ -1,7 +1,9 @@
 import { Banner, Tag } from '@douyinfe/semi-ui'
 import { Link } from 'react-router-dom'
 import { ROUTES } from '@/constants/routes'
-import { useThemeStore } from '@/stores/theme'
+import { THEME_LABELS, type Theme, useThemeStore } from '@/stores/theme'
+
+const THEMES: Theme[] = ['aurora', 'eye-care']
 
 function ThemeSection() {
   const { theme, setTheme } = useThemeStore()
@@ -13,31 +15,31 @@ function ThemeSection() {
         <Tag color="blue">本地主题</Tag>
       </header>
       <p>选择工作台界面主题；设置会自动保存到本机浏览器。</p>
-      <div className="mt-4 flex gap-3">
-        <button
-          type="button"
-          aria-pressed={theme === 'aurora'}
-          onClick={() => setTheme('aurora')}
-          className={`rounded-lg border px-4 py-2 text-sm motion-safe:transition-transform motion-safe:duration-150 motion-safe:hover:scale-[1.02] motion-safe:active:scale-[0.98] ${
-            theme === 'aurora'
-              ? 'border-[var(--workspace-brand)] bg-[var(--workspace-brand-soft)] text-[var(--workspace-brand)]'
-              : 'border-[var(--workspace-border-strong)] text-[var(--workspace-text)]'
-          }`}
-        >
-          极光
-        </button>
-        <button
-          type="button"
-          aria-pressed={theme === 'eye-care'}
-          onClick={() => setTheme('eye-care')}
-          className={`rounded-lg border px-4 py-2 text-sm motion-safe:transition-transform motion-safe:duration-150 motion-safe:hover:scale-[1.02] motion-safe:active:scale-[0.98] ${
-            theme === 'eye-care'
-              ? 'border-[var(--workspace-brand)] bg-[var(--workspace-brand-soft)] text-[var(--workspace-brand)]'
-              : 'border-[var(--workspace-border-strong)] text-[var(--workspace-text)]'
-          }`}
-        >
-          护眼
-        </button>
+      <div className="workspace-theme-picker" role="group" aria-label="工作台皮肤">
+        {THEMES.map((item) => {
+          const meta = THEME_LABELS[item]
+          return (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={theme === item}
+              onClick={() => setTheme(item)}
+              className="workspace-theme-card"
+              data-theme-preview={item}
+            >
+              <span className="workspace-theme-card__preview" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span className="workspace-theme-card__copy">
+                <strong><span aria-hidden="true">{meta.icon}</span>{meta.label}</strong>
+                <small>{meta.desc}</small>
+              </span>
+              <span className="workspace-theme-card__check" aria-hidden="true">✓</span>
+            </button>
+          )
+        })}
       </div>
     </section>
   )
@@ -47,14 +49,6 @@ export default function WorkbenchSettings() {
   return (
     <div className="workspace-page workspace-page--settings">
       <div className="workspace-page__inner workspace-page__inner--narrow">
-        <div className="app-page__hero">
-          <div>
-            <p className="app-page__eyebrow">Local Preferences</p>
-            <h1 className="app-page__title">工作台设置</h1>
-            <p className="app-page__subtitle">查看本地数据、通知和外部通道的当前运行边界。</p>
-          </div>
-        </div>
-
         <ThemeSection />
 
         <section className="project-workspace__panel">

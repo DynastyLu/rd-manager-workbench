@@ -72,11 +72,8 @@ export default function ApplicationCasesPage() {
   return (
     <div className="application-cases-page workspace-page">
       <div className="application-cases-page__inner workspace-page__inner">
-        <header className="application-cases-page__header">
-          <div>
-            <h1>申报认定</h1>
-            <p>用可配置流程管理条件、材料版本、证据、补正与提交。</p>
-          </div>
+        <div className="workspace-module-toolbar">
+          <div className="workspace-module-toolbar__actions">
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild><Button>新建案件</Button></DialogTrigger>
             <DialogContent>
@@ -91,7 +88,8 @@ export default function ApplicationCasesPage() {
               />
             </DialogContent>
           </Dialog>
-        </header>
+          </div>
+        </div>
 
         <Card className="workspace-card application-cases-page__filter">
           <CardContent>

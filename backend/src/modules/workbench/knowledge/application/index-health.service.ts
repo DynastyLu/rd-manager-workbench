@@ -68,7 +68,7 @@ export class IndexHealthService {
 
   async list(category?: IndexHealthCategory) {
     const principal = this.principal();
-    const documentScope = this.dataScope.documents(principal);
+    const documentScope = this.dataScope.documents(principal, 'knowledge.admin');
     const [documents, missingEmbeddings] = await Promise.all([
       this.prisma.contentDocument.findMany({
         where: { status: 'ACTIVE', trashedAt: null, AND: documentScope },
@@ -117,7 +117,7 @@ export class IndexHealthService {
           id: documentId,
           status: 'ACTIVE',
           trashedAt: null,
-          AND: this.dataScope.documents(this.principal()),
+          AND: this.dataScope.documents(this.principal(), 'knowledge.admin'),
         },
         select: { id: true, title: true, originalName: true, mimeType: true },
       });
@@ -195,7 +195,7 @@ export class IndexHealthService {
           id: documentId,
           status: 'ACTIVE',
           trashedAt: null,
-          AND: this.dataScope.documents(this.principal()),
+          AND: this.dataScope.documents(this.principal(), 'knowledge.admin'),
         },
         select: { id: true },
       });

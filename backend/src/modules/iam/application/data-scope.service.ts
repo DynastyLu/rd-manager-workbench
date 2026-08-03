@@ -2,13 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { DataTableSource, type Prisma } from '@prisma/client';
 import { AuthorizationService } from './authorization.service';
 import type { AuthenticatedPrincipal } from '../domain/principal';
+import type { PermissionCode } from '../domain/permission-catalog';
 
 @Injectable()
 export class DataScopeService {
   constructor(private readonly authorization: AuthorizationService) {}
 
-  projects(principal: AuthenticatedPrincipal): Prisma.ProjectWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'project.read');
+  projects(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.ProjectWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -27,8 +28,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  tasks(principal: AuthenticatedPrincipal): Prisma.WorkTaskWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'task.read');
+  tasks(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.WorkTaskWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -57,8 +58,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  employees(principal: AuthenticatedPrincipal): Prisma.ResourceProfileWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'employee.read');
+  employees(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.ResourceProfileWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -85,14 +86,14 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  employeeWork(principal: AuthenticatedPrincipal): Prisma.EmployeeWorkItemWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'employee.read');
+  employeeWork(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.EmployeeWorkItemWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
 
     const predicates: Prisma.EmployeeWorkItemWhereInput[] = [];
-    if (scope.kinds.includes('SELF')) {
+    if (scope.kinds.includes('SELF') || scope.kinds.includes('INVOLVED')) {
       predicates.push({ employeeId: principal.employeeId });
     }
     if (scope.kinds.includes('PROJECT') && scope.projectIds && scope.projectIds.length > 0) {
@@ -102,14 +103,14 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  employeeWeekPlanItems(principal: AuthenticatedPrincipal): Prisma.EmployeeWeekPlanItemWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'employee.read');
+  employeeWeekPlanItems(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.EmployeeWeekPlanItemWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
 
     const predicates: Prisma.EmployeeWeekPlanItemWhereInput[] = [];
-    if (scope.kinds.includes('SELF')) {
+    if (scope.kinds.includes('SELF') || scope.kinds.includes('INVOLVED')) {
       predicates.push({ employeeId: principal.employeeId });
     }
     if (scope.kinds.includes('PROJECT') && scope.projectIds && scope.projectIds.length > 0) {
@@ -119,8 +120,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  meetings(principal: AuthenticatedPrincipal): Prisma.MeetingWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'meeting.read');
+  meetings(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.MeetingWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -142,8 +143,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  documents(principal: AuthenticatedPrincipal): Prisma.ContentDocumentWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'document.read');
+  documents(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.ContentDocumentWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -167,8 +168,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  knowledge(principal: AuthenticatedPrincipal): Prisma.DocumentChunkWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'document.read');
+  knowledge(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.DocumentChunkWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -191,8 +192,8 @@ export class DataScopeService {
       : { id: { in: [] } };
   }
 
-  knowledgeSpaces(principal: AuthenticatedPrincipal): Prisma.KnowledgeSpaceWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'document.read');
+  knowledgeSpaces(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.KnowledgeSpaceWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -211,8 +212,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  decisions(principal: AuthenticatedPrincipal): Prisma.DecisionWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'decision.read');
+  decisions(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.DecisionWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -235,8 +236,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  issues(principal: AuthenticatedPrincipal): Prisma.IssueWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'issue.read');
+  issues(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.IssueWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -259,8 +260,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  risks(principal: AuthenticatedPrincipal): Prisma.RiskWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'risk.read');
+  risks(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.RiskWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -279,8 +280,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  intelligenceItems(principal: AuthenticatedPrincipal): Prisma.IntelligenceItemWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'intelligence.read');
+  intelligenceItems(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.IntelligenceItemWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -313,8 +314,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  partners(principal: AuthenticatedPrincipal): Prisma.PartnerWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'partner.read');
+  partners(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.PartnerWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -322,7 +323,7 @@ export class DataScopeService {
     const predicates: Prisma.PartnerWhereInput[] = [];
     if (scope.kinds.includes('SELF') || scope.kinds.includes('INVOLVED')) {
       predicates.push({
-        projects: { some: { project: this.projects(principal) } },
+        projects: { some: { project: this.projects(principal, permissionCode) } },
       });
     }
     if (scope.kinds.includes('PROJECT') && scope.projectIds && scope.projectIds.length > 0) {
@@ -332,8 +333,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  communications(principal: AuthenticatedPrincipal): Prisma.CommunicationRecordWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'partner.read');
+  communications(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.CommunicationRecordWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -341,8 +342,8 @@ export class DataScopeService {
     const predicates: Prisma.CommunicationRecordWhereInput[] = [];
     if (scope.kinds.includes('SELF') || scope.kinds.includes('INVOLVED')) {
       predicates.push(
-        { project: this.projects(principal) },
-        { partner: this.partners(principal) },
+        { project: this.projects(principal, permissionCode) },
+        { partner: this.partners(principal, permissionCode) },
       );
     }
     if (scope.kinds.includes('PROJECT') && scope.projectIds && scope.projectIds.length > 0) {
@@ -352,8 +353,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  baseTables(principal: AuthenticatedPrincipal): Prisma.DataTableWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'base.read');
+  baseTables(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.DataTableWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -370,8 +371,8 @@ export class DataScopeService {
     return predicates.length > 0 ? { OR: predicates } : { id: { in: [] } };
   }
 
-  baseRecords(principal: AuthenticatedPrincipal): Prisma.DataRecordWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'base.read');
+  baseRecords(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.DataRecordWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -390,8 +391,8 @@ export class DataScopeService {
       : { id: { in: [] } };
   }
 
-  activities(principal: AuthenticatedPrincipal): Prisma.ActivityRecordWhereInput {
-    const scope = this.authorization.resolveScope(principal, 'activity.read');
+  activities(principal: AuthenticatedPrincipal, permissionCode: PermissionCode): Prisma.ActivityRecordWhereInput {
+    const scope = this.authorization.resolveScope(principal, permissionCode);
     if (scope.kinds.includes('ALL')) {
       return {};
     }
@@ -401,7 +402,7 @@ export class DataScopeService {
       predicates.push(
         { actorId: principal.userId },
         { employeeId: principal.employeeId },
-        { project: this.projects(principal) },
+        { project: this.projects(principal, permissionCode) },
       );
     }
 

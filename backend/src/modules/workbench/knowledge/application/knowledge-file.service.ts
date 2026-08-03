@@ -66,7 +66,7 @@ export class KnowledgeFileService {
         id: documentId,
         status: 'ACTIVE',
         trashedAt: null,
-        AND: this.dataScope.documents(this.principal()),
+        AND: this.dataScope.documents(this.principal(), 'document.read'),
       },
       select: {
         id: true,
@@ -188,7 +188,7 @@ export class KnowledgeFileService {
         id: documentId,
         status: 'ACTIVE',
         trashedAt: null,
-        AND: this.dataScope.documents(this.principal()),
+        AND: this.dataScope.documents(this.principal(), 'document.read'),
       },
       select: { id: true },
     });

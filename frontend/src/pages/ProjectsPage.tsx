@@ -171,11 +171,8 @@ export default function ProjectsPage() {
   return (
     <div className="projects-page workspace-page">
       <div className="projects-page__inner workspace-page__inner">
-      <header className="projects-page__header">
-        <div>
-          <h1>项目</h1>
-          <p>围绕目标、工作项、会议和资料推进研发工作。</p>
-        </div>
+      <div className="workspace-module-toolbar">
+        <div className="workspace-module-toolbar__actions">
         <Button
           theme="solid"
           type="primary"
@@ -185,7 +182,8 @@ export default function ProjectsPage() {
         >
           新建项目
         </Button>
-      </header>
+        </div>
+      </div>
 
       <section className="projects-page__surface workspace-card" aria-label="项目目录">
         <div className="projects-page__tabs" role="tablist" aria-label="项目视图">

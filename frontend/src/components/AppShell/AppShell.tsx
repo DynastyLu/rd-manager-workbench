@@ -4,6 +4,7 @@ import { matchRoutes, Outlet, useLocation, useNavigate, type RouteObject } from 
 import routes, { primaryNavigation, type RouteDefinition } from '@/router/routes'
 import { WorkspaceHeader } from './WorkspaceHeader'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
+import { RouteHistoryTitleProvider } from './RouteHistoryTitleProvider'
 import './AppShell.less'
 
 interface AppShellProps {
@@ -61,28 +62,30 @@ export function AppShell({ skeleton = null }: AppShellProps) {
   }, [])
 
   return (
-    <div className="app-shell">
-      <WorkspaceNavigation items={primaryNavigation} />
-      <div className="app-shell__main">
-        <WorkspaceHeader route={activeRoute} />
-        <main className="app-shell__content" ref={contentRef}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={pathname}
-              className="app-shell__page"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <Suspense fallback={skeleton}>
-                <Outlet />
-              </Suspense>
-            </motion.div>
-          </AnimatePresence>
-        </main>
+    <RouteHistoryTitleProvider routeKey={pathname}>
+      <div className="app-shell">
+        <WorkspaceNavigation items={primaryNavigation} />
+        <div className="app-shell__main">
+          <WorkspaceHeader route={activeRoute} />
+          <main className="app-shell__content" ref={contentRef}>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={pathname}
+                className="app-shell__page"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <Suspense fallback={skeleton}>
+                  <Outlet />
+                </Suspense>
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
       </div>
-    </div>
+    </RouteHistoryTitleProvider>
   )
 }
 

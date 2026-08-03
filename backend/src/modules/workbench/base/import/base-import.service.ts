@@ -42,7 +42,7 @@ export class BaseImportService {
       where: {
         AND: [
           { id: tableId, archivedAt: null },
-          this.dataScope.baseTables(this.principal()),
+          this.dataScope.baseTables(this.principal(), 'base.update'),
         ],
       },
     });
@@ -277,7 +277,7 @@ export class BaseImportService {
       where: {
         AND: [
           { id: tableId, archivedAt: null },
-          this.dataScope.baseTables(this.principal()),
+          this.dataScope.baseTables(this.principal(), 'base.update'),
         ],
       },
     });

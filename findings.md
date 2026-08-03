@@ -1,5 +1,15 @@
 # 发现与决策
 
+## 2026-08-02 全站工作区 UI 审计
+
+- `WorkspaceHeader` 已显示当前路由，至少 15 个模块页仍在内容区重复渲染同名标题和宣传式说明。
+- `workspace-page__inner` 无最大宽度，而旧 `app-page__inner` 限制 1280px，导致超宽屏页面表现不一致。
+- `AdminPages.less` 的工具栏使用 auto-fit 等分网格，空 spacer 不能发挥 flex 作用，创建按钮因此被拉成整列。
+- 权限表固定列宽总和小于可用宽度，Semi 横向画布按列宽总和渲染，产生右侧巨大空白。
+- `FormView.tsx` 使用布局内联样式和原生按钮，绕过工作区设计变量和 Semi 组件规范。
+- `ProjectWorkspacePage.less` 在工作项页签嵌套块后缺少结束括号，计划基线及后续样式被错误嵌套，是项目概览表单贴边的直接根因。
+- 全局 `.workspace-card:hover` 会移动大型结构容器；Aurora 渐变覆盖普通业务页，降低信息密度和稳定感。
+
 ## 2026-07-30 企业级账号、角色与权限决策
 
 - 当前系统没有真实 User、Role、Permission 或 AuthSession 模型，HTTP 请求也没有 Access Token 注入与刷新逻辑；现有员工档案不能直接等同于登录账号。
@@ -335,3 +345,28 @@
 - Transformers/ONNX 模型下载缓存不能依赖进程临时内存。Windows 使用 `%LOCALAPPDATA%/RD Manager Workbench/models/embeddings`，其他平台使用对应用户缓存目录，并允许 `LOCAL_AI_MODEL_CACHE` 显式覆盖；原生 ONNX 加载失败后降级 WASM，失败时仍保留全文检索。
 - 全量重索引创建必须在 PostgreSQL advisory transaction lock 内复验活动任务；否则双击或多窗口请求会创建重复索引作业。锁键通过 Prisma 参数插值传入，避免 PostgreSQL 不接受带下划线数字字面量的问题。
 - 本地模型的持久化状态需区分 `UNKNOWN`、`PERSISTED` 和 `DEGRADED`。缓存写入失败可让本次内存推理继续，但页面必须明确提示“本次可用、重启后可能重新下载”，且接口不得返回原始异常、绝对路径或索引任务错误数组。
+
+## 2026-08-02 Kimi 改动复核
+
+- 产品负责人确认默认超级管理员、默认账号密码、Dock 和 Aurora 页面样式均为预期方案，不作为缺陷。
+- 当前需要修复的是可复现的权限、数据隔离、实时认证、接口缺失、迁移一致性、交互失效和工程门禁问题。
+- 已确认 P0 包括员工导入和工作台全量数据、写操作复用 read scope、日历/提醒/附件/文档跨用户、Socket 全局广播、文件夹任意路径及 SSE 401、项目进展草稿全量泄露。
+- 当前前后端普通构建和大部分测试通过，但 `frontend pnpm typecheck:contracts` 因 Project 缺少 `ownerUserId` 样例失败。
+- Dashboard 权限不能只靠 controller 元数据单测；必须用真实 Guard 验证缺任一权限返回 403，并用两个普通用户的真实数据验证 Prisma 范围过滤。项目可见范围需使用 `AND: [scope, { archivedAt: null }]`，避免未来 scope 中出现同名字段时覆盖归档约束。
+
+## 2026-08-02 全宽布局与安全审计表格根因
+
+- 安全审计列宽合计为 900px，并把该值传给 Semi Table 的 `scroll.x`；宽屏下内部表格因此固定为 900px，即使外层卡片已是全宽仍会留下大面积空白。
+- 统一规则不能只设置 Table 外壳宽度；必须同时约束 `.semi-spin`、`.semi-spin-children`、`.semi-table-container`、`.semi-table-body` 和真实 `table`，使表格最小宽度等于容器，超宽内容在内部滚动。
+- 通用页面壳虽已移除 1280px 上限，项目详情仍残留 1320/1440px 限宽和基于 `100vw - 1440px` 的居中 padding；现已统一改为全宽和 `clamp()` 边距。
+- 浏览器回归必须检查真实 `<table>` 的计算宽度，单看 `.semi-table-wrapper` 会漏掉“外壳全宽、内部表格窄”的假通过。
+
+## 2026-08-03 全站动态皮肤组件研究
+
+- MotionSites 更适合作为动效节奏、视觉层次和营销级氛围的灵感来源，不应作为企业工作台的运行时组件依赖。
+- React Bits 提供可复制到项目源码的 React 动效组件，覆盖背景、文字、交互与动画，适合抽取 Dock、光效边框、加载和空状态的实现思路；应改造成项目自己的语义、令牌和无障碍接口。
+- Aceternity UI 提供 Glowing Effect、Hover Border Gradient、Animated Tabs、Stateful Button、Multi-Step Loader、Animated Modal、Floating Dock、File Upload、Bento/Grid、Empty States 等模式；适合高可见区域，但不应替换 Semi 的 DatePicker、Select、Table、Modal 等成熟企业控件。
+- Uiverse 以 CSS/Tailwind 单体元素为主，适合按钮、开关、输入框和加载器的局部微交互；来源质量不一，复制前需检查键盘、焦点、降级动效和许可说明。
+- 当前工程已经包含 React 19、Semi UI、Tailwind 和 Framer Motion，新增整套 UI 运行时依赖没有必要；最佳路径是保留 Semi 行为层，把筛选后的动效组件放入 `shared/ui`，由统一 token 和 motion policy 驱动。
+- 视觉方向确定为 `Luminous Workspace`：白色生产力界面、冷蓝到紫色的低饱和光晕、细描边、分层玻璃质感和克制的状态动效。高频表格与表单不做持续动画，AI、导航、空状态、上传和加载反馈允许更强表现。
+- 全站重构必须继续遵守既有全宽规则：页面不使用窄 `max-width` 居中画布；容器默认 `width: 100%`、`min-width: 0`；优先 Grid/Flex 和 `clamp()`；表格的真实 `table` 必须铺满，超宽内容只在内部滚动。

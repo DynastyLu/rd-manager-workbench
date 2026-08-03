@@ -76,14 +76,9 @@ export default function RisksPage() {
   return (
     <div className="risks-page workspace-page">
       <div className="risks-page__inner workspace-page__inner">
-        <header className="risks-page__header">
-          <div>
-            <h1>风险对象库</h1>
-            <p>按状态筛选未关闭风险；高风险会实时影响关联项目健康度。</p>
-            {projectId ? (
-              <p className="risks-page__scope">当前仅显示本项目风险</p>
-            ) : null}
-          </div>
+        <div className="workspace-module-toolbar">
+          {projectId ? <span className="risks-page__scope">当前仅显示本项目风险</span> : <span />}
+          <div className="workspace-module-toolbar__actions">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button>新建风险</Button>
@@ -117,7 +112,8 @@ export default function RisksPage() {
               </form>
             </DialogContent>
           </Dialog>
-        </header>
+          </div>
+        </div>
 
         {focusedRiskQuery.data ? (
           <section aria-label="当前定位风险">

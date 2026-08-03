@@ -276,17 +276,12 @@ export default function ExtensionsSettingsPage() {
   return (
     <div className="extensions-page workspace-page">
       <div className="workspace-page__inner">
-        <header className="extensions-page__hero">
-          <div>
-            <p>CONTROLLED EXTERNAL ACCESS</p>
-            <h1>外部能力</h1>
-            <span>本地功能始终可用。外部调用默认关闭、逐次确认，凭据只保存在 Electron 加密保险箱。</span>
-          </div>
-          <div className="extensions-page__hero-status">
+        <div className="workspace-module-toolbar">
+          <div className="extensions-page__hero-status workspace-module-toolbar__actions">
             <Tag color="blue">{enabledCount} 个服务已启用</Tag>
             <Tag color={storeQuery.data ? 'green' : 'grey'}>{storeQuery.data ? '凭据保险箱可用' : '仅本地模式'}</Tag>
           </div>
-        </header>
+        </div>
 
         {!storeQuery.data ? (
           <Banner

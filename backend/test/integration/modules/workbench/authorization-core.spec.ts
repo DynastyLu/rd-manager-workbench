@@ -52,11 +52,11 @@ describe('Workbench authorization core', () => {
       { code: PERMISSIONS.EMPLOYEE_UPDATE, dataScope: DataScope.SELF },
       { code: PERMISSIONS.EMPLOYEE_ARCHIVE, dataScope: DataScope.SELF },
       { code: PERMISSIONS.EMPLOYEE_DELETE, dataScope: DataScope.SELF },
-      { code: PERMISSIONS.PROJECT_READ, dataScope: DataScope.SELF },
+      { code: PERMISSIONS.PROJECT_READ, dataScope: DataScope.ALL },
       { code: PERMISSIONS.PROJECT_CREATE, dataScope: DataScope.SELF },
       { code: PERMISSIONS.PROJECT_UPDATE, dataScope: DataScope.SELF },
       { code: PERMISSIONS.PROJECT_DELETE, dataScope: DataScope.SELF },
-      { code: PERMISSIONS.TASK_READ, dataScope: DataScope.SELF },
+      { code: PERMISSIONS.TASK_READ, dataScope: DataScope.ALL },
       { code: PERMISSIONS.TASK_CREATE, dataScope: DataScope.SELF },
       { code: PERMISSIONS.TASK_UPDATE, dataScope: DataScope.SELF },
       { code: PERMISSIONS.TASK_DELETE, dataScope: DataScope.SELF },
@@ -150,12 +150,12 @@ describe('Workbench authorization core', () => {
     expect(missing.body.error.code).toBe('RESOURCE_NOT_FOUND');
   });
 
-  it('lists only self-scoped projects and excludes others', async () => {
+  it('allows organization-wide project reads while keeping project writes self-scoped', async () => {
     const peerList = await peer.agent
       .get('/api/projects')
       .query({ search: prefix, pageSize: 100 })
       .expect(200);
-    expect(peerList.body.data.data).not.toEqual(
+    expect(peerList.body.data.data).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: projectId })]),
     );
 
@@ -168,9 +168,8 @@ describe('Workbench authorization core', () => {
     );
   });
 
-  it('returns 403 for an existing project outside scope and 404 for a missing one', async () => {
-    const getExisting = await peer.agent.get(`/api/projects/${projectId}`).expect(403);
-    expect(getExisting.body.error.code).toBe('PERMISSION_DENIED');
+  it('returns 403 for project writes outside SELF scope while read remains allowed', async () => {
+    await peer.agent.get(`/api/projects/${projectId}`).expect(200);
 
     const patchExisting = await peer.agent
       .patch(`/api/projects/${projectId}`)
@@ -185,12 +184,12 @@ describe('Workbench authorization core', () => {
     expect(missing.body.error.code).toBe('HTTP_ERROR');
   });
 
-  it('lists only self-scoped tasks and excludes others', async () => {
+  it('allows organization-wide task reads while keeping task writes self-scoped', async () => {
     const peerList = await peer.agent
       .get('/api/tasks')
       .query({ projectId, pageSize: 100 })
       .expect(200);
-    expect(peerList.body.data.data).not.toEqual(
+    expect(peerList.body.data.data).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: taskId })]),
     );
 
@@ -203,9 +202,8 @@ describe('Workbench authorization core', () => {
     );
   });
 
-  it('returns 403 for an existing task outside scope and 404 for a missing one', async () => {
-    const getExisting = await peer.agent.get(`/api/tasks/${taskId}`).expect(403);
-    expect(getExisting.body.error.code).toBe('PERMISSION_DENIED');
+  it('returns 403 for task writes outside SELF scope while read remains allowed', async () => {
+    await peer.agent.get(`/api/tasks/${taskId}`).expect(200);
 
     const patchExisting = await peer.agent
       .patch(`/api/tasks/${taskId}`)

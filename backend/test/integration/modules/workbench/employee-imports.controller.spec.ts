@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import {
+  DataScope,
   EmployeeImportRowStatus,
   EmployeeProgressPeriod,
   EmployeeProgressScope,
@@ -17,6 +18,7 @@ import ExcelJS from 'exceljs';
 import type { Response } from 'supertest';
 import { configureBodyParser } from '../../../../src/bootstrap/body-parser';
 import { StoragePort } from '../../../../src/infrastructure/storage/storage.port';
+import { PERMISSIONS } from '../../../../src/modules/iam/domain/permission-catalog';
 import { EmployeeProgressSnapshotService } from '../../../../src/modules/workbench/employees/application/employee-progress-snapshot.service';
 import { EmployeeWorkbookService } from '../../../../src/modules/workbench/employees/application/employee-workbook.service';
 import { HttpExceptionFilter } from '../../../../src/shared/filters/http-exception.filter';
@@ -53,7 +55,11 @@ describe('Employee work imports API', () => {
     app.useGlobalInterceptors(app.get(ResponseInterceptor));
     await app.init();
 
-    authenticated = await authenticatedRequest(app, prisma, `${prefix}-ROLE`);
+    authenticated = await authenticatedRequest(app, prisma, `${prefix}-ROLE`, [
+      { code: PERMISSIONS.EMPLOYEE_READ, dataScope: DataScope.ALL },
+      { code: PERMISSIONS.EMPLOYEE_UPDATE, dataScope: DataScope.ALL },
+      { code: PERMISSIONS.EMPLOYEE_DELETE, dataScope: DataScope.ALL },
+    ]);
 
     const employee = await prisma.resourceProfile.create({
       data: { displayName: employeeName },

@@ -41,7 +41,7 @@ export class ReportsService {
 
   async portfolio(query: ReportQueryDto) {
     const { from, endExclusive } = this.range(query);
-    const scope = this.dataScope.projects(this.principal());
+    const scope = this.dataScope.projects(this.principal(), 'project.read');
     const projects = await this.prisma.project.findMany({
       where: { archivedAt: null, createdAt: { lt: endExclusive }, AND: scope },
       orderBy: [{ code: 'asc' }, { id: 'asc' }],
@@ -82,7 +82,7 @@ export class ReportsService {
 
   async taskCompletionTrend(query: ReportQueryDto) {
     const range = this.range(query);
-    const scope = this.dataScope.tasks(this.principal());
+    const scope = this.dataScope.tasks(this.principal(), 'task.read');
     const tasks = await this.prisma.workTask.findMany({
       where: {
         archivedAt: null,
@@ -109,7 +109,7 @@ export class ReportsService {
 
   async riskTrend(query: ReportQueryDto) {
     const range = this.range(query);
-    const scope = this.dataScope.risks(this.principal());
+    const scope = this.dataScope.risks(this.principal(), 'risk.read');
     const risks = await this.prisma.risk.findMany({
       where: { archivedAt: null, OR: [{ createdAt: { gte: range.from, lt: range.endExclusive } }, { closedAt: { gte: range.from, lt: range.endExclusive } }], AND: scope },
       select: { status: true, level: true, createdAt: true, closedAt: true },
@@ -134,7 +134,7 @@ export class ReportsService {
     const { from, to } = this.resourceRange(query);
     const weekCount = Math.floor((to.getTime() - from.getTime()) / WEEK_MS) + 1;
     if (weekCount < 1 || weekCount > 13) this.invalidRange('Resource report range must contain between 1 and 13 weeks');
-    const scope = this.dataScope.employees(this.principal());
+    const scope = this.dataScope.employees(this.principal(), 'employee.read');
     const resources = await this.prisma.resourceProfile.findMany({
       where: { archivedAt: null, AND: scope },
       orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
@@ -162,7 +162,7 @@ export class ReportsService {
 
   async intelligence(query: ReportQueryDto) {
     const range = this.range(query);
-    const scope = this.dataScope.intelligenceItems(this.principal());
+    const scope = this.dataScope.intelligenceItems(this.principal(), 'intelligence.read');
     const items = await this.prisma.intelligenceItem.findMany({
       where: { archivedAt: null, createdAt: { gte: range.from, lt: range.endExclusive }, AND: scope },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],

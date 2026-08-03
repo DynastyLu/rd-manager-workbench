@@ -1,6 +1,6 @@
 import { WorkspaceFormSelect } from '@/components/workspace/WorkspaceFormSelect'
 import { useState, type FormEvent } from 'react'
-import { Select } from '@douyinfe/semi-ui'
+import { Button, Checkbox, Input, InputNumber, Select, TextArea } from '@douyinfe/semi-ui'
 
 import type { DataField, DataTable, DataTableSource } from '../types'
 import { RelationPicker } from './RelationPicker'
@@ -88,17 +88,6 @@ function FieldControl({
   onChange: (value: unknown) => void
   relationTargetTable?: DataTable
 }) {
-  const commonStyle = {
-    width: '100%',
-    minHeight: 34,
-    padding: '0 10px',
-    border: '1px solid #dee0e3',
-    borderRadius: 6,
-    background: '#fff',
-    color: '#1f2329',
-    font: 'inherit',
-  }
-
   switch (field.type) {
     case 'RELATION':
       return relationTargetTable ? (
@@ -113,28 +102,25 @@ function FieldControl({
       )
     case 'LONG_TEXT':
       return (
-        <textarea
+        <TextArea
           id={`base-form-${field.id}`}
           aria-label={field.name}
-          required={required}
+          aria-required={required}
           value={typeof value === 'string' ? value : ''}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={onChange}
           rows={4}
-          style={{ ...commonStyle, padding: 10, resize: 'vertical' }}
+          autosize={{ minRows: 4, maxRows: 10 }}
         />
       )
     case 'NUMBER':
       return (
-        <input
+        <InputNumber
           id={`base-form-${field.id}`}
           aria-label={field.name}
-          required={required}
-          type="number"
+          aria-required={required}
           value={typeof value === 'number' || typeof value === 'string' ? value : ''}
-          onChange={(event) =>
-            onChange(event.target.value === '' ? '' : Number(event.target.value))
-          }
-          style={commonStyle}
+          onChange={(nextValue) => onChange(nextValue === '' ? '' : Number(nextValue))}
+          style={{ width: '100%' }}
         />
       )
     case 'DATETIME':
@@ -155,7 +141,7 @@ function FieldControl({
           required={required}
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
-          style={commonStyle}
+          className="base-form-view__control"
         >
           <option value="">请选择</option>
           {getOptions(field).map((option) => (
@@ -179,58 +165,56 @@ function FieldControl({
             value={Array.isArray(value) ? value.map(String) : []}
             onChange={(nextValue) => onChange(Array.isArray(nextValue) ? nextValue : [])}
             optionList={getOptions(field)}
-            style={{ ...commonStyle, minHeight: 80 }}
+            className="base-form-view__control"
+            style={{ width: '100%' }}
           />
         </>
       )
     case 'CHECKBOX':
       return (
-        <input
+        <Checkbox
           id={`base-form-${field.id}`}
           aria-label={field.name}
-          required={required}
-          type="checkbox"
+          aria-required={required}
           checked={Boolean(value)}
           onChange={(event) => onChange(event.target.checked)}
-          style={{ width: 16, height: 16, accentColor: '#3370ff' }}
-        />
+        >
+          已选择
+        </Checkbox>
       )
     case 'LINK':
       return (
-        <input
+        <Input
           id={`base-form-${field.id}`}
           aria-label={field.name}
-          required={required}
+          aria-required={required}
           type="url"
           value={typeof value === 'string' ? value : ''}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={onChange}
           placeholder="https://"
-          style={commonStyle}
         />
       )
     case 'ATTACHMENT':
       return (
-        <textarea
+        <TextArea
           id={`base-form-${field.id}`}
           aria-label={field.name}
-          required={required}
+          aria-required={required}
           value={Array.isArray(value) ? value.join('\n') : typeof value === 'string' ? value : ''}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={onChange}
           placeholder="每行一个本地文件路径，也可以用逗号分隔"
           rows={3}
-          style={{ ...commonStyle, padding: 10, resize: 'vertical' }}
+          autosize={{ minRows: 3, maxRows: 8 }}
         />
       )
     default:
       return (
-        <input
+        <Input
           id={`base-form-${field.id}`}
           aria-label={field.name}
-          required={required}
-          type="text"
+          aria-required={required}
           value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
-          onChange={(event) => onChange(event.target.value)}
-          style={commonStyle}
+          onChange={onChange}
         />
       )
   }
@@ -251,7 +235,7 @@ export function FormView({
 
   if (tableSource !== 'CUSTOM') {
     return (
-      <div style={{ padding: 32, color: '#646a73', textAlign: 'center' }}>
+      <div className="base-form-view__unavailable">
         预置业务表不能通过表单新增镜像记录。
       </div>
     )
@@ -279,19 +263,22 @@ export function FormView({
   }
 
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 20px' }}>
-      <header style={{ marginBottom: 22 }}>
-        <h2 style={{ margin: 0, color: '#1f2329', fontSize: 20 }}>新增记录</h2>
-        <p style={{ margin: '6px 0 0', color: '#8f959e', fontSize: 13 }}>
+    <div className="base-form-view workspace-form-surface">
+      <header className="base-form-view__header">
+        <h2>新增记录</h2>
+        <p>
           填写后直接写入当前自定义数据表。
         </p>
       </header>
-      <form noValidate onSubmit={(event) => void submit(event)} style={{ display: 'grid', gap: 17 }}>
+      <form className="base-form-view__form" noValidate onSubmit={(event) => void submit(event)}>
         {writableFields.map((field) => (
-          <div key={field.id} style={{ display: 'grid', gap: 7 }}>
-            <label htmlFor={`base-form-${field.id}`} style={{ color: '#1f2329', fontSize: 13 }}>
+          <div
+            key={field.id}
+            className={`base-form-view__field base-form-view__field--${field.type.toLowerCase()}`}
+          >
+            <label htmlFor={`base-form-${field.id}`}>
               {field.name}
-              {field.isPrimary || field.isRequired ? <span style={{ marginLeft: 3, color: '#f54a45' }}>*</span> : null}
+              {field.isPrimary || field.isRequired ? <span aria-hidden="true">*</span> : null}
             </label>
             <FieldControl
               field={field}
@@ -307,28 +294,14 @@ export function FormView({
           </div>
         ))}
         {error ? (
-          <p role="alert" style={{ margin: 0, color: '#f54a45', fontSize: 12 }}>
+          <p className="base-form-view__error" role="alert">
             {error}
           </p>
         ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            style={{
-              height: 34,
-              padding: '0 18px',
-              border: 0,
-              borderRadius: 6,
-              background: '#3370ff',
-              color: '#fff',
-              fontWeight: 600,
-              cursor: isSubmitting ? 'wait' : 'pointer',
-              opacity: isSubmitting ? 0.6 : 1,
-            }}
-          >
+        <div className="base-form-view__actions workspace-section__footer">
+          <Button htmlType="submit" theme="solid" type="primary" loading={isSubmitting}>
             {isSubmitting ? '提交中…' : '提交记录'}
-          </button>
+          </Button>
         </div>
       </form>
     </div>

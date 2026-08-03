@@ -115,6 +115,7 @@ const listApplicationCasesResult = {
 
 const project = {
   id: 'project-1',
+  ownerUserId: 'user-1',
   code: 'RD-001',
   name: '耐盐材料筛选',
   type: '育种',

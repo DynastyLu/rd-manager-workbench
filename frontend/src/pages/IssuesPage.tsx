@@ -56,11 +56,8 @@ export default function IssuesPage() {
   return (
     <div className="issues-page workspace-page">
       <div className="issues-page__inner workspace-page__inner">
-        <header className="issues-page__header">
-          <div>
-            <h1>问题与阻塞</h1>
-            <p>记录影响对象、解决方案、期限与验证结果。</p>
-          </div>
+        <div className="workspace-module-toolbar">
+          <div className="workspace-module-toolbar__actions">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button>新建问题</Button>
@@ -82,7 +79,8 @@ export default function IssuesPage() {
               </form>
             </DialogContent>
           </Dialog>
-        </header>
+          </div>
+        </div>
 
         {focusedIssueQuery.data ? (
           <section aria-label="当前定位问题">

@@ -15,16 +15,6 @@ export default function AutomationDataPage() {
   return (
     <div className="workspace-page automation-data-page">
       <div className="workspace-page__inner grid gap-4">
-        <div className="workspace-page__hero-card">
-          <header className="app-page__hero">
-            <div>
-              <p className="app-page__eyebrow">Automation &amp; Data</p>
-              <h1 className="app-page__title">自动化与数据</h1>
-              <p className="app-page__subtitle">这些本地能力正在规划，当前不会发起未实现的请求。</p>
-            </div>
-          </header>
-        </div>
-
         <PlannedModuleState
           title="自动化与数据能力"
           description="围绕本地研发工作流逐步建设自动化与数据管理能力。"
@@ -32,8 +22,8 @@ export default function AutomationDataPage() {
         />
 
         <section aria-label="规划中的自动化与数据模块" className="workspace-card p-4">
-          <h2 className="font-medium" style={{ color: 'var(--workspace-text)' }}>规划模块</h2>
-          <ul className="mt-3 grid gap-2 text-sm sm:grid-cols-2" style={{ color: 'var(--workspace-text-secondary)' }}>
+          <h2 className="font-medium text-[var(--workspace-text)]">规划模块</h2>
+          <ul className="mt-3 grid gap-2 text-sm text-[var(--workspace-text-secondary)] sm:grid-cols-2">
             {plannedModules.map((module) => (
               <li key={module}>{module}</li>
             ))}

@@ -491,11 +491,8 @@ export default function EmployeesPage() {
   return (
     <div className="employees-page workspace-page">
       <div className="employees-page__inner workspace-page__inner">
-        <header className="employees-page__header">
-        <div>
-          <h1>员工</h1>
-          <p>统一维护员工档案、工作计划和团队进展。</p>
-        </div>
+        <div className="workspace-module-toolbar">
+          <div className="workspace-module-toolbar__actions">
         <Button
           theme="solid"
           type="primary"
@@ -505,7 +502,8 @@ export default function EmployeesPage() {
         >
           新建员工
         </Button>
-      </header>
+          </div>
+        </div>
 
       <section className="employees-page__surface workspace-card" aria-label="员工工作区">
         <Tabs

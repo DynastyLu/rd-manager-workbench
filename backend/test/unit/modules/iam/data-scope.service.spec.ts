@@ -5,12 +5,55 @@ import type {
   PrincipalDataScope,
   PrincipalPermission,
 } from '../../../../src/modules/iam/domain/principal';
+import { PERMISSIONS } from '../../../../src/modules/iam/domain/permission-catalog';
 
 describe('DataScopeService', () => {
   const service = new DataScopeService(new AuthorizationService());
 
+  it('resolves project scope from the permission for the current operation', () => {
+    const employee = principal({
+      permissions: [
+        grant(PERMISSIONS.PROJECT_READ, 'ALL'),
+        grant(PERMISSIONS.PROJECT_UPDATE, 'SELF'),
+        grant(PERMISSIONS.PROJECT_DELETE, 'SELF'),
+      ],
+    });
+
+    expect(service.projects(employee, PERMISSIONS.PROJECT_READ)).toEqual({});
+    expect(service.projects(employee, PERMISSIONS.PROJECT_UPDATE)).toEqual({
+      OR: [{ ownerUserId: employee.userId }],
+    });
+    expect(service.projects(employee, PERMISSIONS.PROJECT_DELETE)).toEqual({
+      OR: [{ ownerUserId: employee.userId }],
+    });
+  });
+
+  it('resolves task scope from the permission for the current operation', () => {
+    const employee = principal({
+      permissions: [
+        grant(PERMISSIONS.TASK_READ, 'ALL'),
+        grant(PERMISSIONS.TASK_UPDATE, 'SELF'),
+        grant(PERMISSIONS.TASK_DELETE, 'SELF'),
+      ],
+    });
+
+    expect(service.tasks(employee, PERMISSIONS.TASK_READ)).toEqual({});
+    expect(service.tasks(employee, PERMISSIONS.TASK_UPDATE)).toEqual({
+      OR: [
+        { ownerUserId: employee.userId },
+        { assigneeUserId: employee.userId },
+      ],
+    });
+    expect(service.tasks(employee, PERMISSIONS.TASK_DELETE)).toEqual({
+      OR: [
+        { ownerUserId: employee.userId },
+        { assigneeUserId: employee.userId },
+      ],
+    });
+  });
+
   it('returns unrestricted project predicates only for SUPER_ADMIN', () => {
-    expect(service.projects(principal({ roleCodes: ['SUPER_ADMIN'] }))).toEqual({});
+    expect(service.projects(principal({ roleCodes: ['SUPER_ADMIN'] }), PERMISSIONS.PROJECT_READ)).toEqual({});
   });
 
   it('limits INVOLVED projects to projects owned by or explicitly shared with the user', () => {
@@ -18,7 +61,7 @@ describe('DataScopeService', () => {
       permissions: [grant('project.read', 'INVOLVED')],
     });
 
-    expect(service.projects(employee)).toEqual({
+    expect(service.projects(employee, PERMISSIONS.PROJECT_READ)).toEqual({
       OR: [{ ownerUserId: employee.userId }, { members: { some: { userId: employee.userId } } }],
     });
   });
@@ -36,7 +79,7 @@ describe('DataScopeService', () => {
       ],
     });
 
-    expect(service.employees(employee)).toEqual({
+    expect(service.employees(employee, PERMISSIONS.EMPLOYEE_READ)).toEqual({
       OR: [
         { id: employee.employeeId },
         { department: { in: ['产品部', '研发部'] } },
@@ -58,7 +101,7 @@ describe('DataScopeService', () => {
       permissions: [grant('task.read', 'INVOLVED')],
     });
 
-    expect(service.tasks(employee)).toEqual({
+    expect(service.tasks(employee, PERMISSIONS.TASK_READ)).toEqual({
       OR: [
         { ownerUserId: employee.userId },
         { assigneeUserId: employee.userId },
@@ -76,8 +119,21 @@ describe('DataScopeService', () => {
       ],
     });
 
-    expect(service.employeeWork(employee)).toEqual({
+    expect(service.employeeWork(employee, PERMISSIONS.EMPLOYEE_READ)).toEqual({
       OR: [{ employeeId: employee.employeeId }, { projectId: { in: ['project-a'] } }],
+    });
+  });
+
+  it('treats INVOLVED employee work and week plans as the bound employee without widening scope', () => {
+    const employee = principal({
+      permissions: [grant(PERMISSIONS.EMPLOYEE_READ, 'INVOLVED')],
+    });
+
+    expect(service.employeeWork(employee, PERMISSIONS.EMPLOYEE_READ)).toEqual({
+      OR: [{ employeeId: employee.employeeId }],
+    });
+    expect(service.employeeWeekPlanItems(employee, PERMISSIONS.EMPLOYEE_READ)).toEqual({
+      OR: [{ employeeId: employee.employeeId }],
     });
   });
 
@@ -86,7 +142,7 @@ describe('DataScopeService', () => {
       permissions: [grant('meeting.read', 'INVOLVED')],
     });
 
-    expect(service.meetings(employee)).toEqual({
+    expect(service.meetings(employee, PERMISSIONS.MEETING_READ)).toEqual({
       OR: [
         { organizerUserId: employee.userId },
         { participants: { some: { userId: employee.userId } } },
@@ -101,7 +157,7 @@ describe('DataScopeService', () => {
       permissions: [grant('document.read', 'INVOLVED')],
     });
 
-    expect(service.documents(employee)).toEqual({
+    expect(service.documents(employee, PERMISSIONS.DOCUMENT_READ)).toEqual({
       OR: [
         { ownerUserId: employee.userId },
         { userShares: { some: { userId: employee.userId } } },
@@ -117,7 +173,7 @@ describe('DataScopeService', () => {
       permissions: [grant('document.read', 'SELF')],
     });
 
-    expect(service.knowledge(employee)).toEqual({
+    expect(service.knowledge(employee, PERMISSIONS.DOCUMENT_READ)).toEqual({
       document: {
         OR: [{ ownerUserId: employee.userId }],
       },
@@ -127,28 +183,28 @@ describe('DataScopeService', () => {
   it.each([
     [
       'projects',
-      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.projects(user),
+      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.projects(user, PERMISSIONS.PROJECT_READ),
     ],
-    ['tasks', (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.tasks(user)],
+    ['tasks', (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.tasks(user, PERMISSIONS.TASK_READ)],
     [
       'employees',
-      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.employees(user),
+      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.employees(user, PERMISSIONS.EMPLOYEE_READ),
     ],
     [
       'employee work',
-      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.employeeWork(user),
+      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.employeeWork(user, PERMISSIONS.EMPLOYEE_READ),
     ],
     [
       'meetings',
-      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.meetings(user),
+      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.meetings(user, PERMISSIONS.MEETING_READ),
     ],
     [
       'documents',
-      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.documents(user),
+      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.documents(user, PERMISSIONS.DOCUMENT_READ),
     ],
     [
       'knowledge',
-      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.knowledge(user),
+      (subject: DataScopeService, user: AuthenticatedPrincipal) => subject.knowledge(user, PERMISSIONS.DOCUMENT_READ),
     ],
   ])('returns an explicit deny-all predicate for %s without a relevant grant', (_name, build) => {
     expect(build(service, principal())).toEqual({ id: { in: [] } });

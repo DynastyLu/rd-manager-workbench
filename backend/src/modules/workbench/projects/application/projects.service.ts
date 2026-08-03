@@ -10,6 +10,7 @@ import { ListProjectsQueryDto } from '../interface/http/dto/list-projects-query.
 import { UpdateProjectDto } from '../interface/http/dto/update-project.dto';
 import { ProjectProgressService } from './project-progress.service';
 import { ProjectWorkItemViewDto } from '../interface/http/dto/project-plan.dto';
+import type { PermissionCode } from '../../../../modules/iam/domain/permission-catalog';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
@@ -68,7 +69,7 @@ export class ProjectsService {
     const principal = this.requestContext.requirePrincipal();
     const page = this.toPage(query.page);
     const pageSize = this.toPageSize(query.pageSize);
-    const scopeWhere = this.dataScope.projects(principal);
+    const scopeWhere = this.dataScope.projects(principal, 'project.read');
     const searchWhere = query.search
       ? {
           OR: [
@@ -116,7 +117,7 @@ export class ProjectsService {
   async get(id: string) {
     const principal = this.requestContext.requirePrincipal();
     const project = await this.prisma.project.findFirst({
-      where: { id, archivedAt: null, ...this.dataScope.projects(principal) },
+      where: { id, archivedAt: null, ...this.dataScope.projects(principal, 'project.read') },
       include: {
         milestones: {
           orderBy: [
@@ -127,7 +128,12 @@ export class ProjectsService {
           ],
         },
         tasks: {
-          where: { archivedAt: null },
+          where: {
+            AND: [
+              { archivedAt: null },
+              this.dataScope.tasks(principal, 'task.read'),
+            ],
+          },
           orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
           include: { dependencies: { select: { dependsOnTaskId: true } } },
         },
@@ -176,7 +182,7 @@ export class ProjectsService {
 
   async update(id: string, dto: UpdateProjectDto) {
     const principal = this.requestContext.requirePrincipal();
-    await this.assertAccessible(id);
+    await this.assertAccessible(id, 'project.update');
     try {
       if (dto.weightMode === 'CUSTOM') {
         const milestones = await this.prisma.milestone.findMany({
@@ -219,7 +225,7 @@ export class ProjectsService {
 
   async archive(id: string) {
     const principal = this.requestContext.requirePrincipal();
-    await this.assertAccessible(id);
+    await this.assertAccessible(id, 'project.delete');
     const result = await this.prisma.project.updateMany({
       where: { id, archivedAt: null },
       data: { archivedAt: new Date(), updatedByUserId: principal.userId },
@@ -232,7 +238,7 @@ export class ProjectsService {
 
   async updateWorkItemView(id: string, config: ProjectWorkItemViewDto) {
     const principal = this.requestContext.requirePrincipal();
-    await this.assertAccessible(id);
+    await this.assertAccessible(id, 'project.update');
     const result = await this.prisma.project.updateMany({
       where: { id, archivedAt: null },
       data: { workItemViewConfig: config as unknown as Prisma.InputJsonValue, updatedByUserId: principal.userId },
@@ -241,10 +247,10 @@ export class ProjectsService {
     return config;
   }
 
-  private async assertAccessible(id: string) {
+  private async assertAccessible(id: string, permissionCode: PermissionCode) {
     const principal = this.requestContext.requirePrincipal();
     const accessible = await this.prisma.project.findFirst({
-      where: { id, archivedAt: null, ...this.dataScope.projects(principal) },
+      where: { id, archivedAt: null, ...this.dataScope.projects(principal, permissionCode) },
       select: { id: true },
     });
     if (!accessible) {

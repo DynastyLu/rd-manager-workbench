@@ -8,11 +8,27 @@ interface WorkspaceCardProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 export function WorkspaceCard({ children, hover = true, className = '', ...props }: WorkspaceCardProps) {
+  const { onPointerMove, onPointerLeave, ...restProps } = props
+
   return (
     <CardContext.Provider value>
       <div
-        className={`workspace-card ${hover ? '' : 'hover:!transform-none hover:!shadow-[var(--workspace-shadow-panel)]'} ${className}`}
-        {...props}
+        className={`workspace-card ${className}`}
+        data-interactive={hover ? 'true' : 'false'}
+        onPointerMove={(event) => {
+          if (hover) {
+            const bounds = event.currentTarget.getBoundingClientRect()
+            event.currentTarget.style.setProperty('--spotlight-x', `${event.clientX - bounds.left}px`)
+            event.currentTarget.style.setProperty('--spotlight-y', `${event.clientY - bounds.top}px`)
+          }
+          onPointerMove?.(event)
+        }}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.removeProperty('--spotlight-x')
+          event.currentTarget.style.removeProperty('--spotlight-y')
+          onPointerLeave?.(event)
+        }}
+        {...restProps}
       >
         {children}
       </div>

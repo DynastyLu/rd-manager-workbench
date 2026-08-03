@@ -74,6 +74,7 @@ import { ProjectDetailsForm } from '@/modules/workbench/components/ProjectDetail
 import { FileAttachments } from '@/modules/content/components/FileAttachments'
 import { toast } from 'sonner'
 import './ProjectWorkspacePage.less'
+import { useRouteHistoryTitle } from '@/components/AppShell/RouteHistoryTitleContext'
 
 const SECTIONS = [
   { key: 'overview', label: '概览' },
@@ -1288,6 +1289,7 @@ export default function ProjectWorkspacePage() {
     queryFn: () => getProject(projectId),
     enabled: Boolean(projectId),
   })
+  useRouteHistoryTitle(projectQuery.data?.name)
   const pendingDraftsQuery = useQuery({
     queryKey: ['project-progress-drafts', projectId, undefined],
     queryFn: () => listProjectProgressDrafts({ projectId }),

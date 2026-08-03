@@ -87,18 +87,14 @@ export default function IntelligenceBriefsPage() {
   }
   return (
     <div className="brief-page">
-      <header>
-        <div>
-          <Link to={ROUTES.INTELLIGENCE}>
-            <IconArrowLeft /> 返回行业情报
-          </Link>
-          <h1>日报与周报</h1>
-          <p>人工挑选情报卡并保存快照，历史内容不会被后续编辑改写。</p>
-        </div>
+      <div className="workspace-module-toolbar brief-page__toolbar">
+        <Link to={ROUTES.INTELLIGENCE}>
+          <IconArrowLeft /> 返回行业情报
+        </Link>
         <Button aria-label="新建简报" theme="solid" type="primary" icon={<IconPlus />} onClick={() => openEditor()}>
           新建简报
         </Button>
-      </header>
+      </div>
       <div className="brief-kind">
         <button className={kind === 'DAILY' ? 'active' : ''} onClick={() => setKind('DAILY')}>
           日报

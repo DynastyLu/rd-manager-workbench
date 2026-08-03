@@ -58,16 +58,26 @@
   padding: 18px 20px 24px;
 
   &__toolbar {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    display: flex;
+    min-width: 0;
+    align-items: flex-end;
+    flex-wrap: wrap;
     gap: 10px;
-    align-items: end;
     padding-bottom: 14px;
     border-bottom: 1px solid var(--workspace-border);
 
     .semi-select,
     .semi-input-wrapper {
-      width: 100%;
+      width: min(100%, 260px);
+    }
+
+    > .workspace-modal-form__field {
+      width: min(100%, 220px);
+      margin: 0;
+    }
+
+    > .semi-button {
+      flex: 0 0 auto;
     }
   }
 
@@ -97,6 +107,37 @@
   color: var(--workspace-text-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+/*
+ * Semi Table can size its internal canvas from scroll.x. Every management
+ * table must still fill its card; genuinely wide columns scroll inside it.
+ */
+.admin-users__table,
+.admin-roles__table,
+.admin-permissions__table,
+.admin-audits__table,
+.admin-ownership__table {
+  width: 100%;
+  min-width: 0;
+
+  .semi-spin,
+  .semi-spin-children,
+  .semi-table-wrapper,
+  .semi-table-container,
+  .semi-table-body {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .semi-table-body {
+    overflow-x: auto;
+  }
+
+  table {
+    min-width: 100%;
+  }
 }
 
 .sr-only {
@@ -289,7 +330,20 @@
   }
 
   .admin-page__toolbar {
-    grid-template-columns: 1fr;
+    align-items: stretch;
+    flex-direction: column;
+
+    .semi-select,
+    .semi-input-wrapper,
+    > .workspace-modal-form__field,
+    > .semi-button {
+      width: 100%;
+      max-width: none;
+    }
+
+    .admin-page__toolbar-spacer {
+      display: none;
+    }
   }
 
   .role-permission-matrix__grant {

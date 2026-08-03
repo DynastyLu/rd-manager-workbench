@@ -52,12 +52,8 @@ export default function PersonalSecurityPage() {
   }
 
   return (
-    <div className="security-page">
-      <header className="security-page__header">
-        <span className="auth-card__eyebrow">PERSONAL SECURITY</span>
-        <h1>账号与登录安全</h1>
-        <p>查看账号身份、当前登录设备，并随时终止不再使用的会话。</p>
-      </header>
+    <div className="security-page workspace-page">
+      <div className="security-page__inner workspace-page__inner workspace-page__inner--narrow">
       <div className="security-page__grid">
         <Card className="security-page__identity">
           <div className="security-page__avatar">{currentUser?.displayName.slice(0, 1)}</div>
@@ -124,6 +120,7 @@ export default function PersonalSecurityPage() {
             />
           )}
         </Card>
+      </div>
       </div>
     </div>
   )

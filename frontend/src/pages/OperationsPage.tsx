@@ -184,18 +184,13 @@ function NonProjectRdPage() {
   return (
     <div className="operations-page workspace-page">
       <div className="workspace-page__inner">
-        <header className="operations-page__header">
-          <div>
-            <p>R&amp;D OPERATIONS</p>
-            <h1>非项目研发</h1>
-            <span>把预研、技术债、专利、培训和临时支持纳入可追踪的工作闭环。</span>
-          </div>
-          <div className="operations-page__header-actions">
+        <div className="workspace-module-toolbar">
+          <div className="operations-page__header-actions workspace-module-toolbar__actions">
             <Link className="operations-page__switch" to={`${ROUTES.OPERATIONS}?tab=resources`}>资源负荷</Link>
             <Link className="operations-page__switch" to={ROUTES.REPORTS}>统计报表</Link>
             <Button aria-label="新建事项" theme="solid" type="primary" icon={<IconPlus />} onClick={() => setEditor({ mode: 'create' })}>新建事项</Button>
           </div>
-        </header>
+        </div>
 
         <section className="operations-page__surface workspace-card" aria-label="非项目研发目录">
           <div className="operations-page__filters">

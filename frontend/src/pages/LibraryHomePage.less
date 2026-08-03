@@ -6,7 +6,7 @@
   min-height: 620px;
   padding: 16px;
   overflow: hidden;
-  background: var(--workspace-canvas-gradient);
+  background: var(--workspace-canvas);
   color: var(--workspace-text);
 }
 
@@ -286,9 +286,109 @@
 .base-record-detail > a { margin-top: 16px; color: var(--workspace-info); }
 .base-loading { display: grid; min-height: 520px; place-items: center; padding: 40px; background: var(--workspace-canvas); color: var(--workspace-text-muted); }
 
+.base-form-view {
+  padding: 28px 32px 0;
+
+  &__header {
+    margin-bottom: 24px;
+
+    h2 {
+      margin: 0;
+      color: var(--workspace-text);
+      font-size: 20px;
+      font-weight: 650;
+    }
+
+    p {
+      margin: 6px 0 0;
+      color: var(--workspace-text-muted);
+      font-size: 13px;
+    }
+  }
+
+  &__form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 20px;
+  }
+
+  &__field {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+    gap: 7px;
+
+    > label {
+      color: var(--workspace-text);
+      font-size: 13px;
+      font-weight: 540;
+
+      span {
+        margin-left: 3px;
+        color: var(--workspace-danger);
+      }
+    }
+
+    &--long_text,
+    &--attachment,
+    &--relation {
+      grid-column: 1 / -1;
+    }
+
+    .semi-input-wrapper,
+    .semi-input-number,
+    .semi-select,
+    .semi-input-textarea-wrapper {
+      width: 100%;
+    }
+  }
+
+  &__error,
+  &__actions {
+    grid-column: 1 / -1;
+  }
+
+  &__error {
+    margin: 0;
+    color: var(--workspace-danger);
+    font-size: 12px;
+  }
+
+  &__actions {
+    margin: 6px -32px 0;
+  }
+
+  &__unavailable {
+    padding: 48px 32px;
+    color: var(--workspace-text-muted);
+    text-align: center;
+  }
+}
+
 @media (max-width: 900px) {
   .base-page { grid-template-columns: 190px minmax(680px, 1fr); overflow: auto; }
   .base-toolbar__identity p { display: none; }
+}
+
+@media (max-width: 720px) {
+  .base-form-view {
+    padding: 20px 16px 0;
+
+    &__form {
+      grid-template-columns: 1fr;
+    }
+
+    &__field,
+    &__error,
+    &__actions {
+      grid-column: 1;
+    }
+
+    &__actions {
+      margin-right: -16px;
+      margin-left: -16px;
+    }
+  }
 }
 .base-business-links { display: flex; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--workspace-border-strong); background: transparent; }
 .base-business-links a { padding: 5px 10px; border-radius: 6px; color: var(--workspace-text-secondary); font-size: 12px; }

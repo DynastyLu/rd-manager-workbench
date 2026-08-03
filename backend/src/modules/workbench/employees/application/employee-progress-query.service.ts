@@ -380,7 +380,7 @@ export class EmployeeProgressQueryService {
     const where = this.workItemWhere(query, period);
     const scopedWhere: Prisma.EmployeeWorkItemWhereInput = {
       ...where,
-      ...this.dataScope.employeeWork(principal),
+      ...this.dataScope.employeeWork(principal, 'employee.read'),
     };
     const result = await this.prisma.$transaction(async (tx) => {
       const [data, total, batches] = await Promise.all([
@@ -413,7 +413,7 @@ export class EmployeeProgressQueryService {
       where: {
         id,
         archivedAt: null,
-        ...this.dataScope.employeeWork(principal),
+        ...this.dataScope.employeeWork(principal, 'employee.read'),
         employee: { archivedAt: null },
         importBatch: {
           status: EmployeeWorkImportStatus.COMPLETED,
@@ -450,7 +450,7 @@ export class EmployeeProgressQueryService {
       ...(query.priority ? { priority: query.priority } : {}),
       ...this.dueDateWhere(query.dueDateFrom, query.dueDateTo) as Prisma.EmployeeWeekPlanItemWhereInput,
       ...(query.carryStatus ? { carryStatus: query.carryStatus } : {}),
-      ...this.dataScope.employeeWork(principal) as Prisma.EmployeeWeekPlanItemWhereInput,
+      ...this.dataScope.employeeWork(principal, 'employee.read') as Prisma.EmployeeWeekPlanItemWhereInput,
       employee: {
         archivedAt: null,
         ...(query.department ? { department: query.department } : {}),
@@ -493,7 +493,7 @@ export class EmployeeProgressQueryService {
       where: {
         id,
         archivedAt: null,
-        ...this.dataScope.employeeWork(principal) as Prisma.EmployeeWeekPlanItemWhereInput,
+        ...this.dataScope.employeeWork(principal, 'employee.read') as Prisma.EmployeeWeekPlanItemWhereInput,
         employee: { archivedAt: null },
         importBatch: {
           status: EmployeeWorkImportStatus.COMPLETED,
@@ -1068,7 +1068,7 @@ export class EmployeeProgressQueryService {
     tx: Prisma.TransactionClient,
     principal: AuthenticatedPrincipal,
   ): Promise<string[] | undefined> {
-    const scope = this.dataScope.employees(principal);
+    const scope = this.dataScope.employees(principal, 'employee.read');
     if (Object.keys(scope).length === 0) return undefined;
     const records = await tx.resourceProfile.findMany({
       where: scope,
@@ -1081,7 +1081,7 @@ export class EmployeeProgressQueryService {
     tx: Prisma.TransactionClient,
     principal: AuthenticatedPrincipal,
   ): Promise<string[] | undefined> {
-    const scope = this.dataScope.projects(principal);
+    const scope = this.dataScope.projects(principal, 'project.read');
     if (Object.keys(scope).length === 0) return undefined;
     const records = await tx.project.findMany({
       where: scope,
@@ -1095,7 +1095,7 @@ export class EmployeeProgressQueryService {
     id: string,
     principal: AuthenticatedPrincipal,
   ) {
-    const scope = this.dataScope.employees(principal);
+    const scope = this.dataScope.employees(principal, 'employee.read');
     if (Object.keys(scope).length === 0) return;
     const accessible = await tx.resourceProfile.findFirst({
       where: { id, ...scope },
@@ -1126,7 +1126,7 @@ export class EmployeeProgressQueryService {
     id: string,
     principal: AuthenticatedPrincipal,
   ) {
-    const scope = this.dataScope.projects(principal);
+    const scope = this.dataScope.projects(principal, 'project.read');
     if (Object.keys(scope).length === 0) return;
     const accessible = await tx.project.findFirst({
       where: { id, archivedAt: null, ...scope },

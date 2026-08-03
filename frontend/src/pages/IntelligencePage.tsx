@@ -256,13 +256,8 @@ export default function IntelligencePage() {
 
   return (
     <div className="intel-page">
-      <header className="intel-hero">
-        <div>
-          <span className="intel-eyebrow">LIBRARY · INTELLIGENCE</span>
-          <h1>行业情报</h1>
-          <p>把分散来源沉淀为可追溯卡片，再转成任务、风险、会议议题或知识页。</p>
-        </div>
-        <div className="intel-hero__actions">
+      <div className="workspace-module-toolbar">
+        <div className="intel-hero__actions workspace-module-toolbar__actions">
           <Link to={ROUTES.INTELLIGENCE_BRIEFS}>
             <Button icon={<IconArticle />}>日报与周报</Button>
           </Link>
@@ -282,7 +277,7 @@ export default function IntelligencePage() {
                   : '计划'}
           </Button>
         </div>
-      </header>
+      </div>
       <section className="intel-board">
         <Tabs activeKey={tab} onChange={(key) => setTab(key as WorkspaceTab)}>
           <TabPane tab="情报卡" itemKey="items" />

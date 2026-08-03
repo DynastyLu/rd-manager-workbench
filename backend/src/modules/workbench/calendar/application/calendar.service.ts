@@ -117,7 +117,7 @@ export class CalendarService {
         where: {
           archivedAt: null,
           scheduledAt: { gte: from, lt: to },
-          ...this.dataScope.meetings(principal),
+          ...this.dataScope.meetings(principal, 'meeting.read'),
         },
         orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
       }),
@@ -125,7 +125,7 @@ export class CalendarService {
         where: {
           archivedAt: null,
           dueAt: { gte: from, lt: to },
-          ...this.dataScope.tasks(principal),
+          ...this.dataScope.tasks(principal, 'task.read'),
         },
         orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
       }),
@@ -226,7 +226,7 @@ export class CalendarService {
   }
 
   private async allowedProjectIds(principal: import('../../../../modules/iam/domain/principal').AuthenticatedPrincipal): Promise<string[] | undefined> {
-    const scope = this.dataScope.projects(principal);
+    const scope = this.dataScope.projects(principal, 'project.read');
     if (Object.keys(scope).length === 0) return undefined;
     const records = await this.prisma.project.findMany({
       where: scope,
@@ -240,7 +240,7 @@ export class CalendarService {
     allowedProjectIds?: string[] | undefined,
   ): import('@prisma/client').Prisma.CalendarEventWhereInput {
     if (allowedProjectIds === undefined) {
-      const scope = this.dataScope.projects(principal);
+      const scope = this.dataScope.projects(principal, 'project.read');
       if (Object.keys(scope).length === 0) return {};
       return { project: scope };
     }

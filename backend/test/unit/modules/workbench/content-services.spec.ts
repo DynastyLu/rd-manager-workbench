@@ -19,7 +19,11 @@ const mockDataScope = {
 describe('content service guards', () => {
   it('rejects version history for a missing document', async () => {
     const prisma = {
-      contentDocument: { findUnique: jest.fn().mockResolvedValue(null) },
+      contentDocument: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(0),
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
       documentVersion: { findMany: jest.fn().mockResolvedValue([]) },
     } as unknown as PlatformPrismaService;
     const service = new DocumentsService(prisma, {} as StoragePort, mockRequestContext, mockDataScope);

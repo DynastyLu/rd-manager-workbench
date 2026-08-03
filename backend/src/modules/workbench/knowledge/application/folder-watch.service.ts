@@ -275,7 +275,7 @@ export class FolderWatchService implements OnModuleInit {
 
   async list() {
     const principal = this.requestContext.requirePrincipal();
-    const documentScope = this.dataScope.documents(principal);
+    const documentScope = this.dataScope.documents(principal, 'document.read');
     const where =
       Object.keys(documentScope).length === 0
         ? undefined
@@ -344,7 +344,7 @@ export class FolderWatchService implements OnModuleInit {
   }
 
   private async requireAccessibleSpace(principal: AuthenticatedPrincipal, spaceId: string): Promise<void> {
-    const documentScope = this.dataScope.documents(principal);
+    const documentScope = this.dataScope.documents(principal, 'document.read');
     if (Object.keys(documentScope).length === 0) {
       return;
     }

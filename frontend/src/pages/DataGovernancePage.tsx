@@ -97,16 +97,13 @@ export default function DataGovernancePage() {
   return (
     <div className="data-governance-page workspace-page">
       <div className="workspace-page__inner">
-        <header className="data-governance-page__hero">
-          <div>
-            <p className="data-governance-page__eyebrow">LOCAL DATA CONTROL</p>
-            <h1>数据安全</h1>
-            <p>备份、恢复、审计和健康检查都在本机完成，危险操作必须先通过只读预检。</p>
+        <div className="workspace-module-toolbar">
+          <div className="workspace-module-toolbar__actions">
+            <Tag color={failedChecks > 0 ? 'red' : 'green'}>
+              {failedChecks > 0 ? `${failedChecks} 项异常` : '本地数据健康'}
+            </Tag>
           </div>
-          <Tag color={failedChecks > 0 ? 'red' : 'green'}>
-            {failedChecks > 0 ? `${failedChecks} 项异常` : '本地数据健康'}
-          </Tag>
-        </header>
+        </div>
 
         <Tabs type="line" className="data-governance-page__tabs workspace-card">
         <TabPane tab="概览" itemKey="overview">

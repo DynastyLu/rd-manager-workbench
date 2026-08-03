@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-base-to-string */
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { TextArea } from '@douyinfe/semi-ui'
 import { useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/workspace/SemiCompat'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/workspace/SemiCompat'
@@ -38,23 +39,23 @@ export default function DecisionsPage() {
   return (
     <div className="decisions-page workspace-page">
       <div className="decisions-page__inner workspace-page__inner">
-        <header className="decisions-page__header">
-          <div>
-            <h1>决策对象库</h1>
-            <p>沉淀背景、备选方案、依据、结论与后续任务。</p>
-          </div>
+        <div className="workspace-module-toolbar">
+          <div className="workspace-module-toolbar__actions">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild><Button>新建决策</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>新建决策</DialogTitle></DialogHeader>
-              <form className="grid gap-3" onSubmit={(event) => { event.preventDefault(); createMutation.mutate(event.currentTarget) }}>
+              <form className="workspace-modal-form" onSubmit={(event) => { event.preventDefault(); createMutation.mutate(event.currentTarget) }}>
                 <Input name="title" required placeholder="决策标题" />
-                <textarea name="alternatives" required className="min-h-24 rounded-md border bg-transparent p-2 text-sm" placeholder="每行一项备选方案" />
-                <Button type="submit" disabled={createMutation.isPending}>保存决策</Button>
+                <TextArea name="alternatives" required autosize={{ minRows: 4, maxRows: 8 }} placeholder="每行一项备选方案" />
+                <div className="workspace-modal-form__actions">
+                  <Button type="submit" disabled={createMutation.isPending}>保存决策</Button>
+                </div>
               </form>
             </DialogContent>
           </Dialog>
-        </header>
+          </div>
+        </div>
 
         {focusedDecisionQuery.data ? (
           <section aria-label="当前定位决策">

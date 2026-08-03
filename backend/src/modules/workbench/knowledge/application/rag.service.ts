@@ -75,7 +75,7 @@ export class RagService {
     hasEvidence: boolean;
   }> {
     const principal = this.requestContext.requirePrincipal();
-    const chunkScope = this.dataScope.knowledge(principal);
+    const chunkScope = this.dataScope.knowledge(principal, 'document.read');
     const authScopeSql = await this.buildAuthScopeSql(chunkScope);
     if (authScopeSql === null) {
       return {

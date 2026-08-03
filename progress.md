@@ -707,3 +707,49 @@
 - 前端门禁：125 files / 702 Vitest、17/17 Chromium E2E、lint、typecheck、production build 全部通过。
 - 后端门禁：121 suites / 868 unit、47 suites / 208 PostgreSQL integration、Prisma validate/migrate status、lint、build 全部通过；导入排序新增 focused 17/17 回归。
 - Electron 门禁：20 files / 59 tests、typecheck、macOS x64 目录包构建通过；Windows 工作流已落库，真实 Windows 安装、杀软和 native→WASM 行为仍需 Windows runner/目标机完成平台验收。
+
+## 2026-08-02 Kimi 大范围改动修复启动
+
+- 完成 443 文件改动的权限、数据、前端和桌面端审查。
+- 根据产品负责人反馈移除默认管理员创建方式、Dock 和视觉方案的主观问题。
+- 新增 `docs/product/2026-08-02-kimi-change-review-issues.md` v2，共保留 8 个 P0、12 个 P1、6 个 P2。
+- 新增 `docs/superpowers/plans/2026-08-02-kimi-change-remediation.md`，按四批次 12 个任务执行。
+- 当前开始批次 A，所有行为修复先写失败测试。
+- 首次批量追加计划时因旧 `findings.md` 上下文不匹配失败；已改为按文件尾实际内容分开追加。
+- Dashboard 已完成首个 P0 修复：接口同时要求 `project.read` 与 `task.read`，五类聚合查询按当前 principal 的 task/project scope 隔离，并通过显式 `AND` 保证归档约束不可被范围条件覆盖。
+- Dashboard TDD 与复审已通过：unit 3/3、真实 PostgreSQL integration 4/4、backend lint/build、`git diff --check`；集成覆盖缺任一权限 403，以及 SELF/INVOLVED 两个普通用户双向看不到对方的 task/project/milestone/progress。
+- 员工导入 11 个批次端点已补齐 read/update/delete 权限与 ALL 数据范围 Guard；范围拒绝发生在 UUID/DTO Pipe 和上传 interceptor 之前，并统一写入 `PERMISSION_DENIED` 安全审计。
+- 员工导入 focused 验证通过：unit 17/17、真实 HTTP integration 11/11、backend lint/build 和 scoped diff-check；规格与质量双复核 APPROVED。旧大型导入集成因执行过慢留待最终全量门禁补跑。
+- 操作级 DataScope 已完成迁移：18 个范围构造方法和 98 个调用点显式传入 read/update/delete/archive/admin 权限码；项目/任务真实集成 7/7 证明 read=ALL 不会放大 update/delete=SELF。
+- 规格复核补出的会议子资源、文档版本/回收站权限回退已修复；会议与文档 unit 27/27、文档复跑 16/16，backend build/lint、focused diff-check 通过。另修复 task.read=ALL 查询不存在任务错误返回 500，现返回 404。
+
+## 2026-08-02 全站工作区 UI 统一启动
+
+- 完成六张问题截图到真实源码的映射，确认重复页头、工具栏网格、固定表格画布、内联表单和项目 Less 作用域五类根因。
+- 新增设计规格 `docs/superpowers/specs/2026-08-02-workspace-ui-unification-design.md`。
+- 新增实施计划 `docs/superpowers/plans/2026-08-02-workspace-ui-unification.md`。
+- 本阶段只修改前端视觉骨架和回归测试，不覆盖当前未提交后端权限与数据范围改动。
+
+## 2026-08-02 全页面布局统一与安全审计表格修复
+
+- 安全审计取消固定 `scroll.x=900`，管理端用户、角色、权限、安全审计和归属迁移表统一使用全宽内部画布与表内横向滚动。
+- 通用页面壳和项目详情页移除固定最大宽度；页面边距改为响应式 `clamp()`，主容器补齐 `width: 100%`、`min-width: 0`，避免分辨率变化后内容居中缩成小块或向右溢出。
+- 自动化覆盖 26 个主要路由，在 1280、1440、1920 三档真实 Chromium 视口检查文档溢出、主内容越界、结构卡片越界和真实表格未铺满；3/3 通过。
+- 验证：`pnpm typecheck`；布局规则 6/6；管理页 3 passed / 5 skipped；生产构建和 `git diff --check` 通过。构建仍报告第三方 `lottie-web` 直接 eval、知识 API 混合静态/动态导入和大 chunk 警告，本批未将其误报为布局修复成果。
+
+## 2026-08-03 Luminous Workspace 全站皮肤启动
+
+- 已完成 MotionSites、React Bits、Uiverse 和 Aceternity UI 的能力与适用边界研究。
+- 方案定为保留 Semi UI 企业控件能力，使用现有 Framer Motion/Tailwind/Less 在项目内实现统一动效基元，不直接拼装四套视觉系统。
+- 视觉目标：白色生产力底色、蓝紫低饱和光晕、层级玻璃表面、精细边框、克制微动效；表格和表单优先效率，AI/导航/空状态/加载优先表现力。
+- 已开始盘点全站入口、页面样式、公共组件和现有 Aurora token，下一步先落地设计令牌与公共基元，再通过全局 Semi 皮肤覆盖扩展到业务页面。
+
+## 2026-08-03 Luminous Workspace 全站皮肤完成
+
+- 全局设计令牌已补齐玻璃表面、品牌光晕、层级阴影、响应式圆角和统一动效时长；保留 Semi UI 的企业控件行为，不混装四套组件运行时。
+- 新增全局 `luminous-skin.css`，统一 Button、Input、Select、DatePicker、Table、Modal、Dropdown、Toast、Tabs、Empty、Skeleton、分页及页面/卡片表面。
+- 工作台首页完成低饱和 Hero、KPI 卡片、Bento 快捷入口与 Spotlight 微交互；行业情报、知识库、员工、系统管理和登录页完成视觉适配。
+- 设置页新增“流光 / 护眼”两套可预览皮肤卡片，选择结果继续由本地 theme store 持久化；键盘焦点与 reduced-motion 均有降级规则。
+- 响应式验收覆盖 26 个主要路由 × 1280/1440/1920，3/3 通过，无页面级横向溢出、结构卡片越界或真实表格未铺满。
+- 质量门禁：Luminous 静态契约 4/4、UI/布局/卡片测试 14/14、TypeScript、目标 ESLint、生产构建、`git diff --check` 全部通过。
+- 生产构建仍保留既有警告：第三方 `lottie-web` 使用直接 eval、知识 API 静态/动态混合导入、大 chunk；本次视觉重构未把这些工程警告误报为已修复。

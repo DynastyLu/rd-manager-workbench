@@ -43,7 +43,7 @@ export class ApplicationsSearchAdapter implements SearchAdapter {
             { batch: { contains: query, mode: 'insensitive' } },
           ],
         },
-        { project: this.dataScope.projects(this.principal()) },
+        { project: this.dataScope.projects(this.principal(), 'project.read') },
       ],
     };
     const applicationCases = await this.prisma.applicationCase.findMany({

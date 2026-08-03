@@ -18,6 +18,40 @@ function buildDocumentsService(prisma: PlatformPrismaService, storage: StoragePo
   return new DocumentsService(prisma, storage, mockRequestContext, mockDataScope);
 }
 
+describe('DocumentsService operation data scope', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('uses document.update scope for edits and document.delete scope for trash', async () => {
+    const prisma = {
+      contentDocument: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'document-1',
+          status: 'ACTIVE',
+          spaceId: null,
+          parentId: null,
+          projectId: null,
+          meetingId: null,
+        }),
+        update: jest.fn().mockResolvedValue({ id: 'document-1' }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        count: jest.fn().mockResolvedValue(1),
+      },
+      knowledgeSpace: { findFirst: jest.fn() },
+      project: { findFirst: jest.fn() },
+      meeting: { findFirst: jest.fn() },
+    } as unknown as PlatformPrismaService;
+    const service = buildDocumentsService(prisma, {} as StoragePort);
+
+    await service.update('document-1', { title: 'Updated' });
+    await service.trash('document-1');
+
+    expect(mockDataScope.documents).toHaveBeenCalledWith(mockPrincipal, 'document.update');
+    expect(mockDataScope.documents).toHaveBeenCalledWith(mockPrincipal, 'document.delete');
+  });
+});
+
 type TrashedDocument = {
   id: string;
   status: 'TRASHED';

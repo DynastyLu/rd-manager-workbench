@@ -42,7 +42,7 @@ export class ProjectsSearchAdapter implements SearchAdapter {
             { leadName: { contains: query, mode: 'insensitive' } },
           ],
         },
-        this.dataScope.projects(this.principal()),
+        this.dataScope.projects(this.principal(), 'project.read'),
       ],
     };
     const projects = await this.prisma.project.findMany({

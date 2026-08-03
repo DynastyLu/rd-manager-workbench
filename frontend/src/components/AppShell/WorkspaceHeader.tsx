@@ -9,7 +9,7 @@ import {
   IconSearch,
   IconSetting,
 } from '@douyinfe/semi-icons'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import type { RouteDefinition } from '@/router/routes'
 import { ROUTES } from '@/constants/routes'
 import { logout } from '@/modules/auth/api'
@@ -18,6 +18,9 @@ import type { CurrentUser } from '@/modules/auth/types'
 import { ProjectForm } from '@/modules/workbench/components/ProjectForm'
 import { TaskForm } from '@/modules/workbench/components/TaskForm'
 import { NotificationCenter } from './NotificationCenter'
+import { RouteHistoryTabs } from './RouteHistoryTabs'
+import { useCurrentRouteHistoryTitle } from './RouteHistoryTitleContext'
+import { useRouteHistory } from './useRouteHistory'
 
 interface WorkspaceHeaderProps {
   route?: RouteDefinition
@@ -151,11 +154,21 @@ function AccountMenu() {
 
 export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
   const navigate = useNavigate()
+  const { pathname, search, hash } = useLocation()
+  const userId = useAuthStore((state) => state.user?.id)
+  const routeTitleOverride = useCurrentRouteHistoryTitle()
   const searchEntryRef = useRef<HTMLButtonElement>(null)
   const [createTarget, setCreateTarget] = useState<CreateTarget>(null)
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [recentProjectId, setRecentProjectId] = useState(() => getRecentProjectIds()[0])
-  const routeTitle = route?.title ?? '工作台'
+  const routeHistory = useRouteHistory({
+    userId,
+    pathname,
+    search,
+    hash,
+    route,
+    titleOverride: routeTitleOverride,
+  })
 
   useEffect(() => {
     const refreshRecentProjects = () => setRecentProjectId(getRecentProjectIds()[0])
@@ -197,10 +210,7 @@ export function WorkspaceHeader({ route }: WorkspaceHeaderProps) {
         <div className="workspace-header__context">
           <span className="workspace-header__identity">研发工作台</span>
           <span className="workspace-header__divider" aria-hidden="true" />
-          <div className="workspace-header__route" aria-label={`当前位置：工作空间，${routeTitle}`}>
-            <strong>{routeTitle}</strong>
-            <span>本地单人空间</span>
-          </div>
+          <RouteHistoryTabs controller={routeHistory} />
         </div>
 
         <div className="workspace-header__search-wrap">

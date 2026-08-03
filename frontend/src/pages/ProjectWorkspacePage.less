@@ -5,16 +5,16 @@
   &--loading,
   &--error {
     display: grid;
-    max-width: 1320px;
+    width: 100%;
     gap: 20px;
-    margin: 0 auto;
-    padding: 32px;
+    margin: 0;
+    padding: clamp(20px, 2vw, 32px);
   }
 
   &__back-row {
-    max-width: 1440px;
-    margin: 0 auto;
-    padding: 18px 28px 0;
+    width: 100%;
+    margin: 0;
+    padding: 18px clamp(18px, 2vw, 32px) 0;
 
     a {
       display: inline-flex;
@@ -30,12 +30,12 @@
 
   &__header {
     display: grid;
-    max-width: 1440px;
+    width: 100%;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 14px;
-    margin: 0 auto;
-    padding: 16px 28px 20px;
+    margin: 0;
+    padding: 16px clamp(18px, 2vw, 32px) 20px;
   }
 
   &__header-actions {
@@ -89,7 +89,7 @@
     display: flex;
     min-height: 48px;
     gap: 28px;
-    padding: 0 max(28px, calc((100vw - 1440px) / 2 + 28px));
+    padding: 0 clamp(18px, 2vw, 32px);
     border-top: 1px solid var(--workspace-border);
     border-bottom: 1px solid var(--workspace-border);
     background: var(--workspace-surface);
@@ -141,10 +141,10 @@
 
   &__content {
     display: block;
-    max-width: 1440px;
+    width: 100%;
     min-height: 460px;
-    margin: 0 auto;
-    padding: 22px 28px 40px;
+    margin: 0;
+    padding: 22px clamp(18px, 2vw, 32px) 40px;
   }
 
   &__overview { display: grid; gap: 18px; }
@@ -597,6 +597,7 @@
     border: 1px solid var(--semi-color-border);
     border-radius: 8px;
     background: var(--semi-color-fill-0);
+  }
 }
 
 .project-workspace__plan {
@@ -692,6 +693,7 @@
   }
 }
 
+.project-workspace__work-item-toolbar {
   [role='tab'] {
     padding: 6px 14px;
     border: 0;

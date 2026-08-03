@@ -2,7 +2,6 @@ import { Suspense } from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { Banner, Spin, Table, Tag } from '@douyinfe/semi-ui'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table/interface'
-import { tableScrollWidth } from '@/lib/tableScrollWidth'
 import { listPermissions } from './api'
 import type { PermissionCatalogEntry } from './types'
 import './AdminPages.less'
@@ -50,7 +49,6 @@ function PermissionsContent() {
     {
       title: '说明',
       dataIndex: 'description',
-      width: 300,
     },
     {
       title: '敏感',
@@ -69,17 +67,12 @@ function PermissionsContent() {
 
   return (
     <>
-      <h2 className="admin-page__heading" aria-level={1}>
-        权限目录
-      </h2>
-
       <Table
         className="admin-permissions__table"
         columns={columns}
         dataSource={permissionsQuery.data ?? []}
         loading={permissionsQuery.isLoading}
         pagination={false}
-        scroll={{ x: tableScrollWidth(columns) }}
         rowKey="id"
       />
     </>

@@ -603,14 +603,12 @@ export function MeetingsWorkspace({ embedded = false }: { embedded?: boolean }) 
 
   return (
     <div className={embedded ? 'meetings-workspace meetings-workspace--embedded' : 'meetings-workspace'}>
-      <header className="meetings-workspace__header">
-        <div>
-          <span className="meetings-workspace__eyebrow">会议</span>
-          <h1>{embedded ? '会议列表' : '会议与行动项'}</h1>
-          <p>{projectId ? '当前仅显示本项目会议' : '把议程、纪要、决策和行动项放在同一个工作流里。'}</p>
-        </div>
+      <div className="workspace-module-toolbar">
+        {projectId ? <span className="meetings-workspace__scope">当前仅显示本项目会议</span> : <span />}
+        <div className="workspace-module-toolbar__actions">
         <Button aria-label="新建会议" theme="solid" type="primary" icon={<IconPlus />} onClick={() => setIsCreateOpen(true)}>新建会议</Button>
-      </header>
+        </div>
+      </div>
 
       <div className="meetings-workspace__toolbar">
         <div className="meetings-workspace__filters">

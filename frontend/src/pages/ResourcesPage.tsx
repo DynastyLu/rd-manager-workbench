@@ -141,15 +141,14 @@ export default function ResourcesPage() {
 
   return (
     <div className="resources-page">
-      <header className="resources-page__header">
-        <div><p>RESOURCE PLANNING</p><h1>资源负荷</h1><span>按 13 周滚动查看容量、投入结构和超载风险。</span></div>
-        <div className="resources-page__actions">
+      <div className="workspace-module-toolbar">
+        <div className="resources-page__actions workspace-module-toolbar__actions">
           <Link className="resources-page__switch" to={`${ROUTES.OPERATIONS}?tab=non-project-rd`}>非项目研发</Link>
           <Link className="resources-page__switch" to={ROUTES.REPORTS}>统计报表</Link>
           <Button icon={<IconRefresh />} onClick={() => { void summary.refetch() }}>刷新</Button>
           <Button aria-label="新建资源" theme="solid" type="primary" icon={<IconPlus />} onClick={() => setProfileOpen(true)}>新建资源</Button>
         </div>
-      </header>
+      </div>
 
       <section className="resources-page__surface" aria-label="13周资源负荷矩阵">
         <div className="resources-range">

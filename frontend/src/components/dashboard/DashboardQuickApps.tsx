@@ -14,7 +14,7 @@ interface DashboardQuickAppsProps {
 
 export function DashboardQuickApps({ items }: DashboardQuickAppsProps) {
   return (
-    <div className="workspace-card dashboard-quick-apps">
+    <div className="workspace-card dashboard-quick-apps" data-interactive="true">
       <h2 className="dashboard-quick-apps__title">常用应用</h2>
       <nav className="dashboard-quick-apps__grid" aria-label="常用应用">
         {items.map((item) => (
