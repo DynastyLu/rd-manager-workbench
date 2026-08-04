@@ -11,7 +11,6 @@
 | `frontend/` | React、TypeScript、Vite 前端，源自 treasure-box 的通用工程骨架。 |
 | `backend/` | NestJS、Prisma、PostgreSQL API，源自 backend-core-platform 的通用工程骨架。 |
 | `desktop/` | Electron 桌面壳，负责启动检查、运行时 API 地址与本机能力桥接。 |
-| `docs/` | 产品说明、设计记录和实施计划。 |
 
 根目录不是 pnpm workspace；三个应用分别安装依赖、维护锁文件并独立运行。
 
