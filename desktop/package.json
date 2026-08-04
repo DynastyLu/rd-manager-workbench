@@ -27,7 +27,7 @@
   },
   "build": {
     "appId": "com.rdworkbench.desktop",
-    "productName": "研发工作台",
+    "productName": "星研工作台",
     "directories": {
       "output": "release"
     },
