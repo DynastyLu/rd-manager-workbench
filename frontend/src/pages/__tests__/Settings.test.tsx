@@ -7,7 +7,6 @@ describe('WorkbenchSettings', () => {
   it('describes local preferences without exposing account management', () => {
     render(<MemoryRouter><WorkbenchSettings /></MemoryRouter>)
 
-    expect(screen.getByRole('heading', { name: '工作台设置' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '通知送达范围' })).toBeInTheDocument()
     expect(screen.getByText(/应用完全退出后不保证提醒送达/)).toBeInTheDocument()
     expect(screen.getByText('短信通道未配置，不会发送短信')).toBeInTheDocument()

@@ -1701,7 +1701,13 @@ describe('Multi-dimensional base API', () => {
 
   it('projects both meetings and actions into one preset without copies', async () => {
     const meeting = await prisma.meeting.create({
-      data: { title: `${prefix} 评审会`, scheduledAt: new Date('2026-07-27T02:00:00.000Z') },
+      data: {
+        title: `${prefix} 评审会`,
+        scheduledAt: new Date('2026-07-27T02:00:00.000Z'),
+        createdByUserId: authenticated.user.id,
+        updatedByUserId: authenticated.user.id,
+        organizerUserId: authenticated.user.id,
+      },
     });
     const action = await prisma.meetingAction.create({
       data: {
@@ -1785,10 +1791,19 @@ describe('Multi-dimensional base API', () => {
           impact: 'HIGH',
           level: 'HIGH',
           projectId: firstProject.id,
+          createdByUserId: authenticated.user.id,
+          updatedByUserId: authenticated.user.id,
+          ownerUserId: authenticated.user.id,
         },
       }),
       prisma.decision.create({
-        data: { title: `${prefix} 决策`, alternatives: [], projectId: firstProject.id },
+        data: {
+          title: `${prefix} 决策`,
+          alternatives: [],
+          projectId: firstProject.id,
+          createdByUserId: authenticated.user.id,
+          updatedByUserId: authenticated.user.id,
+        },
       }),
     ]);
     const table = await prisma.dataTable.findFirstOrThrow({

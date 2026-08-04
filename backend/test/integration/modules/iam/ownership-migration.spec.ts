@@ -98,6 +98,15 @@ describe('ownership migration APIs', () => {
   async function cleanupOrphanTestRecords(): Promise<void> {
     const testPrefix = 'TEST-';
     await prisma.$transaction(async (tx) => {
+      await tx.resourceLoadEntry.deleteMany({
+        where: {
+          OR: [
+            { task: { title: { startsWith: testPrefix } } },
+            { project: { code: { startsWith: testPrefix } } },
+            { nonProjectRdItem: { code: { startsWith: testPrefix } } },
+          ],
+        },
+      });
       await tx.meetingAction.deleteMany({
         where: { title: { startsWith: testPrefix } },
       });

@@ -24,7 +24,7 @@ describe('Semi workspace foundation', () => {
 
     expect(tokenSource).toContain('--workspace-sidebar-width: 208px')
     expect(tokenSource).toContain('--workspace-header-height: 56px')
-    expect(tokenSource).toContain('--workspace-brand: #8b5cf6')
-    expect(tokenSource).toContain('--workspace-canvas: #f8fafc')
+    expect(tokenSource).toContain('--workspace-brand: #4f46e5')
+    expect(tokenSource).toContain('--workspace-canvas: #f6f8fc')
   })
 })

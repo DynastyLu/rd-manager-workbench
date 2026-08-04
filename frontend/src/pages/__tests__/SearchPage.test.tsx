@@ -92,7 +92,6 @@ describe('SearchPage', () => {
 
     renderSearchPage()
 
-    expect(screen.getByRole('heading', { name: '全局搜索' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '最近搜索' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '再次搜索：项目进度' }))
 

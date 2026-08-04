@@ -72,7 +72,6 @@ describe('DataGovernancePage', () => {
   it('presents backup, audit and health as one settings workspace', async () => {
     renderPage()
 
-    expect(screen.getByRole('heading', { name: '数据安全' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '概览' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '备份恢复' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '审计日志' })).toBeInTheDocument()

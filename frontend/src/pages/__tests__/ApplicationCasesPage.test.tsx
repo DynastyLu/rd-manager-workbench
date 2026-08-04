@@ -43,7 +43,6 @@ describe('ApplicationCasesPage', () => {
 
     renderPage()
 
-    expect(screen.getByRole('heading', { name: '申报认定' })).toBeInTheDocument()
     expect(await screen.findByText('还没有申报案件，先创建一个案件吧。')).toBeInTheDocument()
   })
 

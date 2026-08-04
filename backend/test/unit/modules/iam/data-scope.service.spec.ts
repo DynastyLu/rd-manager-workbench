@@ -168,6 +168,23 @@ describe('DataScopeService', () => {
     });
   });
 
+  it('keeps INVOLVED document write scope owner-only instead of treating read shares as editors', () => {
+    const employee = principal({
+      roleCodes: ['EMPLOYEE', 'REVIEWER'],
+      permissions: [
+        grant(PERMISSIONS.DOCUMENT_UPDATE, 'INVOLVED'),
+        grant(PERMISSIONS.DOCUMENT_DELETE, 'INVOLVED'),
+      ],
+    });
+
+    expect(service.documents(employee, PERMISSIONS.DOCUMENT_UPDATE)).toEqual({
+      OR: [{ ownerUserId: employee.userId }],
+    });
+    expect(service.documents(employee, PERMISSIONS.DOCUMENT_DELETE)).toEqual({
+      OR: [{ ownerUserId: employee.userId }],
+    });
+  });
+
   it('applies the document predicate at the chunk query instead of filtering ranked results later', () => {
     const employee = principal({
       permissions: [grant('document.read', 'SELF')],

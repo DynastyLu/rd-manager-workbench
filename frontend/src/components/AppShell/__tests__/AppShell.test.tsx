@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAuthStore } from '@/modules/auth/store'
+import type { CurrentUser } from '@/modules/auth/types'
 import { AppShell } from '../AppShell'
 
 const { listNotifications, subscribeToNotifications } = vi.hoisted(() => ({
@@ -20,6 +22,21 @@ vi.mock('@/modules/workbench/api/notifications', () => ({
 vi.mock('@/modules/workbench/realtime/notificationSocket', () => ({
   subscribeToNotifications,
 }))
+
+const employee: CurrentUser = {
+  id: 'user-employee',
+  username: 'employee',
+  status: 'ACTIVE',
+  mustChangePassword: false,
+  permissionVersion: 1,
+  resourceProfileId: 'profile-employee',
+  displayName: '普通员工',
+  roleCodes: ['EMPLOYEE'],
+  permissions: [
+    { code: 'project.read', dataScope: 'INVOLVED' },
+    { code: 'task.read', dataScope: 'INVOLVED' },
+  ],
+}
 
 function CurrentPath() {
   return <output aria-label="当前路径">{useLocation().pathname}</output>
@@ -50,6 +67,13 @@ function renderShell(initialPath = '/docs') {
 
 describe('AppShell', () => {
   beforeEach(() => {
+    localStorage.clear()
+    useAuthStore.setState({
+      status: 'AUTHENTICATED',
+      accessToken: 'access-token',
+      csrfToken: 'csrf-token',
+      user: employee,
+    })
     listNotifications.mockReset()
     subscribeToNotifications.mockReset()
     listNotifications.mockResolvedValue({
@@ -63,7 +87,7 @@ describe('AppShell', () => {
     Reflect.deleteProperty(window, 'rdWorkbenchDesktop')
   })
 
-  it('renders semantic primary navigation, active documents app, and the route content area without tabs', () => {
+  it('renders semantic primary navigation, active documents app, and route history', async () => {
     const { container } = renderShell()
 
     expect(screen.getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
@@ -72,8 +96,10 @@ describe('AppShell', () => {
       'aria-current',
       'page'
     )
-    expect(screen.getByLabelText('当前位置：工作空间，文档与知识库')).toBeInTheDocument()
-    expect(screen.getByText('文档与知识库', { selector: 'strong' })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: '文档与知识库' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
     expect(screen.getByRole('main')).toBeInTheDocument()
     expect(container.querySelector('.tab-bar')).not.toBeInTheDocument()
   })
@@ -89,21 +115,23 @@ describe('AppShell', () => {
     expect(screen.getByLabelText('当前路径')).toHaveTextContent('/settings')
   })
 
-  it('uses the more specific nested route title in the workspace header', () => {
+  it('uses the more specific nested route title in route history', async () => {
     renderShell('/library/applications')
 
-    expect(screen.getByLabelText('当前位置：工作空间，申报认定')).toBeInTheDocument()
-    expect(screen.getByText('申报认定', { selector: 'strong' })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: '申报认定' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
   })
 
   it.each([
     ['/library/applications/extra', '申报认定'],
     ['/spaces/projects/project-1/overview/extra', '项目空间'],
-  ])('does not treat invalid path %s as the specific %s page', (path, specificTitle) => {
+  ])('does not treat invalid path %s as the specific %s page', async (path, specificTitle) => {
     renderShell(path)
 
-    expect(screen.getByLabelText('当前位置：工作空间，工作台')).toBeInTheDocument()
-    expect(screen.queryByText(specificTitle, { selector: 'strong' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: '工作台' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: specificTitle })).not.toBeInTheDocument()
   })
 
   it('navigates to an internal related object when Electron reports a notification click', () => {

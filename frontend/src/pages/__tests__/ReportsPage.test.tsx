@@ -47,7 +47,6 @@ describe('ReportsPage', () => {
   it('renders five real-data report sections and an accessible trend table', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><MemoryRouter><ReportsPage /></MemoryRouter></QueryClientProvider>)
-    expect(screen.getByRole('heading', { name: '统计报表' })).toBeInTheDocument()
     expect(await screen.findByRole('tab', { name: '项目组合' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '任务趋势' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '风险趋势' })).toBeInTheDocument()

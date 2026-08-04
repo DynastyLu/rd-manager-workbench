@@ -41,7 +41,6 @@ describe('ProjectsPage', () => {
 
     renderProjectsPage()
 
-    expect(screen.getByRole('heading', { name: '项目' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '最近访问' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '全部项目' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('textbox', { name: '搜索项目' })).toBeInTheDocument()

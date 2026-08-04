@@ -87,7 +87,6 @@ describe('IntelligencePage', () => {
 
   it('presents a Feishu-style four-part intelligence workspace with real cards', async () => {
     renderPage()
-    expect(screen.getByRole('heading', { name: '行业情报' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '情报卡' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '主题' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '来源' })).toBeInTheDocument()

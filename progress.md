@@ -753,3 +753,18 @@
 - 响应式验收覆盖 26 个主要路由 × 1280/1440/1920，3/3 通过，无页面级横向溢出、结构卡片越界或真实表格未铺满。
 - 质量门禁：Luminous 静态契约 4/4、UI/布局/卡片测试 14/14、TypeScript、目标 ESLint、生产构建、`git diff --check` 全部通过。
 - 生产构建仍保留既有警告：第三方 `lottie-web` 使用直接 eval、知识 API 静态/动态混合导入、大 chunk；本次视觉重构未把这些工程警告误报为已修复。
+
+## 2026-08-04 main 合并门禁修复启动
+
+- 已 fetch 远端并确认当前开发分支可对 `origin/main` 快进：远端 main 无独有提交，开发分支领先 77 个提交。
+- 新鲜验证：backend unit 134/134 suites、976/976 tests 通过；backend integration 58/61 suites、302/311 tests 通过。
+- 已复现 4 个业务/权限失败和 5 个本地测试数据清理失败；前端复现 15 个测试文件、20 个用例失败，完整进程长时间未退出后已终止。
+- 合并 main 已暂停；下一步从文档只读分享越权的调用链开始定位根因。
+- 文档越权根因已定位到 `DataScopeService.documents()`：INVOLVED 的分享/组织可见谓词未区分 read 与 update/delete；已先增加 owner-only 写范围单元回归，待 RED 验证。
+- owner-only 写范围单元回归按预期 RED（额外收到 userShares/roleShares/project/organization 谓词）；已实施最小修复，仅 `document.read` 扩大到只读分享范围。
+- 文档权限修复已 GREEN：DataScope unit 19/19、内容授权真实 HTTP integration 7/7。
+- 多维表格写入 404 已定位为测试夹具遗漏所有权，按生产创建服务契约补齐会议 organizer、风险 owner、决策 creator，未放宽领域服务权限。
+- 多维表格 ACTION/RISK 聚焦集成测试 2/2 通过。
+- ownership migration 清理顺序已修复，聚焦集成测试 5/5 通过。
+- 前端旧页头、旧面包屑与旧主题令牌契约已更新；全量测试 149/149 files、826 passed、5 skipped，并正常退出。
+- 完整门禁：frontend lint/typecheck/contracts/build 通过；backend lint/build、134 suites/977 unit、61 suites/311 integration、3 e2e 通过；desktop typecheck、20 files/59 tests 通过。

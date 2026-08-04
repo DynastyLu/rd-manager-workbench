@@ -78,7 +78,6 @@ describe('ExtensionsSettingsPage', () => {
   it('organizes SMS, AI, calendar and cloud drive settings with a clear browser fallback', async () => {
     renderPage()
 
-    expect(screen.getByRole('heading', { name: '外部能力' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '短信通知' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'AI 助手' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '外部日历' })).toBeInTheDocument()

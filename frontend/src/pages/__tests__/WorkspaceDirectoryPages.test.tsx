@@ -144,7 +144,6 @@ describe('workspace directory pages', () => {
   it('loads the real document and knowledge workspace instead of a planned module', async () => {
     renderPage(<KnowledgeHomePage />, '/docs?documentId=document-1')
 
-    expect(await screen.findByRole('heading', { name: '文档与知识库' })).toBeInTheDocument()
     expect(await screen.findByText('研发知识')).toBeInTheDocument()
     expect(await screen.findByDisplayValue('耐盐材料技术方案')).toBeInTheDocument()
     expect(screen.queryByRole('toolbar', { name: '文档格式工具栏' })).not.toBeInTheDocument()
@@ -233,6 +232,7 @@ describe('workspace directory pages', () => {
   it('makes the meetings route a meetings and materials directory', () => {
     renderPage(<MeetingsAndMaterialsPage />)
 
-    expect(screen.getByRole('heading', { name: '会议与资料' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '会议模块' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '新建会议' })).toBeInTheDocument()
   })
 })

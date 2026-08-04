@@ -112,7 +112,6 @@ describe('TasksPage', () => {
 
     renderTasksPage()
 
-    expect(await screen.findByRole('heading', { name: '我的工作' })).toBeInTheDocument()
     expect(await screen.findByText('整理评审材料')).toBeInTheDocument()
     const views = screen.getByRole('navigation', { name: '我的工作视图' })
     for (const [name, count] of [

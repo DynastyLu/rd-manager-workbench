@@ -57,7 +57,7 @@ describe('ResourcesPage', () => {
 
   it('shows the 13-week load matrix with overload and skills', async () => {
     renderPage()
-    expect(screen.getByRole('heading', { name: '资源负荷' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '13周资源负荷矩阵' })).toBeInTheDocument()
     expect(await screen.findByText('张三')).toBeInTheDocument()
     expect(screen.getByText('112.5%')).toBeInTheDocument()
     expect(screen.getByText('已超载')).toBeInTheDocument()

@@ -370,3 +370,16 @@
 - 当前工程已经包含 React 19、Semi UI、Tailwind 和 Framer Motion，新增整套 UI 运行时依赖没有必要；最佳路径是保留 Semi 行为层，把筛选后的动效组件放入 `shared/ui`，由统一 token 和 motion policy 驱动。
 - 视觉方向确定为 `Luminous Workspace`：白色生产力界面、冷蓝到紫色的低饱和光晕、细描边、分层玻璃质感和克制的状态动效。高频表格与表单不做持续动画，AI、导航、空状态、上传和加载反馈允许更强表现。
 - 全站重构必须继续遵守既有全宽规则：页面不使用窄 `max-width` 居中画布；容器默认 `width: 100%`、`min-width: 0`；优先 Grid/Flex 和 `clamp()`；表格的真实 `table` 必须铺满，超宽内容只在内部滚动。
+
+## 2026-08-04 main 合并门禁复核
+
+- `design/aurora-glass-frontend` 同时包含本地 `main` 和 `origin/main`，相对 `origin/main` 快进 77 个提交；分支关系本身没有冲突。
+- 后端单元测试 134 suites / 976 tests 全绿。
+- 后端集成测试 61 suites 中 3 suites、311 tests 中 9 tests 失败：文档共享只读用户/角色 PATCH 实际 200；多维表格 ACTION/RISK 记录 PATCH 实际 404；ownership migration 清理被本地 `resource_load_entries_reference_by_kind_check` 遗留数据阻塞。
+- 前端单线程完整测试至少复现 15 files / 20 tests 失败，集中在新版页面结构、AppShell 路由历史、主题令牌断言；测试运行超过 7 分钟仍未自然退出，需要逐文件区分真实回归与过时断言。
+- 安全缺陷和完整门禁失败存在时不推进 `main`，先按 TDD 逐项修复。
+- 多维表格 ACTION/RISK 404 的根因是集成夹具直接写 Prisma 时遗漏所有权字段；适配器随后正确调用会议/风险/决策领域服务，领域服务按 update scope 拒绝这些“无主记录”。生产创建服务会写入 organizer/creator/owner，不能通过放宽生产范围来迎合错误夹具。
+- 文档越权根因是 `DataScopeService.documents()` 把用户分享、角色分享、项目成员与组织可见条件应用到了所有 `INVOLVED` 权限；现已限定这些谓词只服务于 `document.read`，写权限保持所有者或显式项目授权边界。
+- ownership migration 的 5 个失败来自测试清理顺序：删除 `WorkTask` 时 PostgreSQL 将资源负荷外键置空，但 `kind=TASK` 的检查约束要求 `task_id` 非空。清理函数现在先删除关联负荷记录；聚焦集成测试 5/5 通过。
+- 前端 20 个失败中的页面失败均来自过时契约：测试仍查找已按产品要求移除的重复大页头；AppShell 仍验证已被历史路由标签替代的旧面包屑；主题测试仍锁定旧紫色与旧画布色。测试现改为验证真实功能入口、历史标签选中/非法路径回退和当前设计令牌。
+- 前端全量以 2 workers 正常退出：149/149 files，826 passed、5 skipped；先前单 worker 看似未退出实际是整套运行接近 10 分钟，而 20 个过期断言各自等待也放大了耗时。

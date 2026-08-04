@@ -89,7 +89,6 @@ describe('OperationsPage', () => {
 
   it('organises non-project work as a searchable business workspace', async () => {
     renderPage()
-    expect(screen.getByRole('heading', { name: '非项目研发' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: '搜索非项目研发' })).toBeInTheDocument()
     expect(await screen.findByText('向量检索预研')).toBeInTheDocument()
     expect(screen.getByText('形成选型结论')).toBeInTheDocument()

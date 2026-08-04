@@ -175,8 +175,7 @@ describe('KnowledgeHomePage', () => {
   it('renders document browser tab by default', async () => {
     renderKnowledgeHome()
 
-    // Heading and tabs
-    expect(screen.getByRole('heading', { name: '文档与知识库' })).toBeInTheDocument()
+    // Workspace tabs
     expect(screen.getByText('文档浏览')).toBeInTheDocument()
     expect(screen.getByText('AI 问答')).toBeInTheDocument()
 
@@ -218,8 +217,8 @@ describe('KnowledgeHomePage', () => {
   it('switches between documents and chat tabs', () => {
     renderKnowledgeHome()
 
-    // Default is documents tab with document browser heading visible
-    expect(screen.getByRole('heading', { name: '文档与知识库' })).toBeInTheDocument()
+    // Default is documents tab
+    expect(screen.getByText('文档浏览')).toBeInTheDocument()
 
     // Click AI 问答 tab
     fireEvent.click(screen.getByText('AI 问答'))

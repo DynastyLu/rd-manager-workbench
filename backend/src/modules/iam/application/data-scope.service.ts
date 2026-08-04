@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataTableSource, type Prisma } from '@prisma/client';
 import { AuthorizationService } from './authorization.service';
 import type { AuthenticatedPrincipal } from '../domain/principal';
-import type { PermissionCode } from '../domain/permission-catalog';
+import { PERMISSIONS, type PermissionCode } from '../domain/permission-catalog';
 
 @Injectable()
 export class DataScopeService {
@@ -153,7 +153,10 @@ export class DataScopeService {
     if (scope.kinds.includes('SELF') || scope.kinds.includes('INVOLVED')) {
       predicates.push({ ownerUserId: principal.userId });
     }
-    if (scope.kinds.includes('INVOLVED')) {
+    if (
+      permissionCode === PERMISSIONS.DOCUMENT_READ &&
+      scope.kinds.includes('INVOLVED')
+    ) {
       predicates.push(
         { userShares: { some: { userId: principal.userId } } },
         { roleShares: { some: { role: { code: { in: [...principal.roleCodes] } } } } },
