@@ -38,6 +38,7 @@ desktop/release/
 *.log
 .DS_Store
 .codex-tmp/
+.codex-artifacts/
 outputs/
 -.html
 -[0-9]*.png
