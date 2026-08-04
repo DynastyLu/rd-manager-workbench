@@ -768,3 +768,4 @@
 - ownership migration 清理顺序已修复，聚焦集成测试 5/5 通过。
 - 前端旧页头、旧面包屑与旧主题令牌契约已更新；全量测试 149/149 files、826 passed、5 skipped，并正常退出。
 - 完整门禁：frontend lint/typecheck/contracts/build 通过；backend lint/build、134 suites/977 unit、61 suites/311 integration、3 e2e 通过；desktop typecheck、20 files/59 tests 通过。
+- `design/aurora-glass-frontend` 已通过 `--ff-only` 快进合并到本地 `main`；代码树与完成全量验证的 `f78c532` 一致，仅追加本次同步记录后推送 `origin/main`。
