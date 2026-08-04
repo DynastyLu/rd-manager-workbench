@@ -86,7 +86,7 @@ Run: `git diff --check && git diff -- README.md docs/superpowers`.
 
 Expected: no new whitespace errors; diff only contains the documentation record and README update.
 
-- [ ] **Step 3: Push main and compare local/remote hashes**
+- [x] **Step 3: Push main and compare local/remote hashes**
 
 Run: `git push origin main && git fetch origin main && test "$(git rev-parse main)" = "$(git rev-parse origin/main)"`.
 
